@@ -167,7 +167,83 @@ router.post('/', authMiddleware, async (req, res) => {
         );
         const branchId = branchRes.rows[0].id;
 
-        // 4. Create Admin User
+        // 4. Ensure System Roles Exist (Don't create duplicates)
+        const rolesToCreate = ['admin', 'manager', 'staff', 'accountant', 'sales', 'viewer'];
+        const roleIds = {};
+        
+        for (const roleName of rolesToCreate) {
+            // Try to insert, ignore if already exists
+            await client.query(
+                `INSERT INTO roles (name, description, is_system_role) 
+                 VALUES ($1, $2, TRUE) 
+                 ON CONFLICT (name) DO NOTHING`,
+                [roleName, `${roleName.charAt(0).toUpperCase() + roleName.slice(1)} Role`]
+            );
+            
+            // Fetch the role ID (whether we created it or it already exists)
+            const roleRes = await client.query(
+                `SELECT id FROM roles WHERE name = $1`,
+                [roleName]
+            );
+            if (roleRes.rows.length > 0) {
+                roleIds[roleName] = roleRes.rows[0].id;
+            }
+        }
+
+        // 5. Ensure System Permissions Exist (Don't create duplicates)
+        const ALL_PERMS = [
+            { module: 'Sales', action: 'view_customers', description: 'View Customers List' },
+            { module: 'Sales', action: 'manage_customers', description: 'Add/Edit Customers' },
+            { module: 'Sales', action: 'view_invoices', description: 'View Invoices' },
+            { module: 'Sales', action: 'create_invoices', description: 'Create Invoices' },
+            { module: 'Sales', action: 'edit_invoices', description: 'Edit Invoices' },
+            { module: 'Sales', action: 'delete_invoices', description: 'Delete Invoices' },
+            { module: 'Purchases', action: 'view_bills', description: 'View Purchase Bills' },
+            { module: 'Purchases', action: 'create_bills', description: 'Record Purchase Bills' },
+            { module: 'Inventory', action: 'view_products', description: 'View Inventory' },
+            { module: 'Inventory', action: 'manage_stock', description: 'Add/Edit Products' },
+            { module: 'Finance', action: 'view_ledger', description: 'View Ledgers & Transactions' },
+            { module: 'Finance', action: 'manage_transactions', description: 'Record Journal/Receipts' },
+            { module: 'HR', action: 'view_employees', description: 'View Employee List' },
+            { module: 'HR', action: 'manage_employees', description: 'Add/Edit Employees' },
+            { module: 'Settings', action: 'access_settings', description: 'Access System Settings' }
+        ];
+
+        const permissionIds = {};
+        for (const perm of ALL_PERMS) {
+            // Insert and ignore if already exists
+            await client.query(
+                `INSERT INTO permissions (module, action, description) 
+                 VALUES ($1, $2, $3) 
+                 ON CONFLICT (module, action) DO NOTHING`,
+                [perm.module, perm.action, perm.description]
+            );
+            
+            // Fetch the permission ID (whether we created it or it already exists)
+            const permRes = await client.query(
+                `SELECT id FROM permissions WHERE module = $1 AND action = $2`,
+                [perm.module, perm.action]
+            );
+            if (permRes.rows.length > 0) {
+                const key = `${perm.module}:${perm.action}`;
+                permissionIds[key] = permRes.rows[0].id;
+            }
+        }
+
+        // 6. Assign All Permissions to Admin Role (Idempotent)
+        const adminRoleId = roleIds['admin'];
+        if (adminRoleId) {
+            for (const [key, permId] of Object.entries(permissionIds)) {
+                await client.query(
+                    `INSERT INTO role_permissions (role_id, permission_id) 
+                     VALUES ($1, $2) 
+                     ON CONFLICT DO NOTHING`,
+                    [adminRoleId, permId]
+                );
+            }
+        }
+
+        // 7. Create Admin User
         const bcrypt = await import('bcryptjs');
         const hashedPassword = await bcrypt.default.hash(admin_password, 10);
         

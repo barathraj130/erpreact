@@ -209,7 +209,24 @@ router.get("/me", async (req, res) => {
             const roleKey = user.role ? user.role.toLowerCase() : 'user';
             
             if (roleKey === 'admin') {
-                permissions = [{ action: 'access_settings' }, { action: 'view_invoices' }];
+                // Admin gets ALL permissions
+                permissions = [
+                    { module: 'Sales', action: 'view_customers' },
+                    { module: 'Sales', action: 'manage_customers' },
+                    { module: 'Sales', action: 'view_invoices' },
+                    { module: 'Sales', action: 'create_invoices' },
+                    { module: 'Sales', action: 'edit_invoices' },
+                    { module: 'Sales', action: 'delete_invoices' },
+                    { module: 'Purchases', action: 'view_bills' },
+                    { module: 'Purchases', action: 'create_bills' },
+                    { module: 'Inventory', action: 'view_products' },
+                    { module: 'Inventory', action: 'manage_stock' },
+                    { module: 'Finance', action: 'view_ledger' },
+                    { module: 'Finance', action: 'manage_transactions' },
+                    { module: 'HR', action: 'view_employees' },
+                    { module: 'HR', action: 'manage_employees' },
+                    { module: 'Settings', action: 'access_settings' }
+                ];
             } 
             else if (roleKey === 'manager') {
                 permissions = [

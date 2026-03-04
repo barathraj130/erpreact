@@ -1,6 +1,5 @@
-// frontend/src/components/Layout/Sidebar.tsx
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { JSX, useState } from 'react';
+import React, { JSX, useState, useEffect } from 'react';
 import {
     FaBox,
     FaBrain,
@@ -38,72 +37,120 @@ interface SidebarProps {
     mode: 'HOST' | 'ADMIN' | 'USER';
 }
 
+const getMenuItems = (mode: string, user: any): MenuItem[] => {
+    if (mode === 'HOST') return [
+        { name: "Platform Hub", path: "/platform-admin", icon: <FaTachometerAlt /> },
+        { name: "Tenants", path: "/platform-admin#tenants", icon: <FaBuilding /> },
+        { name: "Global Config", path: "/platform-admin#config", icon: <FaCog /> },
+    ];
+    if (mode === 'ADMIN') return [
+        { name: "Admin Dashboard", path: "/dashboard", icon: <FaTachometerAlt /> },
+        { name: "Employees", path: "/admin/employees", icon: <FaUsers /> },
+        { name: "Branch Assets", path: "/admin/branches", icon: <FaBuilding /> },
+        { name: "Analytics", path: "/admin/reports", icon: <FaChartPie /> },
+    ];
+
+    const enabledModules = user?.enabled_modules ? String(user.enabled_modules).toLowerCase() : "";
+    const hasModule = (modName: string) => enabledModules.includes(modName);
+
+    const baseItems: MenuItem[] = [
+        { name: "Command Center", path: "/dashboard", icon: <FaTachometerAlt /> }
+    ];
+
+    if (hasModule("sales")) {
+        baseItems.push({ 
+            name: "Revenue Stream", 
+            icon: <FaShoppingCart />, 
+            module: "sales", 
+            subItems: [
+                { name: "Sales Orders", path: "/invoices" }, 
+                { name: "Stakeholders", path: "/customers" }
+            ] 
+        });
+    }
+
+    if (hasModule("procurement") || hasModule("inventory")) {
+        baseItems.push({ 
+            name: "Procurement", 
+            icon: <FaTruck />, 
+            module: "procurement", 
+            subItems: [
+                { name: "Suppliers", path: "/suppliers" }, 
+                { name: "Purchase Bills", path: "/purchase-bills" }
+            ] 
+        });
+    }
+
+    if (hasModule("inventory")) {
+        baseItems.push({ name: "Inventory Matrix", path: "/products", icon: <FaBox />, module: "inventory" });
+    }
+
+    if (hasModule("finance") || hasModule("accounting")) {
+        baseItems.push({ 
+            name: "Fiscal Logic", 
+            icon: <FaLandmark />, 
+            module: "finance", 
+            subItems: [
+                { name: "Finance Hub", path: "/finance/dashboard" },
+                { name: "Loan Portfolio", path: "/finance/loans" },
+                { name: "Cash Receipts", path: "/finance/receipts" },
+                { name: "Auto Reconcile", path: "/finance/reconciliation" },
+                { name: "Financial Intel", path: "/finance/reports" },
+                { name: "Global Ledgers", path: "/ledgers" }, 
+                { name: "Automated Log", path: "/transactions" },
+            ] 
+        });
+    }
+
+    if (hasModule("hr")) {
+        baseItems.push({ 
+            name: "Workforce", 
+            icon: <FaUsers />, 
+            module: "hr", 
+            subItems: [
+                { name: "Staff Registry", path: "/employees" },
+                { name: "Presence Portal", path: "/attendance" }
+            ] 
+        });
+    }
+
+    if (hasModule("ai")) {
+        baseItems.push({ name: "Cognitive AI", path: "/ai-insights", icon: <FaBrain />, module: "ai" });
+    }
+
+    if (user?.role === 'admin') {
+        baseItems.push({ name: "Admin Setup", path: "/admin/branches", icon: <FaCog /> });
+    }
+
+    return baseItems;
+};
+
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode }): JSX.Element => {
     const { user } = useAuthUser();
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [openMenu, setOpenMenu] = useState<string | null>(null);
+    
     const location = useLocation();
     const navigate = useNavigate();
 
-    const MENU_ITEMS = ((): MenuItem[] => {
-        if (mode === 'HOST') return [
-            { name: "Platform Hub", path: "/platform-admin", icon: <FaTachometerAlt /> },
-            { name: "Tenants", path: "/platform-admin", icon: <FaBuilding /> },
-            { name: "Global Config", path: "/platform-admin", icon: <FaCog /> },
-        ];
-        if (mode === 'ADMIN') return [
-            { name: "Admin Dashboard", path: "/dashboard", icon: <FaTachometerAlt /> },
-            { name: "Employees", path: "/admin/employees", icon: <FaUsers /> },
-            { name: "Branch Assets", path: "/admin/branches", icon: <FaBuilding /> },
-            { name: "Analytics", path: "/admin/reports", icon: <FaChartPie /> },
-        ];
-        return [
-            { name: "Command Center", path: "/dashboard", icon: <FaTachometerAlt /> },
-            { 
-                name: "Revenue Stream", 
-                icon: <FaShoppingCart />, 
-                module: "sales", 
-                subItems: [
-                    { name: "Sales Orders", path: "/invoices" }, 
-                    { name: "Stakeholders", path: "/customers" }
-                ] 
-            },
-            { 
-                name: "Procurement", 
-                icon: <FaTruck />, 
-                module: "procurement", 
-                subItems: [
-                    { name: "Suppliers", path: "/suppliers" }, 
-                    { name: "Purchase Bills", path: "/purchase-bills" }
-                ] 
-            },
-            { name: "Inventory Matrix", path: "/products", icon: <FaBox />, module: "inventory" },
-            { 
-                name: "Fiscal Logic", 
-                icon: <FaLandmark />, 
-                module: "finance", 
-                subItems: [
-                    { name: "Finance Hub", path: "/finance/dashboard" },
-                    { name: "Loan Portfolio", path: "/finance/loans" },
-                    { name: "Cash Receipts", path: "/finance/receipts" },
-                    { name: "Auto Reconcile", path: "/finance/reconciliation" },
-                    { name: "Financial Intel", path: "/finance/reports" },
-                    { name: "Global Ledgers", path: "/ledgers" }, 
-                    { name: "Automated Log", path: "/transactions" },
-                ] 
-            },
-            { 
-                name: "Workforce", 
-                icon: <FaUsers />, 
-                module: "hr", 
-                subItems: [
-                    { name: "Staff Registry", path: "/employees" },
-                    { name: "Presence Portal", path: "/attendance" }
-                ] 
-            },
-            { name: "Cognitive AI", path: "/ai-insights", icon: <FaBrain />, module: "ai" },
-        ];
-    })();
+    const MENU_ITEMS = getMenuItems(mode, user);
+
+    const [openMenu, setOpenMenu] = useState<string | null>(null);
+
+    // Auto-open menu on mount/location change
+    useEffect(() => {
+        let currentMenuName = null;
+        for (const item of MENU_ITEMS) {
+            if (item.subItems) {
+                if (item.subItems.some(sub => location.pathname.startsWith(sub.path!))) {
+                    currentMenuName = item.name;
+                    break;
+                }
+            }
+        }
+        if (currentMenuName && openMenu !== currentMenuName) {
+            setOpenMenu(currentMenuName);
+        }
+    }, [location.pathname, MENU_ITEMS]);
 
     const handleLogout = () => {
         if (window.confirm("Terminate secure session?")) {
@@ -130,49 +177,54 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode }):
 
             <div className="sidebar-nav">
                 <div className="nav-scroll">
-                    {MENU_ITEMS.map((item) => (
-                        <div key={item.name} className="menu-group">
-                            <NavLink 
-                                to={item.path || '#'} 
-                                onClick={(e) => {
-                                    if (item.subItems) {
-                                        e.preventDefault();
-                                        setOpenMenu(openMenu === item.name ? null : item.name);
-                                    }
-                                }}
-                                className={({ isActive }) => `menu-item ${isActive ? 'menu-item-active' : ''}`}
-                            >
-                                <span className="menu-icon">{item.icon}</span>
-                                {!isCollapsed && (
-                                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="menu-item-text">
-                                        {item.name}
-                                    </motion.span>
-                                )}
-                                {!isCollapsed && item.subItems && (
-                                    <FaChevronRight size={10} style={{ marginLeft: 'auto', transform: openMenu === item.name ? 'rotate(90deg)' : 'none', transition: '0.4s cubic-bezier(0.16, 1, 0.3, 1)', opacity: 0.4 }} />
-                                )}
-                            </NavLink>
+                    {MENU_ITEMS.map((item) => {
+                        const hasActiveSub = item.subItems?.some(sub => location.pathname.startsWith(sub.path!));
+                        const isActive = item.path === location.pathname || hasActiveSub;
+                        return (
+                            <div key={item.name} className="menu-group">
+                                <NavLink 
+                                    to={item.path || '#'} 
+                                    onClick={(e) => {
+                                        if (item.subItems) {
+                                            e.preventDefault();
+                                            setOpenMenu(openMenu === item.name ? null : item.name);
+                                        }
+                                    }}
+                                    className={typeof isActive === 'boolean' && isActive ? 'menu-item menu-item-active' : 'menu-item'}
+                                >
+                                    <span className="menu-icon">{item.icon}</span>
+                                    {!isCollapsed && (
+                                        <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="menu-item-text">
+                                            {item.name}
+                                        </motion.span>
+                                    )}
+                                    {!isCollapsed && item.subItems && (
+                                        <FaChevronRight size={10} style={{ marginLeft: 'auto', transform: openMenu === item.name ? 'rotate(90deg)' : 'none', transition: '0.4s cubic-bezier(0.16, 1, 0.3, 1)', opacity: 0.4 }} />
+                                    )}
+                                </NavLink>
 
-                            <AnimatePresence>
-                                {!isCollapsed && item.subItems && openMenu === item.name && (
-                                    <motion.div 
-                                        initial={{ height: 0, opacity: 0 }} 
-                                        animate={{ height: 'auto', opacity: 1 }} 
-                                        exit={{ height: 0, opacity: 0 }}
-                                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                                        className="sub-menu"
-                                    >
-                                        {item.subItems.map(sub => (
-                                            <NavLink key={sub.name} to={sub.path!} className={({isActive}) => `sub-menu-item ${isActive ? 'active' : ''}`}>
-                                                <div className="dot" />
-                                                {sub.name}
-                                            </NavLink>
-                                        ))}
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
-                    ))}
+                                <AnimatePresence>
+                                    {!isCollapsed && item.subItems && openMenu === item.name && (
+                                        <motion.div 
+                                            initial={{ height: 0, opacity: 0 }} 
+                                            animate={{ height: 'auto', opacity: 1 }} 
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                                            className="sub-menu"
+                                            style={{ overflow: 'hidden' }}
+                                        >
+                                            {item.subItems.map(sub => (
+                                                <NavLink key={sub.name} to={sub.path!} className={({isActive: isSubActive}) => `sub-menu-item ${isSubActive ? 'active' : ''}`}>
+                                                    <div className="dot" />
+                                                    {sub.name}
+                                                </NavLink>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 

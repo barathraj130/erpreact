@@ -55,11 +55,14 @@ router.post("/staff", authMiddleware, checkPermission("Settings", "access_settin
             if (emp) emailToUse = emp.email;
         }
 
-        // Insert User with active_company_id = 1
+        // Get current user's company_id to ensure staff is added to the same company
+        const companyId = req.user?.company_id || 1;
+
+        // Insert User with proper company_id and active_company_id
         await db.pgRun(
-            `INSERT INTO users (username, email, password_hash, role, employee_id, active_company_id)
-             VALUES ($1, $2, $3, $4, $5, 1)`,
-            [username, emailToUse, hashed, role, employee_id || null]
+            `INSERT INTO users (company_id, username, email, password_hash, role, employee_id, active_company_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $1)`,
+            [companyId, username, emailToUse, hashed, role, employee_id || null]
         );
         res.json({ success: true, message: "Login created successfully" });
     } catch (err) {
@@ -114,15 +117,16 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
 
         const result = await db.pgRun(
             `INSERT INTO users (
-                username, nickname, email, phone, gstin, 
+                company_id, username, nickname, email, phone, gstin, 
                 address_line1, city_pincode, state, state_code, 
                 bank_name, bank_account_no, bank_ifsc_code,
                 initial_balance, role, active_company_id,
                 password_hash  -- ✅ Storing hash
             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'user', $14, $15)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'user', $15, $16)
              RETURNING id`,
             [
+                req.user.company_id,
                 username, nickname || null, email || null, phone || null, gstin || null,
                 address_line1 || null, city_pincode || null, state || null, state_code || null,
                 bank_name || null, bank_account_no || null, bank_ifsc_code || null,
