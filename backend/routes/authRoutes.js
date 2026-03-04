@@ -176,13 +176,14 @@ router.get("/me", async (req, res) => {
         const decoded = jwt.verify(token, jwtSecret);
         
         // 1. Fetch User with Company and Subscription Context
+        // COALESCE ensures users with null active_company_id still get their company + modules
         const user = await db.pgGet(`
             SELECT 
-                u.id, u.username, u.email, u.role, u.active_company_id, u.signature_url,
+                u.id, u.username, u.email, u.role, u.active_company_id, u.company_id, u.signature_url,
                 c.company_name, c.company_code,
                 s.enabled_modules, s.status as subscription_status
             FROM users u
-            JOIN companies c ON u.active_company_id = c.id
+            JOIN companies c ON c.id = COALESCE(u.active_company_id, u.company_id)
             LEFT JOIN subscriptions s ON c.subscription_id = s.id
             WHERE u.id = $1
         `, [decoded.user.id]);

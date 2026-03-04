@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { JSX, useState, useEffect } from 'react';
+import React, { JSX, useEffect, useState } from 'react';
 import {
     FaBox,
     FaBrain,
@@ -40,8 +40,8 @@ interface SidebarProps {
 const getMenuItems = (mode: string, user: any): MenuItem[] => {
     if (mode === 'HOST') return [
         { name: "Platform Hub", path: "/platform-admin", icon: <FaTachometerAlt /> },
-        { name: "Tenants", path: "/platform-admin#tenants", icon: <FaBuilding /> },
-        { name: "Global Config", path: "/platform-admin#config", icon: <FaCog /> },
+        { name: "Tenants", path: "/platform-admin", icon: <FaBuilding /> },
+        { name: "Global Config", path: "/platform-admin", icon: <FaCog /> },
     ];
     if (mode === 'ADMIN') return [
         { name: "Admin Dashboard", path: "/dashboard", icon: <FaTachometerAlt /> },
@@ -51,7 +51,9 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
     ];
 
     const enabledModules = user?.enabled_modules ? String(user.enabled_modules).toLowerCase() : "";
-    const hasModule = (modName: string) => enabledModules.includes(modName);
+    // If no modules info available (e.g. token doesn't carry it yet), show everything
+    const modulesKnown = enabledModules.length > 0;
+    const hasModule = (modName: string) => !modulesKnown || enabledModules.includes(modName);
 
     const baseItems: MenuItem[] = [
         { name: "Command Center", path: "/dashboard", icon: <FaTachometerAlt /> }
