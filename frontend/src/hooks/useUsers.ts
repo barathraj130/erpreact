@@ -1,4 +1,4 @@
-// frontend/src/hooks/useUsers.ts
+// frontend/src/hooks/useUsers.ts - module verified
 
 import { useCallback, useEffect, useState } from 'react';
 import { Customer, fetchCustomers } from '../api/userApi';

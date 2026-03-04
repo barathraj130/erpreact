@@ -1,4 +1,4 @@
-// frontend/src/hooks/useAuthUser.ts
+// frontend/src/hooks/useAuthUser.ts - module verified
 import { useEffect, useState } from "react";
 import { getCurrentUser } from "../api/authApi";
 

@@ -1,96 +1,178 @@
-// frontend/src/pages/DayBook.tsx
-
-import React, { useState } from 'react';
-// import { fetchTransactions } from '../api/transactionApi'; // To be used
+import { motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { FaCalendarAlt, FaChartLine, FaHistory, FaReceipt } from 'react-icons/fa';
+import { fetchTransactions, Transaction } from '../api/transactionApi';
+import './DayBook.css';
 
 const DayBook: React.FC = () => {
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-    const [transactions, setTransactions] = useState<any[]>([]); // Placeholder for transaction data
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(false);
 
-    const loadDayBook = async (selectedDate: string) => {
+    const loadData = async (selectedDate: string) => {
         setLoading(true);
-        // NOTE: Replace with actual API call to fetch daily transactions, debits, and credits
-        // const data = await fetchTransactions({ startDate: selectedDate, endDate: selectedDate });
-        
-        // Mock Data for Day Book
-        const mockData = [
-            { id: 101, time: '09:30', particular: 'Sales Invoice #123 (R. Kumar)', type: 'Debit', amount: 5500.00 },
-            { id: 102, time: '11:00', particular: 'Receipt from R. Kumar', type: 'Credit', amount: 3000.00 },
-            { id: 103, time: '14:45', particular: 'Petty Cash Expense: Tea & Snacks', type: 'Debit', amount: 150.00 },
-        ];
-        
-        setTransactions(mockData);
-        setLoading(false);
+        try {
+            const data = await fetchTransactions();
+            const filtered = data.filter(t => t.date.slice(0, 10) === selectedDate);
+            setTransactions(filtered);
+        } catch (err) {
+            console.error("Failed to load Day Book:", err);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    React.useEffect(() => {
-        loadDayBook(date);
+    useEffect(() => {
+        loadData(date);
     }, [date]);
 
-    const totalDebit = transactions.reduce((sum, t) => sum + (t.type === 'Debit' ? t.amount : 0), 0);
-    const totalCredit = transactions.reduce((sum, t) => sum + (t.type === 'Credit' ? t.amount : 0), 0);
+    const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(amount);
+    };
+
+    const totalDebit = transactions.reduce((sum, t) => sum + (t.type === 'BILL' || t.type === 'PAYMENT' ? Number(t.amount) : 0), 0);
+    const totalCredit = transactions.reduce((sum, t) => sum + (t.type === 'INVOICE' || t.type === 'RECEIPT' ? Number(t.amount) : 0), 0);
 
     return (
-        <section id="dayBookSection" className="app-section">
-            <div className="section-header">
-                <h2>Day Book (Daily Transactions)</h2>
-                <div>
-                    <label htmlFor="dayBookDate">Select Date:</label>
+        <div className="daybook-container">
+            {/* Header */}
+            <header className="daybook-header">
+                <div className="daybook-title">
+                    <motion.h1
+                        initial={{ opacity: 0, x: -30 }}
+                        animate={{ opacity: 1, x: 0 }}
+                    >
+                        Daily <span style={{ color: 'var(--primary)' }}>Ledger</span>
+                    </motion.h1>
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.2 }}
+                    >
+                        Financial Audit Pulse: {new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
+                    </motion.p>
+                </div>
+                <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="date-selector-glass"
+                >
+                    <FaCalendarAlt style={{ color: 'var(--primary)' }} />
                     <input 
                         type="date" 
-                        id="dayBookDate" 
-                        className="form-control" 
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
-                        style={{width: 'auto'}}
                     />
-                </div>
-            </div>
-            
-            {loading && <p>Loading Day Book for {date}...</p>}
+                </motion.div>
+            </header>
 
-            {!loading && (
-                <div className="table-container">
-                    <table className="data-table">
-                        <thead>
+            {/* Stats Matrix */}
+            <div className="ledger-matrix">
+                <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="ledger-stat-card debit"
+                >
+                    <div className="stat-icon-bg"><FaChartLine /></div>
+                    <span className="stat-label">Neural Outflow (Debit)</span>
+                    <h3 className="stat-value">{formatCurrency(totalDebit)}</h3>
+                    <div style={{ marginTop: '24px', height: '4px', background: 'var(--error-glow)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: '100%' }}
+                            transition={{ duration: 1.5, ease: "easeOut" }}
+                            style={{ height: '100%', background: 'var(--error)' }} 
+                        />
+                    </div>
+                </motion.div>
+                
+                <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                    className="ledger-stat-card credit"
+                >
+                    <div className="stat-icon-bg"><FaReceipt /></div>
+                    <span className="stat-label">Neural Inflow (Credit)</span>
+                    <h3 className="stat-value">{formatCurrency(totalCredit)}</h3>
+                    <div style={{ marginTop: '24px', height: '4px', background: 'var(--success-glow)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: '100%' }}
+                            transition={{ duration: 1.5, ease: "easeOut" }}
+                            style={{ height: '100%', background: 'var(--success)' }} 
+                        />
+                    </div>
+                </motion.div>
+            </div>
+
+            {/* Table Area */}
+            <motion.div 
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="daybook-table-wrapper"
+            >
+                <table className="day-table">
+                    <thead>
+                        <tr>
+                            <th>Narrative Context</th>
+                            <th>Protocol Type</th>
+                            <th style={{ textAlign: 'right' }}>Debit (Dr)</th>
+                            <th style={{ textAlign: 'right' }}>Credit (Cr)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? (
+                            <tr><td colSpan={4} style={{ padding: '80px', textAlign: 'center' }}><div className="skeleton" style={{ height: '40px', borderRadius: '12px' }}></div></td></tr>
+                        ) : transactions.length === 0 ? (
                             <tr>
-                                <th>Time</th>
-                                <th>Particulars</th>
-                                <th className="num">Debit (Dr) (₹)</th>
-                                <th className="num">Credit (Cr) (₹)</th>
+                                <td colSpan={4} style={{ padding: '120px 0', textAlign: 'center' }}>
+                                    <FaHistory size={64} style={{ color: 'var(--border-color)', marginBottom: '24px' }} />
+                                    <h3 style={{ margin: 0, fontWeight: 950, color: 'var(--text-primary)' }}>Book Idle</h3>
+                                    <p style={{ color: 'var(--text-muted)', fontWeight: 500, marginTop: '8px' }}>No financial impulses detected for this timestamp.</p>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td colSpan={2} style={{fontWeight: 'bold'}}>Opening Balance (Cash)</td>
-                                <td className="num" style={{fontWeight: 'bold'}}>5000.00</td>
-                                <td></td>
-                            </tr>
-                            {transactions.map(t => (
-                                <tr key={t.id}>
-                                    <td>{t.time}</td>
-                                    <td>{t.particular}</td>
-                                    <td className="num">{t.type === 'Debit' ? t.amount.toFixed(2) : ''}</td>
-                                    <td className="num">{t.type === 'Credit' ? t.amount.toFixed(2) : ''}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <td colSpan={2} style={{fontWeight: 'bold'}}>Total Transactions</td>
-                                <td className="num total-row">{totalDebit.toFixed(2)}</td>
-                                <td className="num total-row">{totalCredit.toFixed(2)}</td>
-                            </tr>
-                            <tr>
-                                <td colSpan={2} style={{fontWeight: 'bold'}}>Closing Balance (Cash)</td>
-                                <td className="num" colSpan={2} style={{fontWeight: 'bold', textAlign: 'center'}}>{(5000 + totalCredit - totalDebit).toFixed(2)} Dr</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            )}
-        </section>
+                        ) : (
+                            transactions.map((t, idx) => {
+                                const isCredit = t.type === 'INVOICE' || t.type === 'RECEIPT';
+                                return (
+                                    <motion.tr 
+                                        key={t.id} 
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: 0.6 + (idx * 0.05) }}
+                                        className="tx-row"
+                                    >
+                                        <td>
+                                            <div className="tx-narration">{t.description}</div>
+                                            <div className="tx-entity">{t.user_name || t.lender_name || 'System Auto-Node'}</div>
+                                        </td>
+                                        <td>
+                                            <span className={`type-pill ${isCredit ? 'credit' : 'debit'}`}>
+                                                {t.type}
+                                            </span>
+                                        </td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            {!isCredit ? <div className="val-debit">{formatCurrency(t.amount)}</div> : <div className="val-empty">•</div>}
+                                        </td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            {isCredit ? <div className="val-credit">{formatCurrency(t.amount)}</div> : <div className="val-empty">•</div>}
+                                        </td>
+                                    </motion.tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </motion.div>
+        </div>
     );
 };
 

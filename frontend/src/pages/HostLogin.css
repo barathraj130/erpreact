@@ -1,0 +1,251 @@
+/* HostLogin.css - Nexus Core Dark Edition */
+
+.host-login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #020617; /* Deepest interstellar slate */
+    position: relative;
+    overflow: hidden;
+    padding: 24px;
+    font-family: 'Outfit', 'Inter', sans-serif;
+}
+
+.neural-background {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.plasma-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+}
+
+.orb-1 {
+    width: 600px;
+    height: 600px;
+    top: -200px;
+    right: -100px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+}
+
+.orb-2 {
+    width: 800px;
+    height: 800px;
+    bottom: -300px;
+    left: -200px;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+}
+
+.host-login-card {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 520px;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 48px;
+    padding: 80px 60px;
+    box-shadow: 
+        0 40px 100px -20px rgba(0, 0, 0, 0.5),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.host-header {
+    text-align: center;
+    margin-bottom: 56px;
+}
+
+.host-icon-wrapper {
+    display: inline-flex;
+    padding: 24px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, transparent 100%);
+    color: #6366f1;
+    border-radius: 300px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    margin-bottom: 32px;
+    box-shadow: 0 0 40px rgba(99, 102, 241, 0.1);
+}
+
+.host-header h1 {
+    font-size: 2.75rem;
+    font-weight: 950;
+    color: white;
+    letter-spacing: 4px;
+    margin-bottom: 12px;
+}
+
+.host-header .highlight {
+    color: #6366f1;
+    text-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+}
+
+.host-header .subtitle {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 800;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+}
+
+.host-form {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 900;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    margin-bottom: 12px;
+    padding-left: 20px;
+}
+
+.input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.field-icon {
+    position: absolute;
+    left: 24px;
+    color: #475569;
+    font-size: 1.1rem;
+    transition: color 0.3s;
+}
+
+.input-container input {
+    width: 100%;
+    padding: 22px 24px 22px 64px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 24px;
+    color: white;
+    font-size: 1.05rem;
+    font-weight: 600;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.input-container input:focus {
+    outline: none;
+    border-color: rgba(99, 102, 241, 0.4);
+    background: rgba(99, 102, 241, 0.05);
+    box-shadow: 0 0 40px rgba(99, 102, 241, 0.1);
+}
+
+.input-container input:focus ~ .field-icon {
+    color: #6366f1;
+}
+
+.toggle-btn {
+    position: absolute;
+    right: 20px;
+    background: none;
+    border: none;
+    color: #475569;
+    cursor: pointer;
+    font-size: 1.25rem;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.3s;
+}
+
+.toggle-btn:hover {
+    color: #64748b;
+}
+
+.nexus-submit {
+    width: 100%;
+    padding: 24px;
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: white;
+    border-radius: 24px;
+    border: none;
+    font-size: 0.9rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    box-shadow: 0 20px 40px rgba(79, 70, 229, 0.2);
+    margin-top: 16px;
+}
+
+.host-error-alert {
+    padding: 20px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 20px;
+    color: #ef4444;
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 40px;
+    letter-spacing: 0.05em;
+}
+
+.host-footer {
+    margin-top: 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 32px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.security-tag {
+    font-size: 0.65rem;
+    font-weight: 900;
+    color: #334155;
+    letter-spacing: 0.15em;
+}
+
+.system-version {
+    font-size: 0.65rem;
+    font-weight: 900;
+    color: #475569;
+}
+
+/* Animations */
+.dot-flashing {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: white;
+    color: white;
+    animation: dot-flashing 1s infinite linear alternate;
+    animation-delay: 0.5s;
+}
+
+@keyframes dot-flashing {
+  0% { background-color: white; }
+  50%, 100% { background-color: rgba(255, 255, 255, 0.2); }
+}
+
+@media (max-width: 640px) {
+    .host-login-card {
+        padding: 40px 24px;
+        border-radius: 32px;
+    }
+    .host-header h1 {
+        font-size: 2rem;
+    }
+}

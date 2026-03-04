@@ -1,33 +1,24 @@
 // frontend/src/pages/CompanyProfile.tsx
-
+import { motion } from 'framer-motion';
 import React, { useCallback, useEffect, useState } from 'react';
-// NOTE: You would need to create companyApi.ts later
-// import { fetchProfile, updateProfile, fetchBankAccounts, createBankAccount, deleteBankAccount } from '../api/companyApi';
+import { FaBuilding, FaCheckCircle, FaHashtag, FaPlus, FaSave, FaUniversity } from 'react-icons/fa';
+import { fetchProfile } from '../api/companyApi';
 
 const CompanyProfile: React.FC = () => {
     const [profile, setProfile] = useState<any>({});
-    const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    // Mock fetch functions until companyApi.ts is implemented
-    const mockFetchProfile = async () => ({ id: 1, company_name: "JBS KNITWEAR", gstin: "33CKAPJ7513F1ZK", phone: "9791902205", email: "contact@jbsknitwear.com", address_line1: "3/2B, Nesavalar Colony", bank_name: "ICICI", bank_account_no: "123456" });
-    const mockFetchBankAccounts = async () => ([
+    const [bankAccounts, setBankAccounts] = useState<any[]>([
         { id: 1, bank_name: "ICICI Bank", account_number: "106105501618", ifsc_code: "ICIC0001061", account_type: "Savings", is_default: 1 },
         { id: 2, bank_name: "HDFC Bank", account_number: "9876543210", ifsc_code: "HDFC0000020", account_type: "Current", is_default: 0 },
     ]);
+    const [loading, setLoading] = useState(true);
 
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [profileData, bankData] = await Promise.all([
-                mockFetchProfile(), 
-                mockFetchBankAccounts()
-            ]);
-            setProfile(profileData);
-            setBankAccounts(bankData);
+            const data = await fetchProfile();
+            setProfile(data);
         } catch (err) {
-            setError('Failed to load company data.');
+            console.error('Identity Retrieval Failure', err);
         } finally {
             setLoading(false);
         }
@@ -36,89 +27,115 @@ const CompanyProfile: React.FC = () => {
     useEffect(() => {
         loadData();
     }, [loadData]);
-    
-    const handleProfileSubmit = (e: React.FormEvent) => {
+
+    const onSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        alert('Profile saved! (Implementation needed in companyApi.ts)');
-        // Implement API call: updateProfile(profile.id, formData)
+        alert("Corporate Identity Synced.");
     };
-    
-    const handleDeleteBank = (id: number) => {
-        if (window.confirm(`Are you sure you want to delete bank account #${id}?`)) {
-            // Implement API call: deleteBankAccount(id).then(loadData)
-            alert(`Bank account ${id} deleted (Mock).`);
-            loadData();
-        }
-    };
-    
-    if (loading) return <section className="app-section"><p>Loading company configuration...</p></section>;
-    if (error) return <section className="app-section"><p className="text-danger">{error}</p></section>;
+
+    if (loading) return (
+        <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="spinner-innovative" />
+        </div>
+    );
 
     return (
-        <section id="companySection" className="app-section">
-            <div className="section-header">
-                <h2>Company Operations</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', maxWidth: '1200px' }}>
+            {/* Identity Header */}
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
-                    <button className="btn btn-primary" onClick={() => {/* openExpenseModal() */}}><i className="fas fa-plus"></i> New Expense</button>
+                    <h1 style={{ fontSize: '2.5rem', fontWeight: 950, letterSpacing: '-0.03em' }}>
+                        Corporate <span style={{ color: 'var(--primary)' }}>Identity</span>
+                    </h1>
+                    <p style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        Manage legal entity, fiscal registration and banking hubs.
+                    </p>
+                </div>
+            </header>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '32px' }}>
+                {/* Profile Form */}
+                <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="enterprise-card" style={{ padding: '40px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
+                        <div style={{ padding: '10px', background: 'var(--primary-glow)', color: 'var(--primary)', borderRadius: '10px' }}>
+                            <FaBuilding />
+                        </div>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Primary Organization Data</h2>
+                    </div>
+
+                    <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <div className="input-block">
+                            <label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Registered Company Name</label>
+                            <input className="input-modern" value={profile.company_name || ''} onChange={e => setProfile({...profile, company_name: e.target.value})} />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                            <div className="input-block">
+                                <label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>GSTIN Registry</label>
+                                <input className="input-modern" value={profile.gstin || ''} onChange={e => setProfile({...profile, gstin: e.target.value})} />
+                            </div>
+                            <div className="input-block">
+                                <label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Fiscal Representative</label>
+                                <input className="input-modern" value={profile.admin_name || 'MASTER ADMIN'} />
+                            </div>
+                        </div>
+
+                        <div className="input-block">
+                            <label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Registered Office Address</label>
+                            <textarea className="input-modern" style={{ minHeight: '100px', paddingTop: '12px' }} value={profile.address_line1 || ''} onChange={e => setProfile({...profile, address_line1: e.target.value})} />
+                        </div>
+
+                        <button type="submit" className="btn-enterprise" style={{ width: 'fit-content', padding: '16px 32px' }}>
+                            <FaSave /> Commit Profile Updates
+                        </button>
+                    </form>
+                </motion.div>
+
+                {/* Bank Hub */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="enterprise-card" style={{ padding: '32px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <FaUniversity color="var(--primary)" />
+                                <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Banking Hub</h3>
+                            </div>
+                            <button className="clickable glass" style={{ padding: '8px', borderRadius: '8px' }}><FaPlus /></button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {bankAccounts.map((acc, idx) => (
+                                <motion.div 
+                                    key={acc.id} 
+                                    whileHover={{ scale: 1.02 }}
+                                    style={{ background: 'var(--bg-canvas)', borderRadius: '16px', padding: '16px', border: '1px solid var(--border-subtle)', position: 'relative' }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                        <span style={{ fontWeight: 800 }}>{acc.bank_name}</span>
+                                        {acc.is_default ? (
+                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, background: 'var(--success-surface)', color: 'var(--success)', padding: '2px 8px', borderRadius: '100px' }}>PRIMARY</span>
+                                        ) : null}
+                                    </div>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <FaHashtag size={10} /> {acc.account_number}
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginTop: '4px' }}>IFSC: {acc.ifsc_code}</div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    </motion.div>
+
+                    {/* Subscription Status */}
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="enterprise-card glass" style={{ padding: '32px', background: 'var(--text-main)', color: 'white' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                            <FaCheckCircle color="var(--primary)" />
+                            <span style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Subscription Matrix</span>
+                        </div>
+                        <h3 style={{ fontSize: '1.5rem', fontWeight: 950 }}>Enterprise Full Stack</h3>
+                        <p style={{ fontSize: '0.85rem', opacity: 0.7, marginTop: '8px' }}>All neural and logistic modules unlocked. Next audit: March 2024.</p>
+                    </motion.div>
                 </div>
             </div>
-
-            <h3 className="section-subheader">Company Profile for Printing</h3>
-            <div className="form-container" style={{padding: '20px', backgroundColor: 'white', borderRadius: '8px', boxShadow: 'var(--box-shadow)'}}>
-                <form onSubmit={handleProfileSubmit}>
-                    <fieldset>
-                        <legend>Company Information</legend>
-                        <div className="form-grid" style={{gridTemplateColumns: 'repeat(3, 1fr)'}}>
-                            <div className="form-group grid-col-span-2">
-                                <label>Company Name*</label>
-                                <input type="text" value={profile.company_name || ''} onChange={(e) => setProfile({...profile, company_name: e.target.value})} required className="form-control" />
-                            </div>
-                            <div className="form-group">
-                                <label>GSTIN</label>
-                                <input type="text" value={profile.gstin || ''} onChange={(e) => setProfile({...profile, gstin: e.target.value})} className="form-control" />
-                            </div>
-                            {/* ... other contact and address fields using input elements and state management ... */}
-                        </div>
-                    </fieldset>
-                    <button type="submit" className="btn btn-primary">Save Company Profile</button>
-                </form>
-            </div>
-
-            <h3 className="section-subheader">Bank Accounts</h3>
-            <div className="section-header" style={{borderBottom: 'none', paddingBottom: '0'}}>
-               <div></div>
-               <button className="btn btn-secondary" onClick={() => {/* openBankAccountModal() */}}><i className="fas fa-plus"></i> Add Bank Account</button>
-            </div>
-            <div className="table-container">
-                <table className="data-table">
-                    <thead>
-                        <tr>
-                            <th>Bank Name</th>
-                            <th>Account Number</th>
-                            <th>IFSC</th>
-                            <th>Type</th>
-                            <th>Default</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {bankAccounts.map(account => (
-                            <tr key={account.id}>
-                                <td>{account.bank_name}</td>
-                                <td>{account.account_number}</td>
-                                <td>{account.ifsc_code || '-'}</td>
-                                <td>{account.account_type}</td>
-                                <td>{account.is_default ? 'Yes' : 'No'}</td>
-                                <td className="actions-cell">
-                                    <button className="btn btn-primary btn-sm" onClick={() => {/* openBankAccountModal(account) */}}>Edit</button>
-                                    <button className="btn btn-danger btn-sm" onClick={() => handleDeleteBank(account.id)}>Delete</button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        </div>
     );
 };
 

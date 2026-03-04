@@ -1,0 +1,84 @@
+
+> backend@1.0.0 start
+> node server.js
+
+--> Loading pg.js
+[dotenv@17.3.1] injecting env (12) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+✅ PostgreSQL pool initialized.
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+--> Loading authMiddleware.js
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+--> Loading productRoutes.js
+🚀 Server script starting...
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+⏳ Syncing Database Schema...
+   🔸 Syncing table: subscriptions
+🔥 Server running on port 3000
+   🔹 Finished syncing: subscriptions
+   🔸 Syncing table: companies
+   🔹 Finished syncing: companies
+   🔸 Syncing table: branches
+   🔹 Finished syncing: branches
+   🔸 Syncing table: users
+   🔹 Finished syncing: users
+   🔸 Syncing table: employees
+   🔹 Finished syncing: employees
+   🔸 Syncing table: salary_advances
+   🔹 Finished syncing: salary_advances
+   🔸 Syncing table: advance_repayments
+   🔹 Finished syncing: advance_repayments
+   🔸 Syncing table: attendance_logs
+   🔹 Finished syncing: attendance_logs
+   🔸 Syncing table: payroll_runs
+   🔹 Finished syncing: payroll_runs
+   🔸 Syncing table: roles
+   🔹 Finished syncing: roles
+   🔸 Syncing table: permissions
+   🔹 Finished syncing: permissions
+   🔸 Syncing table: role_permissions
+   🔹 Finished syncing: role_permissions
+   🔸 Syncing table: lenders
+   🔹 Finished syncing: lenders
+   🔸 Syncing table: tax_rates
+   🔹 Finished syncing: tax_rates
+   🔸 Syncing table: tax_filings
+   🔹 Finished syncing: tax_filings
+   🔸 Syncing table: system_configs
+   🔹 Finished syncing: system_configs
+   🔸 Syncing table: chart_of_accounts
+   🔹 Finished syncing: chart_of_accounts
+   🔸 Syncing table: transactions
+   🔹 Finished syncing: transactions
+   🔸 Syncing table: transaction_lines
+   🔹 Finished syncing: transaction_lines
+   🔸 Syncing table: ledger_entries
+   🔹 Finished syncing: ledger_entries
+   🔸 Syncing table: stock_units
+   🔹 Finished syncing: stock_units
+   🔸 Syncing table: products
+   🔹 Finished syncing: products
+   🔸 Syncing table: product_suppliers
+   🔹 Finished syncing: product_suppliers
+   🔸 Syncing table: invoices
+   🔹 Finished syncing: invoices
+   🔸 Syncing table: invoice_line_items
+   🔹 Finished syncing: invoice_line_items
+   🔸 Syncing table: purchase_bills
+   🔹 Finished syncing: purchase_bills
+   🔸 Syncing table: purchase_bill_items
+   🔹 Finished syncing: purchase_bill_items
+   🔸 Syncing table: bank_details
+   🔹 Finished syncing: bank_details
+   🔸 Syncing table: notifications
+   🔹 Finished syncing: notifications
+   🔸 Syncing table: audit_log
+   🔹 Finished syncing: audit_log
+   🔸 Syncing table: business_agreements
+   🔹 Finished syncing: business_agreements
+   🔸 Syncing table: constraints
+   🔹 Finished syncing: constraints
+   🔸 Syncing table: throughput_metrics
+   🔹 Finished syncing: throughput_metrics
+   🔸 Syncing table: constraint_actions
+   🔹 Finished syncing: constraint_actions
+✨ Schema Sync Complete.

@@ -1,0 +1,1046 @@
+
+> frontend@1.0.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 49651 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.29.182:5173/
+11:12:39 AM [vite] vite.config.js changed, restarting server...
+11:12:49 AM [vite] vite.config.js changed, restarting server...
+11:12:59 AM [vite] server restarted.
+11:19:05 AM [vite] page reload index.html
+11:21:22 AM [vite] vite.config.js changed, restarting server...
+11:21:22 AM [vite] page reload index.html
+11:21:22 AM [vite] page reload src/main.tsx
+11:21:24 AM [vite] page reload index.html
+11:21:25 AM [vite] vite.config.js changed, restarting server...
+11:21:37 AM [vite] server restarted.
+11:29:56 AM [vite] hmr update /src/pages/Inventory.tsx
+11:29:56 AM [vite] hmr update /src/components/OfflineIndicator.tsx
+11:29:56 AM [vite] hmr update /src/pages/Customers.tsx
+11:29:56 AM [vite] hmr update /src/pages/Transactions.tsx
+11:29:56 AM [vite] hmr update /src/App.tsx
+11:29:56 AM [vite] hmr update /src/pages/DayBook.tsx
+11:29:56 AM [vite] hmr update /src/pages/Dashboard.tsx
+11:29:56 AM [vite] vite.config.js changed, restarting server...
+11:29:56 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:29:56 AM [vite] hmr update /src/App.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Subscriptions.tsx, /src/context/TenantContext.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx
+11:29:56 AM [vite] hmr update /src/pages/CreateInvoice.tsx
+11:29:56 AM [vite] hmr update /src/pages/Ledgers.tsx
+11:29:56 AM [vite] hmr update /src/components/Layout/Sidebar.tsx
+11:29:56 AM [vite] page reload index.html
+11:29:56 AM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+11:29:56 AM [vite] hmr update /src/index.css
+11:29:56 AM [vite] hmr update /src/pages/InvoiceDetails.tsx
+11:29:56 AM [vite] hmr update /src/pages/FileManager.tsx
+11:29:56 AM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+11:29:56 AM [vite] hmr update /src/pages/DayBook.tsx
+11:29:56 AM [vite] hmr update /src/pages/Settings.tsx
+11:29:56 AM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Login.tsx, /src/App.tsx, /src/pages/Subscriptions.tsx, /src/context/TenantContext.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/DayBook.tsx, /src/pages/TOCDashboard.tsx
+11:29:56 AM [vite] hmr update /src/pages/Customers.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx
+11:29:56 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:29:56 AM [vite] hmr update /src/context/TenantContext.tsx
+11:29:56 AM [vite] hmr update /src/pages/PurchaseBills.tsx
+11:29:56 AM [vite] hmr update /src/pages/Invoices.tsx
+11:29:57 AM [vite] hmr update /src/pages/Employees.tsx
+11:29:57 AM [vite] hmr update /src/pages/PlatformAdmin.tsx
+11:29:57 AM [vite] hmr update /src/pages/hr/Attendance.tsx
+11:29:57 AM [vite] hmr update /src/pages/Login.css
+11:29:57 AM [vite] page reload src/main.tsx
+11:29:57 AM [vite] hmr update /src/pages/EditInvoice.tsx
+11:29:57 AM [vite] hmr update /src/pages/AddSupplierModal.tsx
+11:29:57 AM [vite] hmr update /src/pages/Login.tsx
+11:29:57 AM [vite] hmr update /src/pages/customer/MyLedger.tsx
+11:29:57 AM [vite] hmr update /src/pages/Reports.tsx
+11:29:57 AM [vite] hmr update /src/pages/Suppliers.tsx
+11:30:02 AM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+11:30:02 AM [vite] vite.config.js changed, restarting server...
+11:30:02 AM [vite] page reload index.html
+11:30:13 AM [vite] page reload src/main.tsx
+11:30:13 AM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+11:30:13 AM [vite] hmr update /src/pages/Customers.tsx
+11:30:13 AM [vite] hmr update /src/components/OfflineIndicator.tsx
+11:30:18 AM [vite] hmr update /src/pages/DayBook.tsx
+11:30:18 AM [vite] hmr update /src/pages/DayBook.tsx
+11:30:21 AM [vite] hmr update /src/pages/Employees.tsx
+11:30:31 AM [vite] server restarted.
+11:31:38 AM [vite] vite.config.js changed, restarting server...
+11:31:44 AM [vite] hmr update /src/pages/Inventory.tsx
+11:31:44 AM [vite] hmr update /src/components/OfflineIndicator.tsx
+11:31:44 AM [vite] hmr update /src/pages/Customers.tsx
+11:31:44 AM [vite] hmr update /src/pages/Transactions.tsx
+11:31:44 AM [vite] hmr update /src/App.tsx
+11:31:44 AM [vite] hmr update /src/pages/DayBook.tsx
+11:31:44 AM [vite] hmr update /src/pages/Dashboard.tsx
+11:31:44 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:31:44 AM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/Subscriptions.tsx
+11:31:44 AM [vite] hmr update /src/pages/CreateInvoice.tsx
+11:31:44 AM [vite] hmr update /src/pages/Ledgers.tsx
+11:31:44 AM [vite] hmr update /src/components/Layout/Sidebar.tsx
+11:31:44 AM [vite] page reload index.html
+11:31:44 AM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx
+11:31:44 AM [vite] hmr update /src/index.css
+11:31:44 AM [vite] hmr update /src/pages/InvoiceDetails.tsx
+11:31:44 AM [vite] hmr update /src/pages/FileManager.tsx
+11:31:44 AM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+11:31:44 AM [vite] hmr update /src/pages/DayBook.tsx
+11:31:44 AM [vite] hmr update /src/pages/Settings.tsx
+11:31:44 AM [vite] hmr update /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/PurchaseBills.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Subscriptions.tsx, /src/pages/Login.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/TOCDashboard.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx
+11:31:44 AM [vite] hmr update /src/pages/Customers.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx
+11:31:44 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:31:44 AM [vite] hmr update /src/context/TenantContext.tsx
+11:31:44 AM [vite] hmr update /src/pages/PurchaseBills.tsx
+11:31:44 AM [vite] hmr update /src/pages/Invoices.tsx
+11:31:44 AM [vite] hmr update /src/pages/Employees.tsx
+11:31:44 AM [vite] hmr update /src/pages/PlatformAdmin.tsx
+11:31:44 AM [vite] hmr update /src/pages/hr/Attendance.tsx
+11:31:44 AM [vite] hmr update /src/pages/Login.css
+11:31:44 AM [vite] page reload src/main.tsx
+11:31:44 AM [vite] hmr update /src/pages/EditInvoice.tsx
+11:31:44 AM [vite] hmr update /src/pages/AddSupplierModal.tsx
+11:31:44 AM [vite] hmr update /src/pages/Login.tsx
+11:31:44 AM [vite] hmr update /src/pages/customer/MyLedger.tsx
+11:31:44 AM [vite] hmr update /src/pages/Reports.tsx
+11:31:44 AM [vite] hmr update /src/pages/Suppliers.tsx
+11:31:45 AM [vite] vite.config.js changed, restarting server...
+11:31:47 AM [vite] hmr update /src/components/OfflineIndicator.tsx
+11:31:47 AM [vite] hmr update /src/pages/Customers.tsx
+11:31:47 AM [vite] hmr update /src/pages/Inventory.tsx
+11:31:47 AM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx
+11:31:47 AM [vite] hmr update /src/pages/DayBook.tsx
+11:31:47 AM [vite] hmr update /src/App.tsx
+11:31:47 AM [vite] hmr update /src/pages/Transactions.tsx
+11:31:49 AM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+11:31:49 AM [vite] hmr update /src/pages/DayBook.tsx
+11:31:56 AM [vite] hmr update /src/pages/EditInvoice.tsx
+11:31:56 AM [vite] page reload src/main.tsx
+11:31:59 AM [vite] hmr update /src/context/TenantContext.tsx
+11:31:59 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:31:59 AM [vite] hmr update /src/pages/Dashboard.tsx
+11:31:59 AM [vite] page reload index.html
+11:31:59 AM [vite] hmr update /src/pages/AddSupplierModal.tsx
+11:31:59 AM [vite] hmr update /src/pages/Employees.tsx
+11:32:12 AM [vite] server restarted.
+11:38:29 AM [vite] hmr update /src/pages/Inventory.tsx
+11:38:29 AM [vite] hmr update /src/components/OfflineIndicator.tsx
+11:38:29 AM [vite] hmr update /src/pages/Customers.tsx
+11:38:29 AM [vite] hmr update /src/pages/Transactions.tsx
+11:38:29 AM [vite] hmr update /src/App.tsx
+11:38:29 AM [vite] hmr update /src/pages/DayBook.tsx
+11:38:29 AM [vite] hmr update /src/pages/Dashboard.tsx
+11:38:30 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:38:30 AM [vite] hmr update /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Subscriptions.tsx
+11:38:30 AM [vite] hmr update /src/pages/CreateInvoice.tsx
+11:38:30 AM [vite] hmr update /src/pages/Ledgers.tsx
+11:38:30 AM [vite] hmr update /src/components/Layout/Sidebar.tsx
+11:38:30 AM [vite] page reload index.html
+11:38:30 AM [vite] vite.config.js changed, restarting server...
+11:38:30 AM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+11:38:30 AM [vite] hmr update /src/index.css
+11:38:30 AM [vite] hmr update /src/pages/InvoiceDetails.tsx
+11:38:30 AM [vite] hmr update /src/pages/FileManager.tsx
+11:38:30 AM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+11:38:30 AM [vite] hmr update /src/pages/DayBook.tsx
+11:38:30 AM [vite] hmr update /src/pages/Settings.tsx
+11:38:30 AM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/DayBook.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Subscriptions.tsx, /src/pages/Login.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx
+11:38:30 AM [vite] hmr update /src/pages/Customers.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx
+11:38:30 AM [vite] hmr update /src/pages/TOCDashboard.tsx
+11:38:30 AM [vite] hmr update /src/context/TenantContext.tsx
+11:38:30 AM [vite] hmr update /src/pages/PurchaseBills.tsx
+11:38:30 AM [vite] hmr update /src/pages/Invoices.tsx
+11:38:30 AM [vite] hmr update /src/pages/Employees.tsx
+11:38:30 AM [vite] hmr update /src/pages/PlatformAdmin.tsx
+11:38:30 AM [vite] hmr update /src/pages/hr/Attendance.tsx
+11:38:30 AM [vite] hmr update /src/pages/Login.css
+11:38:30 AM [vite] page reload src/main.tsx
+11:38:30 AM [vite] hmr update /src/pages/EditInvoice.tsx
+11:38:30 AM [vite] hmr update /src/pages/AddSupplierModal.tsx
+11:38:30 AM [vite] hmr update /src/pages/Login.tsx
+11:38:30 AM [vite] hmr update /src/pages/customer/MyLedger.tsx
+11:38:31 AM [vite] hmr update /src/pages/Reports.tsx
+11:38:31 AM [vite] hmr update /src/pages/Suppliers.tsx
+11:38:39 AM [vite] hmr update /src/pages/Inventory.tsx
+11:38:42 AM [vite] vite.config.js changed, restarting server...
+11:38:48 AM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+11:38:48 AM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+11:38:52 AM [vite] hmr update /src/pages/Customers.tsx
+11:38:56 AM [vite] server restarted.
+11:39:35 AM [vite] page reload index.html
+11:39:49 AM [vite] vite.config.js changed, restarting server...
+11:39:53 AM [vite] page reload index.html
+11:39:56 AM [vite] vite.config.js changed, restarting server...
+11:40:04 AM [vite] server restarted.
+11:42:28 AM [vite] page reload index.html
+11:46:37 AM [vite] page reload index.html
+11:46:37 AM [vite] vite.config.js changed, restarting server...
+11:46:47 AM [vite] vite.config.js changed, restarting server...
+11:46:58 AM [vite] server restarted.
+11:47:11 AM [vite] vite.config.js changed, restarting server...
+11:47:19 AM [vite] vite.config.js changed, restarting server...
+11:47:22 AM [vite] page reload index.html
+11:47:29 AM [vite] server restarted.
+11:52:53 AM [vite] page reload index.html
+11:52:54 AM [vite] vite.config.js changed, restarting server...
+11:53:22 AM [vite] vite.config.js changed, restarting server...
+11:53:34 AM [vite] server restarted.
+11:53:59 AM [vite] vite.config.js changed, restarting server...
+11:54:03 AM [vite] page reload index.html
+11:54:07 AM [vite] vite.config.js changed, restarting server...
+11:54:27 AM [vite] server restarted.
+12:01:37 PM [vite] vite.config.js changed, restarting server...
+12:01:37 PM [vite] page reload index.html
+12:01:51 PM [vite] vite.config.js changed, restarting server...
+12:02:16 PM [vite] vite.config.js changed, restarting server...
+12:02:26 PM [vite] server restarted.
+12:02:29 PM [vite] vite.config.js changed, restarting server...
+12:02:39 PM [vite] server restarted.
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.29.182:5173/
+Port 5173 is in use, trying another one...
+12:02:40 PM [vite] server restarted.
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: http://192.168.29.182:5174/
+12:03:21 PM [vite] page reload index.html
+12:08:07 PM [vite] vite.config.js changed, restarting server...
+12:08:07 PM [vite] page reload index.html
+12:08:18 PM [vite] vite.config.js changed, restarting server...
+12:08:31 PM [vite] server restarted.
+12:08:43 PM [vite] vite.config.js changed, restarting server...
+12:08:49 PM [vite] vite.config.js changed, restarting server...
+12:08:49 PM [vite] vite.config.js changed, restarting server...
+12:08:58 PM [vite] server restarted.
+12:09:49 PM [vite] page reload index.html
+12:15:06 PM [vite] vite.config.js changed, restarting server...
+12:15:14 PM [vite] page reload index.html
+12:15:17 PM [vite] vite.config.js changed, restarting server...
+12:15:28 PM [vite] server restarted.
+12:15:40 PM [vite] vite.config.js changed, restarting server...
+12:15:47 PM [vite] vite.config.js changed, restarting server...
+12:15:55 PM [vite] server restarted.
+12:16:59 PM [vite] page reload index.html
+12:25:38 PM [vite] vite.config.js changed, restarting server...
+12:25:38 PM [vite] page reload index.html
+12:25:43 PM [vite] vite.config.js changed, restarting server...
+12:25:57 PM [vite] server restarted.
+12:26:04 PM [vite] vite.config.js changed, restarting server...
+12:26:12 PM [vite] vite.config.js changed, restarting server...
+12:26:20 PM [vite] server restarted.
+12:26:49 PM [vite] page reload index.html
+12:33:37 PM [vite] page reload index.html
+12:33:37 PM [vite] vite.config.js changed, restarting server...
+12:33:56 PM [vite] vite.config.js changed, restarting server...
+12:34:05 PM [vite] page reload index.html
+12:34:20 PM [vite] server restarted.
+12:34:20 PM [vite] vite.config.js changed, restarting server...
+12:34:21 PM [vite] page reload index.html
+12:34:28 PM [vite] vite.config.js changed, restarting server...
+12:34:35 PM [vite] server restarted.
+12:35:11 PM [vite] page reload index.html
+12:49:15 PM [vite] vite.config.js changed, restarting server...
+12:49:15 PM [vite] page reload index.html
+12:49:29 PM [vite] vite.config.js changed, restarting server...
+12:49:42 PM [vite] server restarted.
+12:49:45 PM [vite] vite.config.js changed, restarting server...
+12:49:51 PM [vite] vite.config.js changed, restarting server...
+12:50:01 PM [vite] server restarted.
+12:50:44 PM [vite] page reload index.html
+12:56:11 PM [vite] hmr update /src/pages/Inventory.tsx
+12:56:11 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+12:56:11 PM [vite] hmr update /src/pages/Customers.tsx
+12:56:11 PM [vite] hmr update /src/pages/Transactions.tsx
+12:56:11 PM [vite] hmr update /src/App.tsx
+12:56:11 PM [vite] hmr update /src/pages/DayBook.tsx
+12:56:11 PM [vite] hmr update /src/pages/Dashboard.tsx
+12:56:11 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+12:56:11 PM [vite] hmr update /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/EditInvoice.tsx, /src/pages/Invoices.tsx, /src/context/TenantContext.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx
+12:56:11 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+12:56:11 PM [vite] hmr update /src/pages/Ledgers.tsx
+12:56:11 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+12:56:11 PM [vite] page reload index.html
+12:56:11 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+12:56:11 PM [vite] vite.config.js changed, restarting server...
+12:56:12 PM [vite] hmr update /src/index.css
+12:56:12 PM [vite] hmr update /src/pages/InvoiceDetails.tsx
+12:56:12 PM [vite] hmr update /src/pages/FileManager.tsx
+12:56:12 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+12:56:12 PM [vite] hmr update /src/pages/DayBook.tsx
+12:56:12 PM [vite] hmr update /src/pages/Settings.tsx
+12:56:12 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/customer/MyLedger.tsx, /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx, /src/pages/Login.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/DayBook.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx
+12:56:12 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx
+12:56:12 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+12:56:12 PM [vite] hmr update /src/context/TenantContext.tsx
+12:56:12 PM [vite] hmr update /src/pages/PurchaseBills.tsx
+12:56:12 PM [vite] hmr update /src/pages/Invoices.tsx
+12:56:12 PM [vite] hmr update /src/pages/Employees.tsx
+12:56:12 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+12:56:12 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+12:56:12 PM [vite] hmr update /src/pages/Login.css
+12:56:12 PM [vite] page reload src/main.tsx
+12:56:12 PM [vite] hmr update /src/pages/EditInvoice.tsx
+12:56:12 PM [vite] hmr update /src/pages/AddSupplierModal.tsx
+12:56:12 PM [vite] hmr update /src/pages/Login.tsx
+12:56:12 PM [vite] hmr update /src/pages/customer/MyLedger.tsx
+12:56:12 PM [vite] hmr update /src/pages/Reports.tsx
+12:56:12 PM [vite] hmr update /src/pages/Suppliers.tsx
+12:56:26 PM [vite] hmr update /src/pages/Inventory.tsx
+12:56:26 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+12:56:34 PM [vite] hmr update /src/pages/Customers.tsx
+12:56:34 PM [vite] hmr update /src/pages/DayBook.tsx
+12:56:34 PM [vite] hmr update /src/App.tsx
+12:56:34 PM [vite] hmr update /src/pages/Transactions.tsx
+12:56:37 PM [vite] page reload index.html
+12:56:39 PM [vite] vite.config.js changed, restarting server...
+12:56:44 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+12:56:44 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+12:56:44 PM [vite] hmr update /src/pages/Dashboard.tsx
+12:56:44 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+12:56:58 PM [vite] hmr update /src/pages/DayBook.tsx
+12:56:58 PM [vite] hmr update /src/pages/EditInvoice.tsx
+12:56:58 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+12:56:58 PM [vite] hmr update /src/pages/Invoices.tsx
+12:56:58 PM [vite] hmr update /src/pages/Employees.tsx
+12:57:04 PM [vite] server restarted.
+12:57:19 PM [vite] vite.config.js changed, restarting server...
+12:57:22 PM [vite] page reload index.html
+12:57:26 PM [vite] vite.config.js changed, restarting server...
+12:57:46 PM [vite] server restarted.
+12:57:49 PM [vite] page reload index.html
+1:13:27 PM [vite] hmr update /src/pages/Inventory.tsx
+1:13:27 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:13:27 PM [vite] hmr update /src/pages/Customers.tsx
+1:13:27 PM [vite] hmr update /src/pages/Transactions.tsx
+1:13:27 PM [vite] hmr update /src/App.tsx
+1:13:27 PM [vite] hmr update /src/pages/DayBook.tsx
+1:13:27 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:13:27 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:13:27 PM [vite] vite.config.js changed, restarting server...
+1:13:27 PM [vite] hmr update /src/App.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/EditInvoice.tsx, /src/context/TenantContext.tsx, /src/pages/Invoices.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Subscriptions.tsx, /src/components/Layout/CustomerLayout.tsx
+1:13:27 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+1:13:27 PM [vite] hmr update /src/pages/Ledgers.tsx
+1:13:27 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:13:27 PM [vite] page reload index.html
+1:13:27 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+1:13:27 PM [vite] hmr update /src/index.css
+1:13:27 PM [vite] hmr update /src/pages/InvoiceDetails.tsx
+1:13:27 PM [vite] hmr update /src/pages/FileManager.tsx
+1:13:27 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:13:27 PM [vite] hmr update /src/pages/DayBook.tsx
+1:13:27 PM [vite] hmr update /src/pages/Settings.tsx
+1:13:27 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/InvoiceDetails.tsx, /src/App.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx, /src/components/Layout/CustomerLayout.tsx, /src/pages/Login.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx
+1:13:27 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/EditInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx
+1:13:27 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:13:27 PM [vite] hmr update /src/context/TenantContext.tsx
+1:13:27 PM [vite] hmr update /src/pages/PurchaseBills.tsx
+1:13:27 PM [vite] hmr update /src/pages/Invoices.tsx
+1:13:28 PM [vite] hmr update /src/pages/Employees.tsx
+1:13:28 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:13:28 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+1:13:28 PM [vite] hmr update /src/pages/Login.css
+1:13:28 PM [vite] page reload src/main.tsx
+1:13:28 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:13:28 PM [vite] hmr update /src/pages/AddSupplierModal.tsx
+1:13:28 PM [vite] hmr update /src/pages/Login.tsx
+1:13:28 PM [vite] hmr update /src/pages/customer/MyLedger.tsx
+1:13:28 PM [vite] hmr update /src/pages/Reports.tsx
+1:13:28 PM [vite] hmr update /src/pages/Suppliers.tsx
+1:13:38 PM [vite] hmr update /src/pages/Customers.tsx
+1:13:38 PM [vite] hmr update /src/pages/Transactions.tsx
+1:13:38 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:13:38 PM [vite] hmr update /src/pages/Inventory.tsx
+1:13:41 PM [vite] hmr update /src/pages/Customers.tsx
+1:13:42 PM [vite] vite.config.js changed, restarting server...
+1:13:46 PM [vite] hmr update /src/pages/DayBook.tsx
+1:13:46 PM [vite] hmr update /src/App.tsx
+1:13:51 PM [vite] page reload index.html
+1:13:51 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:13:57 PM [vite] server restarted.
+1:14:03 PM [vite] vite.config.js changed, restarting server...
+1:14:10 PM [vite] page reload index.html
+1:14:15 PM [vite] page reload index.html
+1:14:16 PM [vite] vite.config.js changed, restarting server...
+1:14:27 PM [vite] server restarted.
+1:21:42 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:21:58 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:22:02 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:22:50 PM [vite] hmr update /src/App.tsx
+1:23:02 PM [vite] hmr update /src/App.tsx
+1:23:11 PM [vite] hmr update /src/App.tsx
+1:25:08 PM [vite] hmr update /src/pages/Inventory.tsx
+1:25:08 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:25:08 PM [vite] hmr update /src/pages/Customers.tsx
+1:25:08 PM [vite] hmr update /src/pages/Transactions.tsx
+1:25:08 PM [vite] hmr update /src/App.tsx
+1:25:08 PM [vite] hmr update /src/pages/DayBook.tsx
+1:25:08 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:25:08 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:25:08 PM [vite] hmr update /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/EditInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx, /src/pages/CreateInvoice.tsx
+1:25:08 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+1:25:08 PM [vite] hmr update /src/pages/Ledgers.tsx
+1:25:08 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:25:08 PM [vite] page reload index.html
+1:25:08 PM [vite] vite.config.js changed, restarting server...
+1:25:08 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx, /src/pages/CreateInvoice.tsx
+1:25:09 PM [vite] hmr update /src/index.css
+1:25:09 PM [vite] hmr update /src/pages/InvoiceDetails.tsx
+1:25:09 PM [vite] hmr update /src/pages/FileManager.tsx
+1:25:09 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:25:09 PM [vite] hmr update /src/pages/DayBook.tsx
+1:25:09 PM [vite] hmr update /src/pages/Settings.tsx
+1:25:09 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/CreateInvoice.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/customer/MyLedger.tsx, /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx, /src/pages/Login.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx
+1:25:09 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/EditInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx
+1:25:09 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:25:09 PM [vite] hmr update /src/context/TenantContext.tsx
+1:25:09 PM [vite] hmr update /src/pages/PurchaseBills.tsx
+1:25:09 PM [vite] hmr update /src/pages/Invoices.tsx
+1:25:09 PM [vite] hmr update /src/pages/Employees.tsx
+1:25:09 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:25:09 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+1:25:09 PM [vite] hmr update /src/pages/Login.css
+1:25:09 PM [vite] page reload src/main.tsx
+1:25:09 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:25:09 PM [vite] hmr update /src/pages/AddSupplierModal.tsx
+1:25:09 PM [vite] hmr update /src/pages/Login.tsx
+1:25:09 PM [vite] hmr update /src/pages/customer/MyLedger.tsx
+1:25:09 PM [vite] hmr update /src/pages/Reports.tsx
+1:25:09 PM [vite] hmr update /src/pages/Suppliers.tsx
+1:25:12 PM [vite] hmr update /src/pages/Inventory.tsx
+1:25:16 PM [vite] vite.config.js changed, restarting server...
+1:25:16 PM [vite] hmr update /src/pages/Customers.tsx
+1:25:16 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:25:16 PM [vite] hmr update /src/App.tsx
+1:25:16 PM [vite] hmr update /src/pages/Transactions.tsx
+1:25:19 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx, /src/pages/CreateInvoice.tsx
+1:25:19 PM [vite] page reload index.html
+1:25:19 PM [vite] hmr update /src/pages/DayBook.tsx
+1:25:30 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:25:30 PM [vite] hmr update /src/pages/DayBook.tsx
+1:25:30 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:25:33 PM [vite] hmr update /src/pages/Employees.tsx
+1:25:33 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:25:37 PM [vite] hmr update /src/context/TenantContext.tsx
+1:25:38 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:25:44 PM [vite] server restarted.
+1:26:01 PM [vite] vite.config.js changed, restarting server...
+1:26:06 PM [vite] hmr update /src/pages/Inventory.tsx
+1:26:06 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:26:06 PM [vite] hmr update /src/pages/Customers.tsx
+1:26:06 PM [vite] hmr update /src/pages/Transactions.tsx
+1:26:06 PM [vite] hmr update /src/App.tsx
+1:26:06 PM [vite] hmr update /src/pages/DayBook.tsx
+1:26:06 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:26:06 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:26:06 PM [vite] hmr update /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Subscriptions.tsx
+1:26:06 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+1:26:06 PM [vite] hmr update /src/pages/Ledgers.tsx
+1:26:06 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:26:06 PM [vite] page reload index.html
+1:26:06 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx
+1:26:06 PM [vite] hmr update /src/index.css
+1:26:06 PM [vite] hmr update /src/pages/InvoiceDetails.tsx
+1:26:06 PM [vite] hmr update /src/pages/FileManager.tsx
+1:26:06 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:26:06 PM [vite] hmr update /src/pages/DayBook.tsx
+1:26:06 PM [vite] hmr update /src/pages/Settings.tsx
+1:26:06 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/Inventory.tsx, /src/pages/Dashboard.tsx, /src/pages/AddProductModal.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/DayBook.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx, /src/pages/Login.tsx, /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Subscriptions.tsx
+1:26:06 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Customers.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx
+1:26:06 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:26:06 PM [vite] hmr update /src/context/TenantContext.tsx
+1:26:06 PM [vite] hmr update /src/pages/PurchaseBills.tsx
+1:26:06 PM [vite] hmr update /src/pages/Invoices.tsx
+1:26:06 PM [vite] hmr update /src/pages/Employees.tsx
+1:26:06 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:26:06 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+1:26:06 PM [vite] hmr update /src/pages/Login.css
+1:26:06 PM [vite] page reload src/main.tsx
+1:26:06 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:26:06 PM [vite] hmr update /src/pages/AddSupplierModal.tsx
+1:26:06 PM [vite] hmr update /src/pages/Login.tsx
+1:26:06 PM [vite] hmr update /src/pages/customer/MyLedger.tsx
+1:26:06 PM [vite] hmr update /src/pages/Reports.tsx
+1:26:06 PM [vite] hmr update /src/pages/Suppliers.tsx
+1:26:08 PM [vite] hmr update /src/pages/Inventory.tsx
+1:26:08 PM [vite] hmr update /src/pages/Transactions.tsx
+1:26:08 PM [vite] hmr update /src/pages/Customers.tsx
+1:26:08 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:26:08 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:26:09 PM [vite] vite.config.js changed, restarting server...
+1:26:09 PM [vite] hmr update /src/App.tsx
+1:26:10 PM [vite] page reload index.html
+1:26:10 PM [vite] hmr update /src/pages/DayBook.tsx
+1:26:11 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx
+1:26:12 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:26:12 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:26:13 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:26:15 PM [vite] hmr update /src/context/TenantContext.tsx
+1:26:15 PM [vite] page reload src/main.tsx
+1:26:15 PM [vite] hmr update /src/pages/DayBook.tsx
+1:26:16 PM [vite] hmr update /src/pages/Employees.tsx
+1:26:18 PM [vite] hmr update /src/pages/Invoices.tsx
+1:26:18 PM [vite] hmr update /src/pages/Ledgers.tsx
+1:26:18 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:26:18 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+1:26:23 PM [vite] server restarted.
+1:29:23 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:29:38 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:29:48 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:29:57 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:30:40 PM [vite] hmr update /src/App.tsx
+1:31:04 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:31:17 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:31:30 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:31:38 PM [vite] hmr update /src/pages/Inventory.tsx
+1:31:38 PM [vite] hmr update /src/pages/NexusLogin.tsx
+1:31:38 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:31:38 PM [vite] hmr update /src/pages/Customers.tsx
+1:31:38 PM [vite] hmr update /src/pages/Transactions.tsx
+1:31:38 PM [vite] hmr update /src/App.tsx
+1:31:38 PM [vite] hmr update /src/pages/DayBook.tsx
+1:31:38 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:31:38 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:31:38 PM [vite] hmr update /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Subscriptions.tsx
+1:31:38 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+1:31:38 PM [vite] hmr update /src/pages/Ledgers.tsx
+1:31:38 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:31:38 PM [vite] page reload index.html
+1:31:38 PM [vite] vite.config.js changed, restarting server...
+1:31:38 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx
+1:31:38 PM [vite] hmr update /src/index.css
+1:31:38 PM [vite] hmr update /src/pages/InvoiceDetails.tsx
+1:31:38 PM [vite] hmr update /src/pages/FileManager.tsx
+1:31:38 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:31:39 PM [vite] hmr update /src/pages/DayBook.tsx
+1:31:39 PM [vite] hmr update /src/pages/Settings.tsx
+1:31:39 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/PurchaseBills.tsx, /src/pages/Settings.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/Inventory.tsx, /src/pages/Dashboard.tsx, /src/pages/AddProductModal.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/DayBook.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Subscriptions.tsx, /src/pages/Login.tsx, /src/pages/NexusLogin.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx
+1:31:39 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Customers.tsx, /src/pages/Dashboard.tsx, /src/pages/EditInvoice.tsx
+1:31:39 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:31:40 PM [vite] hmr update /src/context/TenantContext.tsx
+1:31:40 PM [vite] hmr update /src/pages/PurchaseBills.tsx
+1:31:40 PM [vite] hmr update /src/pages/Invoices.tsx
+1:31:40 PM [vite] hmr update /src/pages/Employees.tsx
+1:31:40 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+1:31:41 PM [vite] hmr update /src/pages/Login.css
+1:31:41 PM [vite] page reload src/main.tsx
+1:31:41 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:31:41 PM [vite] hmr update /src/pages/AddSupplierModal.tsx
+1:31:41 PM [vite] hmr update /src/pages/Login.tsx
+1:31:41 PM [vite] hmr update /src/pages/customer/MyLedger.tsx
+1:31:41 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:31:41 PM [vite] hmr update /src/pages/Reports.tsx
+1:31:41 PM [vite] hmr update /src/pages/Suppliers.tsx
+1:31:50 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:31:50 PM [vite] vite.config.js changed, restarting server...
+1:31:51 PM [vite] hmr update /src/pages/Inventory.tsx
+1:31:51 PM [vite] hmr update /src/pages/NexusLogin.tsx
+1:31:51 PM [vite] hmr update /src/pages/Customers.tsx
+1:31:55 PM [vite] hmr update /src/pages/Transactions.tsx
+1:31:55 PM [vite] hmr update /src/App.tsx
+1:31:55 PM [vite] page reload index.html
+1:31:57 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/EditInvoice.tsx, /src/pages/Settings.tsx
+1:31:59 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:32:00 PM [vite] hmr update /src/pages/DayBook.tsx
+1:32:03 PM [vite] hmr update /src/pages/Invoices.tsx
+1:32:03 PM [vite] hmr update /src/pages/DayBook.tsx
+1:32:03 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:32:03 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:32:03 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:32:07 PM [vite] server restarted.
+1:32:17 PM [vite] vite.config.js changed, restarting server...
+1:32:20 PM [vite] page reload index.html
+1:32:23 PM [vite] vite.config.js changed, restarting server...
+1:32:35 PM [vite] server restarted.
+1:32:59 PM [vite] page reload index.html
+1:38:30 PM [vite] hmr update /src/pages/HostLogin.tsx
+1:39:07 PM [vite] hmr update /src/pages/Login.css
+1:39:21 PM [vite] hmr update /src/pages/Login.tsx
+1:39:21 PM [vite] hmr update /src/pages/Login.tsx
+1:39:29 PM [vite] hmr update /src/pages/Login.tsx
+1:40:17 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:40:25 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:40:54 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:41:15 PM [vite] hmr update /src/index.css
+1:41:52 PM [vite] hmr update /src/App.tsx
+1:42:03 PM [vite] hmr update /src/App.tsx
+1:43:57 PM [vite] hmr update /src/index.css
+1:44:15 PM [vite] hmr update /src/pages/HostLogin.css
+1:44:24 PM [vite] hmr update /src/pages/HostLogin.css
+1:44:36 PM [vite] hmr update /src/pages/Login.css
+1:44:51 PM [vite] hmr update /src/components/Layout/Sidebar.css
+1:45:00 PM [vite] hmr update /src/components/Layout/Sidebar.css
+1:45:04 PM [vite] hmr update /src/components/Layout/Layout.css
+1:45:30 PM [vite] hmr update /src/pages/PlatformAdmin.css
+1:45:31 PM [vite] hmr update /src/pages/PlatformAdmin.css
+1:45:50 PM [vite] hmr update /src/pages/HostLogin.tsx
+1:46:00 PM [vite] hmr update /src/pages/HostLogin.tsx
+1:46:08 PM [vite] hmr update /src/pages/Login.css
+1:46:25 PM [vite] hmr update /src/pages/HostLogin.tsx
+1:46:32 PM [vite] hmr update /src/pages/Login.tsx
+1:46:51 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:47:07 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:47:27 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:47:35 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:47:49 PM [vite] hmr update /src/App.tsx
+1:47:59 PM [vite] hmr update /src/App.tsx
+1:48:13 PM [vite] hmr update /src/pages/Inventory.tsx
+1:48:13 PM [vite] hmr update /src/pages/HostLogin.tsx
+1:48:13 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:48:13 PM [vite] hmr update /src/pages/Customers.tsx
+1:48:13 PM [vite] hmr update /src/pages/Transactions.tsx
+1:48:13 PM [vite] hmr update /src/pages/HostLogin.css
+1:48:13 PM [vite] hmr update /src/pages/DayBook.tsx
+1:48:13 PM [vite] hmr update /src/pages/Dashboard.tsx
+1:48:14 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:48:21 PM [vite] hmr update /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/EditInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Subscriptions.tsx, /src/pages/Dashboard.tsx
+1:48:21 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+1:48:21 PM [vite] hmr update /src/pages/Ledgers.tsx
+1:48:21 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+1:48:21 PM [vite] page reload index.html
+1:48:21 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+1:48:22 PM [vite] vite.config.js changed, restarting server...
+1:48:22 PM [vite] hmr update /src/index.css
+1:48:22 PM [vite] hmr update /src/pages/PlatformAdmin.css
+1:48:22 PM [vite] hmr update /src/pages/InvoiceDetails.tsx
+1:48:22 PM [vite] hmr update /src/pages/FileManager.tsx
+1:48:22 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:48:22 PM [vite] hmr update /src/pages/DayBook.tsx
+1:48:22 PM [vite] hmr update /src/pages/Settings.tsx
+1:48:22 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/InvoiceDetails.tsx, /src/pages/Invoices.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/PurchaseBills.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx, /src/pages/customer/Marketplace.tsx, /src/pages/customer/MyLedger.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/pages/DayBook.tsx, /src/App.tsx, /src/components/Layout/CustomerLayout.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx, /src/pages/Subscriptions.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/Suppliers.tsx, /src/pages/AddSupplierModal.tsx, /src/pages/TOCDashboard.tsx
+1:48:22 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx
+1:48:22 PM [vite] hmr update /src/pages/TOCDashboard.tsx
+1:48:22 PM [vite] hmr update /src/context/TenantContext.tsx
+1:48:22 PM [vite] hmr update /src/components/Layout/Sidebar.css
+1:48:22 PM [vite] hmr update /src/pages/PurchaseBills.tsx
+1:48:22 PM [vite] hmr update /src/pages/Login.tsx
+1:48:22 PM [vite] hmr update /src/pages/Invoices.tsx
+1:48:22 PM [vite] hmr update /src/pages/Employees.tsx
+1:48:22 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+1:48:22 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+1:48:22 PM [vite] hmr update /src/pages/Login.css
+1:48:22 PM [vite] hmr update /src/App.tsx
+1:48:22 PM [vite] hmr update /src/components/Layout/Layout.css
+1:48:22 PM [vite] page reload src/main.tsx
+1:48:22 PM [vite] hmr update /src/pages/EditInvoice.tsx
+1:48:22 PM [vite] hmr update /src/pages/AddSupplierModal.tsx
+1:48:22 PM [vite] hmr update /src/pages/customer/MyLedger.tsx
+1:48:22 PM [vite] hmr update /src/pages/Reports.tsx
+1:48:22 PM [vite] hmr update /src/pages/Suppliers.tsx
+1:48:36 PM [vite] hmr update /src/components/OfflineIndicator.tsx
+1:48:38 PM [vite] vite.config.js changed, restarting server...
+1:48:38 PM [vite] hmr update /src/pages/Customers.tsx
+1:48:38 PM [vite] hmr update /src/pages/Inventory.tsx
+1:48:38 PM [vite] hmr update /src/pages/HostLogin.tsx
+1:48:39 PM [vite] hmr update /src/pages/Transactions.tsx
+1:48:40 PM [vite] hmr update /src/pages/Inventory.tsx
+1:48:52 PM [vite] page reload index.html
+1:48:52 PM [vite] hmr update /src/pages/HostLogin.css
+1:48:52 PM [vite] hmr update /src/index.css
+1:48:52 PM [vite] hmr update /src/pages/EditInvoice.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+1:48:53 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+1:48:58 PM [vite] server restarted.
+1:49:13 PM [vite] vite.config.js changed, restarting server...
+1:49:19 PM [vite] page reload index.html
+1:49:22 PM [vite] vite.config.js changed, restarting server...
+1:49:35 PM [vite] server restarted.
+1:50:32 PM [vite] vite.config.js changed, restarting server...
+1:50:41 PM [vite] vite.config.js changed, restarting server...
+1:50:54 PM [vite] server restarted.
+1:51:01 PM [vite] page reload index.html
+1:52:07 PM [vite] vite.config.js changed, restarting server...
+1:52:07 PM [vite] page reload index.html
+1:52:11 PM [vite] vite.config.js changed, restarting server...
+1:52:28 PM [vite] server restarted.
+1:53:22 PM [vite] page reload index.html
+1:53:22 PM [vite] page reload index.html
+1:59:16 PM [vite] vite.config.js changed, restarting server...
+1:59:16 PM [vite] page reload index.html
+1:59:20 PM [vite] vite.config.js changed, restarting server...
+1:59:20 PM [vite] vite.config.js changed, restarting server...
+1:59:33 PM [vite] server restarted.
+2:00:10 PM [vite] page reload index.html
+2:00:18 PM [vite] vite.config.js changed, restarting server...
+2:00:21 PM [vite] page reload index.html
+2:00:22 PM [vite] vite.config.js changed, restarting server...
+2:00:36 PM [vite] server restarted.
+2:01:15 PM [vite] page reload index.html
+2:06:37 PM [vite] page reload index.html
+2:06:38 PM [vite] vite.config.js changed, restarting server...
+2:06:39 PM [vite] vite.config.js changed, restarting server...
+2:07:00 PM [vite] server restarted.
+2:07:11 PM [vite] page reload index.html
+2:08:01 PM [vite] vite.config.js changed, restarting server...
+2:08:06 PM [vite] page reload index.html
+2:08:08 PM [vite] vite.config.js changed, restarting server...
+2:08:17 PM [vite] server restarted.
+2:08:28 PM [vite] vite.config.js changed, restarting server...
+2:08:39 PM [vite] vite.config.js changed, restarting server...
+2:09:09 PM [vite] vite.config.js changed, restarting server...
+2:09:25 PM [vite] server restarted.
+2:10:24 PM [vite] vite.config.js changed, restarting server...
+2:10:27 PM [vite] server restarted.
+2:10:27 PM [vite] page reload index.html
+4:17:23 PM [vite] hmr update /src/pages/Inventory.tsx
+4:17:23 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:17:23 PM [vite] hmr update /src/pages/Customers.tsx
+4:17:23 PM [vite] hmr update /src/pages/Transactions.tsx
+4:17:23 PM [vite] hmr update /src/pages/HostLogin.css
+4:17:23 PM [vite] hmr update /src/pages/DayBook.tsx
+4:17:24 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:17:24 PM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx
+4:17:24 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:17:24 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:17:24 PM [vite] page reload index.html
+4:17:24 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:17:24 PM [vite] vite.config.js changed, restarting server...
+4:17:24 PM [vite] hmr update /src/index.css
+4:17:24 PM [vite] hmr update /src/components/Layout/Sidebar.css
+4:17:24 PM [vite] hmr update /src/pages/PlatformAdmin.css
+4:17:24 PM [vite] hmr update /src/pages/FileManager.tsx
+4:17:24 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:17:24 PM [vite] hmr update /src/App.tsx
+4:17:24 PM [vite] hmr update /src/pages/DayBook.tsx
+4:17:25 PM [vite] hmr update /src/pages/Settings.tsx
+4:17:25 PM [vite] hmr update /src/pages/FileManager.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Subscriptions.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/pages/hr/EmployeeLedgerModal.tsx
+4:17:25 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx
+4:17:25 PM [vite] hmr update /src/context/TenantContext.tsx
+4:17:25 PM [vite] hmr update /src/pages/Login.tsx
+4:17:25 PM [vite] hmr update /src/pages/Invoices.tsx
+4:17:25 PM [vite] hmr update /src/pages/Employees.tsx
+4:17:25 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+4:17:25 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:17:25 PM [vite] hmr update /src/pages/Login.css
+4:17:26 PM [vite] hmr update /src/components/Layout/Layout.css
+4:17:26 PM [vite] page reload src/main.tsx
+4:17:26 PM [vite] hmr update /src/pages/Reports.tsx
+4:17:26 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:18:24 PM [vite] hmr update /src/pages/Inventory.tsx
+4:18:24 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:18:40 PM [vite] vite.config.js changed, restarting server...
+4:18:40 PM [vite] hmr update /src/pages/Transactions.tsx
+4:18:40 PM [vite] hmr update /src/pages/Customers.tsx
+4:18:40 PM [vite] hmr update /src/pages/DayBook.tsx
+4:18:40 PM [vite] hmr update /src/pages/HostLogin.css
+4:18:52 PM [vite] hmr update /src/context/TenantContext.tsx
+4:18:59 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:19:00 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:19:01 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:19:04 PM [vite] hmr update /src/pages/Invoices.tsx
+4:20:04 PM [vite] hmr update /src/components/Layout/Sidebar.css
+4:20:06 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:20:10 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:21:04 PM [vite] hmr update /src/pages/Login.css
+4:21:04 PM [vite] hmr update /src/pages/FileManager.tsx
+4:21:04 PM [vite] hmr update /src/pages/Settings.tsx
+4:21:04 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:21:05 PM [vite] hmr update /src/App.tsx
+4:21:07 PM [vite] Internal server error: ETIMEDOUT: connection timed out, read
+      at async readFileHandle (node:internal/fs/promises:553:24)
+      at async viteIndexHtmlMiddleware (file:///Users/barathraj/Desktop/ERPREACT/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:62494:22)
+failed to load config from /Users/barathraj/Desktop/ERPREACT/frontend/vite.config.js
+4:21:08 PM [vite] ETIMEDOUT: connection timed out, read
+4:21:08 PM [vite] server restart failed
+4:29:48 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:29:54 PM [vite] page reload index.html
+4:29:57 PM [vite] page reload src/main.tsx
+4:29:59 PM [vite] hmr update /src/index.css
+4:30:00 PM [vite] hmr update /src/pages/Employees.tsx
+4:30:00 PM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx
+4:30:01 PM [vite] hmr update /src/pages/Login.tsx
+4:30:01 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:30:03 PM [vite] hmr update /src/pages/Reports.tsx
+4:30:03 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+4:30:03 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:30:03 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:30:05 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:30:05 PM [vite] hmr update /src/components/Layout/Layout.css
+4:30:06 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx
+4:30:07 PM [vite] hmr update /src/pages/FileManager.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Subscriptions.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/pages/hr/EmployeeLedgerModal.tsx
+4:30:07 PM [vite] hmr update /src/pages/DayBook.tsx
+4:30:08 PM [vite] hmr update /src/pages/PlatformAdmin.css
+4:30:34 PM [vite] hmr update /src/pages/Invoices.tsx
+4:30:37 PM [vite] hmr update /src/pages/Inventory.tsx
+4:30:37 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:30:37 PM [vite] hmr update /src/pages/Customers.tsx
+4:30:37 PM [vite] hmr update /src/pages/Transactions.tsx
+4:30:37 PM [vite] hmr update /src/pages/HostLogin.css
+4:30:37 PM [vite] hmr update /src/pages/DayBook.tsx
+4:30:37 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:30:37 PM [vite] vite.config.js changed, restarting server...
+4:30:43 PM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx
+4:30:43 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:30:43 PM [vite] page reload index.html
+4:30:43 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:30:43 PM [vite] hmr update /src/index.css
+4:30:43 PM [vite] hmr update /src/components/Layout/Sidebar.css
+4:30:43 PM [vite] hmr update /src/pages/CreateInvoice.css
+4:30:43 PM [vite] hmr update /src/pages/PlatformAdmin.css
+4:30:43 PM [vite] hmr update /src/pages/FileManager.tsx
+4:30:43 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:30:43 PM [vite] hmr update /src/App.tsx
+4:30:43 PM [vite] hmr update /src/pages/DayBook.tsx
+4:30:43 PM [vite] hmr update /src/pages/Settings.tsx
+4:30:43 PM [vite] hmr update /src/pages/FileManager.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/Dashboard.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Subscriptions.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/pages/hr/EmployeeLedgerModal.tsx
+4:30:43 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx
+4:30:43 PM [vite] hmr update /src/context/TenantContext.tsx
+4:30:43 PM [vite] hmr update /src/pages/Login.tsx
+4:30:43 PM [vite] hmr update /src/pages/Employees.tsx
+4:30:43 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+4:30:43 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:30:43 PM [vite] hmr update /src/pages/Login.css
+4:30:43 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:30:43 PM [vite] hmr update /src/components/Layout/Layout.css
+4:30:43 PM [vite] page reload src/main.tsx
+4:30:43 PM [vite] hmr update /src/pages/Reports.tsx
+4:30:43 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:30:43 PM [vite] hmr update /src/pages/Customers.tsx
+4:30:43 PM [vite] hmr update /src/pages/Inventory.tsx
+4:30:43 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:30:44 PM [vite] hmr update /src/pages/Transactions.tsx
+4:30:47 PM [vite] hmr update /src/pages/HostLogin.css
+4:30:47 PM [vite] page reload index.html
+4:30:47 PM [vite] hmr update /src/pages/DayBook.tsx
+4:30:48 PM [vite] hmr update /src/pages/Invoices.tsx
+4:30:48 PM [vite] vite.config.js changed, restarting server...
+4:30:49 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:30:49 PM [vite] hmr update /src/context/TenantContext.tsx
+4:30:49 PM [vite] hmr update /src/App.tsx
+4:30:53 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:30:53 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:30:53 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:30:53 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:30:55 PM [vite] hmr update /src/pages/DayBook.tsx
+4:30:59 PM [vite] server restarted.
+4:32:09 PM [vite] vite.config.js changed, restarting server...
+4:32:13 PM [vite] page reload index.html
+4:32:14 PM [vite] vite.config.js changed, restarting server...
+4:32:27 PM [vite] server restarted.
+4:33:16 PM [vite] page reload index.html
+4:41:45 PM [vite] hmr update /src/pages/Inventory.tsx
+4:41:45 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:41:45 PM [vite] hmr update /src/pages/Customers.tsx
+4:41:45 PM [vite] hmr update /src/pages/Transactions.tsx
+4:41:45 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:41:45 PM [vite] hmr update /src/pages/HostLogin.css
+4:41:45 PM [vite] hmr update /src/pages/Login.css
+4:41:45 PM [vite] hmr update /src/pages/DayBook.tsx
+4:41:45 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:41:45 PM [vite] hmr update /src/App.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/Invoices.tsx, /src/pages/Subscriptions.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx
+4:41:45 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:41:45 PM [vite] vite.config.js changed, restarting server...
+4:41:45 PM [vite] page reload index.html
+4:41:45 PM [vite] hmr update /src/pages/Branches.tsx
+4:41:45 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:41:45 PM [vite] hmr update /src/index.css
+4:41:45 PM [vite] hmr update /src/components/Layout/Sidebar.css
+4:41:45 PM [vite] hmr update /src/pages/CreateInvoice.css
+4:41:45 PM [vite] hmr update /src/pages/PlatformAdmin.css
+4:41:45 PM [vite] hmr update /src/pages/FileManager.tsx
+4:41:45 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:41:45 PM [vite] hmr update /src/App.tsx
+4:41:45 PM [vite] hmr update /src/pages/DayBook.tsx
+4:41:45 PM [vite] hmr update /src/pages/Settings.tsx
+4:41:45 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/Invoices.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/Settings.tsx, /src/pages/Inventory.tsx, /src/pages/Dashboard.tsx, /src/pages/AddProductModal.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/App.tsx, /src/pages/Subscriptions.tsx, /src/components/Layout/Sidebar.tsx, /src/context/TenantContext.tsx
+4:41:45 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Customers.tsx, /src/pages/Dashboard.tsx
+4:41:45 PM [vite] hmr update /src/context/TenantContext.tsx
+4:41:45 PM [vite] hmr update /src/pages/Login.tsx
+4:41:45 PM [vite] hmr update /src/pages/AIInsights.tsx
+4:41:46 PM [vite] hmr update /src/pages/Employees.tsx
+4:41:46 PM [vite] hmr update /src/pages/Reports.tsx
+4:41:46 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+4:41:46 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:41:46 PM [vite] hmr update /src/components/Layout/Layout.css
+4:41:46 PM [vite] page reload src/main.tsx
+4:41:46 PM [vite] hmr update /src/pages/Invoices.tsx
+4:41:46 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:41:48 PM [vite] hmr update /src/pages/Customers.tsx
+4:41:49 PM [vite] hmr update /src/pages/Inventory.tsx
+4:41:49 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:41:51 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:41:51 PM [vite] vite.config.js changed, restarting server...
+4:41:51 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:41:55 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:41:55 PM [vite] hmr update /src/pages/Transactions.tsx
+4:41:55 PM [vite] hmr update /src/pages/HostLogin.css
+4:41:55 PM [vite] hmr update /src/pages/Login.css
+4:41:55 PM [vite] page reload index.html
+4:41:55 PM [vite] hmr update /src/pages/FileManager.tsx
+4:41:55 PM [vite] hmr update /src/pages/DayBook.tsx
+4:42:08 PM [vite] server restarted.
+4:42:18 PM [vite] vite.config.js changed, restarting server...
+4:42:23 PM [vite] page reload index.html
+4:42:28 PM [vite] vite.config.js changed, restarting server...
+4:42:39 PM [vite] server restarted.
+4:42:56 PM [vite] page reload index.html
+4:52:39 PM [vite] vite.config.js changed, restarting server...
+4:52:43 PM [vite] hmr update /src/pages/Inventory.tsx
+4:52:43 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:52:43 PM [vite] hmr update /src/pages/Customers.tsx
+4:52:43 PM [vite] hmr update /src/pages/Transactions.tsx
+4:52:43 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:52:43 PM [vite] hmr update /src/pages/HostLogin.css
+4:52:43 PM [vite] hmr update /src/pages/Login.css
+4:52:43 PM [vite] hmr update /src/pages/DayBook.tsx
+4:52:43 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:52:43 PM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Subscriptions.tsx
+4:52:43 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:52:43 PM [vite] page reload index.html
+4:52:43 PM [vite] hmr update /src/pages/Branches.tsx
+4:52:43 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:52:43 PM [vite] hmr update /src/index.css
+4:52:43 PM [vite] hmr update /src/components/Layout/Sidebar.css
+4:52:43 PM [vite] hmr update /src/pages/CreateInvoice.css
+4:52:43 PM [vite] hmr update /src/pages/PlatformAdmin.css
+4:52:43 PM [vite] hmr update /src/pages/FileManager.tsx
+4:52:43 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:52:43 PM [vite] hmr update /src/App.tsx
+4:52:43 PM [vite] hmr update /src/pages/DayBook.tsx
+4:52:43 PM [vite] hmr update /src/pages/Settings.tsx
+4:52:43 PM [vite] hmr update /src/pages/FileManager.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Invoices.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx
+4:52:43 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx
+4:52:43 PM [vite] hmr update /src/context/TenantContext.tsx
+4:52:43 PM [vite] hmr update /src/pages/Login.tsx
+4:52:43 PM [vite] hmr update /src/pages/AIInsights.tsx
+4:52:43 PM [vite] hmr update /src/pages/Employees.tsx
+4:52:43 PM [vite] hmr update /src/pages/Reports.tsx
+4:52:43 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+4:52:43 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:52:43 PM [vite] hmr update /src/components/Layout/Layout.css
+4:52:43 PM [vite] page reload src/main.tsx
+4:52:43 PM [vite] hmr update /src/pages/Invoices.tsx
+4:52:43 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:52:44 PM [vite] hmr update /src/pages/Transactions.tsx
+4:52:45 PM [vite] hmr update /src/pages/Customers.tsx
+4:52:45 PM [vite] hmr update /src/pages/Inventory.tsx
+4:52:45 PM [vite] hmr update /src/pages/Customers.tsx
+4:52:45 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:52:45 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:52:46 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:52:46 PM [vite] vite.config.js changed, restarting server...
+4:52:49 PM [vite] page reload index.html
+4:52:49 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:52:49 PM [vite] hmr update /src/pages/HostLogin.css
+4:52:49 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:52:49 PM [vite] hmr update /src/pages/DayBook.tsx
+4:52:49 PM [vite] hmr update /src/pages/Login.css
+4:52:49 PM [vite] hmr update /src/pages/DayBook.tsx
+4:52:55 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:52:55 PM [vite] hmr update /src/pages/Employees.tsx
+4:53:00 PM [vite] server restarted.
+4:58:25 PM [vite] hmr update /src/pages/Login.tsx
+4:58:34 PM [vite] hmr update /src/pages/Login.tsx
+4:59:17 PM [vite] vite.config.js changed, restarting server...
+4:59:24 PM [vite] hmr update /src/pages/Inventory.tsx
+4:59:24 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:59:24 PM [vite] hmr update /src/pages/Customers.tsx
+4:59:24 PM [vite] hmr update /src/pages/Transactions.tsx
+4:59:24 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+4:59:24 PM [vite] hmr update /src/pages/HostLogin.css
+4:59:24 PM [vite] hmr update /src/pages/Login.css
+4:59:24 PM [vite] hmr update /src/pages/DayBook.tsx
+4:59:24 PM [vite] hmr update /src/pages/Dashboard.tsx
+4:59:24 PM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Dashboard.tsx, /src/pages/Invoices.tsx, /src/pages/Subscriptions.tsx
+4:59:24 PM [vite] hmr update /src/pages/Ledgers.tsx
+4:59:24 PM [vite] page reload index.html
+4:59:24 PM [vite] hmr update /src/pages/Branches.tsx
+4:59:24 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:59:24 PM [vite] hmr update /src/index.css
+4:59:24 PM [vite] hmr update /src/components/Layout/Sidebar.css
+4:59:24 PM [vite] hmr update /src/pages/CreateInvoice.css
+4:59:24 PM [vite] hmr update /src/pages/PlatformAdmin.css
+4:59:24 PM [vite] hmr update /src/pages/FileManager.tsx
+4:59:24 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:59:24 PM [vite] hmr update /src/App.tsx
+4:59:24 PM [vite] hmr update /src/pages/DayBook.tsx
+4:59:24 PM [vite] hmr update /src/pages/Settings.tsx
+4:59:24 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/FileManager.tsx, /src/pages/Invoices.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/pages/Inventory.tsx, /src/pages/Dashboard.tsx, /src/pages/AddProductModal.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/HostLogin.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Subscriptions.tsx, /src/pages/Login.tsx, /src/pages/hr/EmployeeLedgerModal.tsx
+4:59:24 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Customers.tsx, /src/pages/Dashboard.tsx
+4:59:24 PM [vite] hmr update /src/context/TenantContext.tsx
+4:59:24 PM [vite] hmr update /src/pages/Login.tsx
+4:59:24 PM [vite] hmr update /src/pages/AIInsights.tsx
+4:59:24 PM [vite] hmr update /src/pages/Employees.tsx
+4:59:24 PM [vite] hmr update /src/pages/Reports.tsx
+4:59:24 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+4:59:24 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+4:59:24 PM [vite] hmr update /src/components/Layout/Layout.css
+4:59:24 PM [vite] page reload src/main.tsx
+4:59:24 PM [vite] hmr update /src/pages/Invoices.tsx
+4:59:24 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+4:59:25 PM [vite] hmr update /src/pages/Customers.tsx
+4:59:25 PM [vite] vite.config.js changed, restarting server...
+4:59:25 PM [vite] hmr update /src/pages/HostLogin.tsx
+4:59:25 PM [vite] hmr update /src/pages/Inventory.tsx
+4:59:27 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+4:59:27 PM [vite] page reload index.html
+4:59:27 PM [vite] hmr update /src/pages/Transactions.tsx
+4:59:32 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+4:59:32 PM [vite] hmr update /src/pages/DayBook.tsx
+4:59:34 PM [vite] hmr update /src/pages/DayBook.tsx
+4:59:37 PM [vite] server restarted.
+5:00:47 PM [vite] hmr update /src/pages/Inventory.tsx
+5:00:47 PM [vite] hmr update /src/pages/HostLogin.tsx
+5:00:47 PM [vite] hmr update /src/pages/Customers.tsx
+5:00:47 PM [vite] vite.config.js changed, restarting server...
+5:00:52 PM [vite] hmr update /src/pages/Transactions.tsx
+5:00:52 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+5:00:52 PM [vite] hmr update /src/pages/HostLogin.css
+5:00:52 PM [vite] hmr update /src/pages/Login.css
+5:00:52 PM [vite] hmr update /src/pages/DayBook.tsx
+5:00:52 PM [vite] hmr update /src/pages/Dashboard.tsx
+5:00:52 PM [vite] hmr update /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Invoices.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Subscriptions.tsx
+5:00:52 PM [vite] hmr update /src/pages/Ledgers.tsx
+5:00:52 PM [vite] page reload index.html
+5:00:52 PM [vite] hmr update /src/pages/Branches.tsx
+5:00:52 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+5:00:52 PM [vite] hmr update /src/index.css
+5:00:52 PM [vite] hmr update /src/components/Layout/Sidebar.css
+5:00:52 PM [vite] hmr update /src/pages/CreateInvoice.css
+5:00:52 PM [vite] hmr update /src/pages/PlatformAdmin.css
+5:00:52 PM [vite] hmr update /src/pages/FileManager.tsx
+5:00:52 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+5:00:52 PM [vite] hmr update /src/App.tsx
+5:00:52 PM [vite] hmr update /src/pages/DayBook.tsx
+5:00:52 PM [vite] hmr update /src/pages/Settings.tsx
+5:00:52 PM [vite] hmr update /src/pages/FileManager.tsx, /src/pages/Invoices.tsx, /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx, /src/pages/PlatformAdmin.tsx, /src/App.tsx, /src/context/TenantContext.tsx, /src/components/Layout/Sidebar.tsx, /src/pages/Dashboard.tsx, /src/pages/Subscriptions.tsx, /src/pages/HostLogin.tsx, /src/pages/Login.tsx, /src/pages/Customers.tsx, /src/pages/AddCustomerModal.tsx, /src/pages/DayBook.tsx, /src/components/TransactionHistoryModal.tsx, /src/pages/hr/AdvanceSalaryModal.tsx, /src/pages/hr/EmployeeLedgerModal.tsx, /src/pages/Inventory.tsx, /src/pages/AddProductModal.tsx
+5:00:52 PM [vite] hmr update /src/pages/Customers.tsx, /src/pages/Dashboard.tsx, /src/pages/CreateInvoice.tsx
+5:00:52 PM [vite] hmr update /src/context/TenantContext.tsx
+5:00:52 PM [vite] hmr update /src/pages/Login.tsx
+5:00:52 PM [vite] hmr update /src/pages/AIInsights.tsx
+5:00:52 PM [vite] hmr update /src/pages/Employees.tsx
+5:00:52 PM [vite] hmr update /src/pages/Reports.tsx
+5:00:52 PM [vite] hmr update /src/pages/PlatformAdmin.tsx
+5:00:52 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+5:00:52 PM [vite] hmr update /src/components/Layout/Layout.css
+5:00:52 PM [vite] page reload src/main.tsx
+5:00:52 PM [vite] hmr update /src/pages/Invoices.tsx
+5:00:52 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+5:00:52 PM [vite] hmr update /src/pages/Customers.tsx
+5:00:52 PM [vite] hmr update /src/pages/Inventory.tsx
+5:00:52 PM [vite] hmr update /src/pages/HostLogin.tsx
+5:00:53 PM [vite] hmr update /src/pages/HostLogin.css
+5:00:53 PM [vite] hmr update /src/pages/Transactions.tsx
+5:00:53 PM [vite] hmr update /src/pages/hr/Attendance.tsx
+5:00:54 PM [vite] page reload index.html
+5:00:54 PM [vite] vite.config.js changed, restarting server...
+5:00:54 PM [vite] hmr update /src/pages/CreateInvoice.tsx, /src/pages/Settings.tsx
+5:00:54 PM [vite] hmr update /src/pages/Login.css
+5:01:01 PM [vite] hmr update /src/pages/DayBook.tsx
+5:01:01 PM [vite] hmr update /src/pages/Dashboard.tsx
+5:01:01 PM [vite] hmr update /src/App.tsx
+5:01:01 PM [vite] hmr update /src/context/TenantContext.tsx
+5:01:01 PM [vite] hmr update /src/components/TransactionHistoryModal.tsx
+5:01:01 PM [vite] hmr update /src/components/Layout/Sidebar.tsx
+5:01:01 PM [vite] hmr update /src/pages/DayBook.tsx
+5:01:03 PM [vite] hmr update /src/pages/Employees.tsx
+5:01:07 PM [vite] hmr update /src/pages/CreateInvoice.tsx
+5:01:07 PM [vite] hmr update /src/pages/Invoices.tsx
+5:01:08 PM [vite] hmr update /src/pages/FileManager.tsx
+5:01:08 PM [vite] hmr update /src/pages/Ledgers.tsx
+5:01:08 PM [vite] hmr update /src/pages/Branches.tsx
+5:01:09 PM [vite] hmr update /src/pages/Login.tsx
+5:01:10 PM [vite] hmr update /src/index.css
+5:01:11 PM [vite] hmr update /src/pages/Settings.tsx
+5:01:11 PM [vite] hmr update /src/components/Layout/Sidebar.css
+5:01:11 PM [vite] hmr update /src/pages/CreateInvoice.css
+5:01:13 PM [vite] server restarted.

@@ -1,0 +1,201 @@
+/* Sidebar.css - Quantum Synthesis Edition */
+
+.sidebar-container {
+    height: 100vh;
+    background: #0f172a; /* Deep slate for cinematic contrast */
+    color: #94a3b8;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-expanded { width: 300px; }
+.sidebar-collapsed { width: 88px; }
+
+.sidebar-header {
+    height: 100px;
+    padding: 0 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+}
+
+.logo-icon {
+    min-width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 900;
+    box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
+}
+
+.logo-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.logo-text {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: white;
+    letter-spacing: 2px;
+    line-height: 1;
+}
+
+.logo-sub {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #6366f1;
+    letter-spacing: 1.5px;
+    margin-top: 4px;
+}
+
+.sidebar-nav {
+    flex: 1;
+    padding: 20px 14px;
+    overflow: hidden;
+    position: relative;
+}
+
+.nav-scroll {
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.nav-scroll::-webkit-scrollbar { width: 4px; }
+.nav-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+
+.menu-group {
+    margin-bottom: 8px;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    padding: 14px 18px;
+    border-radius: 16px;
+    color: #94a3b8;
+    text-decoration: none;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    margin-bottom: 4px;
+    position: relative;
+}
+
+.menu-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+
+.menu-item-active {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: white !important;
+    box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.3);
+}
+
+.menu-icon {
+    font-size: 1.2rem;
+    min-width: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.menu-item-text {
+    margin-left: 16px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.sub-menu {
+    padding: 4px 0 8px 46px;
+}
+
+.sub-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    color: #64748b;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    gap: 12px;
+}
+
+.sub-menu-item:hover, .sub-menu-item.active {
+    color: white;
+}
+
+.sub-menu-item .dot {
+    width: 4px;
+    height: 4px;
+    background: #475569;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.sub-menu-item:hover .dot, .sub-menu-item.active .dot {
+    background: #6366f1;
+    box-shadow: 0 0 8px #6366f1;
+    transform: scale(1.5);
+}
+
+.sidebar-footer {
+    padding: 20px;
+    display: flex;
+    gap: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.footer-btn {
+    height: 48px;
+    border: none;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.action-toggle {
+    width: 48px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+}
+
+.logout-btn {
+    flex: 1;
+    background: rgba(239, 68, 68, 0.05);
+    color: #ef4444;
+    gap: 10px;
+    font-weight: 800;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+}
+
+.sidebar-collapsed .logo-content,
+.sidebar-collapsed .menu-item-text,
+.sidebar-collapsed .btn-text {
+    display: none;
+}
+
+@media (max-width: 1024px) {
+    .sidebar-container { transform: translateX(-100%); }
+    .sidebar-open { transform: translateX(0); }
+}

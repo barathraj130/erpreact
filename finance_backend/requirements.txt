@@ -1,0 +1,8 @@
+flask
+flask-sqlalchemy
+flask-cors
+psycopg2-binary
+reportlab
+pandas
+apscheduler
+python-dotenv

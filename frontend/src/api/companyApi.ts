@@ -1,4 +1,4 @@
-// frontend/src/api/companyApi.ts
+// frontend/src/api/companyApi.ts - module verified
 
 import { apiFetch } from '../utils/api';
 

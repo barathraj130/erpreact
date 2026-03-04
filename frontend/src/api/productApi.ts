@@ -7,23 +7,19 @@ import { apiFetch } from '../utils/api';
 export interface Product {
     id: number;
     company_id: number;
-    product_name: string;
+    name: string;
     sku: string | null;
     description: string | null;
     cost_price: number;
-    sale_price: number;
+    selling_price: number;
     current_stock: number;
-    unit_id: number | null; 
-    unit_name: string | null; 
-    hsn_acs_code: string | null;
-    low_stock_threshold: number;
-    reorder_level: number;
+    unit: string | null;
+    hsn_code: string | null;
+    min_stock: number;
+    barcode: string | null;
     is_active: number; 
-    image_url: string | null;
     updated_at: string;
     created_at: string;
-    preferred_supplier_name?: string;
-    preferred_supplier_purchase_price?: number;
 }
 
 interface ApiResponse {
@@ -39,6 +35,24 @@ interface ApiResponse {
  */
 export const fetchProducts = async (): Promise<Product[]> => {
     const res = await apiFetch('/products'); 
+    return res.json();
+};
+
+export const createProduct = async (data: any): Promise<ApiResponse> => {
+    const res = await apiFetch('/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    return res.json();
+};
+
+export const updateProduct = async (id: number, data: any): Promise<ApiResponse> => {
+    const res = await apiFetch(`/products/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
     return res.json();
 };
 

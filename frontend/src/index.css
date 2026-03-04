@@ -1,74 +1,571 @@
-/* frontend/src/index.css */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 :root {
-  --primary: #2563eb;       /* Royal Blue */
-  --primary-hover: #1d4ed8;
-  --bg-body: #f8fafc;       /* Very light slate */
-  --bg-card: #ffffff;
-  --text-main: #0f172a;     /* Dark Slate */
-  --text-muted: #64748b;    /* Muted Slate */
-  --sidebar-bg: #0f172a;    /* Deep Navy */
-  --sidebar-width: 240px;   /* Shortened Width */
+  /* --- 🎨 THEME: MODERN ENTERPRISE (LIGHT) --- */
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-glow: rgba(99, 102, 241, 0.12);
+  --primary-surface: rgba(99, 102, 241, 0.08);
+  
+  --success: #10b981;
+  --success-glow: rgba(16, 185, 129, 0.1);
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --error-glow: rgba(239, 68, 68, 0.1);
+  
+  --bg-body: #f8fafc;
   --border-color: #e2e8f0;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  
+  /* Neutral Palette - Refined Grays */
+  --bg-canvas: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-card: #ffffff;
+  --bg-topbar: rgba(255, 255, 255, 0.8);
+  
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-standard: #e2e8f0;
+
+  /* --- 🧱 LAYOUT & SHAPES --- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 32px;
+  
+  /* Layered Depth (Premium Shadows) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  --shadow-premium: 0 20px 25px -5px rgba(0, 0, 0, 0.06), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
+  --shadow-float: 0 20px 48px -12px rgba(0, 0, 0, 0.12);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+
+  /* --- ✨ MOTION TOKENS (Purposeful & Fast) --- */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-standard: 250ms cubic-bezier(0.16, 1, 0.3, 1); /* Ease-out-expo style */
+  --transition-slow: 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Base Styles */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: 'Inter', sans-serif;
-}
-
-body {
-  background-color: var(--bg-body);
-  color: var(--text-main);
   -webkit-font-smoothing: antialiased;
 }
 
-/* --- Layout Utilities --- */
-.flex-center { display: flex; align-items: center; justify-content: center; }
-.flex-between { display: flex; align-items: center; justify-content: space-between; }
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, sans-serif;
+  overflow-x: hidden;
+}
 
-/* --- Buttons --- */
-button { cursor: pointer; transition: all 0.2s ease; font-weight: 500; }
+h1, h2, h3, h4, .font-heading {
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Glassmorphism Class */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Interaction Primaries */
+button, .clickable {
+  cursor: pointer;
+  transition: var(--transition-standard);
+  user-select: none;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+
+input::placeholder { color: var(--text-light); }
+
+/* --- 🧾 THE ENTERPRISE COMPONENT LIBRARY --- */
+
+/* Standardized Page Layout */
+.page-container {
+    animation: canvas-reveal 0.4s var(--transition-standard);
+}
+
+/* Glassmorphism & Depth */
+.glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: var(--shadow-premium);
+}
+
+/* Innovative Buttons */
+.btn-enterprise {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: 800;
+    font-size: 0.85rem;
+    transition: var(--transition-standard);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.btn-enterprise:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+}
+
+.btn-enterprise:active {
+    transform: scale(0.96);
+}
 
 .btn-primary {
-  background-color: var(--primary);
-  color: white;
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.9rem;
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    border-radius: var(--radius-md);
+    font-weight: 800;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.25);
+    cursor: pointer;
 }
 
-.btn-primary:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
-
-/* --- Cards --- */
-.card {
-  background: var(--bg-card);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  padding: 24px;
-  transition: box-shadow 0.2s;
+.btn-primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(99, 102, 241, 0.3);
 }
 
-.card:hover { box-shadow: var(--shadow-md); }
-
-/* --- Inputs --- */
-input {
-  border: 1px solid var(--border-color);
-  padding: 10px 12px;
-  border-radius: 8px;
-  outline: none;
-  font-size: 0.95rem;
-  transition: border-color 0.2s;
+.btn-primary:active {
+    transform: scale(0.96);
 }
 
-input:focus { border-color: var(--primary); }
+.btn-secondary {
+    background: white;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 12px 28px;
+    border-radius: var(--radius-md);
+    font-weight: 800;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.btn-secondary:hover {
+    background: var(--bg-canvas);
+    border-color: var(--text-muted);
+    transform: translateY(-1px);
+}
+
+/* Premium Tables */
+.enterprise-table-wrapper {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-standard);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.enterprise-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.enterprise-table th {
+    background: var(--bg-canvas);
+    padding: 18px 24px;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border-standard);
+}
+
+.enterprise-table td {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    transition: var(--transition-fast);
+}
+
+.enterprise-table tr:hover td {
+    background: var(--primary-surface);
+    color: var(--text-primary);
+}
+
+.enterprise-table tr {
+    cursor: pointer;
+}
+
+/* KPI Counters & Badges */
+.badge-premium {
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge-host { background: #e0e7ff; color: #4338ca; }
+.badge-admin { background: #fef3c7; color: #92400e; }
+.badge-user { background: #d1fae5; color: #065f46; }
+
+/* Global Loading State */
+.full-screen-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background: var(--bg-canvas);
+    font-weight: 900;
+    color: var(--primary);
+    letter-spacing: 0.2em;
+    gap: 20px;
+}
+
+.spinner-innovative {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--primary-surface);
+    border-top: 4px solid var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Custom Scrollbar --- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* --- Invoice Layout Responsiveness --- */
+.invoice-layout {
+  display: flex;
+  height: calc(100vh - 80px); /* Adjust based on header height, user seems to have 80px header or sidebar padding */
+  background: var(--bg-body);
+  overflow: hidden;
+  position: relative;
+}
+
+.invoice-form-side {
+  width: 45%;
+  min-width: 480px;
+  background: #fff;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+  transition: width 0.3s ease;
+}
+
+.invoice-preview-side {
+  flex: 1;
+  background: #4b5563;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 25px;
+}
+
+@media (max-width: 1024px) {
+  .invoice-layout {
+    flex-direction: column;
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .invoice-form-side {
+    width: 100%;
+    min-width: 100%;
+    border-right: none;
+    height: auto;
+    overflow-y: visible;
+  }
+  
+  .invoice-preview-side {
+    display: flex;
+    width: 100%;
+    background: #f1f5f9;
+    padding: 20px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .page-container {
+    padding: 1rem;
+  }
+  
+  th, td {
+    padding: 12px 8px;
+    font-size: 0.8rem;
+  }
+  
+  .btn-primary, .btn-secondary {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+  }
+
+  .invoice-form-side h2 {
+    font-size: 1.1rem;
+  }
+}
+
+/* --- Settings Page Layout --- */
+.settings-container {
+  display: flex;
+  gap: 30px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: 'Inter', sans-serif;
+}
+
+.settings-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .settings-container {
+    flex-direction: column;
+    padding: 10px;
+  }
+  
+  .settings-sidebar {
+    width: 100%;
+    margin-bottom: 20px;
+  }
+  
+  .settings-sidebar > div:last-child {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+  
+  /* Make sidebar items horizontal on mobile */
+  .settings-sidebar .nav-item {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/* --- ENHANCED MOBILE RESPONSIVENESS --- */
+
+/* Extra Small Devices (Phones, 320px - 480px) */
+@media (max-width: 480px) {
+  /* Base adjustments */
+  body {
+    font-size: 14px;
+  }
+  
+  h1 {
+    font-size: 1.5rem !important;
+  }
+  
+  h2 {
+    font-size: 1.25rem !important;
+  }
+  
+  h3 {
+    font-size: 1.1rem !important;
+  }
+  
+  /* Touch targets - minimum 44x44px */
+  button, .btn-primary, .btn-secondary, a[role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 12px 16px;
+  }
+  
+  /* Card padding */
+  .card, .glass-panel {
+    padding: 16px !important;
+  }
+  
+  /* Table improvements */
+  table {
+    font-size: 0.75rem;
+  }
+  
+  th, td {
+    padding: 8px 4px !important;
+  }
+  
+  /* Input fields */
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+    padding: 12px !important;
+  }
+  
+  /* Modal adjustments */
+  .modal-overlay {
+    padding: 10px !important;
+  }
+  
+  /* Grid columns force single column */
+  [style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Small Devices (Tablets, 481px - 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+  /* Moderate size adjustments */
+  .page-container {
+    padding: 1.5rem;
+  }
+  
+  /* 2-column grids on tablets */
+  [style*="gridTemplateColumns"][style*="repeat(auto-fit"] {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  }
+}
+
+/* Medium Devices (Small Laptops, 769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* Standard 3-column grids */
+  [style*="gridTemplateColumns"][style*="repeat(auto-fit"] {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
+  }
+}
+
+/* Mobile-specific utilities */
+@media (max-width: 768px) {
+  /* Hide on mobile */
+  .hide-mobile {
+    display: none !important;
+  }
+  
+  /* Show only on mobile */
+  .show-mobile {
+    display: block !important;
+  }
+  
+  /* Full width on mobile */
+  .mobile-full-width {
+    width: 100% !important;
+  }
+  
+  /* Stack flex containers */
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+  
+  /* Reduce gaps */
+  .mobile-reduce-gap {
+    gap: 10px !important;
+  }
+  
+  /* Horizontal scroll for tables */
+  .table-container, [style*="overflowX"] {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Better tap highlighting */
+  button, a, [role="button"] {
+    -webkit-tap-highlight-color: rgba(37, 99, 235, 0.1);
+  }
+  
+  /* Prevent text selection on interactive elements */
+  button, .btn-primary, .btn-secondary {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+  }
+  
+  .no-print, .btn-primary, .btn-secondary, header, .sidebar {
+    display: none !important;
+  }
+  
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .card {
+    break-inside: avoid;
+  }
+}
+
+/* High DPI screens */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  /* Sharper borders for retina displays */
+  .card, .glass-panel, .btn-primary, .btn-secondary {
+    border-width: 0.5px;
+  }
+}
+
+/* Landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Reduce header height in landscape */
+  header {
+    height: 60px !important;
+    min-height: 60px !important;
+  }
+  
+  .card {
+    padding: 12px !important;
+  }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding: env(safe-area-inset-left)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+

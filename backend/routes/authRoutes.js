@@ -4,62 +4,146 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import { jwtSecret } from "../config/jwtConfig.js";
 import * as db from "../database/pg.js";
+import { loginLimiter } from "../middlewares/rateLimitMiddleware.js";
+import { logAction } from "../services/auditLogService.js";
+import * as authService from "../services/authService.js";
 
 const router = express.Router();
 
 /* ============================================================
    1. LOGIN ROUTE
 ============================================================ */
-router.post("/login", async (req, res) => {
-    const { email, password } = req.body; 
-    console.log(`🔹 Login Attempt: ${email}`);
+/* ============================================================
+   1. LOGIN ROUTE (MULTI-TENANT)
+============================================================ */
+router.post("/login", loginLimiter, async (req, res) => {
+    const { company_code, email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+    
+    console.log(`🔹 Login Attempt: ${email} for Company: ${company_code}`);
 
     try {
-        // Case-insensitive User Lookup
-        const user = await db.pgGet(
-            "SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1)",
-            [email]
+        // Authenticate user
+        const user = await authService.authenticateUser(company_code, email, password);
+        
+        // Generate tokens
+        const { accessToken, refreshToken } = authService.generateTokens(user);
+
+        // Store refresh token in database
+        await db.pgRun(
+            `INSERT INTO refresh_tokens (user_id, token, expires_at)
+             VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+            [user.id, refreshToken]
         );
 
-        if (!user) {
-            console.log("❌ User not found in DB");
-            return res.status(401).json({ error: "User not found." });
-        }
+        // Log successful login
+        await logAction({
+            user_id: user.id,
+            company_id: user.company_id,
+            module: "AUTH",
+            action: "LOGIN",
+            resource_type: "session",
+            resource_id: user.id,
+            status: "success",
+            ip_address: ip
+        });
 
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            console.log("❌ Password incorrect");
-            return res.status(401).json({ error: "Invalid password." });
-        }
-
-        // Force active_company_id if missing (Self-Healing)
-        const activeCompany = user.active_company_id || 1;
-
-        const token = jwt.sign(
-            { 
-                user: { 
-                    id: user.id, 
-                    email: user.email, 
-                    role: user.role, 
-                    active_company_id: activeCompany 
-                } 
+        console.log(`✅ User ${user.username} logged in successfully for ${user.company_name}`);
+        
+        res.json({
+            success: true,
+            accessToken,
+            refreshToken,
+            user: {
+                id: user.id,
+                name: user.username,
+                email: user.email,
+                role: user.role,
+                company: user.company_name,
+                permissions: user.permissions
             },
-            jwtSecret,
-            { expiresIn: "24h" }
-        );
-
-        console.log(`✅ User ${user.username} logged in successfully.`);
-        res.json({ success: true, token });
+            token: accessToken // 👈 For compatibility with Login.tsx
+        });
 
     } catch (err) {
-        console.error("❌ Login Critical Error:", err);
-        res.status(500).json({ error: "Server error" });
+        console.error("❌ Login Error:", err.message);
+        
+        // Log failed login
+        await logAction({
+            user_id: null,
+            company_id: null,
+            module: "AUTH",
+            action: "LOGIN_FAILED",
+            resource_type: "session",
+            resource_id: null,
+            status: "error",
+            ip_address: ip,
+            error_message: err.message
+        }).catch(() => {}); // Ignore logging errors
+
+        const statusCode = err.code === "SUBSCRIPTION_EXPIRED" ? 403 : 
+                          err.code === "ACCOUNT_LOCKED" ? 423 : 401;
+        
+        res.status(statusCode).json({
+            error: err.message,
+            code: err.code,
+            attemptsLeft: err.attemptsLeft,
+            minutesLeft: err.minutesLeft
+        });
     }
 });
 
 /* ============================================================
-   2. SIGNUP ROUTE (Optional)
+   1B. REFRESH TOKEN ROUTE
 ============================================================ */
+router.post("/refresh", async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+        return res.status(401).json({ error: "Refresh token required" });
+    }
+
+    try {
+        const newAccessToken = authService.refreshAccessToken(refreshToken);
+        res.json({ success: true, accessToken: newAccessToken });
+    } catch (err) {
+        console.error("❌ Refresh token error:", err.message);
+        res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+});
+
+/* ============================================================
+   1C. LOGOUT ROUTE
+============================================================ */
+router.post("/logout", async (req, res) => {
+    const { refreshToken } = req.body;
+    const authHeader = req.headers.authorization;
+
+    try {
+        if (refreshToken) {
+            // Invalidate refresh token
+            await db.pgRun("DELETE FROM refresh_tokens WHERE token = $1", [refreshToken]);
+        }
+
+        const token = authHeader?.split(" ")[1];
+        if (token) {
+            const decoded = jwt.verify(token, jwtSecret);
+            await logAction({
+                user_id: decoded.user.id,
+                company_id: decoded.user.company_id,
+                module: "AUTH",
+                action: "LOGOUT",
+                resource_type: "session",
+                resource_id: decoded.user.id,
+                status: "success"
+            });
+        }
+
+        res.json({ success: true, message: "Logged out successfully" });
+    } catch (err) {
+        res.json({ success: true, message: "Logout complete" });
+    }
+});
 router.post("/signup", async (req, res) => {
     const { username, email, password } = req.body;
     try {
@@ -91,11 +175,17 @@ router.get("/me", async (req, res) => {
         const token = authHeader.split(" ")[1];
         const decoded = jwt.verify(token, jwtSecret);
         
-        // 1. Fetch User
-        const user = await db.pgGet(
-            "SELECT id, username, email, role, active_company_id, signature_url FROM users WHERE id = $1",
-            [decoded.user.id]
-        );
+        // 1. Fetch User with Company and Subscription Context
+        const user = await db.pgGet(`
+            SELECT 
+                u.id, u.username, u.email, u.role, u.active_company_id, u.signature_url,
+                c.company_name, c.company_code,
+                s.enabled_modules, s.status as subscription_status
+            FROM users u
+            JOIN companies c ON u.active_company_id = c.id
+            LEFT JOIN subscriptions s ON c.subscription_id = s.id
+            WHERE u.id = $1
+        `, [decoded.user.id]);
 
         if (!user) return res.status(404).json({ error: "User not found" });
 

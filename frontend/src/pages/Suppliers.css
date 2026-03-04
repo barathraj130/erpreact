@@ -1,0 +1,128 @@
+/* frontend/src/pages/Suppliers.css */
+
+.suppliers-container {
+    padding: 32px;
+    max-width: 1600px;
+    margin: 0 auto;
+    animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.suppliers-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+    gap: 24px;
+}
+
+.suppliers-title h1 {
+    font-size: 2.5rem;
+    font-weight: 950;
+    color: var(--text-primary);
+    letter-spacing: -1.5px;
+    margin: 0;
+}
+
+.suppliers-title p {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+.suppliers-toolbar {
+    background: white;
+    border-radius: 20px;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 32px;
+}
+
+.suppliers-toolbar input {
+    border: none;
+    outline: none;
+    width: 100%;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: transparent;
+}
+
+.suppliers-table-container {
+    background: white;
+    border-radius: 24px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.sup-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sup-table th {
+    background: #f8fafc;
+    padding: 20px 24px;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sup-table td {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--bg-body);
+}
+
+.sup-row {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.sup-row:hover {
+    background: #f8fafc;
+}
+
+.vendor-orb {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--primary-glow);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+
+.balance-text {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: var(--error);
+    letter-spacing: -0.5px;
+}
+
+.control-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}

@@ -48,7 +48,7 @@ const Marketplace: React.FC = () => {
                             {/* Product Image */}
                             <div style={{ height: '200px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', position: 'relative' }}>
                                 {product.image_url ? (
-                                    <img src={product.image_url} style={{width:'100%', height:'100%', objectFit:'cover'}} alt={product.product_name} />
+                                    <img src={product.image_url} style={{width:'100%', height:'100%', objectFit:'cover'}} alt={product.name} />
                                 ) : (
                                     <FaBox size={48} />
                                 )}
@@ -68,7 +68,7 @@ const Marketplace: React.FC = () => {
                             <div style={{ padding: '20px', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                                     <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b', margin: 0, lineHeight: 1.4 }}>
-                                        {product.product_name}
+                                        {product.name}
                                     </h3>
                                 </div>
                                 
@@ -87,7 +87,7 @@ const Marketplace: React.FC = () => {
                                     <div>
                                         <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Price</div>
                                         <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a' }}>
-                                            ₹{Number(product.sale_price).toLocaleString('en-IN')}
+                                            ₹{Number(product.selling_price).toLocaleString('en-IN')}
                                         </div>
                                     </div>
                                     <button 

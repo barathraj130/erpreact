@@ -22,10 +22,10 @@ async function createLenderAndLedgerPG(client, companyId, lenderData) {
     const lenderSql = `
         INSERT INTO lenders (
             company_id, lender_name, entity_type, phone, email, 
-            initial_payable_balance, notes, 
+            initial_payable_balance, current_balance, notes, 
             bank_name, bank_account_no, bank_ifsc_code
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10)
         RETURNING id
     `;
     
@@ -47,7 +47,7 @@ async function createLenderAndLedgerPG(client, companyId, lenderData) {
 router.get('/', authMiddleware, async (req, res) => {
     try {
         const sql = `
-            SELECT l.*, (COALESCE(l.initial_payable_balance, 0)) AS remaining_balance 
+            SELECT l.*, (COALESCE(l.current_balance, l.initial_payable_balance, 0)) AS remaining_balance 
             FROM lenders l WHERE l.company_id = $1 ORDER BY l.lender_name ASC
         `;
         const rows = await db.pgAll(sql, [req.user?.active_company_id]);

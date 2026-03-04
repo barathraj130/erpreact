@@ -9,6 +9,7 @@ import {
     FaChevronUp,
     FaHistory,
     FaMoneyBillWave,
+    FaSearch,
     FaUserClock,
     FaUsers
 } from 'react-icons/fa';
@@ -65,6 +66,7 @@ const PayrollRun: React.FC = () => {
     const [processing, setProcessing] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const [activeTab, setActiveTab] = useState<'MONTHLY' | 'WEEKLY' | 'DAILY'>('MONTHLY');
+    const [searchTerm, setSearchTerm] = useState('');
 
     const API_BASE = '/api';
 
@@ -175,12 +177,19 @@ const PayrollRun: React.FC = () => {
     const dailyPayroll = payrollData.filter(p => p.employee.salary_type === 'Daily');
 
     const getCurrentPayroll = () => {
+        let base = [];
         switch (activeTab) {
-            case 'MONTHLY': return monthlyPayroll;
-            case 'WEEKLY': return weeklyPayroll;
-            case 'DAILY': return dailyPayroll;
-            default: return [];
+            case 'MONTHLY': base = monthlyPayroll; break;
+            case 'WEEKLY': base = weeklyPayroll; break;
+            case 'DAILY': base = dailyPayroll; break;
         }
+        
+        if (!searchTerm.trim()) return base;
+        
+        return base.filter(p => 
+            p.employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.employee.designation?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
     };
 
     const currentPayroll = getCurrentPayroll();
@@ -408,23 +417,82 @@ const PayrollRun: React.FC = () => {
                     </div>
 
                     {/* Current Tab Summary */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                        <div style={{ ...cardStyle, borderLeft: `4px solid ${tabConfig[activeTab].color}` }}>
-                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Total Employees</p>
-                            <h2 style={{ margin: '8px 0 0', color: '#1e293b' }}>{currentActivePayroll.length}</h2>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+                        <div style={{ ...cardStyle, borderLeft: `5px solid ${tabConfig[activeTab].color}`, padding: '24px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Employees</p>
+                                    <h2 style={{ margin: '12px 0 0', color: '#1e293b', fontSize: '2rem', fontWeight: 800 }}>{currentActivePayroll.length}</h2>
+                                </div>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: `${tabConfig[activeTab].bg}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: tabConfig[activeTab].color }}>
+                                    <FaUsers size={24} />
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ ...cardStyle, borderLeft: '4px solid #16a34a' }}>
-                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Total Gross</p>
-                            <h2 style={{ margin: '8px 0 0', color: '#16a34a' }}>₹{currentTotalGross.toLocaleString()}</h2>
+                        <div style={{ ...cardStyle, borderLeft: '5px solid #10b981', padding: '24px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Gross</p>
+                                    <h2 style={{ margin: '12px 0 0', color: '#10b981', fontSize: '2rem', fontWeight: 800 }}>₹{currentTotalGross.toLocaleString()}</h2>
+                                </div>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                                    <FaMoneyBillWave size={24} />
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ ...cardStyle, borderLeft: '4px solid #dc2626' }}>
-                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Total Deductions</p>
-                            <h2 style={{ margin: '8px 0 0', color: '#dc2626' }}>₹{currentTotalDeductions.toLocaleString()}</h2>
+                        <div style={{ ...cardStyle, borderLeft: '5px solid #ef4444', padding: '24px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Deductions</p>
+                                    <h2 style={{ margin: '12px 0 0', color: '#ef4444', fontSize: '2rem', fontWeight: 800 }}>₹{currentTotalDeductions.toLocaleString()}</h2>
+                                </div>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+                                    <FaCalculator size={24} />
+                                </div>
+                            </div>
                         </div>
-                        <div style={{ ...cardStyle, borderLeft: '4px solid #7c3aed' }}>
-                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Net Payable</p>
-                            <h2 style={{ margin: '8px 0 0', color: '#7c3aed' }}>₹{currentTotalNet.toLocaleString()}</h2>
+                        <div style={{ ...cardStyle, borderLeft: '5px solid #8b5cf6', padding: '24px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Net Payable</p>
+                                    <h2 style={{ margin: '12px 0 0', color: '#8b5cf6', fontSize: '2rem', fontWeight: 800 }}>₹{currentTotalNet.toLocaleString()}</h2>
+                                </div>
+                                <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b5cf6' }}>
+                                    <FaUserClock size={24} />
+                                </div>
+                            </div>
                         </div>
+                    </div>
+
+                    {/* Search Toolbar */}
+                    <div className="card" style={{ 
+                        padding: '0 24px', 
+                        marginBottom: '32px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '16px', 
+                        border: '1px solid var(--border-color)', 
+                        height: '64px', 
+                        background: 'white', 
+                        boxShadow: 'var(--shadow-sm)', 
+                        borderRadius: '18px' 
+                    }}>
+                        <FaSearch style={{ color: 'var(--text-light)' }} size={20} />
+                        <input 
+                            placeholder="Search employees in current tab..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ 
+                                border: 'none', 
+                                width: '100%', 
+                                outline: 'none', 
+                                background: 'transparent', 
+                                fontSize: '1.05rem', 
+                                fontWeight: 500, 
+                                color: 'var(--text-main)',
+                                letterSpacing: '-0.2px'
+                            }} 
+                        />
                     </div>
 
                     {/* Payroll Table */}
@@ -437,7 +505,8 @@ const PayrollRun: React.FC = () => {
                         </div>
 
                         {currentPayroll.length > 0 ? (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                                         <th style={{ padding: '14px', textAlign: 'left', color: '#64748b' }}>Employee</th>
@@ -550,6 +619,7 @@ const PayrollRun: React.FC = () => {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
                         ) : (
                             <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
                                 <p>No {tabConfig[activeTab].label.toLowerCase()} found</p>

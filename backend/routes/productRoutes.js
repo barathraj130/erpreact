@@ -1,8 +1,9 @@
-// backend/routes/productsRoutes.js
-const express = require("express");
+console.log("--> Loading productRoutes.js");
+import express from "express";
+import * as pgModule from "../database/pg.js";
+import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+
 const router = express.Router();
-const pgModule = require("../database/pg");
-const { checkAuth } = require("../middlewares/jwtAuthMiddleware");
 
 /* ======================================================
    AUTO CREATE PRODUCTS TABLE IF NOT EXISTS  
@@ -15,6 +16,7 @@ async function ensureProductsTable() {
             name TEXT NOT NULL,
             sku TEXT,
             brand TEXT,
+            description TEXT,
             hsn_code TEXT,
             unit TEXT,
             cost_price NUMERIC(12,2),
@@ -28,15 +30,21 @@ async function ensureProductsTable() {
         );
     `;
     await pgModule.pgRun(sql);
+    
+    // Add description column if missing (for existing tables)
+    try {
+        await pgModule.pgRun("ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;");
+    } catch (e) {}
+
     console.log("✅ Products table ensured (dynamic)");
 }
 
-ensureProductsTable();
+// ensureProductsTable();
 
 /* ======================================================
    CREATE PRODUCT (Only name + price required)
 ====================================================== */
-router.post("/", checkAuth, async (req, res) => {
+router.post("/", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     if (!companyId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -45,6 +53,7 @@ router.post("/", checkAuth, async (req, res) => {
         selling_price,
         sku,
         brand,
+        description,
         hsn_code,
         unit,
         cost_price,
@@ -61,16 +70,16 @@ router.post("/", checkAuth, async (req, res) => {
 
     const sql = `
         INSERT INTO products (
-            company_id, name, selling_price, sku, brand, hsn_code, unit,
+            company_id, name, selling_price, sku, brand, description, hsn_code, unit,
             cost_price, opening_stock, current_stock, barcode, min_stock,
             gst_percent
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
         RETURNING *;
     `;
 
     const params = [
-        companyId, name, selling_price, sku || null, brand || null,
+        companyId, name, selling_price, sku || null, brand || null, description || null,
         hsn_code || null, unit || null, cost_price || null,
         opening_stock || 0, current_stock || 0, barcode || null,
         min_stock || null, gst_percent || null
@@ -88,7 +97,7 @@ router.post("/", checkAuth, async (req, res) => {
 /* ======================================================
    GET ALL PRODUCTS OF COMPANY
 ====================================================== */
-router.get("/", checkAuth, async (req, res) => {
+router.get("/", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
 
     try {
@@ -108,7 +117,7 @@ router.get("/", checkAuth, async (req, res) => {
 /* ======================================================
    GET SINGLE PRODUCT
 ====================================================== */
-router.get("/:id", checkAuth, async (req, res) => {
+router.get("/:id", authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT * FROM products 
@@ -128,7 +137,7 @@ router.get("/:id", checkAuth, async (req, res) => {
 /* ======================================================
    UPDATE PRODUCT (Any field optional)
 ====================================================== */
-router.put("/:id", checkAuth, async (req, res) => {
+router.put("/:id", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
 
     let updateFields = [];
@@ -164,7 +173,7 @@ router.put("/:id", checkAuth, async (req, res) => {
 /* ======================================================
    DELETE PRODUCT
 ====================================================== */
-router.delete("/:id", checkAuth, async (req, res) => {
+router.delete("/:id", authMiddleware, async (req, res) => {
     const sql = `
         DELETE FROM products
         WHERE id = $1 AND company_id = $2
@@ -182,4 +191,4 @@ router.delete("/:id", checkAuth, async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

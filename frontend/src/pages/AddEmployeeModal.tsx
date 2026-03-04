@@ -48,7 +48,7 @@ const AddEmployeeModal: React.FC<Props> = ({ onClose, onSuccess, employeeToEdit 
             setStatus(employeeToEdit.status || 'Active');
 
             if (employeeToEdit.signature_url) {
-                setSignaturePreview(`http://localhost:3000${employeeToEdit.signature_url}`);
+                setSignaturePreview(`http://localhost:3001${employeeToEdit.signature_url}`);
             }
         }
     }, [employeeToEdit]);

@@ -1,0 +1,15 @@
+{
+  "amount": 25,
+  "supplier": "Supabase Pte. Ltd.",
+  "date": "2026-02-03",
+  "currency": "USD",
+  "tax_amount": 0,
+  "items": [
+    {
+      "name": "Pro Plan Feb 3 – Mar 2, 2026",
+      "qty": 1,
+      "rate": 25,
+      "amount": 25
+    }
+  ]
+}

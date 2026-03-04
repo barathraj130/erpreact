@@ -198,18 +198,26 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         await client.query(
             `INSERT INTO transactions (
-                company_id, transaction_type, amount, description,
-                related_invoice_id, payment_method, reference_no, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+                company_id, user_id, amount, type, category, date, description, 
+                related_invoice_id, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
             [
                 companyId,
-                'RECEIPT',
+                invoice.customer_id,
                 amount,
+                'RECEIPT',
+                'PAYMENT',
+                payment_date || new Date().toISOString().split('T')[0],
                 `Payment received for Invoice #${invoice.invoice_number}`,
-                invoice_id,
-                payment_method || 'CASH',
-                reference_no || null
+                invoice_id
             ]
+        );
+
+        await client.query(
+            `UPDATE users 
+             SET initial_balance = COALESCE(initial_balance, 0) - $1 
+             WHERE id = $2`,
+            [amount, invoice.customer_id]
         );
 
         await client.query("COMMIT");
@@ -245,7 +253,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         await client.query("BEGIN");
 
         const paymentResult = await client.query(
-            `SELECT p.*, i.company_id, i.total_amount as invoice_total
+            `SELECT p.*, i.company_id, i.customer_id, i.invoice_number, i.total_amount as invoice_total
              FROM invoice_payments p
              JOIN invoices i ON p.invoice_id = i.id
              WHERE p.id = $1 AND i.company_id = $2`,
@@ -257,7 +265,11 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         }
 
         const existingPayment = paymentResult.rows[0];
-        const amountDiff = (amount || existingPayment.amount) - existingPayment.amount;
+        const oldAmt = Number(existingPayment.amount);
+        const newAmt = Number(amount || oldAmt);
+        const amountDiff = newAmt - oldAmt;
+        const customerId = existingPayment.customer_id;
+        const invoiceId = existingPayment.invoice_id;
 
         await client.query(
             `UPDATE invoice_payments 
@@ -271,10 +283,27 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             [amount, payment_date, payment_method, reference_no, notes, id]
         );
 
-        if (amountDiff !== 0) {
-            const invoiceId = existingPayment.invoice_id;
-            const invoiceTotal = Number(existingPayment.invoice_total);
+        // Update Transaction and User Balance
+        if (customerId) {
+            // Update the transaction record
+            await client.query(
+                `UPDATE transactions 
+                 SET amount = $1, date = $2 
+                 WHERE user_id = $3 AND related_invoice_id = $4 AND amount = $5 AND type = 'RECEIPT'`,
+                [newAmt, payment_date || existingPayment.payment_date, customerId, invoiceId, oldAmt]
+            );
 
+            // Adjust the user's running balance by the difference
+            if (amountDiff !== 0) {
+                await client.query(
+                    `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) - $1 WHERE id = $2`,
+                    [amountDiff, customerId]
+                );
+            }
+        }
+
+        if (amountDiff !== 0) {
+            const invoiceTotal = Number(existingPayment.invoice_total);
             const paidResult = await client.query(
                 `SELECT COALESCE(SUM(amount), 0) as total_paid FROM invoice_payments WHERE invoice_id = $1`,
                 [invoiceId]
@@ -334,7 +363,7 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
         await client.query("BEGIN");
 
         const paymentResult = await client.query(
-            `SELECT p.*, i.company_id, i.total_amount as invoice_total, i.invoice_number
+            `SELECT p.*, i.company_id, i.customer_id, i.total_amount as invoice_total, i.invoice_number
              FROM invoice_payments p
              JOIN invoices i ON p.invoice_id = i.id
              WHERE p.id = $1 AND i.company_id = $2`,
@@ -348,8 +377,26 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
         const payment = paymentResult.rows[0];
         const invoiceId = payment.invoice_id;
         const invoiceTotal = Number(payment.invoice_total);
+        const customerId = payment.customer_id;
+        const amount = Number(payment.amount);
 
         await client.query(`DELETE FROM invoice_payments WHERE id = $1`, [id]);
+
+        // REVERSE CUSTOMER BALANCE
+        if (customerId) {
+            await client.query(
+                `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) + $1 WHERE id = $2`,
+                [amount, customerId]
+            );
+
+            // DELETE RELATED TRANSACTION 
+            // Since we don't have a direct ID, we match by type, invoice ID, and amount
+            await client.query(
+                `DELETE FROM transactions 
+                 WHERE user_id = $1 AND related_invoice_id = $2 AND amount = $3 AND type = 'RECEIPT'`,
+                [customerId, invoiceId, amount]
+            );
+        }
 
         const paidResult = await client.query(
             `SELECT COALESCE(SUM(amount), 0) as total_paid FROM invoice_payments WHERE invoice_id = $1`,

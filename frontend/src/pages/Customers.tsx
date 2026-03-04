@@ -1,26 +1,26 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import React, { useState } from 'react';
-import { FaEdit, FaExclamationTriangle, FaPlus, FaSearch, FaSync, FaTag, FaTrash } from 'react-icons/fa';
+import { FaEdit, FaExclamationTriangle, FaHistory, FaMapMarkerAlt, FaPlus, FaSearch, FaSync, FaTag, FaTrash, FaUserCircle } from 'react-icons/fa';
 import { deleteCustomer } from '../api/userApi';
+import TransactionHistoryModal from '../components/TransactionHistoryModal';
 import { useUsers } from '../hooks/useUsers';
 import AddCustomerModal from './AddCustomerModal';
+import './Customers.css';
 
 const Customers: React.FC = () => {
-    // 1. Default to empty array to prevent crash
     const { customers = [], loading, error, refresh } = useUsers();
     
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [customerToEdit, setCustomerToEdit] = useState<any>(null);
+    const [showTransactionModal, setShowTransactionModal] = useState(false);
+    const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
-    // 2. SAFE FILTERING LOGIC
-    // This block protects against null values, missing fields, or non-array data
     const displayedCustomers = React.useMemo(() => {
         if (!Array.isArray(customers)) return [];
 
         return customers.filter(user => {
             if (!user) return false;
-
-            // Safe property access with fallbacks
             const username = user.username || '';
             const gstin = user.gstin || '';
             const nickname = user.nickname || '';
@@ -29,11 +29,11 @@ const Customers: React.FC = () => {
             const searchLower = searchTerm.toLowerCase();
             
             const matchesSearch = username.toLowerCase().includes(searchLower) || 
-                                  gstin.toLowerCase().includes(searchLower) ||
-                                  nickname.toLowerCase().includes(searchLower);
-                                  
+                                   gstin.toLowerCase().includes(searchLower) ||
+                                   nickname.toLowerCase().includes(searchLower);
+                                   
             return isNotAdmin && matchesSearch;
-        });
+        }).sort((a,b) => (a.username || '').localeCompare(b.username || ''));
     }, [customers, searchTerm]);
 
     const handleEdit = (customer: any) => {
@@ -42,12 +42,12 @@ const Customers: React.FC = () => {
     };
 
     const handleDelete = async (id: number) => {
-        if (window.confirm("Delete this customer? This will also remove their transaction history.")) {
+        if (window.confirm("Relinquish this stakeholder record? This action is irreversible.")) {
             try {
                 await deleteCustomer(id);
                 refresh();
             } catch (err) {
-                alert("Failed to delete customer");
+                alert("Authorization failed: Record locked.");
             }
         }
     };
@@ -58,106 +58,168 @@ const Customers: React.FC = () => {
     };
 
     return (
-        <div>
+        <div className="customers-container">
             {/* Header */}
-            <div className="flex-between" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b' }}>Customers</h1>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Manage your client details and balances.</p>
+            <div className="customers-header">
+                <div className="customers-title">
+                    <motion.h1
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                    >Stakeholder Registry</motion.h1>
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.1 }}
+                    >Global Partner Network & Fiscal Exposure Management</motion.p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button className="btn-secondary" onClick={() => refresh()} title="Refresh List" style={{ padding: '10px', cursor: 'pointer' }}>
+                <div className="customers-actions">
+                    <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="btn-secondary" 
+                        onClick={() => refresh()} 
+                        style={{ width: '52px', height: '52px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
                         <FaSync className={loading ? 'fa-spin' : ''} />
-                    </button>
-                    <button className="btn-primary" onClick={() => { setCustomerToEdit(null); setShowModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FaPlus /> Add Customer
-                    </button>
+                    </motion.button>
+                    <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="btn-primary" 
+                        onClick={() => { setCustomerToEdit(null); setShowModal(true); }} 
+                        style={{ height: '52px', padding: '0 28px', gap: '12px', borderRadius: '14px', fontSize: '0.95rem', fontWeight: 800 }}
+                    >
+                        <FaPlus /> Initialize Onboarding
+                    </motion.button>
                 </div>
             </div>
 
-            {/* Error Message */}
-            {error && (
-                <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '12px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <FaExclamationTriangle />
-                    <span>Error loading customers: {error}</span>
-                </div>
-            )}
+            {/* Critical Alerts */}
+            <AnimatePresence>
+                {error && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', color: 'var(--error)', padding: '20px', borderRadius: '16px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid rgba(239, 68, 68, 0.15)' }}
+                    >
+                        <FaExclamationTriangle size={20} />
+                        <span style={{ fontWeight: 800 }}>Vault Sync Failure: {error}</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            {/* Search Bar */}
-            <div className="card" style={{ padding: '12px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', background: 'white', borderRadius: '12px' }}>
-                <FaSearch style={{ color: '#94a3b8' }} />
+            {/* Search Orb */}
+            <div className="search-orb">
+                <FaSearch style={{ color: 'var(--text-muted)' }} size={20} />
                 <input 
-                    placeholder="Search by Name, Nickname or GSTIN..." 
+                    placeholder="Identify partner by username, GSTIN, or alias..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ border: 'none', width: '100%', fontSize: '0.95rem', background:'transparent', outline: 'none' }} 
                 />
             </div>
 
-            {/* Table */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden', background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                    <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            {/* Cinematic Table */}
+            <div className="customer-table-container">
+                <table className="cust-table">
+                    <thead>
                         <tr>
-                            <th style={{ textAlign: 'left', padding: '16px', color: '#475569' }}>Name / Nickname</th>
-                            <th style={{ textAlign: 'left', padding: '16px', color: '#475569' }}>GSTIN</th>
-                            <th style={{ textAlign: 'left', padding: '16px', color: '#475569' }}>Location</th>
-                            <th style={{ textAlign: 'right', padding: '16px', color: '#475569' }}>Current Balance</th>
-                            <th style={{ textAlign: 'center', padding: '16px', color: '#475569' }}>Actions</th>
+                            <th>Partner Identity</th>
+                            <th>Fiscal Registry (GSTIN)</th>
+                            <th>Geographic Context</th>
+                            <th style={{ textAlign: 'right' }}>Capital Exposure</th>
+                            <th style={{ textAlign: 'center' }}>Control Interface</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
-                            <tr><td colSpan={5} style={{padding: '40px', textAlign: 'center', color: '#64748b'}}>Loading data...</td></tr>
+                            [...Array(6)].map((_, i) => (
+                                <tr key={i}><td colSpan={5} style={{ padding: '30px' }}><div className="skeleton" style={{ height: '30px', borderRadius: '8px' }}></div></td></tr>
+                            ))
                         ) : displayedCustomers.length === 0 ? (
-                            <tr><td colSpan={5} style={{padding: '40px', textAlign: 'center', color: '#94a3b8'}}>No customers found.</td></tr>
+                            <tr>
+                                <td colSpan={5} style={{ padding: '120px 32px', textAlign: 'center' }}>
+                                    <FaUserCircle size={64} style={{ color: 'var(--border-color)', marginBottom: '20px' }} />
+                                    <h3 style={{ margin: 0, fontWeight: 900, color: 'var(--text-primary)' }}>Registry Empty</h3>
+                                    <p style={{ color: 'var(--text-muted)', fontWeight: 500 }}>No stakeholder detected within current parameters.</p>
+                                </td>
+                            </tr>
                         ) : (
-                            displayedCustomers.map((user) => (
-                                <tr key={user.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: '16px' }}>
-                                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{user.username}</div>
-                                        {user.nickname && (
-                                            <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                                                <FaTag size={10} /> {user.nickname}
+                            displayedCustomers.map((user, idx) => (
+                                <motion.tr 
+                                    key={user.id} 
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className="cust-row"
+                                >
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                            <div className="identity-orb">
+                                                {(user.username || 'U').charAt(0).toUpperCase()}
                                             </div>
-                                        )}
+                                            <div>
+                                                <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '1.05rem' }}>{user.username}</div>
+                                                {user.nickname && (
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                                        <FaTag size={10} /> {user.nickname}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
                                     </td>
-                                    <td style={{ padding: '16px', color: '#64748b' }}>{user.gstin || '-'}</td>
-                                    <td style={{ padding: '16px', color: '#64748b' }}>{user.city_pincode || user.state || '-'}</td>
-                                    <td style={{ padding: '16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                                        ₹{Number(user.remaining_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    <td>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 800, letterSpacing: '0.5px' }}>{user.gstin || 'NON-CERTIFIED'}</div>
                                     </td>
-                                    <td style={{ padding: '16px', textAlign: 'center' }}>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                            <FaMapMarkerAlt size={12} style={{ opacity: 0.5 }} />
+                                            {user.city_pincode || user.state || 'Universal'}
+                                        </div>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                        <div className="exposure-value">
+                                            ₹{Number(user.initial_balance || 0).toLocaleString('en-IN')}
+                                        </div>
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
                                         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
-                                            <button 
-                                                style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer' }} 
-                                                onClick={() => handleEdit(user)}
-                                                title="Edit Customer"
-                                            >
-                                                <FaEdit />
+                                            <button className="control-btn btn-history" onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); }} title="Audit History">
+                                                <FaHistory size={16} />
                                             </button>
-                                            <button 
-                                                style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} 
-                                                onClick={() => handleDelete(user.id)}
-                                                title="Delete Customer"
-                                            >
-                                                <FaTrash />
+                                            <button className="control-btn btn-edit" onClick={() => handleEdit(user)} title="Modify Records">
+                                                <FaEdit size={16} />
+                                            </button>
+                                            <button className="control-btn btn-delete" onClick={() => handleDelete(user.id)} title="Relinquish Status">
+                                                <FaTrash size={16} />
                                             </button>
                                         </div>
                                     </td>
-                                </tr>
+                                </motion.tr>
                             ))
                         )}
                     </tbody>
                 </table>
             </div>
 
-            {/* Modal */}
             {showModal && (
                 <AddCustomerModal 
                     onClose={handleModalClose} 
                     onSuccess={refresh} 
                     customerToEdit={customerToEdit} 
+                />
+            )}
+
+            {showTransactionModal && selectedCustomer && (
+                <TransactionHistoryModal
+                    isOpen={showTransactionModal}
+                    onClose={() => {
+                        setShowTransactionModal(false);
+                        setSelectedCustomer(null);
+                    }}
+                    entityType="customer"
+                    entityId={selectedCustomer.id}
+                    entityName={selectedCustomer.username}
                 />
             )}
         </div>

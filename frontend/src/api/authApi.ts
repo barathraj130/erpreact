@@ -16,10 +16,10 @@ interface LoginResponse {
     token: string;
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export async function login(email: string, password: string, companyCode: string): Promise<LoginResponse> {
     const res = await apiFetch("/auth/login", {
         method: "POST",
-        body: { email, password }
+        body: { email, password, company_code: companyCode }
     });
     return res.json();
 }

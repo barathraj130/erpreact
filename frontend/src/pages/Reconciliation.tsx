@@ -28,7 +28,7 @@ const Reconciliation: React.FC = () => {
             // await completeReconciliation(selectedBankLedger, matchedIds);
             alert("Reconciliation simulated successfully.");
             setUnmatchedCount(0); // Update count after successful reconciliation
-        } catch (error) {
+        } catch (error: any) {
             alert(`Reconciliation failed: ${error.message}`);
         } finally {
             setLoading(false);

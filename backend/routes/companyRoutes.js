@@ -122,5 +122,72 @@ router.delete('/bank-accounts/:id', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 🏢 CREATE NEW COMPANY (Global Administration)
+ * Only accessible by 'superadmin'
+ */
+router.post('/', authMiddleware, async (req, res) => {
+    if (req.user?.role?.toLowerCase() !== 'superadmin') {
+        return res.status(403).json({ error: "Unauthorized. Superadmin only." });
+    }
+
+    const { 
+        company_name, company_code, admin_email, admin_password,
+        plan_name, max_branches, max_users, enabled_modules, expiry_date 
+    } = req.body;
+    
+    if (!company_name || !company_code || !admin_email || !admin_password) {
+        return res.status(400).json({ error: "Missing required identity fields." });
+    }
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        // 1. Create Subscription
+        const subRes = await client.query(
+            `INSERT INTO subscriptions (plan_name, max_branches, max_users, enabled_modules, expiry_date, status) 
+             VALUES ($1, $2, $3, $4, $5, 'ACTIVE') RETURNING id`,
+            [plan_name || 'Standard', max_branches || 1, max_users || 5, enabled_modules || 'sales,finance', expiry_date || null]
+        );
+        const subscriptionId = subRes.rows[0].id;
+
+        // 2. Create Company
+        const compRes = await client.query(
+            "INSERT INTO companies (company_name, company_code, subscription_id, is_active) VALUES ($1, $2, $3, TRUE) RETURNING id",
+            [company_name, company_code, subscriptionId]
+        );
+        const companyId = compRes.rows[0].id;
+
+        // 3. Create Default Branch
+        const branchRes = await client.query(
+            "INSERT INTO branches (company_id, branch_name, branch_code, is_active) VALUES ($1, 'Main Branch', 'MAIN-01', TRUE) RETURNING id",
+            [companyId]
+        );
+        const branchId = branchRes.rows[0].id;
+
+        // 4. Create Admin User
+        const bcrypt = await import('bcryptjs');
+        const hashedPassword = await bcrypt.default.hash(admin_password, 10);
+        
+        await client.query(
+            `INSERT INTO users (company_id, branch_id, active_company_id, username, email, password_hash, role, is_active) 
+             VALUES ($1, $2, $1, $3, $4, $5, 'admin', TRUE)`,
+            [companyId, branchId, admin_email.split('@')[0], admin_email, hashedPassword]
+        );
+
+        await client.query('COMMIT');
+        res.status(201).json({ success: true, company_id: companyId, company_code });
+
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        console.error("❌ Onboarding Transaction Failed:", error);
+        res.status(500).json({ error: "Failed to provision new tenant environment." });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // ✅ THIS IS THE CRITICAL FIX: EXPORT AS DEFAULT
 export default router;

@@ -6,7 +6,7 @@ interface FetchOptions extends Omit<RequestInit, 'headers' | 'body'> {
 }
 
 // Ensure this matches your backend port
-const API_BASE_URL = "http://localhost:3000/api";
+const API_BASE_URL = "http://localhost:3001/api";
 
 export const apiFetch = async (
     endpoint: string,
@@ -19,7 +19,7 @@ export const apiFetch = async (
 
     let defaultHeaders: Record<string, string> = {};
 
-    if (token) {
+    if (token && endpoint !== "/auth/login") {
         defaultHeaders["Authorization"] = `Bearer ${token}`;
     }
 
@@ -46,6 +46,7 @@ export const apiFetch = async (
             ...options,
             headers,
             body: finalBody as BodyInit,
+            credentials: 'include',
         });
 
         // ✅ CRITICAL FIX: DO NOT AUTO-REDIRECT HERE.

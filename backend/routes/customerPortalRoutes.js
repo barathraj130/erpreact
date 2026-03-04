@@ -8,7 +8,7 @@ const router = express.Router();
 router.get("/catalog", checkCustomerAuth, async (req, res) => {
     try {
         const sql = `
-            SELECT id, product_name, description, sale_price, image_url, sku, current_stock 
+            SELECT id, name, description, selling_price, image_url, sku, current_stock 
             FROM products 
             WHERE is_active = 1
         `;

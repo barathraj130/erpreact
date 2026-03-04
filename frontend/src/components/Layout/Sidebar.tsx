@@ -1,318 +1,199 @@
 // frontend/src/components/Layout/Sidebar.tsx
+import { AnimatePresence, motion } from 'framer-motion';
 import React, { JSX, useState } from 'react';
 import {
     FaBox,
+    FaBrain,
+    FaBuilding,
     FaChartPie,
-    FaChevronDown,
     FaChevronRight,
     FaCog,
-    FaFolder,
+    FaIndent,
     FaLandmark,
-    FaShoppingBag,
+    FaOutdent,
     FaShoppingCart,
     FaSignOutAlt,
     FaTachometerAlt,
+    FaTruck,
     FaUsers
 } from "react-icons/fa";
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import "./Sidebar.css";
 
-// --- 1. Define Types ---
-interface SubMenuItem {
-    name: string;
-    path: string;
-    permission?: string; 
-}
-
+// --- Types ---
 interface MenuItem {
     name: string;
     path?: string;
-    icon: React.ReactNode;
+    icon?: React.ReactNode;
+    module?: string; 
     permission?: string; 
-    subItems?: SubMenuItem[];
+    subItems?: MenuItem[];
 }
 
-interface Permission {
-    module?: string;
-    action?: string;
+interface SidebarProps {
+    isOpen: boolean; // Mobile toggle
+    setIsOpen: (isOpen: boolean) => void;
+    isMobile: boolean;
+    mode: 'HOST' | 'ADMIN' | 'USER';
 }
 
-const Sidebar: React.FC = (): JSX.Element => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode }): JSX.Element => {
     const { user } = useAuthUser();
+    const [isCollapsed, setIsCollapsed] = useState(false);
     const [openMenu, setOpenMenu] = useState<string | null>(null);
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Check if user has permission
-    const hasAccess = (requiredAction?: string): boolean => {
-        if (!requiredAction) return true; 
-        if (user?.role === 'admin') return true; 
-        return user?.permissions?.some((p: Permission) => p.action === requiredAction) ?? false;
-    };
+    const MENU_ITEMS = ((): MenuItem[] => {
+        if (mode === 'HOST') return [
+            { name: "Platform Hub", path: "/platform-admin", icon: <FaTachometerAlt /> },
+            { name: "Tenants", path: "/platform-admin", icon: <FaBuilding /> },
+            { name: "Global Config", path: "/platform-admin", icon: <FaCog /> },
+        ];
+        if (mode === 'ADMIN') return [
+            { name: "Admin Dashboard", path: "/dashboard", icon: <FaTachometerAlt /> },
+            { name: "Employees", path: "/admin/employees", icon: <FaUsers /> },
+            { name: "Branch Assets", path: "/admin/branches", icon: <FaBuilding /> },
+            { name: "Analytics", path: "/admin/reports", icon: <FaChartPie /> },
+        ];
+        return [
+            { name: "Command Center", path: "/dashboard", icon: <FaTachometerAlt /> },
+            { 
+                name: "Revenue Stream", 
+                icon: <FaShoppingCart />, 
+                module: "sales", 
+                subItems: [
+                    { name: "Sales Orders", path: "/invoices" }, 
+                    { name: "Stakeholders", path: "/customers" }
+                ] 
+            },
+            { 
+                name: "Procurement", 
+                icon: <FaTruck />, 
+                module: "procurement", 
+                subItems: [
+                    { name: "Suppliers", path: "/suppliers" }, 
+                    { name: "Purchase Bills", path: "/purchase-bills" }
+                ] 
+            },
+            { name: "Inventory Matrix", path: "/products", icon: <FaBox />, module: "inventory" },
+            { 
+                name: "Fiscal Logic", 
+                icon: <FaLandmark />, 
+                module: "finance", 
+                subItems: [
+                    { name: "Finance Hub", path: "/finance/dashboard" },
+                    { name: "Loan Portfolio", path: "/finance/loans" },
+                    { name: "Cash Receipts", path: "/finance/receipts" },
+                    { name: "Auto Reconcile", path: "/finance/reconciliation" },
+                    { name: "Financial Intel", path: "/finance/reports" },
+                    { name: "Global Ledgers", path: "/ledgers" }, 
+                    { name: "Automated Log", path: "/transactions" },
+                ] 
+            },
+            { 
+                name: "Workforce", 
+                icon: <FaUsers />, 
+                module: "hr", 
+                subItems: [
+                    { name: "Staff Registry", path: "/employees" },
+                    { name: "Presence Portal", path: "/attendance" }
+                ] 
+            },
+            { name: "Cognitive AI", path: "/ai-insights", icon: <FaBrain />, module: "ai" },
+        ];
+    })();
 
-    // --- 2. Typed Menu Items ---
-    const MENU_ITEMS: MenuItem[] = [
-        { 
-            name: "Dashboard", 
-            path: "/dashboard", 
-            icon: <FaTachometerAlt />
-        },
-        {
-            name: "Sales",
-            icon: <FaShoppingCart />,
-            permission: "view_invoices",
-            subItems: [
-                { name: "Customers", path: "/customers", permission: "view_customers" }, 
-                { name: "Invoices", path: "/invoices", permission: "view_invoices" },
-            ]
-        },
-        {
-            name: "Purchases",
-            icon: <FaShoppingBag />,
-            permission: "view_bills",
-            subItems: [
-                { name: "Suppliers", path: "/suppliers" },
-                { name: "Purchase Bills", path: "/bills" },
-            ]
-        },
-        {
-            name: "Inventory",
-            icon: <FaBox />,
-            permission: "view_products",
-            subItems: [
-                { name: "Products", path: "/products" },
-            ]
-        },
-        {
-            name: "Finance",
-            icon: <FaLandmark />,
-            permission: "view_ledger",
-            subItems: [
-                { name: "Transactions", path: "/transactions" },
-            ]
-        },
-        { 
-            name: "File Manager", 
-            path: "/documents", 
-            icon: <FaFolder />,
-            permission: "view_invoices"
-        }, 
-        {
-            name: "HR",
-            icon: <FaUsers />,
-            permission: "view_employees",
-            subItems: [
-                { name: "Employees", path: "/employees" },
-                { name: "Attendance", path: "/attendance" },
-                { name: "Payroll Run", path: "/payroll" },
-            ]
-        },
-        { 
-            name: "Reports", 
-            path: "/reports", 
-            icon: <FaChartPie />,
-            permission: "view_ledger" 
+    const handleLogout = () => {
+        if (window.confirm("Terminate secure session?")) {
+            localStorage.removeItem('erp-token');
+            navigate(mode === 'HOST' ? '/host-login' : '/company-login');
         }
-    ];
-
-    const toggleMenu = (name: string): void => {
-        setOpenMenu(openMenu === name ? null : name);
     };
-
-    const handleLogout = (): void => {
-        localStorage.removeItem('erp-token');
-        navigate('/login');
-    };
-
-    // --- Styles ---
-    const sidebarStyle: React.CSSProperties = {
-        width: '260px',
-        backgroundColor: '#0f172a',
-        color: '#94a3b8',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        borderRight: '1px solid #1e293b',
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        zIndex: 50
-    };
-
-    const headerStyle: React.CSSProperties = {
-        height: '64px',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 24px',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        color: 'white'
-    };
-
-    const logoStyle: React.CSSProperties = {
-        width: '28px',
-        height: '28px',
-        background: '#3b82f6',
-        borderRadius: '6px',
-        marginRight: '12px'
-    };
-
-    const navContainerStyle: React.CSSProperties = {
-        flex: 1,
-        overflowY: 'auto',
-        padding: '20px 12px'
-    };
-
-    const sectionTitleStyle: React.CSSProperties = {
-        fontSize: '0.7rem',
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        marginBottom: '10px',
-        paddingLeft: '12px',
-        opacity: 0.5
-    };
-
-    const footerStyle: React.CSSProperties = {
-        padding: '16px',
-        borderTop: '1px solid rgba(255,255,255,0.05)'
-    };
-
-    const logoutButtonStyle: React.CSSProperties = {
-        marginTop: '8px',
-        width: '100%',
-        padding: '10px 12px',
-        background: 'transparent',
-        border: '1px solid rgba(239, 68, 68, 0.3)',
-        color: '#ef4444',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px'
-    };
-
-    const getMenuItemStyle = (isActive: boolean, isOpen?: boolean): React.CSSProperties => ({
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 12px',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        color: isActive || isOpen ? '#ffffff' : '#94a3b8',
-        backgroundColor: isActive ? '#3b82f6' : (isOpen ? 'rgba(255,255,255,0.05)' : 'transparent'),
-        textDecoration: 'none',
-        marginBottom: '4px',
-        fontWeight: isActive ? 600 : 500
-    });
-
-    const getSubMenuStyle = (isActive: boolean): React.CSSProperties => ({
-        padding: '8px 12px 8px 24px',
-        fontSize: '0.85rem',
-        textDecoration: 'none',
-        color: isActive ? '#60a5fa' : '#94a3b8',
-        fontWeight: isActive ? 500 : 400,
-        display: 'block'
-    });
 
     return (
-        <aside style={sidebarStyle}>
-            {/* Header */}
-            <div style={headerStyle}>
-                <div style={logoStyle}></div>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>ERP System</h2>
+        <aside className={`sidebar-container ${isCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'} ${isOpen ? 'sidebar-open' : ''}`}>
+            <div className="sidebar-header">
+                <div className="logo-icon">
+                    <motion.div initial={{ rotate: -10 }} animate={{ rotate: 0 }} transition={{ type: 'spring' }}>
+                        {mode === 'HOST' ? 'Ω' : 'Σ'}
+                    </motion.div>
+                </div>
+                {!isCollapsed && (
+                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="logo-content">
+                        <span className="logo-text">{mode === 'HOST' ? 'QUANTUM' : 'ENTERPRISE'}</span>
+                        <span className="logo-sub">{mode === 'HOST' ? 'OS CORE' : 'SYNTHESIS ERP'}</span>
+                    </motion.div>
+                )}
             </div>
 
-            {/* Navigation */}
-            <div style={navContainerStyle} className="custom-scrollbar">
-                <p style={sectionTitleStyle}>Main Menu</p>
-                
-                {MENU_ITEMS.map((item: MenuItem): JSX.Element | null => {
-                    // Check Parent Permission
-                    if (item.permission && !hasAccess(item.permission)) return null;
+            <div className="sidebar-nav">
+                <div className="nav-scroll">
+                    {MENU_ITEMS.map((item) => (
+                        <div key={item.name} className="menu-group">
+                            <NavLink 
+                                to={item.path || '#'} 
+                                onClick={(e) => {
+                                    if (item.subItems) {
+                                        e.preventDefault();
+                                        setOpenMenu(openMenu === item.name ? null : item.name);
+                                    }
+                                }}
+                                className={({ isActive }) => `menu-item ${isActive ? 'menu-item-active' : ''}`}
+                            >
+                                <span className="menu-icon">{item.icon}</span>
+                                {!isCollapsed && (
+                                    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="menu-item-text">
+                                        {item.name}
+                                    </motion.span>
+                                )}
+                                {!isCollapsed && item.subItems && (
+                                    <FaChevronRight size={10} style={{ marginLeft: 'auto', transform: openMenu === item.name ? 'rotate(90deg)' : 'none', transition: '0.4s cubic-bezier(0.16, 1, 0.3, 1)', opacity: 0.4 }} />
+                                )}
+                            </NavLink>
 
-                    const isActiveParent = item.subItems?.some(
-                        (sub: SubMenuItem) => location.pathname.startsWith(sub.path)
-                    ) ?? false;
-                    const isOpen = openMenu === item.name || isActiveParent;
-
-                    const visibleSubItems = item.subItems?.filter(
-                        (sub: SubMenuItem) => !sub.permission || hasAccess(sub.permission)
-                    );
-
-                    if (item.subItems && (!visibleSubItems || visibleSubItems.length === 0)) return null;
-
-                    // Menu with Sub Items
-                    if (item.subItems) {
-                        return (
-                            <div key={item.name} style={{ marginBottom: '4px' }}>
-                                <div 
-                                    onClick={() => toggleMenu(item.name)}
-                                    style={getMenuItemStyle(false, isOpen)}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        {item.icon}
-                                        <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{item.name}</span>
-                                    </div>
-                                    {isOpen ? <FaChevronDown size={12} /> : <FaChevronRight size={12} />}
-                                </div>
-                                {isOpen && (
-                                    <div style={{ marginTop: '4px', marginLeft: '14px', borderLeft: '1px solid #334155' }}>
-                                        {visibleSubItems?.map((sub: SubMenuItem): JSX.Element => (
-                                            <NavLink 
-                                                key={sub.name} 
-                                                to={sub.path} 
-                                                style={({ isActive }: { isActive: boolean }) => getSubMenuStyle(isActive)}
-                                            >
+                            <AnimatePresence>
+                                {!isCollapsed && item.subItems && openMenu === item.name && (
+                                    <motion.div 
+                                        initial={{ height: 0, opacity: 0 }} 
+                                        animate={{ height: 'auto', opacity: 1 }} 
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                                        className="sub-menu"
+                                    >
+                                        {item.subItems.map(sub => (
+                                            <NavLink key={sub.name} to={sub.path!} className={({isActive}) => `sub-menu-item ${isActive ? 'active' : ''}`}>
+                                                <div className="dot" />
                                                 {sub.name}
                                             </NavLink>
                                         ))}
-                                    </div>
+                                    </motion.div>
                                 )}
-                            </div>
-                        );
-                    } else {
-                        // Single Menu Item (no sub items)
-                        return (
-                            <NavLink 
-                                key={item.name} 
-                                to={item.path!} 
-                                style={({ isActive }: { isActive: boolean }) => ({
-                                    ...getMenuItemStyle(isActive),
-                                    gap: '12px'
-                                })}
-                            >
-                                {item.icon}
-                                <span style={{ fontSize: '0.9rem', flex: 1 }}>{item.name}</span>
-                            </NavLink>
-                        );
-                    }
-                })}
+                            </AnimatePresence>
+                        </div>
+                    ))}
+                </div>
             </div>
 
-            {/* Footer */}
-            <div style={footerStyle}>
-                {hasAccess('access_settings') && (
-                    <NavLink 
-                        to="/settings" 
-                        style={({ isActive }: { isActive: boolean }) => ({
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            padding: '10px 12px',
-                            borderRadius: '8px',
-                            marginBottom: '4px',
-                            textDecoration: 'none',
-                            color: isActive ? '#ffffff' : '#94a3b8',
-                            backgroundColor: isActive ? 'rgba(255,255,255,0.05)' : 'transparent'
-                        })}
-                    >
-                        <FaCog />
-                        <span style={{ fontSize: '0.9rem' }}>Settings</span>
-                    </NavLink>
-                )}
-                <button onClick={handleLogout} style={logoutButtonStyle}>
-                    <FaSignOutAlt /> Sign Out
-                </button>
+            <div className="sidebar-footer">
+                <motion.button 
+                    whileHover={{ scale: 1.05 }} 
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setIsCollapsed(!isCollapsed)} 
+                    className="footer-btn action-toggle"
+                >
+                    {isCollapsed ? <FaOutdent /> : <FaIndent />}
+                </motion.button>
+                <motion.button 
+                    whileHover={{ scale: 1.05, backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }} 
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleLogout} 
+                    className="footer-btn logout-btn"
+                >
+                    <FaSignOutAlt />
+                    {!isCollapsed && <span className="btn-text">TERMINATE</span>}
+                </motion.button>
             </div>
         </aside>
     );

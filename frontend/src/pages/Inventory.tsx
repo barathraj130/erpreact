@@ -1,126 +1,213 @@
-// frontend/src/pages/Inventory.tsx
+import { motion } from 'framer-motion';
 import React, { useState } from 'react';
-import { FaBoxOpen, FaEdit, FaFilter, FaPlus, FaSearch, FaTrash } from 'react-icons/fa';
+import { FaBox, FaBoxOpen, FaEdit, FaFilter, FaPlus, FaSearch, FaSync, FaTrash } from 'react-icons/fa';
 import { deleteProduct } from '../api/productApi';
 import { useProducts } from '../hooks/useProducts';
+import AddProductModal from './AddProductModal';
+import './Inventory.css';
 
 const Inventory: React.FC = () => {
     const { products, loading, error, refresh } = useProducts();
     const [searchTerm, setSearchTerm] = useState('');
     const [stockFilter, setStockFilter] = useState('all');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
     const filteredProducts = products.filter(p => {
-        const matchesSearch = p.product_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                               p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
         
         let matchesStock = true;
-        if (stockFilter === 'low') matchesStock = p.current_stock <= (p.low_stock_threshold || 5);
+        if (stockFilter === 'low') matchesStock = p.current_stock <= (p.min_stock || 5);
         if (stockFilter === 'out') matchesStock = p.current_stock === 0;
 
         return matchesSearch && matchesStock;
     });
 
     const handleDelete = async (id: number) => {
-        if (window.confirm("Delete this product?")) {
+        if (window.confirm("Relinquish this asset record? Operation-critical data may be lost.")) {
             await deleteProduct(id);
             refresh();
         }
     };
 
+    const handleEdit = (product: any) => {
+        setSelectedProduct(product);
+        setIsModalOpen(true);
+    };
+
+    const handleAdd = () => {
+        setSelectedProduct(null);
+        setIsModalOpen(true);
+    };
+
     return (
-        <div>
+        <div className="inventory-container">
+            {isModalOpen && (
+                <AddProductModal 
+                    onClose={() => setIsModalOpen(false)} 
+                    onSuccess={() => { refresh(); setIsModalOpen(false); }} 
+                    productToEdit={selectedProduct} 
+                />
+            )}
+
             {/* Header */}
-            <div className="flex-between" style={{ marginBottom: '24px' }}>
-                <div>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b' }}>Inventory</h1>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Track stock levels and product details.</p>
+            <div className="inventory-header">
+                <div className="inventory-title">
+                    <motion.h1
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                    >Asset Repository</motion.h1>
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.1 }}
+                    >Strategic Inventory Intelligence & Lifecycle Tracking</motion.p>
                 </div>
-                <button className="btn-primary" onClick={() => alert('Open Product Modal')}>
-                    <FaPlus /> Add Product
-                </button>
+                <div className="inventory-actions" style={{ display: 'flex', gap: '12px' }}>
+                    <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="btn-secondary" 
+                        onClick={() => refresh()} 
+                        style={{ width: '52px', height: '52px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <FaSync className={loading ? 'fa-spin' : ''} />
+                    </motion.button>
+                    <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="btn-primary" 
+                        onClick={handleAdd} 
+                        style={{ height: '52px', padding: '0 28px', gap: '12px', borderRadius: '14px', fontSize: '0.95rem', fontWeight: 800 }}
+                    >
+                        <FaPlus /> Initialize New Asset
+                    </motion.button>
+                </div>
             </div>
 
-            {/* Filter Bar */}
-            <div className="card" style={{ padding: '12px 20px', marginBottom: '20px', display: 'flex', gap: '15px', alignItems: 'center' }}>
-                <div style={{ position: 'relative', flexGrow: 1 }}>
-                    <FaSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+            {/* Toolbar: Search & Inventory Filters */}
+            <div className="inventory-toolbar">
+                <div className="inventory-search">
+                    <FaSearch style={{ color: 'var(--text-muted)' }} size={20} />
                     <input 
-                        placeholder="Search products by Name or SKU..." 
+                        placeholder="Locate assets via identity, SKU, or signature..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ paddingLeft: '35px', width: '100%', border: 'none', background: 'transparent' }} 
                     />
                 </div>
-                <div style={{ height: '20px', width: '1px', background: '#e2e8f0' }}></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b' }}>
-                    <FaFilter size={12} />
+                
+                <div className="inventory-filters">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                        <FaFilter size={14} /> Threshold:
+                    </div>
                     <select 
                         value={stockFilter}
                         onChange={(e) => setStockFilter(e.target.value)}
-                        style={{ border: 'none', background: 'transparent', color: '#475569', fontWeight: 500, outline: 'none' }}
+                        className="filter-select"
                     >
-                        <option value="all">All Stock</option>
-                        <option value="low">Low Stock</option>
-                        <option value="out">Out of Stock</option>
+                        <option value="all">Full Repository</option>
+                        <option value="low">Low Level Criticality</option>
+                        <option value="out">Depleted Resources</option>
                     </select>
                 </div>
             </div>
 
             {/* Table */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                {loading && <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading inventory...</div>}
-                
-                {!loading && (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                        <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            <div className="inventory-table-container">
+                <table className="inv-table">
+                    <thead>
+                        <tr>
+                            <th>Asset Profile</th>
+                            <th>Signature (SKU)</th>
+                            <th style={{ textAlign: 'right' }}>Unit Valuation</th>
+                            <th style={{ textAlign: 'center' }}>Reserves Status</th>
+                            <th style={{ textAlign: 'center' }}>Interface</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? (
+                            [...Array(6)].map((_, i) => (
+                                <tr key={i}><td colSpan={5} style={{ padding: '30px' }}><div className="skeleton" style={{ height: '30px', borderRadius: '8px' }}></div></td></tr>
+                            ))
+                        ) : filteredProducts.length === 0 ? (
                             <tr>
-                                <th style={{ textAlign: 'left', padding: '16px', fontWeight: 600, color: '#475569' }}>Product Name</th>
-                                <th style={{ textAlign: 'left', padding: '16px', fontWeight: 600, color: '#475569' }}>SKU</th>
-                                <th style={{ textAlign: 'right', padding: '16px', fontWeight: 600, color: '#475569' }}>Price</th>
-                                <th style={{ textAlign: 'center', padding: '16px', fontWeight: 600, color: '#475569' }}>Stock Level</th>
-                                <th style={{ textAlign: 'center', padding: '16px', fontWeight: 600, color: '#475569' }}>Actions</th>
+                                <td colSpan={5} style={{ padding: '120px 0', textAlign: 'center' }}>
+                                    <FaBoxOpen size={64} style={{ color: 'var(--border-color)', marginBottom: '24px' }} />
+                                    <h3 style={{ margin: 0, fontWeight: 900, color: 'var(--text-primary)' }}>Repository Empty</h3>
+                                    <p style={{ color: 'var(--text-muted)', fontWeight: 500, marginTop: '8px' }}>No assets detected within specified neural parameters.</p>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {filteredProducts.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} style={{ padding: '60px 0', textAlign: 'center' }}>
-                                        <div style={{ color: '#cbd5e1', fontSize: '3rem', marginBottom: '10px' }}><FaBoxOpen /></div>
-                                        <p style={{ color: '#94a3b8' }}>No products found.</p>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredProducts.map((p) => {
-                                    const isLow = p.current_stock <= (p.low_stock_threshold || 5);
-                                    const isOut = p.current_stock === 0;
-                                    
-                                    return (
-                                        <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '16px', fontWeight: 500 }}>{p.product_name}</td>
-                                            <td style={{ padding: '16px', color: '#64748b' }}>{p.sku || '-'}</td>
-                                            <td style={{ padding: '16px', textAlign: 'right', fontFamily: 'monospace' }}>₹{p.sale_price.toFixed(2)}</td>
-                                            <td style={{ padding: '16px', textAlign: 'center' }}>
-                                                <span style={{ 
-                                                    padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
-                                                    backgroundColor: isOut ? '#fee2e2' : isLow ? '#ffedd5' : '#dcfce7',
-                                                    color: isOut ? '#991b1b' : isLow ? '#9a3412' : '#166534'
-                                                }}>
-                                                    {p.current_stock} Units
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '16px', textAlign: 'center' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
-                                                    <button style={{ color: '#3b82f6' }}><FaEdit /></button>
-                                                    <button style={{ color: '#ef4444' }} onClick={() => handleDelete(p.id)}><FaTrash /></button>
+                        ) : (
+                            filteredProducts.map((p, idx) => {
+                                const isLow = p.current_stock <= (p.min_stock || 5);
+                                const isOut = p.current_stock === 0;
+                                
+                                return (
+                                    <motion.tr 
+                                        key={p.id} 
+                                        initial={{ opacity: 0, x: -20 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: idx * 0.05 }}
+                                        className="inv-row"
+                                    >
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                                <div className="product-orb">
+                                                    <FaBox size={18} />
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </table>
-                )}
+                                                <div>
+                                                    <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: '1.05rem' }}>{p.name}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>{p.description || 'Standard Utility'}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span style={{ background: 'var(--bg-body)', padding: '6px 12px', borderRadius: '10px', border: '1px solid var(--border-color)', fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '0.5px' }}>
+                                                {p.sku || `#${p.id}`}
+                                            </span>
+                                        </td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            <div className="price-text">₹{p.selling_price.toLocaleString()}</div>
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                                <span className={`status-badge ${isOut ? 'status-out' : isLow ? 'status-low' : 'status-ok'}`}>
+                                                    {isOut ? 'Depleted' : isLow ? 'Critical' : 'Operational'}
+                                                </span>
+                                                <span style={{ fontSize: '0.85rem', fontWeight: 900, color: isLow || isOut ? 'var(--text-primary)' : 'var(--text-muted)' }}>{p.current_stock} Units</span>
+                                            </div>
+                                        </td>
+                                        <td style={{ textAlign: 'center' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+                                                <motion.button 
+                                                    whileHover={{ scale: 1.1, background: 'var(--primary)', color: '#fff' }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    className="control-btn btn-edit" 
+                                                    onClick={() => handleEdit(p)} 
+                                                    style={{ width: '38px', height: '38px', border: 'none', borderRadius: '10px', background: 'var(--primary-glow)', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                    title="Modify Manifest"
+                                                >
+                                                    <FaEdit size={14} />
+                                                </motion.button>
+                                                <motion.button 
+                                                    whileHover={{ scale: 1.1, background: 'var(--error)', color: '#fff' }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    className="control-btn btn-delete" 
+                                                    onClick={() => handleDelete(p.id)} 
+                                                    style={{ width: '38px', height: '38px', border: 'none', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.05)', color: 'var(--error)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                    title="Relinquish Asset"
+                                                >
+                                                    <FaTrash size={14} />
+                                                </motion.button>
+                                            </div>
+                                        </td>
+                                    </motion.tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
             </div>
         </div>
     );

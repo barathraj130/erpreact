@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FaCheckCircle, FaDownload, FaExclamationCircle, FaWallet } from 'react-icons/fa';
+import { FaCalendarAlt, FaCheckCircle, FaDownload, FaExclamationCircle, FaFileInvoiceDollar, FaReceipt } from 'react-icons/fa';
 import { apiFetch } from '../../utils/api';
 
 const MyLedger: React.FC = () => {
@@ -22,105 +22,160 @@ const MyLedger: React.FC = () => {
         load();
     }, []);
 
-    const fmt = (n: any) => Number(n || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+    const fmt = (n: any) => Number(n || 0).toLocaleString('en-IN', { 
+        style: 'currency', 
+        currency: 'INR',
+        minimumFractionDigits: 0
+    });
 
-    if (loading) return <div style={{padding: 40, textAlign: 'center', color: '#64748b'}}>Loading your financial data...</div>;
+    if (loading) {
+        return (
+            <div style={{ padding: '80px 20px', textAlign: 'center' }}>
+                <div className="flex-center" style={{ flexDirection: 'column', gap: '20px' }}>
+                    <div className="loading-spinner" style={{ width: '48px', height: '48px', border: '5px solid var(--primary-glow)', borderTop: '5px solid var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+                    <p style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '1.1rem' }}>Preparing your financial statement...</p>
+                </div>
+            </div>
+        );
+    }
 
     const { summary, transactions } = data || { summary: {}, transactions: [] };
 
     return (
-        <div>
-            <div style={{marginBottom: '30px'}}>
-                <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: '#1e293b' }}>My Ledger</h1>
-                <p style={{ color: '#64748b' }}>Track your invoices, payments, and outstanding balance.</p>
+        <div className="page-transition" style={{ paddingBottom: '40px' }}>
+            {/* Header Section */}
+            <div style={{ marginBottom: '32px' }}>
+                <h1 style={{ fontSize: '2.25rem', fontWeight: 900, color: 'var(--text-main)', letterSpacing: '-1px', margin: 0 }}>My Financial Ledger</h1>
+                <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', marginTop: '4px', fontWeight: 500 }}>Track your billing history, payments, and real-time outstanding balance.</p>
             </div>
 
-            {/* --- SUMMARY CARDS --- */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-                {/* Total Billed */}
-                <div style={{ background: 'white', padding: '25px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                    <div style={{ color: '#64748b', marginBottom: '10px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FaWallet /> Total Invoiced
+            {/* Summary Cards with Premium Styling */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '40px' }}>
+                {/* Total Invoiced */}
+                <div className="card" style={{ padding: '28px', borderLeft: '5px solid var(--primary)', boxShadow: 'var(--shadow-md)' }}>
+                    <div style={{ color: 'var(--text-muted)', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ background: 'var(--primary-glow)', padding: '8px', borderRadius: '8px', color: 'var(--primary)' }}><FaFileInvoiceDollar /></div>
+                        Total Invoiced
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#1e293b' }}>
+                    <div style={{ fontSize: '2.25rem', fontWeight: 900, color: 'var(--text-main)', lineHeight: 1 }}>
                         {fmt(summary?.total_billed)}
                     </div>
                 </div>
 
                 {/* Total Paid */}
-                <div style={{ background: 'white', padding: '25px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                    <div style={{ color: '#166534', marginBottom: '10px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FaCheckCircle /> Total Paid
+                <div className="card" style={{ padding: '28px', borderLeft: '5px solid var(--success)', boxShadow: 'var(--shadow-md)' }}>
+                    <div style={{ color: 'var(--success)', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '8px', borderRadius: '8px' }}><FaCheckCircle /></div>
+                        Settled Amount
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#166534' }}>
+                    <div style={{ fontSize: '2.25rem', fontWeight: 900, color: 'var(--success)', lineHeight: 1 }}>
                         {fmt(summary?.total_paid)}
                     </div>
                 </div>
 
-                {/* Pending */}
-                <div style={{ background: '#fff7ed', padding: '25px', borderRadius: '12px', border: '1px solid #fed7aa' }}>
-                    <div style={{ color: '#c2410c', marginBottom: '10px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <FaExclamationCircle /> Balance Due
+                {/* Balance Pending */}
+                <div className="card" style={{ 
+                    padding: '28px', 
+                    borderLeft: '5px solid var(--warning)', 
+                    background: 'linear-gradient(135deg, #ffffff 0%, #fffbf0 100%)',
+                    boxShadow: 'var(--shadow-md)' 
+                }}>
+                    <div style={{ color: 'var(--warning)', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '8px', borderRadius: '8px' }}><FaExclamationCircle /></div>
+                        Outstanding Balance
                     </div>
-                    <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c2410c' }}>
+                    <div style={{ fontSize: '2.25rem', fontWeight: 900, color: '#c2410c', lineHeight: 1 }}>
                         {fmt(summary?.balance_pending)}
                     </div>
                 </div>
             </div>
 
-            {/* --- TRANSACTIONS TABLE --- */}
-            <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', fontWeight: 600, color: '#475569' }}>
-                    Transaction History
+            {/* Transactions Section */}
+            <div className="card" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', background: 'white', boxShadow: 'var(--shadow-lg)' }}>
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-color)', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <FaReceipt style={{ color: 'var(--primary)', opacity: 0.8 }} />
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)' }}>Transaction History</h3>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                    <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <tr>
-                            <th style={{ padding: '16px', textAlign: 'left', color: '#64748b' }}>Date</th>
-                            <th style={{ padding: '16px', textAlign: 'left', color: '#64748b' }}>Invoice #</th>
-                            <th style={{ padding: '16px', textAlign: 'right', color: '#64748b' }}>Amount</th>
-                            <th style={{ padding: '16px', textAlign: 'right', color: '#64748b' }}>Paid</th>
-                            <th style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>Status</th>
-                            <th style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {!transactions || transactions.length === 0 ? (
-                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>No transaction history found.</td></tr>
-                        ) : transactions.map((inv: any) => (
-                            <tr key={inv.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                <td style={{ padding: '16px', fontWeight: 500 }}>{new Date(inv.invoice_date).toLocaleDateString()}</td>
-                                <td style={{ padding: '16px', color: '#3b82f6', fontWeight: 600 }}>{inv.invoice_number}</td>
-                                <td style={{ padding: '16px', textAlign: 'right', fontWeight: 600 }}>{fmt(inv.total_amount)}</td>
-                                <td style={{ padding: '16px', textAlign: 'right', color: '#166534' }}>{fmt(inv.paid_amount)}</td>
-                                <td style={{ padding: '16px', textAlign: 'center' }}>
-                                    <span style={{ 
-                                        background: inv.status === 'Paid' ? '#dcfce7' : '#fef9c3', 
-                                        color: inv.status === 'Paid' ? '#166534' : '#854d0e',
-                                        padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700 
-                                    }}>
-                                        {inv.status || 'PENDING'}
-                                    </span>
-                                </td>
-                                <td style={{ padding: '16px', textAlign: 'center' }}>
-                                    {/* Open PDF in new tab if file_url exists */}
-                                    {inv.file_url ? (
-                                        <button 
-                                            onClick={() => window.open(`http://localhost:3000${inv.file_url}`, '_blank')}
-                                            style={{ border: '1px solid #e2e8f0', background: 'white', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', color: '#475569' }}
-                                            title="Download Invoice"
-                                        >
-                                            <FaDownload />
-                                        </button>
-                                    ) : (
-                                        <span style={{color: '#cbd5e1'}}>-</span>
-                                    )}
-                                </td>
+                
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.95rem', minWidth: '850px' }}>
+                        <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-color)' }}>
+                                <th style={{ padding: '16px 24px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deployment Date</th>
+                                <th style={{ padding: '16px 24px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Invoice Reference</th>
+                                <th style={{ padding: '16px 24px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Amount</th>
+                                <th style={{ padding: '16px 24px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Paid Already</th>
+                                <th style={{ padding: '16px 24px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Payment Status</th>
+                                <th style={{ padding: '16px 24px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Download</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {!transactions || transactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} style={{ padding: '80px 40px', textAlign: 'center' }}>
+                                        <div style={{ opacity: 0.4 }}>
+                                            <FaReceipt size={48} style={{ color: 'var(--text-light)', marginBottom: '16px' }} />
+                                            <p style={{ margin: 0, fontWeight: 700, fontSize: '1.25rem', color: 'var(--text-main)' }}>No Transactions Found</p>
+                                            <p style={{ margin: '4px 0 0', color: 'var(--text-muted)' }}>You haven't been invoiced for any services yet.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : transactions.map((inv: any) => (
+                                <tr key={inv.id} style={{ borderBottom: '1px solid var(--bg-body)', transition: 'background-color 0.2s' }} className="row-hover">
+                                    <td style={{ padding: '20px 24px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <FaCalendarAlt style={{ color: 'var(--text-light)', fontSize: '0.85rem' }} />
+                                            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                                                {new Date(inv.invoice_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '20px 24px' }}>
+                                        <span style={{ color: 'var(--primary)', fontWeight: 800, padding: '4px 10px', background: 'var(--primary-glow)', borderRadius: '6px' }}>
+                                            {inv.invoice_number}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '20px 24px', textAlign: 'right', fontWeight: 800, color: 'var(--text-main)', fontSize: '1rem' }}>
+                                        {fmt(inv.total_amount)}
+                                    </td>
+                                    <td style={{ padding: '20px 24px', textAlign: 'right', color: 'var(--success)', fontWeight: 700 }}>
+                                        {fmt(inv.paid_amount)}
+                                    </td>
+                                    <td style={{ padding: '20px 24px', textAlign: 'center' }}>
+                                        <span style={{ 
+                                            background: inv.status === 'Paid' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', 
+                                            color: inv.status === 'Paid' ? 'var(--success)' : 'var(--warning)',
+                                            padding: '6px 14px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em'
+                                        }}>
+                                            {inv.status || 'PENDING'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '20px 24px', textAlign: 'center' }}>
+                                        {inv.file_url ? (
+                                            <button 
+                                                onClick={() => window.open(`http://localhost:3001${inv.file_url}`, '_blank')}
+                                                style={{ border: 'none', background: 'var(--bg-body)', color: 'var(--primary)', width: '38px', height: '38px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', cursor: 'pointer', transition: 'all 0.2s' }}
+                                                className="icon-btn-hover"
+                                                title="View/Download Receipt"
+                                            >
+                                                <FaDownload />
+                                            </button>
+                                        ) : (
+                                            <span style={{color: 'var(--border-color)', fontWeight: 800}}>•</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
+
+            <style>{`
+                .row-hover:hover { background-color: #f8fafc; }
+                .icon-btn-hover:hover { background: var(--primary) !important; color: white !important; transform: scale(1.1); }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            `}</style>
         </div>
     );
 };

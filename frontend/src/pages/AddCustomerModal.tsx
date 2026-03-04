@@ -18,10 +18,10 @@ const styles = {
         display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 
     },
     modal: { 
-        backgroundColor: '#ffffff', width: '100%', maxWidth: '600px', 
+        backgroundColor: '#ffffff', width: window.innerWidth <= 600 ? '95%' : '100%', maxWidth: '600px', 
         borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', 
         overflow: 'hidden', display: 'flex', flexDirection: 'column' as const, 
-        maxHeight: '90vh', fontFamily: 'Inter, sans-serif' 
+        maxHeight: '90vh', fontFamily: 'Inter, sans-serif', margin: window.innerWidth <= 600 ? '10px' : '0'
     },
     header: { 
         padding: '16px 24px', borderBottom: '1px solid #e5e7eb', 
@@ -46,7 +46,11 @@ const styles = {
     inputWrapper: { position: 'relative' as const },
     icon: { position: 'absolute' as const, left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' as const, fontSize: '14px' },
     input: { width: '100%', padding: '10px 12px 10px 38px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b', backgroundColor: '#fff', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box' as const },
-    row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
+    row: { 
+        display: 'grid', 
+        gridTemplateColumns: window.innerWidth <= 480 ? '1fr' : '1fr 1fr', 
+        gap: '16px' 
+    },
     btnSecondary: { padding: '10px 20px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#475569', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer' },
     btnPrimary: { padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }
 };

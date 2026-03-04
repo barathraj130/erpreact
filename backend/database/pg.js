@@ -1,3 +1,4 @@
+console.log("--> Loading pg.js");
 // backend/database/pg.js
 // COMPLETE VERSION - Fixed with getClient export for transactions
 
@@ -17,24 +18,25 @@ try {
         database: process.env.PG_DATABASE,
         password: process.env.PG_PASSWORD,
         port: process.env.PG_PORT || 5432,
+        // Automatically handle SSL for services like Render/AWS, disable for local
         ssl: process.env.NODE_ENV === "production"
             ? { rejectUnauthorized: false }
             : false
     };
 
     if (!config.user || !config.host || !config.database) {
-        console.warn("⚠️  PG Config missing. Check .env variables.");
+        console.warn("⚠️  PostgreSQL configuration variables missing in .env file.");
     }
 
     pool = new Pool(config);
 
     pool.on("error", (err) => {
-        console.error("❌ Unexpected error on idle client:", err.message);
+        console.error("❌ Unexpected error on idle PostgreSQL client:", err.message);
     });
 
     console.log("✅ PostgreSQL pool initialized.");
 } catch (err) {
-    console.error("❌ Failed to initialize PG Pool:", err.message);
+    console.error("❌ Failed to initialize PostgreSQL Pool:", err.message);
 }
 
 // ============================================
@@ -75,33 +77,19 @@ export const pgRun = async (text, params = []) => {
 };
 
 /**
- * Get a client from the pool for manual transaction control
- * IMPORTANT: Always call client.release() when done!
- * 
- * Usage:
- * const client = await getClient();
- * try {
- *   await client.query('BEGIN');
- *   // ... your queries ...
- *   await client.query('COMMIT');
- * } catch (err) {
- *   await client.query('ROLLBACK');
- *   throw err;
- * } finally {
- *   client.release();
- * }
- * 
- * @returns {object} PostgreSQL client
+ * Get a client from the pool for manual transaction control (BEGIN/COMMIT)
+ * IMPORTANT: Always call client.release() in a finally block!
+ * @returns {object} PostgreSQL connection client
  */
 export const getClient = async () => {
     return await pool.connect();
 };
 
 /**
- * Direct query function (for compatibility)
+ * Direct query function for general purpose use
  * @param {string} text - SQL query
  * @param {array} params - Query parameters
- * @returns {object} Query result
+ * @returns {object} Query result object
  */
 export const query = async (text, params = []) => {
     return await pool.query(text, params);
@@ -111,10 +99,10 @@ export const query = async (text, params = []) => {
 // EXPORTS
 // ============================================
 
-// Export pool for direct access
+// Named export for direct pool access
 export { pool };
 
-// Default export - required by some legacy files
+// Default export for compatibility with "import db from ..." syntax
 export default {
     pool,
     query,

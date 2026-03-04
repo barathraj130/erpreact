@@ -1,40 +1,19 @@
 // backend/routes/ledgerRoutes.js
-const express = require('express');
+import express from 'express';
+import * as db from '../database/pg.js';
+import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+
 const router = express.Router();
-const pgModule = require('../database/pg'); 
-const { checkAuth } = require('../middlewares/jwtAuthMiddleware');
 
 /**
  * Ledger Routes for Chart of Accounts (COA) and Ledger Management
  */
 
-// Helper function to calculate current balance (Debit minus Credit)
-const calculateLedgerBalance = async (ledgerId, companyId) => {
-    const balanceSql = `
-        SELECT 
-            l.opening_balance, 
-            l.is_dr,
-            COALESCE(SUM(CASE WHEN t.type = 'Debit' THEN t.amount ELSE -t.amount END), 0) AS net_transaction_amount
-        FROM ledgers l
-        LEFT JOIN transactions t ON l.id = t.ledger_id -- Assume transactions table is linked to ledger
-        WHERE l.id = $1 AND l.company_id = $2
-        GROUP BY l.id
-    `;
-    
-    // NOTE: Since the current transactions table structure provided doesn't link directly to ledgers,
-    // we assume a joined view or a more complex query based on the voucher system.
-    // We will simplify and mock the complex balance calculation here.
-    return 10000; // Mock current balance
-};
-
-
 // GET /api/ledger/groups - Fetch all ledger groups (COA)
-router.get('/groups', checkAuth, async (req, res) => {
-    const companyId = req.user?.active_company_id;
-    if (!companyId) return res.status(401).json({ error: "Unauthorized." });
-
+router.get('/groups', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     try {
-        const groups = await pgModule.pgAll('SELECT * FROM ledger_groups WHERE company_id = $1 ORDER BY name', [companyId]);
+        const groups = await db.pgAll('SELECT * FROM ledger_groups WHERE company_id = $1 ORDER BY name', [companyId]);
         res.json(groups);
     } catch (error) {
         console.error("Error fetching ledger groups:", error.message);
@@ -43,29 +22,39 @@ router.get('/groups', checkAuth, async (req, res) => {
 });
 
 // GET /api/ledger - Fetch all ledgers (with calculated balances)
-router.get('/', checkAuth, async (req, res) => {
-    const companyId = req.user?.active_company_id;
-    if (!companyId) return res.status(401).json({ error: "Unauthorized." });
+router.get('/', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     
     try {
-        // This is a simplified query; full accounting logic would require summing related transactions/vouchers.
         const sql = `
             SELECT 
                 l.id, l.name, l.opening_balance, l.is_dr,
-                lg.name as group_name
+                lg.name as group_name,
+                (
+                    SELECT COALESCE(SUM(CASE WHEN t.type = 'RECEIPT' OR t.type = 'INVOICE' THEN t.amount ELSE -t.amount END), 0)
+                    FROM transactions t 
+                    WHERE t.ledger_id = l.id
+                ) as net_diff
             FROM ledgers l
             JOIN ledger_groups lg ON l.group_id = lg.id
             WHERE l.company_id = $1
             ORDER BY lg.name, l.name
         `;
         
-        const ledgers = await pgModule.pgAll(sql, [companyId]);
+        const ledgers = await db.pgAll(sql, [companyId]);
 
-        // Mock balance calculation for demonstration
-        const ledgersWithBalance = ledgers.map(l => ({
-            ...l,
-            current_balance: l.opening_balance + Math.floor(Math.random() * 5000) - 2000 // Mock
-        }));
+        // Calculate actual current balance
+        const ledgersWithBalance = ledgers.map(l => {
+            const initial = Number(l.opening_balance || 0);
+            const net = Number(l.net_diff || 0);
+            // Simplistic balance logic: if DR initial, add net. 
+            // In real accounting, it depends on group nature (Asset vs Liability).
+            // For now, presenting opening + net.
+            return {
+                ...l,
+                current_balance: initial + net
+            };
+        });
 
         res.json(ledgersWithBalance);
 
@@ -76,13 +65,29 @@ router.get('/', checkAuth, async (req, res) => {
 });
 
 // GET /api/ledger/report/:id - Fetch detailed transaction report for one ledger
-router.get('/report/:id', checkAuth, async (req, res) => {
+router.get('/report/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const companyId = req.user?.active_company_id;
-    if (!companyId) return res.status(401).json({ error: "Unauthorized." });
+    const companyId = req.user.active_company_id;
     
-    // NOTE: Requires complex join between ledgers, transactions, and vouchers
-    res.json({ ledger_id: id, transactions: [], balance: 0 }); // Mock empty report
+    try {
+        const ledger = await db.pgGet(`SELECT * FROM ledgers WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        if (!ledger) return res.status(404).json({ error: "Ledger not found" });
+
+        const transactions = await db.pgAll(`
+            SELECT * FROM transactions 
+            WHERE ledger_id = $1 AND company_id = $2 
+            ORDER BY date ASC, created_at ASC
+        `, [id, companyId]);
+
+        res.json({ 
+            ledger, 
+            transactions,
+            opening_balance: ledger.opening_balance 
+        });
+    } catch (err) {
+        console.error("Ledger report error:", err);
+        res.status(500).json({ error: "Failed to fetch report" });
+    }
 });
 
-module.exports = router;
+export default router;

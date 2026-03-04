@@ -1,7 +1,10 @@
+import { motion } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
-import { FaEdit, FaExclamationTriangle, FaPlus, FaSearch, FaTrash } from 'react-icons/fa';
-import { Supplier, deleteSupplier, fetchSuppliers } from '../api/supplierApi'; // Using SupplierApi
+import { FaEdit, FaExclamationTriangle, FaHistory, FaPlus, FaSearch, FaSync, FaTrash, FaUserTie } from 'react-icons/fa';
+import { Supplier, deleteSupplier, fetchSuppliers } from '../api/supplierApi';
+import TransactionHistoryModal from '../components/TransactionHistoryModal';
 import AddSupplierModal from './AddSupplierModal';
+import './Suppliers.css';
 
 const Suppliers: React.FC = () => {
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -9,13 +12,15 @@ const Suppliers: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [showTransactionModal, setShowTransactionModal] = useState(false);
+    const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
 
     const loadData = async () => {
         setLoading(true);
         setError(null);
         try {
             const data = await fetchSuppliers();
-            setSuppliers(data);
+            setSuppliers(data || []);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -28,94 +33,168 @@ const Suppliers: React.FC = () => {
     }, []);
 
     const handleDelete = async (id: number) => {
-        if (window.confirm("Delete this supplier? Records linked to them might be affected.")) {
+        if (window.confirm("Dissolve this partnership? Historical procurement logs will be archived.")) {
             try {
                 await deleteSupplier(id);
                 loadData();
             } catch (err) {
-                alert("Could not delete supplier.");
+                alert("Operation failed: Partnership remains active.");
             }
         }
     };
 
     const filtered = suppliers.filter(s => 
-        s.lender_name.toLowerCase().includes(searchTerm.toLowerCase())
+        (s.lender_name || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
-        <div>
+        <div className="suppliers-container">
             {/* Header */}
-            <div className="flex-between" style={{ marginBottom: '24px' }}>
-                <div>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b' }}>Supplier Management</h1>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Track and manage your vendors.</p>
+            <div className="suppliers-header">
+                <div className="suppliers-title">
+                    <motion.h1
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                    >Procurement Network</motion.h1>
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.1 }}
+                    >Strategic Vendor Intelligence & Supply Chain Relations</motion.p>
                 </div>
-                <button className="btn-primary" onClick={() => setShowModal(true)}>
-                    <FaPlus /> Add Supplier
-                </button>
+                <div className="suppliers-actions" style={{ display: 'flex', gap: '12px' }}>
+                    <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="btn-secondary" 
+                        onClick={loadData} 
+                        style={{ width: '52px', height: '52px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <FaSync className={loading ? 'fa-spin' : ''} />
+                    </motion.button>
+                    <motion.button 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="btn-primary" 
+                        onClick={() => setShowModal(true)} 
+                        style={{ height: '52px', padding: '0 28px', gap: '12px', borderRadius: '14px', fontSize: '1rem', fontWeight: 900 }}
+                    >
+                        <FaPlus /> Initialize New Vendor
+                    </motion.button>
+                </div>
             </div>
 
             {error && (
-                <div style={{ color: '#b91c1c', background: '#fee2e2', padding: '12px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <FaExclamationTriangle /> {error}
-                </div>
+                <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    style={{ backgroundColor: 'var(--error-glow)', color: 'var(--error)', padding: '20px', borderRadius: '16px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '16px', border: '1px solid rgba(239, 68, 68, 0.1)', fontWeight: 700 }}
+                >
+                    <FaExclamationTriangle size={20} />
+                    <span>Procurement Node Sync Failure: {error}</span>
+                </motion.div>
             )}
 
-            {/* Toolbar */}
-            <div className="card" style={{ padding: '12px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center' }}>
-                <FaSearch style={{ color: '#94a3b8', marginRight: '10px' }} />
+            {/* Search Toolbar */}
+            <div className="suppliers-toolbar">
+                <FaSearch style={{ color: 'var(--text-muted)' }} size={20} />
                 <input 
-                    placeholder="Search by name..." 
+                    placeholder="Locate vendor via identity, signature, or HASH..." 
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    style={{ border: 'none', width: '100%', outline: 'none', fontSize: '0.95rem' }} 
                 />
             </div>
 
             {/* Table */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                    <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            <div className="suppliers-table-container">
+                <table className="sup-table">
+                    <thead>
                         <tr>
-                            <th style={{ textAlign: 'left', padding: '16px', color: '#475569' }}>Name</th>
-                            <th style={{ textAlign: 'left', padding: '16px', color: '#475569' }}>Contact</th>
-                            <th style={{ textAlign: 'right', padding: '16px', color: '#475569' }}>Payable Balance</th>
-                            <th style={{ textAlign: 'center', padding: '16px', color: '#475569' }}>Actions</th>
+                            <th>Nexus Entity</th>
+                            <th>Neural Contact Patch</th>
+                            <th style={{ textAlign: 'right' }}>Liability Balance</th>
+                            <th style={{ textAlign: 'center' }}>Interface</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
-                            <tr><td colSpan={4} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading suppliers...</td></tr>
+                            [...Array(6)].map((_, i) => (
+                                <tr key={i}><td colSpan={4} style={{ padding: '30px' }}><div className="skeleton" style={{ height: '30px', borderRadius: '8px' }}></div></td></tr>
+                            ))
                         ) : filtered.length === 0 ? (
-                            <tr><td colSpan={4} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>No suppliers found.</td></tr>
+                            <tr>
+                                <td colSpan={4} style={{ padding: '120px 0', textAlign: 'center' }}>
+                                    <FaUserTie size={64} style={{ color: 'var(--border-color)', marginBottom: '24px' }} />
+                                    <h3 style={{ margin: 0, fontWeight: 900, color: 'var(--text-primary)' }}>Registry Empty</h3>
+                                    <p style={{ color: 'var(--text-muted)', fontWeight: 500, marginTop: '8px' }}>No active vendor nodes discovered.</p>
+                                </td>
+                            </tr>
                         ) : (
-                            filtered.map(s => (
-                                <tr key={s.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: '16px', fontWeight: 600, color: '#1e293b' }}>
-                                        {s.lender_name}
-                                    </td>
-                                    <td style={{ padding: '16px', color: '#64748b' }}>
-                                        {s.phone || s.email ? (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                {s.phone && <span>{s.phone}</span>}
-                                                {s.email && <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{s.email}</span>}
+                            filtered.map((s, idx) => (
+                                <motion.tr 
+                                    key={s.id} 
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.05 }}
+                                    className="sup-row"
+                                >
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                            <div className="vendor-orb">
+                                                <FaUserTie size={18} />
                                             </div>
-                                        ) : '-'}
-                                    </td>
-                                    <td style={{ padding: '16px', textAlign: 'right', fontWeight: 600, fontFamily: 'monospace', color: '#dc2626' }}>
-                                        ₹{Number(s.remaining_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                    </td>
-                                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'center', gap: '15px' }}>
-                                            <button style={{ color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }} title="Edit">
-                                                <FaEdit />
-                                            </button>
-                                            <button style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => handleDelete(s.id)} title="Delete">
-                                                <FaTrash />
-                                            </button>
+                                            <div>
+                                                <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '1.1rem' }}>{s.lender_name}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>INDEX: #VND-{s.id}</div>
+                                            </div>
                                         </div>
                                     </td>
-                                </tr>
+                                    <td>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ color: 'var(--text-primary)', fontWeight: 800, fontSize: '0.95rem' }}>{s.phone || 'NO-TRACER'}</span>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>{s.email || 'ENCRYPTED'}</span>
+                                        </div>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                        <div className="balance-text">₹{Number(s.remaining_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+                                            <motion.button 
+                                                whileHover={{ scale: 1.1, background: '#f1f5f9' }}
+                                                whileTap={{ scale: 0.9 }}
+                                                className="control-btn" 
+                                                style={{ background: 'white', border: '1px solid #e2e8f0', color: 'var(--text-secondary)' }}
+                                                onClick={() => {
+                                                    setSelectedSupplier(s);
+                                                    setShowTransactionModal(true);
+                                                }}
+                                                title="Execution History"
+                                            >
+                                                <FaHistory size={14} />
+                                            </motion.button>
+                                            <motion.button 
+                                                whileHover={{ scale: 1.1, background: 'var(--primary)', color: '#fff' }}
+                                                whileTap={{ scale: 0.9 }}
+                                                className="control-btn" 
+                                                style={{ background: 'var(--primary-glow)', color: 'var(--primary)' }}
+                                                title="Modify Manifest"
+                                            >
+                                                <FaEdit size={14} />
+                                            </motion.button>
+                                            <motion.button 
+                                                whileHover={{ scale: 1.1, background: 'var(--error)', color: '#fff' }}
+                                                whileTap={{ scale: 0.9 }}
+                                                className="control-btn" 
+                                                style={{ background: 'rgba(239, 68, 68, 0.05)', color: 'var(--error)' }}
+                                                onClick={() => handleDelete(s.id)} 
+                                                title="Relinquish Node"
+                                            >
+                                                <FaTrash size={14} />
+                                            </motion.button>
+                                        </div>
+                                    </td>
+                                </motion.tr>
                             ))
                         )}
                     </tbody>
@@ -123,6 +202,19 @@ const Suppliers: React.FC = () => {
             </div>
 
             {showModal && <AddSupplierModal onClose={() => setShowModal(false)} onSuccess={loadData} />}
+            
+            {showTransactionModal && selectedSupplier && (
+                <TransactionHistoryModal
+                    isOpen={showTransactionModal}
+                    onClose={() => {
+                        setShowTransactionModal(false);
+                        setSelectedSupplier(null);
+                    }}
+                    entityType="supplier"
+                    entityId={selectedSupplier.id}
+                    entityName={selectedSupplier.lender_name}
+                />
+            )}
         </div>
     );
 };

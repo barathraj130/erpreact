@@ -1,0 +1,7 @@
+
+> backend@1.0.0 start
+> node server.js
+
+--> Loading pg.js
+[dotenv@17.3.1] injecting env (12) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+✅ PostgreSQL pool initialized.

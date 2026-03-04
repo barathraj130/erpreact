@@ -1,29 +1,46 @@
 // backend/routes/invoiceRoutes.js
-// COMPLETE VERSION - Fixed with proper getClient usage
-
 import express from "express";
 import * as db from "../database/pg.js";
 import { checkAccess } from "../middlewares/checkAccess.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
 
 const router = express.Router();
 
+/**
+ * AUTO-FIX: Ensure invoice_payments table exists
+ * (Your run-migrations.js was missing this table)
+ */
+async function ensurePaymentsTable() {
+    const sql = `
+        CREATE TABLE IF NOT EXISTS invoice_payments (
+            id SERIAL PRIMARY KEY,
+            invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+            amount NUMERIC NOT NULL,
+            payment_method VARCHAR(50),
+            payment_date DATE DEFAULT CURRENT_DATE,
+            reference_no TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `;
+    await db.pgRun(sql);
+}
+ensurePaymentsTable();
+
 /* ============================================================
    HELPER: Generate Smart Invoice Number
-   Format: TAX/2023/OCT/001 or RET/2023/OCT/001
 ============================================================ */
 async function generateInvoiceNumber(client, type, companyId) {
     const date = new Date();
     const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
     const year = date.getFullYear();
     const financial_month = `${year}-${monthStr}`;
-
     const prefix = type === "TAX_INVOICE" ? "TAX" : "RET";
 
-    // Count existing invoices for this month/type to generate next sequence
     const result = await client.query(
         `SELECT COUNT(*) AS count FROM invoices 
-         WHERE company_id=$1 AND invoice_category=$2 AND financial_month=$3`,
+         WHERE company_id=$1 AND invoice_type=$2 AND financial_month=$3`,
         [companyId, type, financial_month]
     );
 
@@ -38,11 +55,9 @@ async function generateInvoiceNumber(client, type, companyId) {
 
 /* ============================================================
    1. GET ALL INVOICES
-   Permission: 'view_invoices'
 ============================================================ */
 router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (req, res) => {
     const companyId = req.user.active_company_id;
-
     const sql = `
         SELECT i.*, u.username as customer_name,
         COALESCE(json_agg(li.*) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
@@ -53,130 +68,66 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
         GROUP BY i.id, u.username
         ORDER BY i.created_at DESC
     `;
-
     try {
         const rows = await db.pgAll(sql, [companyId]);
         res.json(rows);
     } catch (err) {
-        console.error("Invoice list error:", err);
         res.status(500).json({ error: "Failed to fetch invoices" });
     }
 });
 
 /* ============================================================
-   2. GET SINGLE INVOICE (View/Print)
-   Permission: 'view_invoices'
-============================================================ */
-router.get("/:id", authMiddleware, checkAccess('Sales', 'view_invoices'), async (req, res) => {
-    const { id } = req.params;
-    const companyId = req.user.active_company_id;
-
-    try {
-        // 1. Fetch Invoice Header + Customer Details + Company Details
-        const invoiceSql = `
-            SELECT i.*, 
-                   u.username as customer_name, u.address_line1, u.city_pincode, u.state, u.state_code, u.gstin as customer_gstin,
-                   c.company_name, c.address_line1 as c_address, c.city_pincode as c_city, c.state as c_state, c.gstin as c_gstin,
-                   c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.signature_url
-            FROM invoices i
-            LEFT JOIN users u ON i.customer_id = u.id
-            LEFT JOIN companies c ON i.company_id = c.id
-            WHERE i.id = $1 AND i.company_id = $2
-        `;
-        const invoiceRes = await db.pgGet(invoiceSql, [id, companyId]);
-        
-        if (!invoiceRes) return res.status(404).json({ error: "Invoice not found" });
-
-        // 2. Fetch Line Items
-        const items = await db.pgAll(`SELECT * FROM invoice_line_items WHERE invoice_id = $1`, [id]);
-
-        // 3. Fetch Payments
-        const payments = await db.pgAll(`SELECT * FROM invoice_payments WHERE invoice_id = $1 ORDER BY payment_date`, [id]);
-
-        // 4. Combine
-        res.json({ ...invoiceRes, items, payments });
-
-    } catch (err) {
-        console.error("Get single invoice error:", err);
-        res.status(500).json({ error: "Failed to fetch invoice" });
-    }
-});
-
-/* ============================================================
-   3. CREATE INVOICE (WITH MULTIPLE PAYMENTS SUPPORT)
-   Permission: 'create_invoices'
+   2. CREATE INVOICE (CRITICAL FIXES FOR COLUMN NAMES)
 ============================================================ */
 router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async (req, res) => {
     const {
-        invoice_number,
-        invoice_type,
-        customer_id,
-        items,
-        notes,
-        amount_paid,
-        balance_due,
-        payment_status,
-        payments, // Array of payment objects
-        transport_details,
-        bundles_count
+        invoice_number, invoice_type, customer_id, items, notes,
+        amount_paid, balance_due, payment_status, payments,
+        transport_details, bundles_count
     } = req.body;
 
     const companyId = req.user.active_company_id;
     let client;
 
     try {
-        // ✅ FIXED: Get client from pool for transaction
         client = await db.getClient();
         await client.query("BEGIN");
 
-        // Generate Number if not provided
         let finalInvoiceNumber = invoice_number;
         let financial_month;
         
         if (!finalInvoiceNumber) {
-            const generated = await generateInvoiceNumber(client, invoice_type, companyId);
-            finalInvoiceNumber = generated.number;
-            financial_month = generated.financial_month;
+            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId);
+            finalInvoiceNumber = gen.number;
+            financial_month = gen.financial_month;
         } else {
-            const date = new Date();
-            const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
-            const year = date.getFullYear();
-            financial_month = `${year}-${monthStr}`;
+            financial_month = `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`;
         }
 
-        // Calculate Totals from Items
         let totalTaxable = 0;
         let totalGST = 0;
-        
         const processedItems = (items || []).map(i => {
             const qty = Number(i.qty) || 0;
             const rate = Number(i.rate) || 0;
             const amount = qty * rate;
-            
-            // GST calculation
             const gstRate = Number(i.gst_rate) || 5;
-            const gstAmount = amount * (gstRate / 100);
-            
             totalTaxable += amount;
-            totalGST += gstAmount;
-            
-            return { ...i, qty, rate, amount, gstRate, gstAmount };
+            totalGST += (amount * (gstRate / 100));
+            return { ...i, qty, rate, amount, gstRate };
         });
 
         const totalAmount = Math.round(totalTaxable + totalGST);
 
-        // Insert Invoice Header
+        // SQL: Matching your run-migrations.js exactly
         const headerSQL = `
             INSERT INTO invoices (
-                company_id, customer_id, invoice_number, invoice_category,
+                company_id, customer_id, invoice_number, invoice_type,
                 financial_month, invoice_date, due_date, status, total_amount,
-                amount_paid, balance_due, payment_status,
-                notes, bundles_count,
-                vehicle_number, transport_mode, supply_date, reverse_charge,
+                paid_amount, notes, bundles_count,
+                vehicle_number, transportation_mode, date_of_supply, reverse_charge,
                 created_at
-            ) VALUES (
-                $1,$2,$3,$4,$5,NOW(),NOW(),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW()
-            ) RETURNING id
+            ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+            RETURNING id
         `;
 
         const result = await client.query(headerSQL, [
@@ -185,153 +136,258 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             finalInvoiceNumber,
             invoice_type || 'TAX_INVOICE',
             financial_month,
-            payment_status || 'UNPAID',
+            payment_status || 'UNPAID', // In DB this is 'status'
             totalAmount,
-            amount_paid || 0,
-            balance_due || totalAmount,
-            payment_status || 'UNPAID',
+            amount_paid || 0,           // In DB this is 'paid_amount'
             notes || null,
             bundles_count || 0,
             transport_details?.vehicle || null,
-            transport_details?.mode || null,
-            transport_details?.supply_date || null,
+            transport_details?.mode || null,      // In DB this is 'transportation_mode'
+            transport_details?.supply_date || null, // In DB this is 'date_of_supply'
             transport_details?.reverse_charge || 'No'
         ]);
 
         const invoiceId = result.rows[0].id;
 
-        // Insert Line Items
+        // Line Items
         for (const item of processedItems) {
             await client.query(
                 `INSERT INTO invoice_line_items (
-                    invoice_id, product_id, description, hsn_acs_code, quantity, 
-                    unit_price, line_total, gst_rate
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-                [
-                    invoiceId,
-                    item.product_id || null,
-                    item.name || item.description || "Item",
-                    item.hsn || null,
-                    item.qty,
-                    item.rate,
-                    item.amount + item.gstAmount,
-                    item.gstRate
-                ]
+                    invoice_id, product_id, description, quantity, 
+                    unit_price, taxable_value, line_total, gst_rate
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [invoiceId, item.product_id || null, item.name || "Item", item.qty, item.rate, item.amount, item.amount, item.gstRate]
             );
-
-            // Deduct Stock (if product ID exists)
-            if (item.product_id) {
-                await client.query(
-                    `UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND company_id = $3`,
-                    [item.qty, item.product_id, companyId]
-                );
-            }
         }
 
-        // Insert Multiple Payments
-        if (payments && Array.isArray(payments) && payments.length > 0) {
-            for (const payment of payments) {
-                if (payment.amount > 0) {
+        // Payments
+        if (Array.isArray(payments) && payments.length > 0) {
+            for (const p of payments) {
+                const pAmt = Number(p.amount) || 0;
+                if (pAmt > 0) {
+                    const pDate = p.payment_date || new Date();
                     await client.query(
-                        `INSERT INTO invoice_payments (
-                            invoice_id, amount, payment_method, payment_date, 
-                            reference_no, notes, created_at
-                        ) VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
-                        [
-                            invoiceId,
-                            Number(payment.amount),
-                            payment.payment_method || 'CASH',
-                            payment.payment_date || new Date().toISOString().slice(0, 10),
-                            payment.reference_no || null,
-                            payment.notes || null
-                        ]
+                        `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [invoiceId, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null]
                     );
+
+                    // RECORD TRANSACTION FOR PAYMENT (RECEIPT)
+                    if (customer_id) {
+                        await client.query(
+                            `INSERT INTO transactions 
+                            (company_id, user_id, amount, type, category, date, description, related_invoice_id) 
+                            VALUES ($1, $2, $3, 'RECEIPT', 'PAYMENT', $4, $5, $6)`,
+                            [
+                                Number(companyId), 
+                                Number(customer_id), 
+                                pAmt, 
+                                pDate, 
+                                `Payment for Invoice #${finalInvoiceNumber}`, 
+                                Number(invoiceId)
+                            ]
+                        );
+
+                        // Subtract from customer balance
+                        await client.query(
+                            `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) - $1 WHERE id = $2`,
+                            [pAmt, Number(customer_id)]
+                        );
+                    }
                 }
             }
         }
 
+
+        // --- INTEGRATE WITH ACCOUNTING ENGINE ---
+        
+        const arAccount = await getAccountByCode(companyId, '1100'); // Accounts Receivable
+        const salesAccount = await getAccountByCode(companyId, '4000'); // Sales Revenue
+        const taxAccount = await getAccountByCode(companyId, '2100'); // GST Payable
+
+        if (arAccount && salesAccount) {
+            const txLines = [
+                { account_id: arAccount.id, debit_amount: totalAmount, credit_amount: 0, description: `Sales to Customer #${customer_id}` },
+                { account_id: salesAccount.id, debit_amount: 0, credit_amount: totalTaxable, description: `Sales Revenue from Inv #${finalInvoiceNumber}` }
+            ];
+            
+            if (totalGST > 0 && taxAccount) {
+                txLines.push({ account_id: taxAccount.id, debit_amount: 0, credit_amount: totalGST, description: `GST on Inv #${finalInvoiceNumber}` });
+            }
+
+            await createTransaction({
+                company_id: companyId,
+                branch_id: req.user.branch_id || 1, // Fallback to branch 1
+                transaction_date: new Date(),
+                reference_type: 'INVOICE',
+                reference_id: invoiceId,
+                description: `Invoice #${finalInvoiceNumber}`,
+                created_by: req.user.id
+            }, txLines);
+        }
+
         await client.query("COMMIT");
-        
-        res.status(201).json({
-            message: "Invoice Created Successfully",
-            invoice_number: finalInvoiceNumber,
-            id: invoiceId,
-            total_amount: totalAmount,
-            payments_count: payments?.length || 0
-        });
-        
+        res.status(201).json({ message: "Invoice saved", id: invoiceId });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
-        console.error("Invoice creation error:", err);
-        res.status(500).json({ 
-            error: "Failed to create invoice.",
-            message: err.message 
-        });
+        console.error("Critical Invoice Error:", err.message);
+        res.status(500).json({ error: err.message });
     } finally {
         if (client) client.release();
     }
 });
 
 /* ============================================================
+   3. GET SINGLE INVOICE (FOR DETAILS & EDIT)
+============================================================ */
+router.get("/:id", authMiddleware, async (req, res) => {
+    const id = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+
+    const sql = `
+        SELECT i.*, 
+               u.username as customer_name, u.address_line1, u.city_pincode, u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
+               c.company_name, c.address_line1 as c_address, c.city_pincode as c_city, c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
+               c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.signature_url
+        FROM invoices i
+        LEFT JOIN users u ON i.customer_id = u.id
+        LEFT JOIN companies c ON i.company_id = c.id
+        WHERE i.id = $1 AND i.company_id = $2
+    `;
+
+    try {
+        const invoice = await db.pgGet(sql, [id, companyId]);
+        if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+        const items = await db.pgAll("SELECT * FROM invoice_line_items WHERE invoice_id = $1", [id]);
+        res.json({ ...invoice, items });
+    } catch (err) {
+        console.error("Fetch Invoice Error:", err.message);
+        res.status(500).json({ error: "Failed to fetch invoice" });
+    }
+});
+
+/* ============================================================
    4. UPDATE INVOICE
-   Permission: 'edit_invoices'
 ============================================================ */
 router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async (req, res) => {
-    const { id } = req.params;
-    const { items, payment_mode, bank_ledger_id, transaction_ref, notes } = req.body;
+    const id = Number(req.params.id);
+    const { items, notes, payments, customer_id, amount_paid, payment_status } = req.body;
     const companyId = req.user.active_company_id;
 
     let client;
     try {
-        // ✅ FIXED: Get client for transaction
         client = await db.getClient();
         await client.query("BEGIN");
 
+        // 0. Fetch Old Invoice for Balance Adjustment
+        const oldInv = await client.query(`SELECT total_amount, customer_id, invoice_number FROM invoices WHERE id = $1`, [id]);
+        if (oldInv.rows.length === 0) throw new Error("Invoice not found");
+        const oldTotal = Number(oldInv.rows[0].total_amount);
+        const oldCustId = oldInv.rows[0].customer_id;
+        const invoiceNumber = oldInv.rows[0].invoice_number;
+
         // 1. Calculate New Totals
-        let totalAmount = 0;
-        
+        let totalTaxable = 0;
+        let totalGST = 0;
         const processedItems = (items || []).map(i => {
-            const qty = Number(i.qty) || 0;
-            const unitPrice = Number(i.unit_price || i.rate || i.price || 0); 
-            const gstRate = Number(i.gst_rate) || 0;
-            const lineTotal = qty * unitPrice;
-            const gstAmount = lineTotal * (gstRate / 100);
-            
-            return { ...i, qty, unitPrice, lineTotal, gstAmount, gstRate };
+            const qty = Number(i.qty || i.quantity) || 0;
+            const rate = Number(i.rate || i.unit_price) || 0;
+            const amount = qty * rate;
+            const gstRate = Number(i.gst_rate) || 5;
+            totalTaxable += amount;
+            totalGST += (amount * (gstRate / 100));
+            return { 
+                description: i.description || i.name, 
+                hsn: i.hsn || i.hsn_acs_code, 
+                qty, 
+                rate, 
+                amount, 
+                gstRate 
+            };
         });
 
-        processedItems.forEach(item => {
-            totalAmount += item.lineTotal + item.gstAmount;
-        });
+        const totalAmount = Math.round(totalTaxable + totalGST);
 
-        if(isNaN(totalAmount)) totalAmount = 0;
-
-        // 2. Update Invoice Header
+        // 2. Update Header
         await client.query(
-            `UPDATE invoices 
-             SET total_amount=$1, payment_mode=$2, bank_ledger_id=$3, transaction_ref=$4, notes=$5, updated_at=NOW()
-             WHERE id=$6 AND company_id=$7`,
-            [totalAmount, payment_mode, bank_ledger_id || null, transaction_ref || null, notes || null, id, companyId]
+            `UPDATE invoices SET 
+                notes = $1, 
+                total_amount = $2, 
+                paid_amount = $3,
+                status = $4,
+                updated_at = NOW() 
+             WHERE id = $5 AND company_id = $6`,
+            [notes || null, totalAmount, amount_paid || 0, payment_status || 'UNPAID', id, companyId]
         );
 
-        // 3. Delete Old Items
-        await client.query(`DELETE FROM invoice_line_items WHERE invoice_id=$1`, [id]);
+        // 3. Adjust Customer Balance for Invoice Amount Change
+        if (oldCustId && totalAmount !== oldTotal) {
+            const diff = totalAmount - oldTotal;
+            await client.query(
+                `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) + $1 WHERE id = $2`,
+                [diff, oldCustId]
+            );
 
-        // 4. Insert New Items
+            // Record transaction for adjustment
+            await client.query(
+                `INSERT INTO transactions 
+                 (company_id, user_id, amount, type, category, date, description, related_invoice_id) 
+                 VALUES ($1, $2, $3, 'INVOICE', 'ADJUSTMENT', NOW(), $4, $5)`,
+                [companyId, oldCustId, diff, `Adjustment for Invoice #${invoiceNumber}`, id]
+            );
+        }
+
+        // 4. Process New Payments
+        if (Array.isArray(payments) && payments.length > 0) {
+            for (const p of payments) {
+                const pAmt = Number(p.amount) || 0;
+                if (pAmt > 0) {
+                    const pDate = p.payment_date || new Date();
+                    
+                    // Insert Payment Record
+                    await client.query(
+                        `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [id, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null]
+                    );
+
+                    // RECORD TRANSACTION FOR PAYMENT (RECEIPT)
+                    if (oldCustId) {
+                        await client.query(
+                            `INSERT INTO transactions 
+                             (company_id, user_id, amount, type, category, date, description, related_invoice_id) 
+                             VALUES ($1, $2, $3, 'RECEIPT', 'PAYMENT', $4, $5, $6)`,
+                            [
+                                Number(companyId), 
+                                Number(oldCustId), 
+                                pAmt, 
+                                pDate, 
+                                `Payment for Invoice #${invoiceNumber}`, 
+                                Number(id)
+                            ]
+                        );
+
+                        // Subtract from customer balance
+                        await client.query(
+                            `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) - $1 WHERE id = $2`,
+                            [pAmt, Number(oldCustId)]
+                        );
+                    }
+                }
+            }
+        }
+
+        // 5. Sync Line Items
+        await client.query("DELETE FROM invoice_line_items WHERE invoice_id = $1", [id]);
+
         for (const item of processedItems) {
             await client.query(
                 `INSERT INTO invoice_line_items (
-                    invoice_id, product_id, description, quantity, unit_price, line_total, gst_rate
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [
-                    id,
-                    item.id || null,
-                    item.description || "Item",
-                    item.qty,
-                    item.unitPrice,
-                    item.lineTotal,
-                    item.gstRate
-                ]
+                    invoice_id, description, hsn_acs_code, quantity, 
+                    unit_price, taxable_value, line_total, gst_rate
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [id, item.description, item.hsn, item.qty, item.rate, item.amount, item.amount, item.gstRate]
             );
         }
 
@@ -340,8 +396,8 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
 
     } catch (err) {
         if (client) await client.query("ROLLBACK");
-        console.error("Update invoice error:", err);
-        res.status(500).json({ error: "Failed to update invoice" });
+        console.error("Update Invoice Error:", err.message);
+        res.status(500).json({ error: err.message });
     } finally {
         if (client) client.release();
     }
@@ -349,35 +405,47 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
 
 /* ============================================================
    5. DELETE INVOICE
-   Permission: 'delete_invoices'
 ============================================================ */
 router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), async (req, res) => {
     const id = Number(req.params.id);
     const companyId = req.user.active_company_id;
-
+    let client;
     try {
-        // Delete Payments first (if they exist)
-        await db.pgRun(`DELETE FROM invoice_payments WHERE invoice_id=$1`, [id]);
-        
-        // Delete Invoice (Cascade deletes items)
-        const r = await db.pgRun(
-            `DELETE FROM invoices WHERE id=$1 AND company_id=$2 RETURNING id`,
-            [id, companyId]
-        );
+        client = await db.getClient();
+        await client.query("BEGIN");
 
-        if (r.rowCount === 0)
+        // 1. Fetch info before deletion
+        const inv = await client.query(`SELECT total_amount, paid_amount, customer_id FROM invoices WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        if (inv.rows.length === 0) {
+            await client.query("ROLLBACK");
             return res.status(404).json({ error: "Invoice not found" });
+        }
 
-        // Optionally delete related transaction entries if any
-        await db.pgRun(
-            `DELETE FROM transactions WHERE related_invoice_id=$1`,
-            [id]
-        );
+        const { total_amount, paid_amount, customer_id } = inv.rows[0];
+        const outstanding = Number(total_amount || 0) - Number(paid_amount || 0);
 
-        res.json({ message: "Invoice deleted" });
+        // 2. Adjust Balance (Subtract the remaining debt of this invoice)
+        if (customer_id && outstanding !== 0) {
+            await client.query(
+                `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) - $1 WHERE id = $2`,
+                [outstanding, customer_id]
+            );
+        }
+
+        // 3. Delete everything related
+        await client.query(`DELETE FROM transactions WHERE related_invoice_id = $1`, [id]);
+        await client.query(`DELETE FROM invoice_payments WHERE invoice_id = $1`, [id]);
+        await client.query(`DELETE FROM invoice_line_items WHERE invoice_id = $1`, [id]);
+        await client.query(`DELETE FROM invoices WHERE id = $1`, [id]);
+
+        await client.query("COMMIT");
+        res.json({ message: "Invoice and related data deleted successfully" });
     } catch (err) {
-        console.error("Delete invoice error:", err);
-        res.status(500).json({ error: "Failed to delete invoice" });
+        if (client) await client.query("ROLLBACK");
+        console.error("Delete Invoice Error:", err.message);
+        res.status(500).json({ error: "Delete failed" });
+    } finally {
+        if (client) client.release();
     }
 });
 

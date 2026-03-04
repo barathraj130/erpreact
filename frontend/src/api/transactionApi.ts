@@ -11,23 +11,26 @@ export interface Transaction {
     user_id: number | null;
     lender_id: number | null;
     related_invoice_id: number | null;
-    type: 'Debit' | 'Credit'; // Derived from accounting logic
+    type: string; 
+    user_name?: string;
+    lender_name?: string;
+    ledger_name?: string;
 }
 
 /**
- * Fetches a list of core transactions (often used for ledger viewing).
+ * Fetches a list of core transactions.
  */
-export const fetchTransactions = async (params: { ledgerId?: number, startDate?: string, endDate?: string } = {}): Promise<Transaction[]> => {
+export const fetchTransactions = async (params: { lender_id?: number, user_id?: number, type?: string, category?: string } = {}): Promise<Transaction[]> => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await apiFetch(`/transaction?${query}`); 
+    const res = await apiFetch(`/transactions?${query}`); 
     return res.json();
 };
 
 /**
- * Creates a direct entry transaction (e.g., petty cash expense).
+ * Creates a direct entry transaction.
  */
 export const createTransaction = async (data: any): Promise<{ id: number, message: string }> => {
-    const res = await apiFetch('/transaction', {
+    const res = await apiFetch('/transactions', {
         method: 'POST',
         body: JSON.stringify(data),
     });

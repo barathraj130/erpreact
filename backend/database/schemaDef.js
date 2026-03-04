@@ -1,10 +1,28 @@
 // backend/database/schemaDef.js
 
 export const schemaDefinition = {
-    // --- 1. CORE COMPANY SETUP ---
+    // --- 0. SUBSCRIPTIONS (ERP OWNER CONTROL) ---
+    subscriptions: {
+        id: "SERIAL PRIMARY KEY",
+        plan_name: "VARCHAR(100) NOT NULL",
+        enabled_modules: "TEXT", // Comma-separated or JSON list: 'finance,sales,inventory,hr,ai,analytics'
+        max_branches: "INTEGER DEFAULT 1",
+        max_users: "INTEGER DEFAULT 5",
+        ai_enabled: "BOOLEAN DEFAULT FALSE",
+        analytics_enabled: "BOOLEAN DEFAULT FALSE",
+        storage_limit_gb: "INTEGER DEFAULT 1",
+        expiry_date: "TIMESTAMP",
+        status: "VARCHAR(20) DEFAULT 'ACTIVE'", // ACTIVE, EXPIRED, CANCELLED
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    // --- 1. CORE COMPANY SETUP (TENANTS) ---
     companies: {
         id: "SERIAL PRIMARY KEY",
         company_name: "VARCHAR(255) NOT NULL UNIQUE",
+        company_code: "VARCHAR(50) UNIQUE",
+        subscription_id: "INTEGER", // Link to subscriptions
+        is_active: "BOOLEAN DEFAULT TRUE",
         gstin: "VARCHAR(20) UNIQUE",
         address_line1: "TEXT",
         address_line2: "TEXT",
@@ -26,10 +44,23 @@ export const schemaDefinition = {
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
-    // --- 2. USERS (Auth + Customers) ---
+    // --- 1B. BRANCHES ---
+    branches: {
+        id: "SERIAL PRIMARY KEY",
+        company_id: "INTEGER NOT NULL",
+        branch_name: "VARCHAR(255) NOT NULL",
+        branch_code: "VARCHAR(50)",
+        location: "TEXT",
+        manager_user_id: "INTEGER",
+        is_active: "BOOLEAN DEFAULT TRUE",
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    // --- 2. USERS (Auth + Staff) ---
     users: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER", 
+        branch_id: "INTEGER", // ✅ NEW: Link to branch
         active_company_id: "INTEGER",
         employee_id: "INTEGER",
         username: "VARCHAR(255) NOT NULL UNIQUE", 
@@ -37,7 +68,7 @@ export const schemaDefinition = {
         email: "VARCHAR(255)",
         password_hash: "TEXT",
         role_id: "INTEGER",
-        role: "VARCHAR(50) NOT NULL DEFAULT 'user'",
+        role: "VARCHAR(50) NOT NULL DEFAULT 'user'", // admin, branch_manager, staff
         phone: "VARCHAR(20)",
         address_line1: "TEXT",
         address_line2: "TEXT",
@@ -50,6 +81,10 @@ export const schemaDefinition = {
         bank_account_no: "TEXT",
         bank_ifsc_code: "TEXT",
         signature_url: "TEXT",
+        is_active: "BOOLEAN DEFAULT TRUE",
+        failed_attempts: "INTEGER DEFAULT 0",
+        lock_until: "TIMESTAMP",
+        last_login: "TIMESTAMP",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
@@ -57,6 +92,7 @@ export const schemaDefinition = {
     employees: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         name: "VARCHAR(255) NOT NULL",
         designation: "VARCHAR(100)",
         email: "VARCHAR(255)",
@@ -73,6 +109,7 @@ export const schemaDefinition = {
     salary_advances: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         employee_id: "INTEGER",
         amount: "NUMERIC(12,2) NOT NULL",
         advance_date: "DATE NOT NULL",
@@ -96,16 +133,17 @@ export const schemaDefinition = {
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
-    // ✅ NEW: 3C. ATTENDANCE LOGS (Updated with work_assigned)
+    // 3C. ATTENDANCE LOGS
     attendance_logs: {
         id: "SERIAL PRIMARY KEY",
         employee_id: "INTEGER",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         date: "DATE NOT NULL",
         check_in_time: "TIME",
         check_out_time: "TIME",
-        status: "VARCHAR(20) DEFAULT 'PRESENT'", // PRESENT, OD, LEAVE
-        work_assigned: "TEXT", // ✅ Added Field
+        status: "VARCHAR(20) DEFAULT 'PRESENT'",
+        work_assigned: "TEXT",
         method: "VARCHAR(20) DEFAULT 'QR_SCAN'",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
@@ -114,6 +152,7 @@ export const schemaDefinition = {
     payroll_runs: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         employee_id: "INTEGER",
         month_year: "VARCHAR(20)",
         base_salary: "NUMERIC(12,2)",
@@ -150,6 +189,7 @@ export const schemaDefinition = {
     lenders: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         lender_name: "VARCHAR(255) NOT NULL",
         entity_type: "VARCHAR(50) DEFAULT 'General'",
         phone: "VARCHAR(20)",
@@ -157,6 +197,7 @@ export const schemaDefinition = {
         contact_person: "TEXT",
         notes: "TEXT",
         initial_payable_balance: "NUMERIC(12,2) DEFAULT 0",
+        current_balance: "NUMERIC(12,2) DEFAULT 0",
         bank_name: "TEXT",
         bank_account_no: "TEXT",
         bank_ifsc_code: "TEXT",
@@ -191,41 +232,52 @@ export const schemaDefinition = {
         updated_at: "TIMESTAMP DEFAULT NOW()"
     },
 
-    // --- 8. ACCOUNTING ---
-    ledger_groups: {
+    // --- 8. ACCOUNTING & TRANSACTION ENGINE ---
+    chart_of_accounts: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // Optional (null for company-level)
+        account_code: "VARCHAR(50) NOT NULL",
         name: "VARCHAR(255) NOT NULL",
-        parent_id: "INTEGER",
-        nature: "VARCHAR(50) NOT NULL",
-        is_default: "BOOLEAN DEFAULT FALSE",
+        account_type: "VARCHAR(50) NOT NULL", // ASSET, LIABILITY, EQUITY, INCOME, EXPENSE
+        parent_account_id: "INTEGER", // For hierarchy
+        opening_balance: "NUMERIC(15,2) DEFAULT 0",
+        current_balance: "NUMERIC(15,2) DEFAULT 0",
+        is_active: "BOOLEAN DEFAULT TRUE",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
-    ledgers: {
-        id: "SERIAL PRIMARY KEY",
-        company_id: "INTEGER",
-        name: "VARCHAR(255) NOT NULL",
-        group_id: "INTEGER",
-        opening_balance: "NUMERIC(12,2) DEFAULT 0",
-        is_dr: "INTEGER DEFAULT 1",
-        gstin: "VARCHAR(20)",
-        state: "VARCHAR(100)",
-        is_default: "BOOLEAN DEFAULT FALSE",
-        created_at: "TIMESTAMP DEFAULT NOW()"
-    },
+
     transactions: {
         id: "SERIAL PRIMARY KEY",
-        company_id: "INTEGER",
-        user_id: "INTEGER",
-        lender_id: "INTEGER",
-        ledger_id: "INTEGER",
-        agreement_id: "INTEGER",
-        related_invoice_id: "INTEGER",
-        amount: "NUMERIC(12,2) NOT NULL",
-        type: "VARCHAR(10) NOT NULL",
+        company_id: "INTEGER NOT NULL",
+        branch_id: "INTEGER NOT NULL",
+        transaction_date: "DATE NOT NULL",
+        reference_type: "VARCHAR(50)", // INVOICE, BILL, PAYMENT, JOURNAL
+        reference_id: "INTEGER",
         description: "TEXT",
-        category: "TEXT",
-        date: "DATE NOT NULL",
+        created_by: "INTEGER",
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    transaction_lines: {
+        id: "SERIAL PRIMARY KEY",
+        transaction_id: "INTEGER REFERENCES transactions(id) ON DELETE CASCADE",
+        account_id: "INTEGER REFERENCES chart_of_accounts(id)",
+        debit_amount: "NUMERIC(15,2) DEFAULT 0",
+        credit_amount: "NUMERIC(15,2) DEFAULT 0",
+        description: "TEXT"
+    },
+
+    ledger_entries: {
+        id: "SERIAL PRIMARY KEY",
+        company_id: "INTEGER NOT NULL",
+        branch_id: "INTEGER NOT NULL",
+        account_id: "INTEGER NOT NULL",
+        transaction_id: "INTEGER NOT NULL",
+        entry_date: "DATE NOT NULL",
+        debit: "NUMERIC(15,2) DEFAULT 0",
+        credit: "NUMERIC(15,2) DEFAULT 0",
+        running_balance: "NUMERIC(15,2)",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
@@ -233,11 +285,13 @@ export const schemaDefinition = {
     stock_units: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         name: "VARCHAR(50) NOT NULL"
     },
     products: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER NOT NULL",
+        branch_id: "INTEGER", // ✅ ADDED
         name: "TEXT NOT NULL",
         sku: "TEXT",
         brand: "TEXT",
@@ -272,6 +326,7 @@ export const schemaDefinition = {
     invoices: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         customer_id: "INTEGER",
         bank_ledger_id: "INTEGER",
         invoice_number: "VARCHAR(100) UNIQUE NOT NULL",
@@ -323,13 +378,25 @@ export const schemaDefinition = {
     purchase_bills: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         supplier_id: "INTEGER",
         bill_number: "VARCHAR(100)",
         bill_date: "DATE",
         due_date: "DATE",
         total_amount: "NUMERIC(12,2) DEFAULT 0",
         status: "VARCHAR(50) DEFAULT 'PENDING'",
+        bill_type: "VARCHAR(20) DEFAULT 'GST'",
         file_url: "TEXT",
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
+    purchase_bill_items: {
+        id: "SERIAL PRIMARY KEY",
+        bill_id: "INTEGER REFERENCES purchase_bills(id) ON DELETE CASCADE",
+        product_id: "INTEGER",
+        description: "TEXT",
+        quantity: "NUMERIC(12,2) NOT NULL",
+        unit_price: "NUMERIC(12,2) NOT NULL",
+        line_total: "NUMERIC(12,2) NOT NULL",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
@@ -337,6 +404,7 @@ export const schemaDefinition = {
     bank_details: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         bank_name: "VARCHAR(255) NOT NULL",
         account_number: "VARCHAR(50) NOT NULL",
         ifsc_code: "VARCHAR(20)",
@@ -367,6 +435,7 @@ export const schemaDefinition = {
     business_agreements: {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
         lender_id: "INTEGER",
         agreement_type: "VARCHAR(50)",
         total_amount: "NUMERIC(12,2) NOT NULL",
@@ -375,6 +444,72 @@ export const schemaDefinition = {
         duration_months: "INTEGER DEFAULT 0",
         start_date: "DATE",
         status: "VARCHAR(50) DEFAULT 'Active'",
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    // --- THEORY OF CONSTRAINTS MODULE ---
+    constraints: {
+        id: "SERIAL PRIMARY KEY",
+        company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
+        constraint_name: "VARCHAR(255) NOT NULL",
+        constraint_type: "VARCHAR(50)",
+        area: "VARCHAR(50)",
+        description: "TEXT",
+        identified_date: "DATE DEFAULT CURRENT_DATE",
+        status: "VARCHAR(20) DEFAULT 'ACTIVE'",
+        capacity: "NUMERIC(12,2)",
+        demand: "NUMERIC(12,2)",
+        utilization_percent: "NUMERIC(5,2)",
+        priority: "INTEGER DEFAULT 1",
+        created_at: "TIMESTAMP DEFAULT NOW()",
+        updated_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    throughput_metrics: {
+        id: "SERIAL PRIMARY KEY",
+        company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
+        period_start: "DATE NOT NULL",
+        period_end: "DATE NOT NULL",
+        total_sales: "NUMERIC(12,2) DEFAULT 0",
+        totally_variable_costs: "NUMERIC(12,2) DEFAULT 0",
+        throughput: "NUMERIC(12,2)",
+        raw_materials: "NUMERIC(12,2) DEFAULT 0",
+        work_in_process: "NUMERIC(12,2) DEFAULT 0",
+        finished_goods: "NUMERIC(12,2) DEFAULT 0",
+        total_investment: "NUMERIC(12,2)",
+        operating_expense: "NUMERIC(12,2) DEFAULT 0",
+        net_profit: "NUMERIC(12,2)",
+        return_on_investment: "NUMERIC(5,2)",
+        productivity: "NUMERIC(5,2)",
+        investment_turns: "NUMERIC(5,2)",
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    constraint_actions: {
+        id: "SERIAL PRIMARY KEY",
+        constraint_id: "INTEGER",
+        company_id: "INTEGER",
+        branch_id: "INTEGER", // ✅ ADDED
+        step_number: "INTEGER",
+        step_name: "VARCHAR(100)",
+        action_description: "TEXT",
+        assigned_to: "INTEGER",
+        due_date: "DATE",
+        completion_date: "DATE",
+        status: "VARCHAR(20) DEFAULT 'PENDING'",
+        notes: "TEXT",
+        created_at: "TIMESTAMP DEFAULT NOW()",
+        updated_at: "TIMESTAMP DEFAULT NOW()"
+    },
+
+    // --- 13. AUTHENTICATION ---
+    refresh_tokens: {
+        id: "SERIAL PRIMARY KEY",
+        user_id: "INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+        token: "TEXT NOT NULL",
+        expires_at: "TIMESTAMP NOT NULL",
         created_at: "TIMESTAMP DEFAULT NOW()"
     }
 };

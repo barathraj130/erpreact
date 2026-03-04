@@ -5,7 +5,7 @@ interface FetchOptions extends Omit<RequestInit, 'headers' | 'body'> {
     body?: any; 
 }
 
-const API_BASE_URL = "http://localhost:3000/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 export const apiFetch = async (
     endpoint: string,
@@ -13,13 +13,19 @@ export const apiFetch = async (
     isJsonRequest: boolean = true
 ): Promise<Response> => {
 
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
     const token = localStorage.getItem("erp-token");
+    const branchId = localStorage.getItem("active-branch-id");
 
     let defaultHeaders: Record<string, string> = {};
 
-    if (token) {
+    // Don't send token on login endpoint to prevent header-size issues from stale tokens
+    if (token && endpoint !== "/auth/login") {
         defaultHeaders["Authorization"] = `Bearer ${token}`;
+    }
+
+    if (branchId) {
+        defaultHeaders["x-branch-id"] = branchId;
     }
 
     let finalBody = options.body;

@@ -21,8 +21,8 @@ async function createAdminUser() {
         
         // 1. Ensure default company exists
         await client.query(`
-            INSERT INTO companies (id, company_name, gstin) 
-            VALUES (1, 'Default System Company', 'ADMIN_COMPANY')
+            INSERT INTO companies (id, company_name, gstin, company_code) 
+            VALUES (1, 'Default System Company', 'ADMIN_COMPANY', 'COMP-001')
             ON CONFLICT (id) DO NOTHING
         `);
 
