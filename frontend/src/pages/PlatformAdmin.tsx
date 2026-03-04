@@ -20,7 +20,9 @@ interface Company {
     max_users?: number;
 }
 
-export default function PlatformAdmin() {
+interface Props { tab?: string; }
+
+export default function PlatformAdmin({ tab = 'hub' }: Props) {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [loading, setLoading] = useState(true);
     const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -70,6 +72,78 @@ export default function PlatformAdmin() {
     if (loading) return (
         <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-canvas)' }}>
             <div className="spinner-innovative" />
+        </div>
+    );
+
+    if (tab === 'config') return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '60px' }}>
+            <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
+                <h1 style={{ fontSize: '2.5rem', fontWeight: 950, letterSpacing: '-0.04em' }}>Global <span style={{ color: 'var(--primary)' }}>Configuration</span></h1>
+                <p style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Platform-wide settings, security policies and system parameters.</p>
+            </motion.div>
+            <div className="enterprise-card glass" style={{ padding: '32px' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '24px' }}>System Settings</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                    {[['Platform Name', 'Fluxora Technology ERP'], ['Default Currency', 'INR (₹)'], ['Default Timezone', 'Asia/Kolkata (IST)'], ['Max Tenants', 'Unlimited'], ['Auth Method', 'JWT + bcrypt'], ['API Version', 'v4.0']].map(([k, v]) => (
+                        <div key={k} style={{ padding: '16px', background: 'var(--bg-canvas)', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{k}</div>
+                            <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '6px' }}>{v}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
+    if (tab === 'tenants') return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', paddingBottom: '60px' }}>
+            <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h1 style={{ fontSize: '2.5rem', fontWeight: 950, letterSpacing: '-0.04em' }}>Tenant <span style={{ color: 'var(--primary)' }}>Management</span></h1>
+                    <p style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Manage all onboarded companies and their subscriptions.</p>
+                </div>
+                <button className="btn-enterprise" onClick={() => setShowRegisterModal(true)}><FaPlus /> Provision New Tenant</button>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="enterprise-table-wrapper">
+                <div style={{ padding: '24px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-card)' }}>
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>All Tenants ({companies.length})</h3>
+                </div>
+                <table className="enterprise-table">
+                    <thead><tr><th>Organization</th><th>Plan</th><th>Branches</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+                    <tbody>
+                        {companies.map((comp, idx) => (
+                            <motion.tr key={comp.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + idx * 0.05 }}>
+                                <td><div style={{ fontWeight: 800 }}>{comp.company_name}</div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700 }}>#{comp.company_code}</div></td>
+                                <td><span className="badge-premium badge-user">{comp.plan_name}</span></td>
+                                <td><span style={{ fontSize: '0.8rem', fontWeight: 700 }}>{comp.active_branches ?? 0} / {comp.max_branches ?? '∞'}</span></td>
+                                <td><span className="badge-premium" style={{ background: comp.is_active ? 'var(--success-surface)' : 'var(--error-surface)', color: comp.is_active ? 'var(--success)' : 'var(--error)' }}>{comp.is_active ? 'ACTIVE' : 'SUSPENDED'}</span></td>
+                                <td style={{ textAlign: 'right' }}><div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}><button className="clickable glass" style={{ fontSize: '0.75rem', fontWeight: 800 }}>CONFIGURE</button><button className="clickable glass" style={{ fontSize: '0.75rem', fontWeight: 800 }}>LOGS</button></div></td>
+                            </motion.tr>
+                        ))}
+                    </tbody>
+                </table>
+            </motion.div>
+            <AnimatePresence>
+                {showRegisterModal && (
+                    <div className="modal-overlay">
+                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="enterprise-card" style={{ width: '600px', padding: '40px', background: 'white', border: '1px solid var(--primary-glow)' }}>
+                            <h2 style={{ fontSize: '1.75rem', fontWeight: 950, marginBottom: '8px' }}>Provision <span style={{ color: 'var(--primary)' }}>New Tenant</span></h2>
+                            <p style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: '32px' }}>Initialize a secure tenant partition.</p>
+                            <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                    <div className="input-block"><label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Company Name</label><input className="input-modern" required value={newComp.name} onChange={e => setNewComp({...newComp, name: e.target.value})} placeholder="e.g. Acme Corp" /></div>
+                                    <div className="input-block"><label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Company Code</label><input className="input-modern" required value={newComp.code} onChange={e => setNewComp({...newComp, code: e.target.value.toUpperCase()})} placeholder="ACME-01" /></div>
+                                </div>
+                                <div className="input-block"><label style={{ fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Admin Email</label><input className="input-modern" type="email" required value={newComp.admin_email} onChange={e => setNewComp({...newComp, admin_email: e.target.value})} /></div>
+                                <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                                    <button type="submit" className="btn-enterprise" style={{ flex: 1 }}>Execute Provisioning</button>
+                                    <button type="button" className="btn-enterprise glass" style={{ color: 'var(--error)' }} onClick={() => setShowRegisterModal(false)}>Abort</button>
+                                </div>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 

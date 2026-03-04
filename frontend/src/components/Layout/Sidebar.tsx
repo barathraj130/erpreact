@@ -40,8 +40,8 @@ interface SidebarProps {
 const getMenuItems = (mode: string, user: any): MenuItem[] => {
     if (mode === 'HOST') return [
         { name: "Platform Hub", path: "/platform-admin", icon: <FaTachometerAlt /> },
-        { name: "Tenants", path: "/platform-admin", icon: <FaBuilding /> },
-        { name: "Global Config", path: "/platform-admin", icon: <FaCog /> },
+        { name: "Tenants", path: "/platform-admin/tenants", icon: <FaBuilding /> },
+        { name: "Global Config", path: "/platform-admin/config", icon: <FaCog /> },
     ];
     if (mode === 'ADMIN') return [
         { name: "Admin Dashboard", path: "/dashboard", icon: <FaTachometerAlt /> },

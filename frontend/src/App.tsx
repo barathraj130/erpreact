@@ -129,7 +129,9 @@ const App: React.FC = () => {
                     <Route path="/mark-attendance" element={<MobileAttendance />} />
 
                     <Route element={<HostRoute />}>
-                        <Route path="/platform-admin" element={<PlatformAdmin />} />
+                        <Route path="/platform-admin" element={<PlatformAdmin tab="hub" />} />
+                        <Route path="/platform-admin/tenants" element={<PlatformAdmin tab="tenants" />} />
+                        <Route path="/platform-admin/config" element={<PlatformAdmin tab="config" />} />
                     </Route>
 
                     <Route element={<AdminRoute />}>
