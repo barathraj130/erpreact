@@ -1,0 +1,598 @@
+/* CreateInvoice.css — Split: Form Left | Preview Right */
+
+
+/* ═══════════ SPLIT LAYOUT ═══════════ */
+.ci-split {
+  display: grid;
+  grid-template-columns: 520px 1fr;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-body, #f7f7f6);
+  font-family: 'Satoshi', sans-serif;
+}
+
+@media (max-width: 1100px) {
+  .ci-split {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .ci-form-pane {
+    height: auto;
+    overflow-y: visible;
+    border-right: none;
+  }
+
+  .ci-form-body {
+    overflow-y: visible;
+    padding: 12px;
+  }
+
+  .ci-preview-pane {
+    display: none !important;
+  }
+}
+
+/* ═══════════ LEFT: FORM PANE ═══════════ */
+.ci-form-pane {
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  overflow: hidden !important;
+}
+
+.ci-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.ci-form-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.3px;
+}
+
+.ci-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 100px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ci-icon-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.ci-save-btn {
+  padding: 8px 18px;
+  background: #111827;
+  color: white;
+  border: none;
+  border-radius: 100px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.ci-save-btn:hover {
+  background: #1e293b;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.ci-form-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  border-right: 1px solid #e8e8e5;
+  scrollbar-width: thin;
+}
+
+.ci-form-body::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Cards */
+.ci-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 32px;
+  padding: 24px;
+  overflow: visible;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  margin-bottom: 24px;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ci-card:hover {
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-4px);
+}
+
+.ci-card-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #475569;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Fields */
+.ci-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ci-field label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+
+.ci-field input,
+.ci-field select,
+.ci-field textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+  font-family: 'Satoshi', sans-serif;
+  box-sizing: border-box;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.ci-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+.ci-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ci-select-icon {
+  position: absolute;
+  right: 14px;
+  color: #94a3b8;
+  pointer-events: none;
+  font-size: 0.85rem;
+}
+
+.ci-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.ci-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* Customer info display */
+.ci-customer-info {
+  margin-top: 10px;
+  padding: 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.72rem;
+  color: #166534;
+}
+
+/* Item Cards */
+.ci-item-card {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  position: relative;
+  transition: border-color 0.2s;
+}
+
+.ci-item-card:hover {
+  border-color: #c7d2fe;
+}
+
+.ci-item-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ci-item-fields {
+  flex: 1;
+  min-width: 0;
+}
+
+.ci-item-delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: white;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+}
+
+.ci-item-card:hover .ci-item-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.ci-amount-display {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.ci-add-btn {
+  padding: 6px 14px;
+  background: #eef2ff;
+  color: #4f46e5;
+  border: 1px solid #c7d2fe;
+  border-radius: 100px;
+  font-weight: 700;
+  font-size: 0.72rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+/* Footer */
+.ci-form-footer {
+  margin-top: 8px;
+  padding: 16px 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ci-footer-total {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.5px;
+}
+
+.ci-print-btn {
+  padding: 8px 16px;
+  background: white;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 100px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ═══════════ RIGHT: PREVIEW PANE ═══════════ */
+.ci-preview-pane {
+  background: #e2e8f0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ci-preview-scroll {
+  flex: 1;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.ci-paper {
+  width: 100%;
+  max-width: 780px;
+  background: white;
+  border: 2px solid #000 !important;
+  /* TRULY THICK OUTER BOUNDING BOX */
+  font-size: 10.5px;
+  color: #000;
+  font-family: 'Satoshi', sans-serif;
+  flex-shrink: 0;
+  transform: scale(0.8);
+  transform-origin: top center;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  /* Ensure content hits the borders exactly */
+}
+
+/* Master Horizontal Dividers */
+.cip-header,
+.cip-title-band,
+.cip-meta,
+.cip-parties,
+.cip-bottom {
+  border-bottom: 1.5px solid #000;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.cip-header {
+  text-align: center;
+  padding: 12px 16px 8px;
+}
+
+.cip-company {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 3px;
+  letter-spacing: 0.5px;
+}
+
+.cip-addr {
+  font-size: 9.5px;
+  font-weight: 600;
+  margin: 0 0 3px;
+  color: #444;
+}
+
+.cip-gstin {
+  font-size: 10px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.cip-title-band {
+  text-align: center;
+  padding: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  background: #f5f5f5;
+}
+
+.cip-meta,
+.cip-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-size: 9px;
+}
+
+.cip-meta-left,
+.cip-party-left {
+  border-right: 1.5px solid #000;
+  padding: 10px;
+}
+
+.cip-meta-right,
+.cip-party-right {
+  padding: 10px;
+}
+
+.cip-meta-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+
+.cip-lbl {
+  font-weight: 600;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.cip-party-head {
+  font-weight: 600;
+  text-decoration: underline;
+  margin-bottom: 6px;
+  font-size: 10px;
+}
+
+.cip-party-name {
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.cip-party-detail {
+  color: #333;
+  margin-bottom: 1px;
+  line-height: 1.3;
+}
+
+/* Table Architecture - Perfectly Uniform Solid Grids */
+.cip-table {
+  width: 100%;
+  border-collapse: collapse;
+  box-sizing: border-box;
+}
+
+.cip-table th,
+.cip-table td {
+  border-bottom: 1.5px solid #000;
+  border-right: 1.5px solid #000;
+  padding: 7px 4px;
+  font-size: 9.5px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* Ensure no doubling vertical lines at the very sides */
+.cip-table th:last-child,
+.cip-table td:last-child {
+  border-right: none;
+}
+
+.cip-table th {
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #f1f5f9;
+}
+
+.cip-empty-row td {
+  height: 24px;
+}
+
+.cip-total-row {
+  font-weight: 600;
+}
+
+/* Bottom Actions */
+.cip-bottom {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  font-size: 9px;
+}
+
+.cip-bottom-left {
+  border-right: 1.5px solid #000;
+  padding: 10px;
+}
+
+.cip-bottom-right {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.cip-words-title {
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.cip-words {
+  font-size: 8.5px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.cip-tax-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: 9px;
+}
+
+.cip-grand-total {
+  font-weight: 700;
+  font-size: 11.5px;
+  border-top: 1.5px solid #000;
+  margin-top: 8px;
+  padding-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.cip-signatory {
+  text-align: right;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.cip-signatory p {
+  font-size: 8.5px;
+  font-style: italic;
+  margin: 0 0 24px;
+}
+
+.cip-sig-line {
+  display: inline-block;
+  border-top: 1.5px solid #000;
+  padding-top: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  min-width: 120px;
+}
+
+/* Scrollbar Cleanup */
+.ci-form-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.ci-form-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}

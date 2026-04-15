@@ -1,0 +1,415 @@
+/* ─────────────────────────────────────────────────────────────
+   index.css — Global Design System: Geist Minimalist Edition
+   All pages inherit these styles. No !important overrides.
+   ───────────────────────────────────────────────────────────── */
+
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&display=swap');
+
+/* ── CSS Variables ── */
+:root {
+  /* Core palette */
+  --bg: #f7f7f6;
+  --surface: #ffffff;
+  --surface-2: #f2f2f0;
+  --border: #e8e8e5;
+  --border-soft: #f0f0ee;
+
+  /* Typography */
+  --text-1: #111110;
+  --text-2: #5c5c58;
+  --text-3: #9b9b96;
+
+  /* Accent */
+  --accent: #1a56db;
+  --accent-bg: #eff4ff;
+
+  /* Semantic */
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --amber: #b45309;
+  --amber-bg: #fffbeb;
+
+  /* Layout */
+  --sidebar-w: 260px;
+  --sidebar-w-collapsed: 80px;
+  --header-h: 52px;
+  --r: 8px;
+
+  /* Legacy aliases — keep old pages working */
+  --primary: #1a56db;
+  --primary-hover: #1746c5;
+  --primary-glow: rgba(26, 86, 219, 0.15);
+  --primary-surface: rgba(26, 86, 219, 0.06);
+  --success: #16a34a;
+  --warning: #b45309;
+  --error: #dc2626;
+  --bg-body: #f7f7f6;
+  --bg-canvas: #f7f7f6;
+  --bg-sidebar: #ffffff;
+  --bg-card: #ffffff;
+  --bg-topbar: #ffffff;
+  --text-primary: #111110;
+  --text-secondary: #5c5c58;
+  --text-muted: #9b9b96;
+  --border-color: #e8e8e5;
+  --border-subtle: #f0f0ee;
+  --border-standard: #e8e8e5;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+
+  /* Shadows — very subtle */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 8px rgba(0,0,0,.06);
+  --shadow-lg: 0 8px 20px rgba(0,0,0,.08);
+  --shadow-premium: 0 2px 10px rgba(0,0,0,.055);
+  --shadow-float: 0 8px 20px rgba(0,0,0,.08);
+  --shadow-2xl: 0 12px 30px rgba(0,0,0,.10);
+
+  /* Motion */
+  --transition-fast: 100ms ease;
+  --transition-standard: 200ms ease;
+  --transition-slow: 300ms ease;
+  --transition-premium: all 0.2s ease;
+}
+
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Base ── */
+html, body {
+  height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-1);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ── Typography ── */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+  color: var(--text-1);
+}
+
+h1 { font-size: 28px; }
+h2 { font-size: 24px; }
+h3 { font-size: 20px; }
+h4 { font-size: 18px; }
+h5 { font-size: 16px; }
+h6 { font-size: 14px; }
+
+strong, b { font-weight: 700; }
+
+p, span, td, .content-text {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── Scrollbar — minimal ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d4d0; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #b5b5b0; }
+
+/* ── Buttons — global base ── */
+button {
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+  font-size: inherit;
+  border: none;
+  background: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ── Inputs ── */
+input, select, textarea {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13.5px;
+  color: var(--text-1);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+}
+
+input::placeholder { color: var(--text-3); }
+
+/* ── Links ── */
+a { color: inherit; text-decoration: none; }
+
+/* ── Shell ── */
+.enterprise-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.shell-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.blur-content {
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+/* ── Legacy card class (used in old pages) ── */
+.enterprise-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* ── Legacy button overrides for older pages ── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--text-1);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-radius: 6px;
+}
+.btn-primary:hover { background: #2a2a28; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--surface);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Satoshi', sans-serif;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.btn-secondary:hover { background: var(--bg); }
+
+/* ── Table — used across pages ── */
+.enterprise-table-wrapper {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.enterprise-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.enterprise-table th {
+  background: var(--bg);
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.enterprise-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+  color: var(--text-2);
+  transition: background 0.1s;
+}
+
+.enterprise-table tbody tr:last-child td { border-bottom: none; }
+.enterprise-table tbody tr:hover td {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+/* ── Status badges ── */
+.badge-green { background: var(--green-bg); color: var(--green); }
+.badge-red { background: var(--red-bg); color: var(--red); }
+.badge-amber { background: var(--amber-bg); color: var(--amber); }
+.badge-blue { background: var(--accent-bg); color: var(--accent); }
+
+/* ── Search orb (legacy) ── */
+.search-orb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 38px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.search-orb input {
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-size: 13px;
+  font-family: 'Satoshi', sans-serif;
+}
+.search-orb:focus-within { border-color: var(--accent); }
+
+/* ── Glass (legacy) ── */
+.glass {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+}
+
+/* ── Loader ── */
+.full-screen-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: var(--bg);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0.05em;
+  gap: 16px;
+}
+
+.spinner-innovative {
+  width: 28px; height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Modals ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+/* ── Page layout helpers ── */
+/* NOTE: .page-container and .page-header are defined in PageShared.css */
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--text-1);
+}
+
+/* ── Invoice layout ── */
+.invoice-layout {
+  display: flex;
+  height: calc(100vh - var(--header-h));
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.invoice-form-side {
+  width: 500px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.invoice-preview-side {
+  flex: 1;
+  background: #4b5563;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .invoice-layout { flex-direction: column; height: auto; }
+  .invoice-form-side { width: 100%; border-right: none; }
+  .invoice-preview-side { display: none !important; }
+}
+
+@media (max-width: 768px) {
+  .page-container { padding: 16px; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .enterprise-table th, .enterprise-table td { padding: 10px 12px; font-size: 12px; }
+  .hide-mobile { display: none !important; }
+  .show-mobile { display: block !important; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 13px; }
+  h1 { font-size: 1.4rem !important; }
+  h2 { font-size: 1.2rem !important; }
+  h3 { font-size: 1rem !important; }
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* ── Settings ── */
+.settings-container {
+  display: flex;
+  gap: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.settings-sidebar { width: 240px; flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  .settings-container { flex-direction: column; padding: 16px; }
+  .settings-sidebar { width: 100%; }
+}

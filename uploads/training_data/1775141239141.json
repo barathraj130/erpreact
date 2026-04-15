@@ -1,0 +1,51 @@
+{
+  "product_name": "LADIES L/S LONG POLO",
+  "sku": "1",
+  "hsn_code": "",
+  "description": "LADIES L/S LONG POLO",
+  "purchase_price": 70,
+  "selling_price": 70,
+  "quantity": 213,
+  "unit": "pcs",
+  "gst_percent": 5,
+  "supplier_name": "JBS KNIT WEAR",
+  "confidence": 0.98,
+  "items": [
+    {
+      "product_name": "LADIES L/S LONG POLO",
+      "sku": "1",
+      "hsn_code": "",
+      "description": "LADIES L/S LONG POLO",
+      "purchase_price": 70,
+      "selling_price": 70,
+      "quantity": 213,
+      "unit": "pcs",
+      "gst_percent": 5,
+      "supplier_name": "JBS KNIT WEAR",
+      "amount": 14910
+    },
+    {
+      "product_name": "MONTH L/K PANT",
+      "sku": "2",
+      "hsn_code": "",
+      "description": "MONTH L/K PANT",
+      "purchase_price": 90,
+      "selling_price": 90,
+      "quantity": 692,
+      "unit": "pcs",
+      "gst_percent": 5,
+      "supplier_name": "JBS KNIT WEAR",
+      "amount": 62280
+    }
+  ],
+  "source_meta": {
+    "amount": 81050,
+    "tax_amount": 3860,
+    "date": "2025-09-04",
+    "currency": "INR",
+    "is_simulated": false
+  },
+  "error": null,
+  "message": null,
+  "has_usable_data": true
+}

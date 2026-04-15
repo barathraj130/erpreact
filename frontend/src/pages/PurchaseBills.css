@@ -1,0 +1,248 @@
+/* frontend/src/pages/PurchaseBills.css */
+
+.purchase-bills-container {
+  animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bills-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.bills-title h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -1.5px;
+  margin: 0;
+}
+
+.bills-title p {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.scan-btn-premium {
+  background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%);
+  color: white;
+  padding: 0 24px;
+  height: 52px;
+  border-radius: 100px;
+  border: none;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2);
+  transition: all 0.3s ease;
+}
+
+.scan-btn-premium:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 30px rgba(99, 102, 241, 0.3);
+}
+
+.bills-table-wrapper {
+  background: white;
+  border-radius: 32px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.bills-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bills-table th {
+  background: #f8fafc;
+  padding: 24px 32px;
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.bills-table td {
+  padding: 24px 32px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.bill-row {
+  transition: all 0.2s ease;
+}
+
+.bill-row:hover {
+  background: #f8fafc;
+}
+
+.bill-identity {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bill-status-pill {
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scanner-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+
+.scanner-modal {
+  background: white;
+  width: 100%;
+  max-width: 600px;
+  border-radius: 32px;
+  overflow: hidden;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+  animation: modalSlide 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalSlide {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.drop-zone-premium {
+  border: 3px dashed #e2e8f0;
+  border-radius: 24px;
+  padding: 60px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #f8fafc;
+}
+
+.drop-zone-premium:hover,
+.drop-zone-premium.active {
+  border-color: var(--primary);
+  background: var(--primary-glow);
+}
+
+.scan-laser {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--primary);
+  box-shadow: 0 0 20px var(--primary);
+  animation: scanAnimation 2s infinite ease-in-out;
+  z-index: 5;
+}
+
+@keyframes scanAnimation {
+  0% {
+    top: 0%;
+  }
+
+  50% {
+    top: 100%;
+  }
+
+  100% {
+    top: 0%;
+  }
+}
+
+.extracted-card {
+  background: white;
+  padding: 32px;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  transform: scale(1.05);
+  border: 1px solid var(--border-color);
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .pb-table-wrapper {
+    border-radius: 16px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .pb-table,
+  .pb-table tbody,
+  .pb-table tr,
+  .pb-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .pb-table thead {
+    display: none;
+  }
+
+  .pb-table tr {
+    margin-bottom: 16px;
+    background: white;
+    border-radius: 16px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+  }
+
+  .pb-table td {
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    border-bottom: 1px dashed var(--border-color, #f1f5f9);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    text-align: right !important;
+  }
+
+  .pb-table td:last-child {
+    border-bottom: none;
+    justify-content: flex-end;
+  }
+}

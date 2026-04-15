@@ -1,0 +1,357 @@
+/* frontend/src/pages/Customers.css */
+
+.customers-container {
+  animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.customers-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  gap: 24px;
+}
+
+.customers-title h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -1.5px;
+  margin: 0;
+}
+
+.customers-title p {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  margin-top: 4px;
+}
+
+.customers-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.customer-table-container {
+  background: white;
+  border-radius: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  padding: 16px;
+}
+
+.cust-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cust-table th {
+  background: #f8fafc;
+  padding: 20px 32px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cust-table td {
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--bg-body);
+}
+
+.cust-row {
+  transition: all 0.2s ease;
+}
+
+.cust-row:hover {
+  background: #f8fafc;
+}
+
+.identity-orb {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--primary-glow);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.exposure-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.control-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.control-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-history {
+  background: var(--bg-body);
+  color: var(--text-primary);
+}
+
+.btn-edit {
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+
+.btn-delete {
+  background: rgba(239, 68, 68, 0.05);
+  color: var(--error);
+}
+
+.btn-history:hover {
+  background: var(--text-primary);
+  color: white;
+}
+
+.btn-edit:hover {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-delete:hover {
+  background: var(--error);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .customers-container {
+    padding: 10px !important;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .customers-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .customers-title h1 {
+    font-size: 1.5rem;
+  }
+
+  .customers-title p {
+    font-size: 0.9rem;
+  }
+
+  .customers-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .customers-actions button {
+    flex: 1;
+    min-width: 100px;
+    justify-content: center;
+  }
+
+  .customer-table-container {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow-x: hidden;
+    margin: 0 -10px;
+    padding: 0 10px;
+  }
+
+  .cust-table {
+    display: none !important;
+  }
+
+  /* Mobile card view - show when table is hidden */
+  .customer-cards,
+  .customer-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .enterprise-mobile-card {
+    background: white;
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    padding: 18px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .enterprise-mobile-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 22px 48px rgba(15, 23, 42, 0.12);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border-radius: 16px;
+    background: var(--primary-glow);
+    color: var(--primary);
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .header-info {
+    min-width: 0;
+  }
+
+  .card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .card-subtitle {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .card-body {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .body-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .card-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0 0;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .stat-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--primary);
+  }
+
+  .card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: var(--surface);
+    color: var(--text-primary);
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+
+  .action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    background: #f8fafc;
+  }
+
+  .action-btn.edit {
+    color: #0c4a6e;
+    border-color: rgba(14, 165, 233, 0.16);
+  }
+
+  .action-btn.delete {
+    color: #dc2626;
+    border-color: rgba(239, 68, 68, 0.18);
+  }
+
+  .customer-card {
+    background: white;
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  .customer-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .customer-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .customer-card-actions button {
+    flex: 1;
+    height: 36px;
+    font-size: 0.8rem;
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "product_name": "",
+  "sku": "",
+  "hsn_code": "",
+  "description": "",
+  "purchase_price": 0,
+  "selling_price": 0,
+  "quantity": 0,
+  "unit": "pcs",
+  "gst_percent": 0,
+  "supplier_name": "AI ERROR",
+  "confidence": 0,
+  "raw_items": [],
+  "source_meta": {
+    "amount": 0,
+    "tax_amount": 0,
+    "date": null,
+    "currency": "INR",
+    "is_simulated": false
+  }
+}

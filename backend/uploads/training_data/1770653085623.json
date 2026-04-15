@@ -1,0 +1,10 @@
+{
+  "amount": 30500,
+  "supplier": "Global Logistics Ltd",
+  "date": "2026-02-09",
+  "currency": "INR",
+  "tax_amount": 990,
+  "confidence": 0.92,
+  "isSimulated": true,
+  "message": "AI Engine is in Simulation Mode (Set GEMINI_API_KEY for Real Scan)"
+}

@@ -1,0 +1,42 @@
+# Node
+/node_modules
+/backend/node_modules
+/frontend/node_modules
+/frontend/dist
+/frontend/build
+/dist
+
+# Python
+/venv
+/.venv
+/finance_backend/venv
+/finance_backend/.venv
+*.pyc
+__pycache__/
+
+# IDEs
+/.idea
+/.vscode
+*.swp
+*.swo
+
+# Database
+database.sqlite
+/backups
+
+# Logs
+*.log
+/server.log
+/vite.log
+/frontend/vite_log.txt
+
+# Credentials and Environment
+.env
+google-credentials.json
+.gemini/
+/tmp/
+.agents/
+.agent/
+_agents/
+_agent/
+/brain/
