@@ -1,0 +1,74 @@
+/* Transactions.css – Clean ERP Transactions Registry */
+
+.tx-container {
+  background-color: var(--erp-bg);
+  color: var(--erp-text-main);
+  font-family: 'Satoshi', sans-serif;
+  min-height: 100vh;
+}
+
+/* ─── Page Header ─── */
+.tx-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 0;
+  margin-bottom: 32px;
+}
+
+/* Reuse Finance.css classes for the rest:
+   .text-title, .text-body, .btn, .stat-card, .erp-table, etc.
+*/
+
+.tx-flow-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tx-category-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--erp-text-muted);
+  text-transform: uppercase;
+}
+
+.timestamp-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.timestamp-cell .primary {
+  font-weight: 700;
+  color: var(--erp-text-main);
+}
+
+.timestamp-cell .secondary {
+  font-size: 0.75rem;
+  color: var(--erp-text-muted);
+}
+
+/* Modal specific overrides if needed */
+.tx-modal-scan-box {
+  background: #f8fafc;
+  border: 1px dashed var(--erp-border);
+  border-radius: var(--erp-radius-card);
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.tx-modal-scan-info h4 {
+  margin: 0;
+  font-size: var(--erp-size-small);
+  font-weight: 700;
+  color: var(--erp-text-secondary);
+}
+
+.tx-modal-scan-info p {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--erp-text-muted);
+}
