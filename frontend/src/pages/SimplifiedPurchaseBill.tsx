@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   FaSave, FaPlus, FaTrash, FaChevronLeft, FaFileUpload, 
   FaFileInvoice, FaRegClock, FaUserAlt, FaBarcode, 
-  FaMoneyBillWave, FaPercentage, FaCalculator, FaTimes, FaCamera
+  FaMoneyBillWave, FaPercentage, FaCalculator, FaTimes, FaCamera, FaBox
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../utils/api";
@@ -20,6 +20,14 @@ interface ProductItem {
   gstRate: number;
   hsnCode?: string;
   unit: string;
+  imageUrl?: string;
+}
+
+interface ExpenseItem {
+  expense_type: string;
+  description: string;
+  amount: number;
+  tax_percent: number;
 }
 
 const SimplifiedPurchaseBill: React.FC = () => {
@@ -36,10 +44,13 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [billNumber, setBillNumber] = useState("");
   const [billDate, setBillDate] = useState(new Date().toISOString().split("T")[0]);
-  const [billType, setBillType] = useState<"TAX" | "NON_TAX">("TAX");
+  const [billCategory, setBillCategory] = useState<"PRODUCT" | "EXPENSE">("PRODUCT");
   const [billFile, setBillFile] = useState<File | null>(null);
   const [items, setItems] = useState<ProductItem[]>([
-    { id: "", name: "", qty: 1, rate: 0, gstRate: 18, unit: "pcs" }
+    { id: "", name: "", qty: 1, rate: 0, gstRate: 18, unit: "pcs", imageUrl: "" }
+  ]);
+  const [expenses, setExpenses] = useState<ExpenseItem[]>([
+    { expense_type: "Freight / Transport", description: "", amount: 0, tax_percent: 18 }
   ]);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [paidAmount, setPaidAmount] = useState<number>(0);
@@ -84,29 +95,45 @@ const SimplifiedPurchaseBill: React.FC = () => {
     let subTotal = 0;
     let totalTax = 0;
     
-    const processedItems = items.map(item => {
-      const amt = item.qty * item.rate;
-      subTotal += amt;
-      const tax = (amt * (item.gstRate || 0)) / 100;
-      totalTax += tax;
-      return { ...item, lineSubtotal: amt, lineTax: tax, lineTotal: amt + tax };
-    });
+    if (billCategory === "PRODUCT") {
+        items.forEach(item => {
+            const amt = item.qty * item.rate;
+            subTotal += amt;
+            if (billType === "TAX") {
+                totalTax += (amt * (item.gstRate || 0)) / 100;
+            }
+        });
+    } else {
+        expenses.forEach(exp => {
+            const amt = exp.amount;
+            subTotal += amt;
+            if (billType === "TAX") {
+                totalTax += (amt * (exp.tax_percent || 0)) / 100;
+            }
+        });
+    }
 
     const grossTotal = subTotal + totalTax;
     const netTotal = grossTotal - discountAmount;
     const balance = Math.max(0, netTotal - paidAmount);
 
-    return { subTotal, totalTax, grossTotal, netTotal, balance, processedItems };
-  }, [items, discountAmount, paidAmount]);
+    return { subTotal, totalTax, grossTotal, netTotal, balance };
+  }, [items, expenses, billCategory, billType, discountAmount, paidAmount]);
 
   // Handlers
   const handleAddItem = () => {
-    setItems([...items, { id: "", name: "", qty: 1, rate: 0, gstRate: 18, unit: "pcs" }]);
+    if (billCategory === "PRODUCT") {
+        setItems([...items, { id: "", name: "", qty: 1, rate: 0, gstRate: 18, unit: "pcs", imageUrl: "" }]);
+    } else {
+        setExpenses([...expenses, { expense_type: "Other", description: "", amount: 0, tax_percent: 18 }]);
+    }
   };
 
   const handleRemoveItem = (index: number) => {
-    if (items.length > 1) {
-      setItems(items.filter((_, i) => i !== index));
+    if (billCategory === "PRODUCT") {
+        if (items.length > 1) setItems(items.filter((_, i) => i !== index));
+    } else {
+        if (expenses.length > 1) setExpenses(expenses.filter((_, i) => i !== index));
     }
   };
 
@@ -121,7 +148,8 @@ const SimplifiedPurchaseBill: React.FC = () => {
         rate: prod.cost_price || 0,
         gstRate: prod.gst_percent || 18,
         unit: prod.unit || "pcs",
-        hsnCode: prod.hsn_code
+        hsnCode: prod.hsn_code,
+        imageUrl: prod.image_url
       };
     } else {
       newItems[index].name = val;
@@ -132,24 +160,23 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const handleSave = async (print = false) => {
     if (!selectedSupplierId) return alert("Please select a supplier.");
     if (!billNumber) return alert("Please enter bill number.");
-    if (items.some(i => !i.name || i.qty <= 0)) return alert("Please ensure all items have name and quantity.");
+    if (billCategory === "PRODUCT" && items.some(i => !i.name || i.qty <= 0)) return alert("Please ensure all products have name and quantity.");
+    if (billCategory === "EXPENSE" && expenses.some(e => !e.expense_type || e.amount <= 0)) return alert("Please ensure all expenses have type and amount.");
 
     setLoading(true);
     try {
       const formData = new FormData();
       const payload = {
-        supplier_id: selectedSupplierId,
-        bill_number: billNumber,
-        bill_date: billDate,
-        bill_type: billType,
-        items: items.map(i => ({
+        bill_category: billCategory,
+        items: billCategory === "PRODUCT" ? items.map(i => ({
           product_id: i.id ? parseInt(i.id) : null,
           description: i.name,
           quantity: i.qty,
           unit_price: i.rate,
           tax_percent: billType === "TAX" ? i.gstRate : 0,
           hsn_code: i.hsnCode
-        })),
+        })) : [],
+        expenses: billCategory === "EXPENSE" ? expenses : [],
         discount_amount: discountAmount,
         paid_amount: paidAmount,
         payment_mode: paymentMode,
@@ -261,83 +288,169 @@ const SimplifiedPurchaseBill: React.FC = () => {
             )}
           </section>
 
-          {/* Section 2: Product Entry Table */}
+          {/* Bill Type Selector */}
+          <section style={{ background: "#fff", borderRadius: "16px", padding: "15px 24px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)", display: "flex", alignItems: "center", gap: "20px" }}>
+             <span style={{ fontWeight: 800, color: "#475569", fontSize: "0.85rem", textTransform: "uppercase" }}>Bill Category:</span>
+             <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "12px", padding: "4px", width: "400px" }}>
+                <button 
+                  onClick={() => { if(items.length > 1 || items[0].id) { if(!confirm("Switching will clear your items. Continue?")) return; } setBillCategory("PRODUCT"); setItems([{ id: "", name: "", qty: 1, rate: 0, gstRate: 18, unit: "pcs", imageUrl: "" }]); }} 
+                  style={{ flex: 1, border: "none", background: billCategory === "PRODUCT" ? "#4f46e5" : "transparent", padding: "10px", borderRadius: "10px", fontSize: "0.9rem", fontWeight: 700, color: billCategory === "PRODUCT" ? "#fff" : "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                >
+                   <FaBox /> Product Bill
+                </button>
+                <button 
+                  onClick={() => { if(expenses.length > 1 || expenses[0].amount > 0) { if(!confirm("Switching will clear your items. Continue?")) return; } setBillCategory("EXPENSE"); setExpenses([{ expense_type: "Freight / Transport", description: "", amount: 0, tax_percent: 18 }]); }} 
+                  style={{ flex: 1, border: "none", background: billCategory === "EXPENSE" ? "#4f46e5" : "transparent", padding: "10px", borderRadius: "10px", fontSize: "0.9rem", fontWeight: 700, color: billCategory === "EXPENSE" ? "#fff" : "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                >
+                   <FaFileInvoice /> Expense Bill
+                </button>
+             </div>
+          </section>
+
+          {/* Section 2: Product Entry Table / Expense Table */}
           <section style={{ background: "#fff", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <h3 style={{ fontSize: "1rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "10px" }}>
-                <FaBarcode color="#4f46e5" /> Items Breakdown
+                {billCategory === "PRODUCT" ? <><FaBarcode color="#4f46e5" /> Items Breakdown</> : <><FaMoneyBillWave color="#4f46e5" /> Expense Details</>}
               </h3>
-              <button onClick={() => setShowAddProductModal(true)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569", borderRadius: "10px", padding: "8px 16px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}>
-                <FaPlus /> New Product
-              </button>
+              {billCategory === "PRODUCT" && (
+                <button onClick={() => setShowAddProductModal(true)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569", borderRadius: "10px", padding: "8px 16px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <FaPlus /> New Product
+                </button>
+              )}
             </div>
 
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ textAlign: "left", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
-                    <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Product Description</th>
-                    <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>Qty</th>
-                    <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "150px" }}>Rate (₹)</th>
-                    {billType === "TAX" && (
-                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>GST %</th>
-                    )}
-                    <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "160px" }}>Total (₹)</th>
-                    <th style={{ padding: "15px", width: "50px" }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <AnimatePresence>
-                    {items.map((item, idx) => (
-                      <motion.tr key={idx} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                        <td style={{ padding: "10px" }}>
-                          <input list="purchase-prod-list" value={item.name} onChange={e => handleProductSelect(idx, e.target.value)} placeholder="Type or select product..." style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", outline: "none", fontSize: "0.95rem" }} />
-                        </td>
-                        <td style={{ padding: "10px" }}>
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
-                            <input type="number" value={item.qty} min={1} onChange={e => {
-                                const t = [...items]; t[idx].qty = parseFloat(e.target.value) || 0; setItems(t);
-                            }} style={{ width: "80px", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 600 }} />
-                            <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: 700 }}>{item.unit}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: "10px" }}>
-                          <input type="number" value={item.rate} min={0} onChange={e => {
-                              const t = [...items]; t[idx].rate = parseFloat(e.target.value) || 0; setItems(t);
-                          }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }} />
-                        </td>
-                        {billType === "TAX" && (
+              {billCategory === "PRODUCT" ? (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                      <th style={{ padding: "15px", width: "60px" }}>IMG</th>
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Product Description</th>
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>Qty</th>
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "150px" }}>Rate (₹)</th>
+                      {billType === "TAX" && (
+                        <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>GST %</th>
+                      )}
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "160px" }}>Total (₹)</th>
+                      <th style={{ padding: "15px", width: "50px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence>
+                      {items.map((item, idx) => (
+                        <motion.tr key={idx} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} style={{ borderBottom: "1px solid #f1f5f9" }}>
                           <td style={{ padding: "10px" }}>
-                            <select value={item.gstRate} onChange={e => {
-                                const t = [...items]; t[idx].gstRate = parseInt(e.target.value); setItems(t);
+                            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "#f1f5f9", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e2e8f0" }}>
+                               {item.imageUrl ? <img src={item.imageUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <FaBox color="#cbd5e1" />}
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <input list="purchase-prod-list" value={item.name} onChange={e => handleProductSelect(idx, e.target.value)} placeholder="Type or select product..." style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", outline: "none", fontSize: "0.95rem" }} />
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+                              <input type="number" value={item.qty} min={1} onChange={e => {
+                                  const t = [...items]; t[idx].qty = parseFloat(e.target.value) || 0; setItems(t);
+                              }} style={{ width: "80px", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 600 }} />
+                              <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: 700 }}>{item.unit}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <input type="number" value={item.rate} min={0} onChange={e => {
+                                const t = [...items]; t[idx].rate = parseFloat(e.target.value) || 0; setItems(t);
+                            }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }} />
+                          </td>
+                          {billType === "TAX" && (
+                            <td style={{ padding: "10px" }}>
+                              <select value={item.gstRate} onChange={e => {
+                                  const t = [...items]; t[idx].gstRate = parseInt(e.target.value); setItems(t);
+                              }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", background: "#fff" }}>
+                                {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                              </select>
+                            </td>
+                          )}
+                          <td style={{ padding: "10px", textAlign: "right" }}>
+                             <div style={{ fontWeight: 800, color: "#1e293b" }}>
+                               ₹{((item.qty * item.rate) + (billType === "TAX" ? (item.qty * item.rate * item.gstRate / 100) : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                             </div>
+                          </td>
+                          <td style={{ padding: "10px", textAlign: "center" }}>
+                            <button onClick={() => handleRemoveItem(idx)} style={{ background: "none", border: "none", color: "#f43f5e", cursor: "pointer", opacity: items.length > 1 ? 1 : 0.3 }}>
+                              <FaTrash size={14} />
+                            </button>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                      <th style={{ padding: "15px", width: "250px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Expense Type</th>
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Description</th>
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "150px" }}>Amount (₹)</th>
+                      {billType === "TAX" && (
+                        <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>GST %</th>
+                      )}
+                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "160px" }}>Total (₹)</th>
+                      <th style={{ padding: "15px", width: "50px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence>
+                      {expenses.map((exp, idx) => (
+                        <motion.tr key={idx} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "10px" }}>
+                            <select value={exp.expense_type} onChange={e => {
+                                const t = [...expenses]; t[idx].expense_type = e.target.value; setExpenses(t);
                             }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", background: "#fff" }}>
-                              {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                                {['Freight / Transport', 'Labour Charges', 'Professional Fees', 'Rent', 'Electricity', 'Repair & Maintenance', 'Printing & Stationery', 'Advertisement', 'Bank Charges', 'Insurance', 'Other'].map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
                             </select>
                           </td>
-                        )}
-                        <td style={{ padding: "10px", textAlign: "right" }}>
-                           <div style={{ fontWeight: 800, color: "#1e293b" }}>
-                             ₹{((item.qty * item.rate) + (billType === "TAX" ? (item.qty * item.rate * item.gstRate / 100) : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                           </div>
-                           <div style={{ fontSize: "0.7rem", color: "#64748b" }}>Base: ₹{(item.qty * item.rate).toLocaleString()}</div>
-                        </td>
-                        <td style={{ padding: "10px", textAlign: "center" }}>
-                          <button onClick={() => handleRemoveItem(idx)} style={{ background: "none", border: "none", color: "#f43f5e", cursor: "pointer", opacity: items.length > 1 ? 1 : 0.3 }}>
-                            <FaTrash size={14} />
-                          </button>
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </AnimatePresence>
-                </tbody>
-              </table>
-              <datalist id="purchase-prod-list">
-                {products.map(p => <option key={p.id} value={p.name} />)}
-              </datalist>
+                          <td style={{ padding: "10px" }}>
+                             <input type="text" value={exp.description} onChange={e => {
+                                 const t = [...expenses]; t[idx].description = e.target.value; setExpenses(t);
+                             }} placeholder="What was this for?" style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0" }} />
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <input type="number" value={exp.amount} min={0} onChange={e => {
+                                const t = [...expenses]; t[idx].amount = parseFloat(e.target.value) || 0; setExpenses(t);
+                            }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }} />
+                          </td>
+                          {billType === "TAX" && (
+                            <td style={{ padding: "10px" }}>
+                              <select value={exp.tax_percent} onChange={e => {
+                                  const t = [...expenses]; t[idx].tax_percent = parseInt(e.target.value); setExpenses(t);
+                              }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", background: "#fff" }}>
+                                {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                              </select>
+                            </td>
+                          )}
+                          <td style={{ padding: "10px", textAlign: "right" }}>
+                             <div style={{ fontWeight: 800, color: "#1e293b" }}>
+                               ₹{(exp.amount + (billType === "TAX" ? (exp.amount * exp.tax_percent / 100) : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                             </div>
+                          </td>
+                          <td style={{ padding: "10px", textAlign: "center" }}>
+                            <button onClick={() => handleRemoveItem(idx)} style={{ background: "none", border: "none", color: "#f43f5e", cursor: "pointer", opacity: expenses.length > 1 ? 1 : 0.3 }}>
+                              <FaTrash size={14} />
+                            </button>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              )}
             </div>
 
             <button onClick={handleAddItem} style={{ marginTop: "20px", background: "#f8fafc", border: "2px dashed #e2e8f0", color: "#64748b", borderRadius: "12px", padding: "12px", width: "100%", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.borderColor = "#4f46e5"} onMouseOut={e => e.currentTarget.style.borderColor = "#e2e8f0"}>
-              <FaPlus /> Add Line Item
+              <FaPlus /> {billCategory === "PRODUCT" ? "Add Line Item" : "Add Another Expense"}
             </button>
           </section>
 

@@ -84,9 +84,11 @@ router.get("/:id", authMiddleware, async (req, res) => {
         );
         if (!bill) return res.status(404).json({ error: "Bill not found" });
 
-        const items = await db.pgAll(`SELECT * FROM purchase_bill_items WHERE bill_id = $1`, [id]);
-        res.json({ ...bill, items });
+        const items = await db.pgAll(`SELECT pbi.*, p.image_url FROM purchase_bill_items pbi LEFT JOIN products p ON p.id = pbi.product_id WHERE pbi.bill_id = $1`, [id]);
+        const expenses = await db.pgAll(`SELECT * FROM purchase_bill_expenses WHERE bill_id = $1`, [id]);
+        res.json({ ...bill, items, expenses });
     } catch (err) {
+        console.error("Fetch Bill Details Error:", err);
         res.status(500).json({ error: "Failed to fetch bill" });
     }
 });
@@ -106,8 +108,8 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
     const {
         supplier_id, supplier_name, bill_number, bill_date,
-        paid_amount, payment_mode, bill_type, items,
-        broker_id, broker_commission_rate, discount_amount
+        paid_amount, payment_mode, bill_type, items, expenses,
+        broker_id, broker_commission_rate, discount_amount, bill_category
     } = data;
 
     let client;
@@ -136,7 +138,9 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         let sgstTotal = 0;
         let igstTotal = 0;
 
-        const processedItems = (items || []).map(item => {
+        const isExpenseBill = bill_category === 'EXPENSE';
+
+        const processedItems = (!isExpenseBill ? (items || []) : []).map(item => {
             const qty          = parseFloat(item.quantity || 0);
             const price        = parseFloat(item.unit_price || 0);
             const lineSubtotal = qty * price;
@@ -177,6 +181,32 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             };
         });
 
+        const processedExpenses = (isExpenseBill ? (expenses || []) : []).map(exp => {
+            const amount = parseFloat(exp.amount || 0);
+            const taxRate = parseFloat(exp.tax_percent || 0);
+            
+            let cgstA = 0, sgstA = 0, igstA = 0;
+            if (bill_type === "TAX") {
+                if (gstType === "INTRA_STATE") {
+                    cgstA = (amount * (taxRate / 2)) / 100;
+                    sgstA = (amount * (taxRate / 2)) / 100;
+                } else {
+                    igstA = (amount * taxRate) / 100;
+                }
+            }
+
+            const lineTax = cgstA + sgstA + igstA;
+            const lineTotal = amount + lineTax;
+
+            subTotal  += amount;
+            taxTotal  += lineTax;
+            cgstTotal += cgstA;
+            sgstTotal += sgstA;
+            igstTotal += igstA;
+
+            return { ...exp, cgst_amount: cgstA, sgst_amount: sgstA, igst_amount: igstA, total_amount: lineTotal };
+        });
+
         const discount = parseFloat(discount_amount || 0);
         const grossTotal = subTotal + taxTotal;
         const netAmount = grossTotal - discount;
@@ -189,8 +219,8 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             (company_id, branch_id, supplier_id, supplier_name, bill_number, bill_date,
              sub_total, tax_total, cgst_total, sgst_total, igst_total, total_amount,
              discount_amount, gst_type, paid_amount, balance_amount, status, bill_type,
-             file_url, broker_id, broker_commission_rate, is_deleted)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,false)
+             file_url, broker_id, broker_commission_rate, bill_category, is_deleted)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,false)
             RETURNING id
         `, [
             companyId, branchId, supplier_id || null,
@@ -198,12 +228,14 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             bill_number, bill_date || new Date(),
             subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, netAmount,
             discount, gstType, paid, balance, status, bill_type || "TAX",
-            fileUrl, broker_id || null, broker_commission_rate || null
+            fileUrl, broker_id || null, broker_commission_rate || null,
+            bill_category || 'PRODUCT'
         ]);
 
         const billId = billRes.rows[0].id;
 
         for (const item of processedItems) {
+            // ... (keep product item saving logic)
             await client.query(`
                 INSERT INTO purchase_bill_items
                 (bill_id, product_id, description, hsn_code, quantity, unit_price,
@@ -244,6 +276,17 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             }
         }
 
+        for (const exp of processedExpenses) {
+            await client.query(`
+                INSERT INTO purchase_bill_expenses
+                (bill_id, expense_type, description, amount, tax_percent, cgst_amount, sgst_amount, igst_amount, total_amount)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            `, [
+                billId, exp.expense_type, exp.description || null, exp.amount, exp.tax_percent || 0,
+                exp.cgst_amount, exp.sgst_amount, exp.igst_amount, exp.total_amount
+            ]);
+        }
+
         if (supplier_id && balance > 0) {
             await client.query(
                 `UPDATE suppliers SET current_balance = current_balance + $1 WHERE id = $2`,
@@ -258,14 +301,37 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             const cashAccount      = await getAccountByCode(companyId, "1000");
             const discountAccount  = await getAccountByCode(companyId, "5100");
 
-            if (inventoryAccount && apAccount) {
-                const txLines = [];
-                txLines.push({ account_id: inventoryAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Inventory Purchase - Bill #${bill_number}` });
-                if (taxTotal > 0 && gstInputAccount) {
-                    txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
-                }
-                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to ${supplierRes.rows[0]?.name || "Supplier"} - Bill #${bill_number}` });
+            const txLines = [];
 
+            if (isExpenseBill) {
+                const expenseTypeMap = {
+                    'Freight / Transport': '5010', 'Labour Charges': '5020', 'Professional Fees': '5030',
+                    'Rent': '5040', 'Electricity': '5050', 'Repair & Maintenance': '5060',
+                    'Printing & Stationery': '5070', 'Advertisement': '5080', 'Bank Charges': '5090',
+                    'Insurance': '5100', 'Other': '5999'
+                };
+
+                for (const exp of processedExpenses) {
+                    const accCode = expenseTypeMap[exp.expense_type] || '5999';
+                    const acc = await getAccountByCode(companyId, accCode);
+                    if (acc) {
+                        txLines.push({ account_id: acc.id, debit_amount: exp.amount, credit_amount: 0, description: `${exp.expense_type} - Bill #${bill_number}` });
+                    }
+                }
+            } else {
+                const inventoryAccount = await getAccountByCode(companyId, "1400");
+                if (inventoryAccount) {
+                    txLines.push({ account_id: inventoryAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Inventory Purchase - Bill #${bill_number}` });
+                }
+            }
+
+            if (taxTotal > 0 && gstInputAccount) {
+                txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
+            }
+
+            if (apAccount) {
+                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to ${supplierRes.rows[0]?.name || "Supplier"} - Bill #${bill_number}` });
+                
                 if (discount > 0 && discountAccount) {
                     txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: `Discount on Bill #${bill_number}` });
                     txLines.push({ account_id: discountAccount.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount - Bill #${bill_number}` });
@@ -275,14 +341,16 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     txLines.push({ account_id: apAccount.id, debit_amount: paid, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
                     txLines.push({ account_id: cashAccount.id, debit_amount: 0, credit_amount: paid, description: `Payment out via ${payment_mode} - Bill #${bill_number}` });
                 }
+            }
 
+            if (txLines.length > 0) {
                 await createTransaction({
                     company_id:       companyId,
                     branch_id:        branchId,
                     transaction_date: bill_date || new Date(),
                     reference_type:   "PURCHASE_BILL",
                     reference_id:     billId,
-                    description:      `Purchase Bill #${bill_number}`,
+                    description:      `${isExpenseBill ? 'Expense' : 'Purchase'} Bill #${bill_number}`,
                     created_by:       userId
                 }, txLines);
             }

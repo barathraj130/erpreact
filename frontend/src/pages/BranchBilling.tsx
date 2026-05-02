@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { 
   FaSearch, FaShoppingCart, FaTrash, FaPlus, FaCheck, FaTimes, 
   FaBox, FaRegClock, FaUserAlt, FaFileUpload, FaPrint, FaWhatsapp,
-  FaInbox, FaExclamationTriangle, FaBolt, FaUserEdit
+  FaInbox, FaExclamationTriangle, FaBolt, FaUserEdit, FaCheckCircle, FaBuilding
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -268,8 +268,12 @@ const BranchBilling: React.FC = () => {
                     boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)"
                   }}
                 >
-                  <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: `${color}15`, color: color, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "15px" }}>
-                    <FaBox />
+                  <div style={{ width: "100%", height: "120px", borderRadius: "12px", background: "#f8fafc", overflow: "hidden", border: "1px solid #e2e8f0", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                     {p.image_url ? (
+                        <img src={p.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                     ) : (
+                        <FaBox size={32} color="#cbd5e1" />
+                     )}
                   </div>
                   <div style={{ fontWeight: 800, color: "#1e293b", fontSize: "0.95rem", marginBottom: "5px", height: "40px", overflow: "hidden" }}>{p.name}</div>
                   <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#0f172a" }}>₹{parseFloat(p.selling_price).toLocaleString()}</div>
