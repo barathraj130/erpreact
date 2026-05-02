@@ -12,6 +12,7 @@ import {
 import { apiFetch } from "../utils/api";
 import "./Dashboard.css";
 import "./PageShared.css";
+import AddBranchModal from "./AddBranchModal";
 
 interface Branch {
   id: number;
@@ -27,6 +28,7 @@ const Branches: React.FC = () => {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -36,18 +38,19 @@ const Branches: React.FC = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const fetchBranches = async () => {
+    try {
+      const response = await apiFetch("/branches");
+      const data = await response.json();
+      if (response.ok) setBranches(data);
+    } catch (error) {
+      console.error("Link Loss", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchBranches = async () => {
-      try {
-        const response = await apiFetch("/branches");
-        const data = await response.json();
-        if (response.ok) setBranches(data);
-      } catch (error) {
-        console.error("Link Loss", error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchBranches();
   }, []);
 
@@ -73,12 +76,22 @@ const Branches: React.FC = () => {
             </svg>
             Refresh
           </button>
-          <button className="db-btn db-btn-primary">
+          <button className="db-btn db-btn-primary" onClick={() => setIsModalOpen(true)}>
             <FaPlus size={12} />
             Authorize Node
           </button>
         </div>
       </header>
+
+      {isModalOpen && (
+        <AddBranchModal 
+          onClose={() => setIsModalOpen(false)} 
+          onSuccess={() => {
+            setIsModalOpen(false);
+            fetchBranches();
+          }} 
+        />
+      )}
 
       {/* ── Page Body ── */}
       <div className="db-content">
