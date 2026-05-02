@@ -62,4 +62,58 @@ router.get("/my-ledger", checkCustomerAuth, async (req, res) => {
     }
 });
 
+// 3. POST ENQUIRY
+router.post("/enquiry", checkCustomerAuth, async (req, res) => {
+    try {
+        const { product_id, product_name, qty, unit, message } = req.body;
+        const customerId = req.user.id;
+        const companyId = req.user.company_id || req.user.active_company_id || 1;
+        
+        await db.pgRun(`
+            INSERT INTO customer_notifications (company_id, customer_id, type, message, details)
+            VALUES ($1, $2, 'ENQUIRY', $3, $4)
+        `, [companyId, customerId, \`Enquiry: \${req.user.username} wants \${qty} \${unit} of \${product_name}\`, JSON.stringify({ product_id, product_name, qty, unit, message })]);
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to send enquiry" });
+    }
+});
+
+// 4. POST MESSAGE
+router.post("/message", checkCustomerAuth, async (req, res) => {
+    try {
+        const { subject, message } = req.body;
+        const customerId = req.user.id;
+        const companyId = req.user.company_id || req.user.active_company_id || 1;
+        
+        await db.pgRun(`
+            INSERT INTO customer_notifications (company_id, customer_id, type, message, details)
+            VALUES ($1, $2, 'MESSAGE', $3, $4)
+        `, [companyId, customerId, \`Message from \${req.user.username}: \${subject}\`, JSON.stringify({ subject, message })]);
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to send message" });
+    }
+});
+
+// 5. POST LOG ACTIVITY
+router.post("/activity", checkCustomerAuth, async (req, res) => {
+    try {
+        const { activity } = req.body;
+        const customerId = req.user.id;
+        const companyId = req.user.company_id || req.user.active_company_id || 1;
+        
+        await db.pgRun(`
+            INSERT INTO customer_notifications (company_id, customer_id, type, message, details)
+            VALUES ($1, $2, 'ACTIVITY', $3, $4)
+        `, [companyId, customerId, \`\${req.user.username} \${activity}\`, JSON.stringify({ activity })]);
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to log activity" });
+    }
+});
+
 export default router;

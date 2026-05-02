@@ -19,6 +19,7 @@ import { useAuthUser } from "../../hooks/useAuthUser";
 import { useTenant } from "../../context/TenantContext";
 import { apiFetch } from "../../utils/api";
 import { closeDayLedger } from "../../api/ledgerApi";
+import { FaBell } from "react-icons/fa";
 import "./Sidebar.css";
 
 interface MenuItem {
@@ -63,7 +64,8 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
           section: "Operations",
           subItems: [
               { name: "Orders", path: "/invoices" },
-              { name: "Customers", path: "/customers" }
+              { name: "Customers", path: "/customers" },
+              { name: "Portal Alerts", path: "/sales/customer-notifications" }
           ] 
       });
   }
@@ -165,6 +167,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
   }, [location.pathname, isMobile, setIsOpen]);
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (mode === "USER" || mode === "ADMIN") {
+      const fetchCount = async () => {
+        try {
+          const res = await apiFetch("/customer-notifications");
+          if (res.ok) {
+            const data = await res.json();
+            setUnreadCount(data.filter((n: any) => !n.is_read).length);
+          }
+        } catch (e) {}
+      };
+      fetchCount();
+      // Poll every 30s
+      const interval = setInterval(fetchCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [mode]);
 
   useEffect(() => {
     for (const item of MENU_ITEMS) {
@@ -321,8 +342,33 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
         ))}
       </nav>
 
-      {/* ── User Chip ── */}
+      {/* ── User Chip & Notifications ── */}
       <div className="sidebar-footer-v2">
+        {(mode === "USER" || mode === "ADMIN") && !isCollapsed && (
+          <div 
+            onClick={() => navigate("/sales/customer-notifications")}
+            style={{ 
+              display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", 
+              cursor: "pointer", color: "#64748b", fontWeight: 700, fontSize: "0.85rem",
+              borderBottom: "1px solid #f1f5f9"
+            }}
+          >
+            <div style={{ position: "relative" }}>
+              <FaBell size={16} />
+              {unreadCount > 0 && (
+                <div style={{ 
+                  position: "absolute", top: "-5px", right: "-5px", background: "#ef4444", 
+                  color: "white", fontSize: "0.6rem", width: "16px", height: "16px", 
+                  borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" 
+                }}>
+                  {unreadCount}
+                </div>
+              )}
+            </div>
+            <span>Notifications</span>
+          </div>
+        )}
+
         <div className="user-chip-v2" onClick={() => handleLogout()} title="Sign Out">
           <div className="admin-avatar-v2">
             {user?.name?.charAt(0).toUpperCase() || "S"}

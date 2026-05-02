@@ -44,11 +44,19 @@ import Suppliers from "./pages/Suppliers";
 import Transactions from "./pages/Transactions";
 import SimpleDashboard from "./SimpleDashboard";
 import SynthesisDashboard from "./SynthesisDashboard";
+import CustomerNotifications from "./pages/CustomerNotifications";
 import EmployeeLogin from "./pages/employee/EmployeeLogin";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import CustomerShop from "./pages/customer/CustomerShop";
 import CustomerLedger from "./pages/customer/CustomerLedger";
 import CustomerLayout from "./components/Layout/CustomerLayout";
+import CustomerLogin from "./pages/customer/CustomerLogin";
+import CustomerPortalLayout from "./pages/customer/CustomerPortalLayout";
+import CustomerHome from "./pages/customer/CustomerHome";
+import CustomerProducts from "./pages/customer/CustomerProducts";
+import CustomerOrders from "./pages/customer/CustomerOrders";
+import CustomerLedgerPage from "./pages/customer/CustomerLedgerPage";
+import CustomerContact from "./pages/customer/CustomerContact";
 
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
@@ -213,6 +221,7 @@ const App: React.FC = () => {
           <Route path="/company-login" element={<Login />} />
           <Route path="/employee-login" element={<EmployeeLogin />} />
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+          <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/host-login" element={<HostLogin />} />
           <Route path="/mark-attendance" element={<MobileAttendance />} />
 
@@ -244,6 +253,7 @@ const App: React.FC = () => {
           <Route element={<WorkspaceRoute />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/customers" element={<Customers />} />
+            <Route path="/sales/customer-notifications" element={<CustomerNotifications />} />
             <Route path="/invoices" element={<Invoices />} />
             <Route path="/invoices/new" element={<CreateInvoice />} />
             <Route path="/invoices/:id" element={<InvoiceDetails />} />
@@ -283,10 +293,19 @@ const App: React.FC = () => {
             <Route path="/reports/:reportId" element={<ReportViewer />} />
           </Route>
 
-          {/* Customer Portal */}
+          {/* Legacy Customer Portal */}
           <Route element={<CustomerRoute />}>
             <Route path="/shop" element={<CustomerShop />} />
             <Route path="/my-ledger" element={<CustomerLedger />} />
+          </Route>
+
+          {/* New Customer Portal */}
+          <Route path="/portal" element={<CustomerPortalLayout />}>
+            <Route path="home" element={<CustomerHome />} />
+            <Route path="products" element={<CustomerProducts />} />
+            <Route path="orders" element={<CustomerOrders />} />
+            <Route path="ledger" element={<CustomerLedgerPage />} />
+            <Route path="contact" element={<CustomerContact />} />
           </Route>
 
 

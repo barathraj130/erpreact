@@ -54,6 +54,7 @@ import attendanceRoutes from "./routes/attendanceRoutes.js";
 import dayOperationsRoutes from "./routes/dayOperationsRoutes.js";
 import branchInventoryRoutes from "./routes/branchInventoryRoutes.js";
 import billingConfigRoutes from "./routes/billingConfigRoutes.js";
+import customerNotificationsRoutes from "./routes/customerNotificationsRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -141,6 +142,7 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api/day-operations", dayOperationsRoutes);
 app.use("/api/branch-inventory", branchInventoryRoutes);
 app.use("/api/billing-config", billingConfigRoutes);
+app.use("/api/customer-notifications", customerNotificationsRoutes);
 
 
 // --- DATABASE INITIALIZATION ---
