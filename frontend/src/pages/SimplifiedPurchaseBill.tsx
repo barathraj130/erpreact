@@ -44,6 +44,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [billNumber, setBillNumber] = useState("");
   const [billDate, setBillDate] = useState(new Date().toISOString().split("T")[0]);
+  const [billType, setBillType] = useState<"TAX" | "NON_TAX">("TAX");
   const [billCategory, setBillCategory] = useState<"PRODUCT" | "EXPENSE">("PRODUCT");
   const [billFile, setBillFile] = useState<File | null>(null);
   const [items, setItems] = useState<ProductItem[]>([
@@ -167,6 +168,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
     try {
       const formData = new FormData();
       const payload = {
+        supplier_id: selectedSupplierId,
+        bill_number: billNumber,
+        bill_date: billDate,
+        bill_type: billType,
         bill_category: billCategory,
         items: billCategory === "PRODUCT" ? items.map(i => ({
           product_id: i.id ? parseInt(i.id) : null,
