@@ -212,8 +212,9 @@ const Inventory: React.FC = () => {
             <thead>
               <tr>
                 <th style={{ paddingLeft: "24px" }}>Product Detail</th>
-                <th>SKU Code</th>
-                <th style={{ textAlign: "right" }}>Price</th>
+                <th>Category</th>
+                <th>Location</th>
+                <th style={{ textAlign: "right" }}>WAC / Selling</th>
                 <th style={{ textAlign: "center" }}>Stock Level</th>
                 <th style={{ textAlign: "center", paddingRight: "24px" }}>Actions</th>
               </tr>
@@ -251,13 +252,18 @@ const Inventory: React.FC = () => {
                         </div>
                       </td>
                       <td>
-                        <span style={{ fontFamily: "monospace", fontSize: "0.85rem", background: "#f1f5f9", padding: "4px 8px", borderRadius: "6px", fontWeight: 600 }}>
-                          {p.sku || `#${p.id}`}
+                        <span style={{ fontSize: "0.85rem", background: "#eff6ff", color: "#3b82f6", padding: "4px 10px", borderRadius: "100px", fontWeight: 700 }}>
+                          {p.category || "Other"}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }}>
+                          {p.location || "---"}
                         </span>
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <div style={{ fontWeight: 800, color: "var(--erp-primary)" }}>₹{p.selling_price.toLocaleString()}</div>
-                        <div style={{ fontSize: "0.7rem", color: "var(--erp-text-muted)" }}>Unit Price</div>
+                        <div style={{ fontSize: "0.7rem", color: "#16a34a", fontWeight: 700 }}>Cost: ₹{(p.cost_price || 0).toFixed(2)}</div>
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`status-badge ${isOut ? "status-error" : isLow ? "status-warning" : "status-success"}`}>

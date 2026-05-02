@@ -17,7 +17,23 @@ const router = express.Router();
 /* ============================================================
    HELPER: Generate Smart Invoice Number
 ============================================================ */
-async function generateInvoiceNumber(client, type, companyId) {
+async function generateInvoiceNumber(client, type, companyId, branchId) {
+    if (branchId) {
+        // Branch Specific Sequence
+        const branchResult = await client.query(
+            `UPDATE branches SET bill_sequence = bill_sequence + 1 
+             WHERE id = $1 RETURNING bill_sequence, bill_prefix`,
+            [branchId]
+        );
+        const { bill_sequence, bill_prefix } = branchResult.rows[0];
+        const padding = bill_sequence.toString().padStart(4, "0");
+        const prefix = bill_prefix || `B${branchId}`;
+        return {
+            number: `${prefix}-${padding}`,
+            financial_month: `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`
+        };
+    }
+
     const date = new Date();
     const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
     const year = date.getFullYear();
@@ -31,7 +47,7 @@ async function generateInvoiceNumber(client, type, companyId) {
 
     const result = await client.query(
         `SELECT COUNT(*) AS count FROM invoices 
-         WHERE company_id=$1 AND invoice_type=$2 AND financial_month=$3`,
+         WHERE company_id=$1 AND invoice_type=$2 AND financial_month=$3 AND branch_id IS NULL`,
         [companyId, type, financial_month]
     );
 
@@ -88,9 +104,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         let finalInvoiceNumber = invoice_number;
         let financial_month;
+        const branchId = req.body.branch_id || req.user.branch_id;
         
         if (!finalInvoiceNumber) {
-            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId);
+            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId);
             finalInvoiceNumber = gen.number;
             financial_month = gen.financial_month;
         } else {
@@ -212,8 +229,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 gst_type, paid_amount, discount_amount, return_amount, notes, bundles_count,
                 vehicle_number, transportation_mode, date_of_supply, reverse_charge,
                 broker_id, broker_commission_rate,
+                branch_id,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, NOW())
             RETURNING id
         `;
 
@@ -243,7 +261,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             transport_details?.supply_date || null,
             transport_details?.reverse_charge || 'No',
             broker_id || null,
-            broker_commission_rate || null
+            broker_commission_rate || null,
+            branchId || null
         ]);
 
         const invoiceId = result.rows[0].id;
@@ -257,14 +276,26 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     await client.query('UPDATE products SET current_stock = current_stock + $1 WHERE id = $2', [item.qty, item.product_id]);
                 } else {
                     // Check stock for sales
-                    const stockResult = await client.query('SELECT current_stock, name FROM products WHERE id = $1', [item.product_id]);
-                    if (stockResult.rows.length > 0) {
-                        const currentStock = Number(stockResult.rows[0].current_stock);
-                        if (currentStock < item.qty) {
-                            throw new Error(`Insufficient stock for product: ${stockResult.rows[0].name}. Available: ${currentStock}, Required: ${item.qty}`);
-                        }
-                        // Deduct stock
+                    if (branchId) {
+                        // Check Branch Inventory
+                        const branchStockRes = await client.query('SELECT current_stock FROM branch_inventory WHERE branch_id = $1 AND product_id = $2', [branchId, item.product_id]);
+                        const stock = Number(branchStockRes.rows[0]?.current_stock || 0);
+                        if (stock < item.qty) throw new Error(`Insufficient stock in branch. Avail: ${stock}`);
+                        
+                        await client.query('UPDATE branch_inventory SET current_stock = current_stock - $1 WHERE branch_id = $2 AND product_id = $3', [item.qty, branchId, item.product_id]);
+                        // Also decrement global product stock
                         await client.query('UPDATE products SET current_stock = current_stock - $1 WHERE id = $2', [item.qty, item.product_id]);
+                    } else {
+                        // Main branch
+                        const stockResult = await client.query('SELECT current_stock, name FROM products WHERE id = $1', [item.product_id]);
+                        if (stockResult.rows.length > 0) {
+                            const currentStock = Number(stockResult.rows[0].current_stock);
+                            if (currentStock < item.qty) {
+                                throw new Error(`Insufficient stock for product: ${stockResult.rows[0].name}. Available: ${currentStock}, Required: ${item.qty}`);
+                            }
+                            await client.query('UPDATE products SET current_stock = current_stock - $1 WHERE id = $2', [item.qty, item.product_id]);
+                            await client.query('UPDATE inventory SET current_stock = current_stock - $1 WHERE product_id = $2', [item.qty, item.product_id]);
+                        }
                     }
                 }
             }

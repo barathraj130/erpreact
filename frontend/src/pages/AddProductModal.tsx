@@ -271,11 +271,14 @@ const AddProductModal: React.FC<Props> = ({
     opening_stock: 0,
     current_stock: 0,
     min_stock: 5,
+    max_stock_level: 0,
     hsn_code: "",
     gst_percent: 0,
     supplier_name: "",
     barcode: "",
     unit: "pcs",
+    category: "Other",
+    location: "",
   });
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -292,11 +295,14 @@ const AddProductModal: React.FC<Props> = ({
         opening_stock: productToEdit.opening_stock || 0,
         current_stock: productToEdit.current_stock || 0,
         min_stock: productToEdit.min_stock || 5,
+        max_stock_level: productToEdit.max_stock_level || 0,
         hsn_code: productToEdit.hsn_code || "",
         gst_percent: productToEdit.gst_percent || 0,
         supplier_name: productToEdit.supplier_name || "",
         barcode: productToEdit.barcode || "",
         unit: productToEdit.unit || "pcs",
+        category: productToEdit.category || "Other",
+        location: productToEdit.location || "",
       });
       if (productToEdit.image_url) {
         setImagePreview(productToEdit.image_url.startsWith('http') ? productToEdit.image_url : `http://${window.location.hostname}:3001${productToEdit.image_url}`);
@@ -448,40 +454,40 @@ const AddProductModal: React.FC<Props> = ({
                 value={formData.sku}
                 onChange={(e: any) => setFormData({ ...formData, sku: e.target.value })}
               />
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Category</label>
+                <div style={styles.inputWrapper}>
+                  <div style={styles.icon}><FaTag /></div>
+                  <CustomSelect
+                    value={formData.category}
+                    onChange={(e: any) => setFormData({ ...formData, category: e.target.value })}
+                    style={styles.input}
+                  >
+                    <option value="Electronics">Electronics</option>
+                    <option value="Raw Materials">Raw Materials</option>
+                    <option value="Finished Goods">Finished Goods</option>
+                    <option value="Packaging">Packaging</option>
+                    <option value="Other">Other</option>
+                  </CustomSelect>
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.row(isMobile)}>
               <InputField
-                label="HSN / SAC Code"
+                label="HSN Code"
                 icon={FaTag}
                 placeholder="8471"
                 value={formData.hsn_code}
                 onChange={(e: any) => setFormData({ ...formData, hsn_code: e.target.value })}
               />
-            </div>
-
-            <div style={styles.row(isMobile)}>
               <InputField
-                label="Supplier Name"
-                icon={FaTag}
-                placeholder="Supplier or vendor"
-                value={formData.supplier_name}
-                onChange={(e: any) => setFormData({ ...formData, supplier_name: e.target.value })}
+                label="Rack / Location"
+                icon={FaAlignLeft}
+                placeholder="e.g. Rack A-12"
+                value={formData.location}
+                onChange={(e: any) => setFormData({ ...formData, location: e.target.value })}
               />
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Unit</label>
-                <div style={styles.inputWrapper}>
-                  <div style={styles.icon}><FaBox /></div>
-                  <CustomSelect
-                    value={formData.unit}
-                    onChange={(e: any) => setFormData({ ...formData, unit: e.target.value })}
-                    style={styles.input}
-                  >
-                    <option value="pcs">pcs</option>
-                    <option value="kg">kg</option>
-                    <option value="mtr">mtr</option>
-                    <option value="box">box</option>
-                    <option value="set">set</option>
-                  </CustomSelect>
-                </div>
-              </div>
             </div>
 
             <div style={styles.sectionTitle}>
@@ -509,6 +515,25 @@ const AddProductModal: React.FC<Props> = ({
 
             <div style={styles.row(isMobile)}>
               <InputField
+                label="Min Stock Level"
+                icon={FaArrowDown}
+                type="number"
+                placeholder="5"
+                value={formData.min_stock}
+                onChange={(e: any) => setFormData({ ...formData, min_stock: parseFloat(e.target.value) || 0 })}
+              />
+              <InputField
+                label="Max Stock Level"
+                icon={FaArrowUp}
+                type="number"
+                placeholder="100"
+                value={formData.max_stock_level}
+                onChange={(e: any) => setFormData({ ...formData, max_stock_level: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+
+            <div style={styles.row(isMobile)}>
+              <InputField
                 label="Opening Stock"
                 icon={FaCheck}
                 type="number"
@@ -517,14 +542,23 @@ const AddProductModal: React.FC<Props> = ({
                 onChange={(e: any) => setFormData({ ...formData, opening_stock: parseFloat(e.target.value) || 0 })}
                 disabled={!!productToEdit}
               />
-              <InputField
-                label="Min Stock Level"
-                icon={FaCheck}
-                type="number"
-                placeholder="5"
-                value={formData.min_stock}
-                onChange={(e: any) => setFormData({ ...formData, min_stock: parseFloat(e.target.value) || 0 })}
-              />
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Unit</label>
+                <div style={styles.inputWrapper}>
+                  <div style={styles.icon}><FaBox /></div>
+                  <CustomSelect
+                    value={formData.unit}
+                    onChange={(e: any) => setFormData({ ...formData, unit: e.target.value })}
+                    style={styles.input}
+                  >
+                    <option value="pcs">pcs</option>
+                    <option value="kg">kg</option>
+                    <option value="mtr">mtr</option>
+                    <option value="box">box</option>
+                    <option value="set">set</option>
+                  </CustomSelect>
+                </div>
+              </div>
             </div>
 
             <div style={styles.row(isMobile)}>
@@ -537,12 +571,23 @@ const AddProductModal: React.FC<Props> = ({
                 onChange={(e: any) => setFormData({ ...formData, gst_percent: parseFloat(e.target.value) || 0 })}
               />
               <InputField
+                label="Supplier Name"
+                icon={FaTag}
+                placeholder="Supplier or vendor"
+                value={formData.supplier_name}
+                onChange={(e: any) => setFormData({ ...formData, supplier_name: e.target.value })}
+              />
+            </div>
+
+            <div style={styles.row(isMobile)}>
+              <InputField
                 label="Barcode (Optional)"
                 icon={FaBarcode}
                 placeholder="Scan or enter barcode"
                 value={formData.barcode}
                 onChange={(e: any) => setFormData({ ...formData, barcode: e.target.value })}
               />
+              <div />
             </div>
 
             <InputField

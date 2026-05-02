@@ -71,9 +71,14 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
   if (hasModule("inventory")) {
       baseItems.push({ 
           name: "Inventory", 
-          path: "/products", 
           icon: <FaBox />, 
-          section: "Operations" 
+          section: "Operations",
+          subItems: [
+              { name: "Global Stock", path: "/inventory/consolidated" },
+              { name: "Stock Transfer", path: "/inventory/transfer" },
+              { name: "Stock Requests", path: "/inventory/requests" },
+              { name: "Product List", path: "/products" }
+          ]
       });
       baseItems.push({ 
           name: "Documents", 
@@ -133,9 +138,14 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
   if (mode === "ADMIN" || user?.role === "admin") {
       baseItems.push({ 
         name: "Admin Setup", 
-        path: "/admin/setup", 
         icon: <FaCog />, 
-        section: "System" 
+        section: "System",
+        subItems: [
+            { name: "Global Settings", path: "/admin/setup" },
+            { name: "Bill Format", path: "/admin/bill-format" },
+            { name: "Branches", path: "/admin/branches" },
+            { name: "Subscriptions", path: "/admin/subscriptions" }
+        ]
       });
   }
 

@@ -1,9 +1,23 @@
-// backend/routes/purchaseBillRoutes.js
 import express from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import * as brokerService from "../services/brokerService.js";
 import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = "./uploads/purchase_bills";
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `bill_${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const upload = multer({ storage });
 
 const router = express.Router();
 
@@ -78,29 +92,35 @@ router.get("/:id", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// CREATE NEW BILL  (Full Accounting Engine Integration)
+// CREATE NEW BILL (Atomic with Inventory & Accounting)
 // ─────────────────────────────────────────────────────────
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id;
     const userId    = req.user.id;
 
+    let data = req.body;
+    if (typeof req.body.data === 'string') {
+        try { data = JSON.parse(req.body.data); } catch(e) {}
+    }
+
     const {
-        supplier_id, supplier_name, bill_number, bill_date, due_date,
+        supplier_id, supplier_name, bill_number, bill_date,
         paid_amount, payment_mode, bill_type, items,
-        broker_id, broker_commission_rate
-    } = req.body;
+        broker_id, broker_commission_rate, discount_amount
+    } = data;
 
     let client;
     try {
         client = await db.getClient();
         await client.query("BEGIN");
 
-        // ── 1. Detect GST Type (Intra vs Inter State) ──────────────────
-        const branchRes  = await client.query(`SELECT state, state_code FROM branches  WHERE id = $1`, [branchId]);
+        const fileUrl = req.file ? `/uploads/purchase_bills/${req.file.filename}` : null;
+
+        const branchRes  = await client.query(`SELECT state, state_code FROM branches WHERE id = $1`, [branchId]);
         const supplierRes = supplier_id
-            ? await client.query(`SELECT state, state_code FROM suppliers WHERE id = $1`, [supplier_id])
-            : { rows: [{}] };
+            ? await client.query(`SELECT name, state, state_code FROM suppliers WHERE id = $1`, [supplier_id])
+            : { rows: [{ name: supplier_name }] };
 
         const branchStateCode   = branchRes.rows[0]?.state_code;
         const supplierStateCode = supplierRes.rows[0]?.state_code;
@@ -110,7 +130,6 @@ router.post("/", authMiddleware, async (req, res) => {
             gstType = "INTER_STATE";
         }
 
-        // ── 2. Process Line Items with GST Split ───────────────────────
         let subTotal  = 0;
         let taxTotal  = 0;
         let cgstTotal = 0;
@@ -118,22 +137,24 @@ router.post("/", authMiddleware, async (req, res) => {
         let igstTotal = 0;
 
         const processedItems = (items || []).map(item => {
-            const qty          = Number(item.quantity || 0);
-            const price        = Number(item.unit_price || 0);
+            const qty          = parseFloat(item.quantity || 0);
+            const price        = parseFloat(item.unit_price || 0);
             const lineSubtotal = qty * price;
-            const taxRate      = Number(item.tax_percent || 18); // default 18%
+            const taxRate      = parseFloat(item.tax_percent || 0);
 
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;
 
-            if (gstType === "INTRA_STATE") {
-                cgstR = taxRate / 2;
-                sgstR = taxRate / 2;
-                cgstA = (lineSubtotal * cgstR) / 100;
-                sgstA = (lineSubtotal * sgstR) / 100;
-            } else {
-                igstR = taxRate;
-                igstA = (lineSubtotal * igstR) / 100;
+            if (bill_type === "TAX") {
+                if (gstType === "INTRA_STATE") {
+                    cgstR = taxRate / 2;
+                    sgstR = taxRate / 2;
+                    cgstA = (lineSubtotal * cgstR) / 100;
+                    sgstA = (lineSubtotal * sgstR) / 100;
+                } else {
+                    igstR = taxRate;
+                    igstA = (lineSubtotal * igstR) / 100;
+                }
             }
 
             const lineTax   = cgstA + sgstA + igstA;
@@ -147,6 +168,8 @@ router.post("/", authMiddleware, async (req, res) => {
 
             return {
                 ...item,
+                quantity: qty,
+                unit_price: price,
                 line_subtotal: lineSubtotal,
                 cgst_rate: cgstR, sgst_rate: sgstR, igst_rate: igstR,
                 cgst_amount: cgstA, sgst_amount: sgstA, igst_amount: igstA,
@@ -154,32 +177,32 @@ router.post("/", authMiddleware, async (req, res) => {
             };
         });
 
-        const finalTotal  = subTotal + taxTotal;
-        const paid        = Number(paid_amount || 0);
-        const balance     = Math.max(0, finalTotal - paid);
-        const status      = paid >= finalTotal ? "PAID" : (paid > 0 ? "PARTIAL" : "PENDING");
+        const discount = parseFloat(discount_amount || 0);
+        const grossTotal = subTotal + taxTotal;
+        const netAmount = grossTotal - discount;
+        const paid = parseFloat(paid_amount || 0);
+        const balance = Math.max(0, netAmount - paid);
+        const status = paid >= netAmount ? "PAID" : (paid > 0 ? "PARTIAL" : "PENDING");
 
-        // ── 3. Insert Purchase Bill Header ─────────────────────────────
         const billRes = await client.query(`
             INSERT INTO purchase_bills
-            (company_id, branch_id, supplier_id, supplier_name, bill_number, bill_date, due_date,
-             sub_total, tax_amount, cgst_amount, sgst_amount, igst_amount, total_amount,
-             gst_type, paid_amount, balance_amount, status, bill_type,
-             broker_id, broker_commission_rate, is_deleted)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,false)
+            (company_id, branch_id, supplier_id, supplier_name, bill_number, bill_date,
+             sub_total, tax_total, cgst_total, sgst_total, igst_total, total_amount,
+             discount_amount, gst_type, paid_amount, balance_amount, status, bill_type,
+             file_url, broker_id, broker_commission_rate, is_deleted)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,false)
             RETURNING id
         `, [
             companyId, branchId, supplier_id || null,
-            supplier_name || supplierRes.rows[0]?.name || null,
-            bill_number, bill_date || new Date(), due_date || null,
-            subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, finalTotal,
-            gstType, paid, balance, status, bill_type || "GST",
-            broker_id || null, broker_commission_rate || null
+            supplierRes.rows[0]?.name || supplier_name || "Unknown",
+            bill_number, bill_date || new Date(),
+            subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, netAmount,
+            discount, gstType, paid, balance, status, bill_type || "TAX",
+            fileUrl, broker_id || null, broker_commission_rate || null
         ]);
 
         const billId = billRes.rows[0].id;
 
-        // ── 4. Insert Line Items & Update Inventory ────────────────────
         for (const item of processedItems) {
             await client.query(`
                 INSERT INTO purchase_bill_items
@@ -188,28 +211,39 @@ router.post("/", authMiddleware, async (req, res) => {
                  cgst_amount, sgst_amount, igst_amount, line_total)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `, [
-                billId,
-                item.product_id || null,
-                item.description || null,
-                item.hsn_code    || null,
-                item.quantity,
-                item.unit_price,
-                item.tax_percent || 18,
-                item.cgst_rate, item.sgst_rate, item.igst_rate,
-                item.cgst_amount, item.sgst_amount, item.igst_amount,
-                item.line_total
+                billId, item.product_id || null, item.description || null,
+                item.hsn_code || null, item.quantity, item.unit_price,
+                item.tax_percent || 0, item.cgst_rate, item.sgst_rate, item.igst_rate,
+                item.cgst_amount, item.sgst_amount, item.igst_amount, item.line_total
             ]);
 
-            // Stock IN for purchased products
             if (item.product_id) {
+                const inv = await client.query(`SELECT current_stock, cost_price FROM inventory WHERE product_id = $1`, [item.product_id]);
+                const currStock = parseFloat(inv.rows[0]?.current_stock || 0);
+                const currCost = parseFloat(inv.rows[0]?.cost_price || 0);
+
+                const newQty = currStock + item.quantity;
+                const newVal = item.quantity * item.unit_price;
+                const existingVal = currStock * currCost;
+                const newWAC = newQty > 0 ? (existingVal + newVal) / newQty : item.unit_price;
+
                 await client.query(
-                    `UPDATE products SET current_stock = current_stock + $1, updated_at = NOW() WHERE id = $2`,
-                    [item.quantity, item.product_id]
+                    `UPDATE products SET current_stock = $1, cost_price = $2, updated_at = NOW() WHERE id = $3`,
+                    [newQty, newWAC, item.product_id]
                 );
+
+                await client.query(
+                    `UPDATE inventory SET current_stock = $1, cost_price = $2, last_updated = NOW() WHERE product_id = $3`,
+                    [newQty, newWAC, item.product_id]
+                );
+
+                await client.query(`
+                    INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
+                    VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
+                `, [companyId, branchId, item.product_id, item.quantity, billId, `Purchased via Bill #${bill_number}`]);
             }
         }
 
-        // ── 5. Update Supplier Balance (Outstanding Payable) ───────────
         if (supplier_id && balance > 0) {
             await client.query(
                 `UPDATE suppliers SET current_balance = current_balance + $1 WHERE id = $2`,
@@ -217,92 +251,29 @@ router.post("/", authMiddleware, async (req, res) => {
             );
         }
 
-        // ── 6. Post Cash / Bank Ledger for Immediate Payment ──────────
-        if (paid > 0) {
-            const pMode = (payment_mode || "CASH").toUpperCase();
-            if (pMode === "CASH") {
-                await client.query(`
-                    INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                    VALUES ($1,$2,'PURCHASE_PAYMENT',$3,'out',$4)
-                `, [companyId, branchId, paid, bill_date || new Date()]);
-            } else {
-                await client.query(`
-                    INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                    VALUES ($1,$2,'PURCHASE_PAYMENT',$3,'out',$4,$5,$6)
-                `, [
-                    companyId, branchId, paid,
-                    pMode, `BILL-${billId}`,
-                    bill_date || new Date()
-                ]);
-            }
-        }
-
-        // ── 7. Double-Entry Accounting via COA ────────────────────────
-        //   DR  5000 – Purchases / COGS (expense)
-        //   DR  2200 – GST Input (tax receivable / input credit)
-        //   CR  2000 – Accounts Payable / Sundry Creditors (liability)
-        //   CR  1000 – Cash / Bank (if paid immediately)
         try {
-            const purchasesAccount = await getAccountByCode(companyId, "5000");
-            const apAccount        = await getAccountByCode(companyId, "2000"); // Accounts Payable
-            const gstInputAccount  = await getAccountByCode(companyId, "2200"); // GST Input Tax Credit
-            const cashAccount      = await getAccountByCode(companyId, "1000"); // Cash/Bank
+            const inventoryAccount = await getAccountByCode(companyId, "1400");
+            const apAccount        = await getAccountByCode(companyId, "2000");
+            const gstInputAccount  = await getAccountByCode(companyId, "2200");
+            const cashAccount      = await getAccountByCode(companyId, "1000");
+            const discountAccount  = await getAccountByCode(companyId, "5100");
 
-            if (purchasesAccount && apAccount) {
+            if (inventoryAccount && apAccount) {
                 const txLines = [];
-
-                // DR Purchases for sub-total
-                txLines.push({
-                    account_id: purchasesAccount.id,
-                    debit_amount: subTotal,
-                    credit_amount: 0,
-                    description: `Purchase from Bill #${bill_number}`
-                });
-
-                // DR GST Input Credit for tax paid
+                txLines.push({ account_id: inventoryAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Inventory Purchase - Bill #${bill_number}` });
                 if (taxTotal > 0 && gstInputAccount) {
-                    txLines.push({
-                        account_id: gstInputAccount.id,
-                        debit_amount: taxTotal,
-                        credit_amount: 0,
-                        description: `GST Input Credit – Bill #${bill_number} (${gstType})`
-                    });
+                    txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
+                }
+                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to ${supplierRes.rows[0]?.name || "Supplier"} - Bill #${bill_number}` });
+
+                if (discount > 0 && discountAccount) {
+                    txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: `Discount on Bill #${bill_number}` });
+                    txLines.push({ account_id: discountAccount.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount - Bill #${bill_number}` });
                 }
 
-                // CR Accounts Payable for the full bill (payable to supplier)
-                txLines.push({
-                    account_id: apAccount.id,
-                    debit_amount: 0,
-                    credit_amount: finalTotal,
-                    description: `Payable to ${supplier_name || "Supplier"} – Bill #${bill_number}`
-                });
-
-                // If paid immediately: DR AP & CR Cash (settle the payable)
                 if (paid > 0 && cashAccount) {
-                    // DR Accounts Payable (reduce liability)
-                    txLines.push({
-                        account_id: apAccount.id,
-                        debit_amount: paid,
-                        credit_amount: 0,
-                        description: `Payment for Bill #${bill_number}`
-                    });
-                    // CR Cash / Bank (reduce asset)
-                    txLines.push({
-                        account_id: cashAccount.id,
-                        debit_amount: 0,
-                        credit_amount: paid,
-                        description: `Cash outflow for Bill #${bill_number}`
-                    });
-                }
-
-                // Validate and balance (absorb rounding into AP)
-                const totalD = txLines.reduce((s, l) => s + (l.debit_amount  || 0), 0);
-                const totalC = txLines.reduce((s, l) => s + (l.credit_amount || 0), 0);
-                const diff   = Math.abs(totalD - totalC);
-                if (diff > 0 && diff < 1) {
-                    // Adjust AP credit entry
-                    const apCredit = txLines.find(l => l.account_id === apAccount.id && l.credit_amount > 0);
-                    if (apCredit) apCredit.credit_amount += (totalD - totalC);
+                    txLines.push({ account_id: apAccount.id, debit_amount: paid, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
+                    txLines.push({ account_id: cashAccount.id, debit_amount: 0, credit_amount: paid, description: `Payment out via ${payment_mode} - Bill #${bill_number}` });
                 }
 
                 await createTransaction({
@@ -316,26 +287,19 @@ router.post("/", authMiddleware, async (req, res) => {
                 }, txLines);
             }
         } catch (accErr) {
-            // Non-fatal: log but don't rollback the bill
-            console.warn("⚠️ Accounting engine posting failed (non-fatal):", accErr.message);
+            console.warn("⚠️ Accounting failed:", accErr.message);
         }
 
-        // ── 8. Broker Commission ───────────────────────────────────────
         if (broker_id) {
             await brokerService.recordCommission(client, req.user, {
-                broker_id,
-                commission_rate: broker_commission_rate,
-                bill_id:         billId,
-                bill_number,
-                bill_amount:     finalTotal,
-                bill_type:       "PURCHASE",
-                date:            bill_date || new Date(),
-                line_items:      items || []
+                broker_id, commission_rate: broker_commission_rate, bill_id: billId,
+                bill_number, bill_amount: netAmount, bill_type: "PURCHASE",
+                date: bill_date || new Date(), line_items: processedItems
             });
         }
 
         await client.query("COMMIT");
-        res.status(201).json({ success: true, id: billId, total: finalTotal, balance, status, gst_type: gstType });
+        res.status(201).json({ success: true, id: billId, total: netAmount, balance, status });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Purchase creation error:", err);
@@ -376,7 +340,6 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
             WHERE id = $4
         `, [newPaid, newBalance, newStatus, id]);
 
-        // Reduce supplier outstanding balance
         if (b.supplier_id) {
             await client.query(
                 `UPDATE suppliers SET current_balance = current_balance - $1 WHERE id = $2`,
@@ -384,7 +347,6 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
             );
         }
 
-        // Cash / Bank Ledger
         const pMode = (payment_mode || "CASH").toUpperCase();
         if (pMode === "CASH") {
             await client.query(`
@@ -402,7 +364,6 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
             ]);
         }
 
-        // Accounting: DR Accounts Payable, CR Cash
         try {
             const apAccount   = await getAccountByCode(companyId, "2000");
             const cashAccount = await getAccountByCode(companyId, "1000");
@@ -421,7 +382,7 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
                 ]);
             }
         } catch (accErr) {
-            console.warn("⚠️ Payment accounting failed (non-fatal):", accErr.message);
+            console.warn("⚠️ Payment accounting failed:", accErr.message);
         }
 
         await client.query("COMMIT");

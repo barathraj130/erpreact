@@ -52,6 +52,8 @@ import ledgerClosingRoutes from "./routes/ledgerClosingRoutes.js";
 import reconciliationRoutes from "./routes/reconciliationRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import dayOperationsRoutes from "./routes/dayOperationsRoutes.js";
+import branchInventoryRoutes from "./routes/branchInventoryRoutes.js";
+import billingConfigRoutes from "./routes/billingConfigRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,6 +139,8 @@ app.use("/api/invoice", invoicePdfRoutes);
 app.use("/api/purchase-pdf", purchasePdfRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/day-operations", dayOperationsRoutes);
+app.use("/api/branch-inventory", branchInventoryRoutes);
+app.use("/api/billing-config", billingConfigRoutes);
 
 
 // --- DATABASE INITIALIZATION ---

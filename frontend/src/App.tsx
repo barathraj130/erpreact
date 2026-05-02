@@ -36,7 +36,7 @@ import Ledgers from "./pages/Ledgers";
 import Login from "./pages/Login";
 import PlatformAdmin from "./pages/PlatformAdmin";
 import PurchaseBills from "./pages/PurchaseBills";
-import CreatePurchaseBill from "./pages/CreatePurchaseBill";
+import SimplifiedPurchaseBill from "./pages/SimplifiedPurchaseBill";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Subscriptions from "./pages/Subscriptions";
@@ -64,6 +64,11 @@ import LenderManagement from "./pages/finance/LenderManagement";
 // New Reports Module
 import ReportsDashboard from "./pages/reports/ReportsDashboard";
 import ReportViewer from "./pages/reports/ReportViewer";
+import ConsolidatedInventory from "./pages/ConsolidatedInventory";
+import StockTransfer from "./pages/StockTransfer";
+import StockRequestsInbox from "./pages/StockRequestsInbox";
+import BranchBilling from "./pages/BranchBilling";
+import BillFormatSettings from "./pages/BillFormatSettings";
 
 
 
@@ -231,6 +236,7 @@ const App: React.FC = () => {
             <Route path="/admin/branches" element={<Branches />} />
             <Route path="/admin/subscriptions" element={<Subscriptions />} />
             <Route path="/admin/settings" element={<Settings />} />
+            <Route path="/admin/bill-format" element={<BillFormatSettings />} />
             <Route path="/admin/reports" element={<Reports />} />
             <Route path="/admin/employees" element={<Employees />} />
           </Route>
@@ -248,9 +254,13 @@ const App: React.FC = () => {
             <Route path="/ledgers" element={<Ledgers />} />
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/purchase-bills" element={<PurchaseBills />} />
-            <Route path="/purchase-bills/new" element={<CreatePurchaseBill />} />
+            <Route path="/purchase-bills/new" element={<SimplifiedPurchaseBill />} />
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/daybook" element={<DayBook />} />
+            <Route path="/inventory/consolidated" element={<ConsolidatedInventory />} />
+            <Route path="/inventory/transfer" element={<StockTransfer />} />
+            <Route path="/inventory/requests" element={<StockRequestsInbox />} />
+            <Route path="/branch/billing" element={<BranchBilling />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/employees" element={<Employees />} />
 
