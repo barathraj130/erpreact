@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { 
   FaSearch, FaShoppingCart, FaTrash, FaPlus, FaCheck, FaTimes, 
   FaBox, FaRegClock, FaUserAlt, FaFileUpload, FaPrint, FaWhatsapp,
-  FaInbox, FaExclamationTriangle, FaBolt, FaUserEdit, FaCheckCircle, FaBuilding
+  FaInbox, FaExclamationTriangle, FaBolt, FaUserEdit, FaCheckCircle, FaBuilding,
+  FaWallet, FaCalendarCheck, FaChartLine, FaHistory
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,6 +37,10 @@ const BranchBilling: React.FC = () => {
   const [requestNote, setRequestNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"BILLING" | "INVENTORY" | "DAY_CLOSE">("BILLING");
+  const [cashSummary, setCashSummary] = useState<any>(null);
+  const [dayTransactions, setDayTransactions] = useState<any[]>([]);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -174,6 +179,30 @@ const BranchBilling: React.FC = () => {
     setSearchTerm("");
   };
 
+  const fetchCashSummary = async () => {
+    setIsLoadingSummary(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await apiFetch(`/ledgers/cash?startDate=${today}&endDate=${today}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDayTransactions(data.entries || []);
+        
+        const totalIn = data.entries.filter((e:any) => e.direction === 'in').reduce((sum:number, e:any) => sum + parseFloat(e.amount), 0);
+        const totalOut = data.entries.filter((e:any) => e.direction === 'out').reduce((sum:number, e:any) => sum + parseFloat(e.amount), 0);
+        setCashSummary({ totalIn, totalOut, net: totalIn - totalOut });
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "DAY_CLOSE") fetchCashSummary();
+  }, [activeTab]);
+
   // Stock Request
   const handleSendRequest = async () => {
     if (!showRequestModal || !requestQty) return;
@@ -206,101 +235,256 @@ const BranchBilling: React.FC = () => {
   return (
     <div className="db-page" style={{ height: "100vh", background: "#f1f5f9", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Top Bar */}
-      <header style={{ height: "70px", background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 30px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-          <div style={{ padding: "8px 15px", background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "10px" }}>
-            <FaBuilding color="#4f46e5" />
-            <span style={{ fontWeight: 800, color: "#1e293b" }}>{activeBranch?.branch_name || "Branch Terminal"}</span>
+      <header style={{ height: "80px", background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 30px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "30px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+             <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "linear-gradient(135deg, #4f46e5, #818cf8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 900 }}>{activeBranch?.branch_name?.[0] || 'B'}</div>
+             <div style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontWeight: 900, color: "#0f172a", fontSize: "1.1rem" }}>{activeBranch?.branch_name || "Branch Terminal"}</span>
+                <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 700 }}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}</span>
+             </div>
           </div>
-          <span style={{ fontSize: "0.9rem", color: "#64748b", fontWeight: 600 }}><FaRegClock /> {new Date().toLocaleDateString()}</span>
+
+          <nav style={{ display: "flex", gap: "5px", background: "#f1f5f9", padding: "5px", borderRadius: "12px" }}>
+             {[
+               { id: "BILLING", label: "Billing", icon: <FaBolt /> },
+               { id: "INVENTORY", label: "Inventory", icon: <FaBox /> },
+               { id: "DAY_CLOSE", label: "Day Close", icon: <FaCalendarCheck /> }
+             ].map(tab => (
+               <button 
+                 key={tab.id}
+                 onClick={() => setActiveTab(tab.id as any)}
+                 style={{ 
+                   padding: "8px 16px", 
+                   borderRadius: "8px", 
+                   border: "none", 
+                   background: activeTab === tab.id ? "#fff" : "transparent",
+                   color: activeTab === tab.id ? "#4f46e5" : "#64748b",
+                   fontWeight: 800,
+                   fontSize: "0.85rem",
+                   cursor: "pointer",
+                   display: "flex",
+                   alignItems: "center",
+                   gap: "8px",
+                   boxShadow: activeTab === tab.id ? "0 4px 6px -1px rgba(0,0,0,0.1)" : "none",
+                   transition: "0.2s"
+                 }}
+               >
+                 {tab.icon} {tab.label}
+               </button>
+             ))}
+          </nav>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-          <button onClick={() => navigate('/inventory/requests')} style={{ padding: "8px 16px", borderRadius: "10px", background: pendingRequestsCount > 0 ? "#fee2e2" : "#f1f5f9", color: pendingRequestsCount > 0 ? "#ef4444" : "#64748b", border: "none", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}>
-             <FaInbox /> Requests {pendingRequestsCount > 0 && <span style={{ background: "#ef4444", color: "#fff", padding: "2px 6px", borderRadius: "50%", fontSize: "10px" }}>{pendingRequestsCount}</span>}
+          <button onClick={() => navigate('/inventory/requests')} style={{ padding: "10px 18px", borderRadius: "12px", background: pendingRequestsCount > 0 ? "#fee2e2" : "#f1f5f9", color: pendingRequestsCount > 0 ? "#ef4444" : "#64748b", border: "none", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: "10px", transition: "0.2s" }}>
+             <FaInbox /> {pendingRequestsCount > 0 ? `${pendingRequestsCount} Requests` : 'Stock Inbox'}
           </button>
           <div style={{ height: "30px", width: "1px", background: "#e2e8f0" }}></div>
-          <button onClick={() => navigate('/dashboard')} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontWeight: 600 }}>Exit Mode</button>
+          <button onClick={() => navigate('/dashboard')} style={{ padding: "10px", borderRadius: "10px", background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontWeight: 700 }}>Exit Mode</button>
         </div>
       </header>
 
       {/* Main Billing Area */}
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 450px", overflow: "hidden" }}>
         
-        {/* Left: Product Selection */}
-        <div style={{ padding: "30px", overflowY: "auto", display: "flex", flexDirection: "column" }}>
-          <div style={{ marginBottom: "30px", display: "flex", gap: "20px" }}>
-            <div className="search-container" style={{ flex: 1, background: "#fff", border: "2px solid #3b82f6", height: "60px" }}>
-              <FaSearch className="search-icon" style={{ fontSize: "20px" }} />
-              <input 
-                ref={searchInputRef}
-                className="search-input" 
-                placeholder="Search Product (F2) or Scan Barcode..." 
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{ fontSize: "1.1rem" }}
-              />
-            </div>
-            <button onClick={() => handleClear()} className="page-btn-round-ghost" style={{ height: "60px", padding: "0 25px" }}>
-              <FaTrash /> Clear Bill
-            </button>
-          </div>
+        {/* Main Content Area */}
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <AnimatePresence mode="wait">
+            {activeTab === "BILLING" && (
+              <motion.div 
+                key="billing"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                style={{ padding: "30px", height: "100%", overflowY: "auto", display: "flex", flexDirection: "column" }}
+              >
+                <div style={{ marginBottom: "30px", display: "flex", gap: "20px" }}>
+                  <div className="search-container" style={{ flex: 1, background: "#fff", border: "2px solid #4f46e5", height: "60px", boxShadow: "0 10px 15px -3px rgba(79, 70, 229, 0.1)" }}>
+                    <FaSearch className="search-icon" style={{ fontSize: "20px", color: "#4f46e5" }} />
+                    <input 
+                      ref={searchInputRef}
+                      className="search-input" 
+                      placeholder="Search Product (F2) or Scan Barcode..." 
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      style={{ fontSize: "1.1rem" }}
+                    />
+                  </div>
+                  <button onClick={() => handleClear()} className="page-btn-round-ghost" style={{ height: "60px", padding: "0 25px", background: "#fff" }}>
+                    <FaTrash /> Clear Bill
+                  </button>
+                </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "20px" }}>
-            {filteredProducts.map(p => {
-              const stock = parseFloat(p.current_stock);
-              const color = stock > 10 ? "#22c55e" : stock > 0 ? "#f59e0b" : "#94a3b8";
-              const isOut = stock <= 0;
-              
-              return (
-                <motion.div 
-                  key={p.product_id}
-                  whileHover={!isOut ? { y: -5 } : {}}
-                  onClick={() => addToCart(p)}
-                  style={{ 
-                    background: "#fff", 
-                    borderRadius: "16px", 
-                    padding: "20px", 
-                    border: `2px solid ${isOut ? "#e2e8f0" : color}`,
-                    cursor: isOut ? "not-allowed" : "pointer",
-                    position: "relative",
-                    opacity: isOut ? 0.6 : 1,
-                    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)"
-                  }}
-                >
-                  <div style={{ width: "100%", height: "120px", borderRadius: "12px", background: "#f8fafc", overflow: "hidden", border: "1px solid #e2e8f0", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                     {p.image_url ? (
-                        <img src={p.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                     ) : (
-                        <FaBox size={32} color="#cbd5e1" />
-                     )}
-                  </div>
-                  <div style={{ fontWeight: 800, color: "#1e293b", fontSize: "0.95rem", marginBottom: "5px", height: "40px", overflow: "hidden" }}>{p.name}</div>
-                  <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#0f172a" }}>₹{parseFloat(p.selling_price).toLocaleString()}</div>
-                  
-                  <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 800, color: color }}>{isOut ? "OUT OF STOCK" : `${stock} ${p.unit}`}</span>
-                    {stock < 5 && !isOut && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setShowRequestModal(p); }}
-                        style={{ background: "#ef4444", color: "#fff", border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "0.65rem", fontWeight: 900, cursor: "pointer" }}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "20px" }}>
+                  {filteredProducts.map(p => {
+                    const stock = parseFloat(p.current_stock);
+                    const color = stock > 10 ? "#10b981" : stock > 0 ? "#f59e0b" : "#94a3b8";
+                    const isOut = stock <= 0;
+                    
+                    return (
+                      <motion.div 
+                        key={p.product_id}
+                        whileHover={!isOut ? { y: -8, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)" } : {}}
+                        onClick={() => addToCart(p)}
+                        style={{ 
+                          background: "#fff", 
+                          borderRadius: "20px", 
+                          padding: "15px", 
+                          border: `2px solid ${isOut ? "#e2e8f0" : "transparent"}`,
+                          cursor: isOut ? "not-allowed" : "pointer",
+                          position: "relative",
+                          opacity: isOut ? 0.6 : 1,
+                          boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)",
+                          transition: "0.2s"
+                        }}
                       >
-                        REQ
-                      </button>
-                    )}
+                        <div style={{ width: "100%", height: "130px", borderRadius: "15px", background: "#f8fafc", overflow: "hidden", border: "1px solid #f1f5f9", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                           {p.image_url ? (
+                              <img src={p.image_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                           ) : (
+                              <FaBox size={40} color="#e2e8f0" />
+                           )}
+                        </div>
+                        <div style={{ fontWeight: 800, color: "#1e293b", fontSize: "0.9rem", marginBottom: "8px", lineHeight: "1.2" }}>{p.name}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                           <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0f172a" }}>₹{parseFloat(p.selling_price).toLocaleString()}</div>
+                           <span style={{ fontSize: "0.7rem", fontWeight: 900, color: color, background: `${color}15`, padding: "4px 8px", borderRadius: "6px" }}>{isOut ? "OUT" : `${stock} ${p.unit}`}</span>
+                        </div>
+                        {stock < 5 && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setShowRequestModal(p); }}
+                            style={{ marginTop: "12px", width: "100%", background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0", padding: "8px", borderRadius: "10px", fontSize: "0.75rem", fontWeight: 800, cursor: "pointer" }}
+                          >
+                            Request Stock
+                          </button>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === "INVENTORY" && (
+              <motion.div 
+                key="inventory"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                style={{ padding: "40px", height: "100%", overflowY: "auto" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px" }}>
+                  <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1.5rem" }}>Branch Inventory Details</h2>
+                  <div className="search-container" style={{ width: "300px", background: "#fff" }}>
+                    <FaSearch className="search-icon" />
+                    <input className="search-input" placeholder="Search Inventory..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                   </div>
-                  {isOut && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setShowRequestModal(p); }}
-                      style={{ marginTop: "10px", width: "100%", background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0", padding: "6px", borderRadius: "8px", fontSize: "0.7rem", fontWeight: 800, cursor: "pointer" }}
-                    >
-                      Request Stock
-                    </button>
-                  )}
-                </motion.div>
-              );
-            })}
-          </div>
+                </div>
+
+                <div style={{ background: "#fff", borderRadius: "20px", boxShadow: "0 4px 6px rgba(0,0,0,0.05)", overflow: "hidden" }}>
+                  <table className="erp-table">
+                    <thead>
+                      <tr>
+                        <th style={{ paddingLeft: "30px" }}>Product</th>
+                        <th style={{ textAlign: "right" }}>Selling Price</th>
+                        <th style={{ textAlign: "right" }}>Current Stock</th>
+                        <th style={{ textAlign: "right" }}>Value</th>
+                        <th style={{ textAlign: "center" }}>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredProducts.map(p => (
+                        <tr key={p.product_id}>
+                          <td style={{ paddingLeft: "30px" }}>
+                             <div style={{ fontWeight: 800 }}>{p.name}</div>
+                             <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>HSN: {p.hsn_code || 'N/A'}</div>
+                          </td>
+                          <td style={{ textAlign: "right", fontWeight: 700 }}>₹{parseFloat(p.selling_price).toLocaleString()}</td>
+                          <td style={{ textAlign: "right", fontWeight: 900, color: "#4f46e5" }}>{parseFloat(p.current_stock).toLocaleString()} {p.unit}</td>
+                          <td style={{ textAlign: "right", fontWeight: 700 }}>₹{(p.current_stock * p.selling_price).toLocaleString()}</td>
+                          <td style={{ textAlign: "center" }}>
+                             {p.current_stock <= p.min_stock ? (
+                               <span style={{ color: "#ef4444", background: "#fef2f2", padding: "4px 10px", borderRadius: "100px", fontSize: "0.75rem", fontWeight: 800 }}>Low Stock</span>
+                             ) : (
+                               <span style={{ color: "#10b981", background: "#f0fdf4", padding: "4px 10px", borderRadius: "100px", fontSize: "0.75rem", fontWeight: 800 }}>Optimal</span>
+                             )}
+                          </td>
+                          <td>
+                             <button onClick={() => setShowRequestModal(p)} className="page-btn-round-ghost" style={{ fontSize: "0.75rem", padding: "6px 12px" }}>Request More</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === "DAY_CLOSE" && (
+              <motion.div 
+                key="dayclose"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                style={{ padding: "40px", height: "100%", overflowY: "auto" }}
+              >
+                <div style={{ maxWidth: "800px", margin: "0 auto" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px" }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1.75rem" }}>Day Closing Summary</h2>
+                      <p style={{ color: "#64748b", marginTop: "5px" }}>Review today's cash ledger for {activeBranch?.branch_name}</p>
+                    </div>
+                    <button onClick={fetchCashSummary} style={{ padding: "10px", borderRadius: "10px", background: "#f1f5f9", border: "none", cursor: "pointer" }}><FaBolt color="#4f46e5" /></button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "25px", marginBottom: "40px" }}>
+                     <div style={{ background: "#fff", padding: "25px", borderRadius: "24px", boxShadow: "0 4px 6px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+                        <div style={{ color: "#64748b", fontSize: "0.85rem", fontWeight: 700, marginBottom: "10px" }}>Total Cash In</div>
+                        <div style={{ fontSize: "1.75rem", fontWeight: 900, color: "#10b981" }}>₹{cashSummary?.totalIn?.toLocaleString() || '0'}</div>
+                     </div>
+                     <div style={{ background: "#fff", padding: "25px", borderRadius: "24px", boxShadow: "0 4px 6px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+                        <div style={{ color: "#64748b", fontSize: "0.85rem", fontWeight: 700, marginBottom: "10px" }}>Total Cash Out</div>
+                        <div style={{ fontSize: "1.75rem", fontWeight: 900, color: "#ef4444" }}>₹{cashSummary?.totalOut?.toLocaleString() || '0'}</div>
+                     </div>
+                     <div style={{ background: "linear-gradient(135deg, #4f46e5, #818cf8)", padding: "25px", borderRadius: "24px", boxShadow: "0 10px 20px -5px rgba(79, 70, 229, 0.4)", color: "#fff" }}>
+                        <div style={{ opacity: 0.8, fontSize: "0.85rem", fontWeight: 700, marginBottom: "10px" }}>Closing Balance</div>
+                        <div style={{ fontSize: "1.75rem", fontWeight: 900 }}>₹{cashSummary?.net?.toLocaleString() || '0'}</div>
+                     </div>
+                  </div>
+
+                  <div style={{ background: "#fff", borderRadius: "24px", padding: "30px", border: "1px solid #e2e8f0", marginBottom: "40px" }}>
+                    <h3 style={{ margin: "0 0 20px 0", fontSize: "1.1rem", fontWeight: 900 }}>Today's Cash Ledger</h3>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", borderBottom: "1px solid #f1f5f9" }}>
+                          <th style={{ padding: "10px" }}>Time</th>
+                          <th style={{ padding: "10px" }}>Description</th>
+                          <th style={{ padding: "10px", textAlign: "right" }}>In</th>
+                          <th style={{ padding: "10px", textAlign: "right" }}>Out</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dayTransactions.map(tx => (
+                          <tr key={tx.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                            <td style={{ padding: "15px 10px", fontSize: "0.85rem", color: "#64748b" }}>{new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td style={{ padding: "15px 10px", fontWeight: 600 }}>{tx.note}</td>
+                            <td style={{ padding: "15px 10px", textAlign: "right", color: "#10b981", fontWeight: 800 }}>{tx.direction === 'in' ? `₹${parseFloat(tx.amount).toLocaleString()}` : '-'}</td>
+                            <td style={{ padding: "15px 10px", textAlign: "right", color: "#ef4444", fontWeight: 800 }}>{tx.direction === 'out' ? `₹${parseFloat(tx.amount).toLocaleString()}` : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <button className="page-btn-round" style={{ width: "100%", height: "70px", fontSize: "1.25rem", borderRadius: "20px" }}>
+                    <FaCheckCircle /> Verify & Close Day
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Right: Current Bill Sidebar */}
