@@ -1,0 +1,133 @@
+
+.reports-page {
+  background: #fdfdfc;
+  min-height: 100vh;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 20px;
+  padding: 24px;
+}
+
+.report-hero {
+  grid-column: span 12;
+  background: linear-gradient(135deg, #1e1e1d 0%, #3a3a38 100%);
+  border-radius: 28px;
+  padding: 40px;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+}
+
+.report-hero::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.health-gauge {
+  width: 140px;
+  height: 140px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.health-gauge-val {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+}
+
+.report-card {
+  background: #fff;
+  border: 1px solid #f1f1f0;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+  transition: all 0.3s ease;
+}
+
+.report-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.05);
+}
+
+.report-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9b9b96;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.metric-v {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111110;
+}
+
+.success-circle {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.table-glass {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-glass th {
+  text-align: left;
+  padding: 16px;
+  font-size: 12px;
+  color: #9b9b96;
+  font-weight: 500;
+  border-bottom: 1px solid #f1f1f0;
+}
+
+.table-glass td {
+  padding: 16px;
+  font-size: 13.5px;
+  color: #111110;
+  border-bottom: 1px solid #f9f9f8;
+}
+
+.badge-glow {
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bg-success-glow { background: #ecfdf5; color: #059669; }
+.bg-warning-glow { background: #fffbeb; color: #d97706; }
+
+@media (max-width: 1024px) {
+  .report-hero { grid-column: span 12; }
+  .report-card { grid-column: span 12 !important; }
+}

@@ -1,0 +1,384 @@
+
+
+:root {
+  /* --- 💎 REFINED SENIOR COLOR PALETTE --- */
+  --erp-primary: #3361FF;    /* A more vibrant, modern "SaaS Blue" as requested */
+  --erp-bg-canvas: #0F172A; 
+  --erp-card-bg: #FFFFFF;   /* Clean white for the central card to stay professional */
+  --erp-input-bg: #F8FAFC;  /* Very light grey for inputs, NO light blue shades */
+  --erp-text-main: #0F172A; 
+  --erp-text-muted: #64748B;
+  --erp-error: #EF4444;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: 'Satoshi', sans-serif;
+  background-color: var(--erp-bg-canvas);
+}
+
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+  position: relative;
+  overflow: hidden;
+  width: 100vw;
+  max-width: 100vw;
+}
+
+.background-mesh {
+  position: absolute;
+  inset: 0;
+  opacity: 0.1;
+  background-image: radial-gradient(var(--erp-primary) 0.5px, transparent 0.5px);
+  background-size: 30px 30px;
+  z-index: 0;
+}
+
+.login-box-wrapper {
+  z-index: 10;
+  padding: 24px;
+  width: 100%;
+  max-width: 1100px; /* Slimmer for better focus */
+}
+
+.login-box {
+  display: flex;
+  background: var(--erp-card-bg);
+  border-radius: 40px; /* Luxurious deep corners */
+  overflow: hidden;
+  box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.4);
+  min-height: 700px;
+  box-sizing: border-box;
+}
+
+/* LEFT SIDE: BRANDING */
+.login-banner {
+  width: 45%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: #F1F5F9;
+}
+
+.banner-visual {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.illustration-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+}
+
+.banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.2) 50%, transparent 100%);
+  z-index: 2;
+}
+
+.banner-content {
+  position: relative;
+  z-index: 3;
+  padding: 40px;
+  color: white;
+}
+
+.brand-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+  backdrop-filter: blur(5px);
+}
+
+.banner-heading {
+  font-size: 4.5rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin: 0 0 10px 0;
+}
+
+.banner-description {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+/* RIGHT SIDE: AUTH FORM */
+.login-form-side {
+  width: 55%;
+  background: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+}
+
+.form-container {
+  width: 100%;
+  max-width: 400px;
+}
+
+.form-header {
+  margin-bottom: 40px;
+}
+
+.header-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--erp-text-main);
+  margin-bottom: 6px;
+  letter-spacing: -0.03em;
+}
+
+.header-subtitle {
+  color: var(--erp-text-muted);
+  font-size: 15px;
+}
+
+.auth-error-block {
+  padding: 12px 16px;
+  background: #FEF2F2;
+  color: #DC2626;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  border: 1px solid rgba(220, 38, 38, 0.1);
+}
+
+/* --- 🔘 FORM CONTROLS --- */
+.form-field-group {
+  margin-bottom: 24px;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--erp-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  margin-left: 4px;
+}
+
+.field-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--erp-input-bg);
+  border: 1.5px solid #F1F5F9;
+  border-radius: 16px;
+  height: 56px;
+  padding: 0 16px;
+  transition: all 0.2s ease;
+}
+
+.field-icon {
+  color: #94A3B8;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.field-native-input {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--erp-text-main);
+  padding: 0;
+}
+
+.field-native-input:focus {
+  outline: none;
+}
+
+/* FIX for the blue shade shade - making it white/neutral instead */
+.field-input-container:focus-within {
+  border-color: var(--erp-primary);
+  background: #FFFFFF;
+  box-shadow: none !important; /* Removed blue focus shade */
+}
+
+/* Browser Autofill Fix (prevents unwanted blueish backgrounds) */
+.field-native-input:-webkit-autofill,
+.field-native-input:-webkit-autofill:hover, 
+.field-native-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--erp-text-main);
+  -webkit-box-shadow: 0 0 0px 1000px #FFFFFF inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+.field-has-error {
+  border-color: #F87171 !important;
+}
+
+.field-error-text {
+  font-size: 11px;
+  color: #EF4444;
+  font-weight: 600;
+  margin-top: 6px;
+  display: block;
+}
+
+/* --- 🛡️ FULLY ROUND BUTTONS & BLEED FIX --- */
+.interactive-wrapper-fix {
+  overflow: hidden !important;
+  isolation: isolate !important;
+}
+
+.password-eye-wrapper {
+  margin-left: 10px;
+  border-radius: 99px; /* Round buttons man */
+  flex-shrink: 0;
+}
+
+.password-toggle-btn {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 10px;
+  display: flex;
+  transition: color 0.2s;
+} .password-toggle-btn:hover { color: var(--erp-primary); }
+
+.login-button-wrapper {
+  border-radius: 99px; /* Round buttons man */
+  margin-top: 32px;
+}
+
+.primary-action-btn {
+  width: 100%;
+  height: 58px;
+  background: var(--erp-primary);
+  color: white;
+  border: none;
+  border-radius: 99px; /* Round buttons man */
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease, filter 0.2s ease;
+  transform: none !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+} .primary-action-btn:hover:not(:disabled) { filter: brightness(1.1); }
+
+.action-text-flex {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.action-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: erp-spin 0.8s linear infinite;
+}
+@keyframes erp-spin { to { transform: rotate(360deg); } }
+
+/* --- ⛓️ CHECKBOX --- */
+.checkbox-input-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  padding: 10px 0;
+}
+
+.hidden-native-checkbox {
+  position: absolute;
+  opacity: 0;
+}
+
+.styled-checkbox-frame {
+  width: 20px;
+  height: 20px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.hidden-native-checkbox:checked ~ .styled-checkbox-frame {
+  background: var(--erp-primary);
+  border-color: var(--erp-primary);
+}
+
+.styled-checkbox-frame::after {
+  content: "";
+  position: absolute;
+  left: 6px; top: 2px;
+  width: 5px; height: 10px;
+  border: solid white;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+  display: none;
+}
+.hidden-native-checkbox:checked ~ .styled-checkbox-frame::after { display: block; }
+
+.checkbox-label-text {
+  font-size: 14px;
+  color: var(--erp-text-muted);
+  font-weight: 600;
+}
+
+/* --- 📱 RESPONSIVE --- */
+@media (max-width: 1024px) {
+  .login-box-wrapper { padding: 16px; }
+  .login-box { 
+    flex-direction: column; 
+    min-height: auto; 
+    border-radius: 32px; 
+    overflow: hidden;
+  }
+  .login-banner { 
+    width: 100%; 
+    height: 30vh; /* Slightly reduced height as requested */
+  }
+  .login-form-side { 
+    width: 100%; 
+    padding: 30px 24px; /* Reduced vertical padding to shorten form length */
+  }
+  .banner-content { padding: 24px; }
+  .banner-heading { font-size: 2.8rem; }
+  .banner-description { font-size: 0.9rem; }
+}
+
+@media (max-width: 480px) {
+  .login-box-wrapper { padding: 12px; }
+  .login-box { border-radius: 28px; }
+  .header-title { font-size: 24px; }
+  .primary-action-btn { height: 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

@@ -1,0 +1,354 @@
+/* frontend/src/pages/Suppliers.css */
+
+.suppliers-container {
+  animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.suppliers-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 40px;
+  gap: 24px;
+}
+
+.suppliers-title h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -1.5px;
+  margin: 0;
+}
+
+.suppliers-title p {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.suppliers-table-container {
+  background: white;
+  border-radius: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.sup-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sup-table th {
+  background: #f8fafc;
+  padding: 20px 24px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sup-table td {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--bg-body);
+}
+
+.sup-row {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.sup-row:hover {
+  background: #f8fafc;
+}
+
+.vendor-orb {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--primary-glow);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.balance-text {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--error);
+  letter-spacing: -0.5px;
+}
+
+.control-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 768px) {
+  .suppliers-container {
+    padding: 10px !important;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  /* Page Header Fix */
+  .suppliers-header {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    margin-bottom: 4px;
+    background: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    width: 100%;
+  }
+
+  .suppliers-header .suppliers-title h1 {
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    margin: 0 !important;
+    letter-spacing: normal !important;
+  }
+
+  .suppliers-header .suppliers-title p {
+    font-size: 12px !important;
+    margin: 4px 0 0 !important;
+    opacity: 0.6 !important;
+  }
+
+  .suppliers-header .suppliers-actions {
+    width: 100% !important;
+    display: flex !important;
+    gap: 10px !important;
+  }
+
+  .add-supplier-btn, 
+  .suppliers-header .btn-primary {
+    width: 100% !important;
+    height: 40px !important;
+    border-radius: 100px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    background: var(--primary) !important;
+    color: white !important;
+  }
+
+  .suppliers-header .btn-secondary {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 40px !important;
+    border-radius: 100px !important;
+  }
+
+  /* Search Bar Fix */
+  .search-orb {
+    position: relative;
+    width: 100% !important;
+    height: 40px !important;
+    border-radius: 10px !important;
+    margin-bottom: 12px !important;
+    padding: 0 12px 0 36px !important;
+    background: var(--white) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: none !important;
+  }
+
+  .search-orb svg {
+    position: absolute !important;
+    left: 12px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 15px !important;
+    height: 15px !important;
+    color: var(--text-muted) !important;
+  }
+
+  .search-orb input {
+    width: 100% !important;
+    height: 100% !important;
+    padding: 0 !important;
+    font-size: 13px !important;
+  }
+
+  /* Table removal */
+  .suppliers-table-container {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin-top: 0 !important;
+    overflow-x: hidden;
+    margin: 0 -10px;
+    padding: 0 10px;
+  }
+
+  .sup-table {
+    display: none !important;
+  }
+
+  /* Card Layout */
+  .supplier-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--white);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+
+  .supplier-card .card-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .supplier-card .avatar {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 10px;
+    background: var(--primary-surface);
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .supplier-card .supplier-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin: 0;
+  }
+
+  .supplier-card .supplier-id {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 2px 0 0;
+  }
+
+  .supplier-card .card-contact {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .supplier-card .contact-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .supplier-card .contact-row svg {
+    width: 13px;
+    height: 13px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .supplier-card .card-balance {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .supplier-card .balance-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .supplier-card .balance-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--error);
+  }
+
+  .supplier-card .card-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .supplier-card .action-btn {
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    background: var(--white);
+    color: var(--text-primary);
+    flex: 1;
+    justify-content: center;
+  }
+
+  .supplier-card .action-btn.edit {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #2563eb;
+  }
+
+  .supplier-card .action-btn.delete {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #ef4444;
+  }
+
+  .supplier-card .action-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+}
