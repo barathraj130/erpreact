@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { apiFetch } from '../utils/api';
+import { useAuthUser } from "../hooks/useAuthUser";
 import { 
   FaFolder, 
   FaFilePdf, 
@@ -44,6 +45,7 @@ interface DocItem {
 }
 
 const DocumentManager: React.FC = () => {
+  const { user } = useAuthUser();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeCategory, setActiveCategory] = useState('Documents');
   const [searchQuery, setSearchQuery] = useState('');
@@ -244,7 +246,7 @@ const DocumentManager: React.FC = () => {
       {/* ── Sticky Topbar ── */}
       <header className="db-topbar">
         <div className="db-topbar-left">
-          <span className="db-topbar-title">Platform Hub</span>
+          <span className="db-topbar-title">{user?.company || "Documents"}</span>
           <span className="db-topbar-sep">/</span>
           <span className="db-topbar-sub">Documents</span>
         </div>

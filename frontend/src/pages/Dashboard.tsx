@@ -111,9 +111,9 @@ const Dashboard: React.FC = () => {
       {/* ── Sticky Topbar ── */}
       <header className="db-topbar">
         <div className="db-topbar-left" style={{ paddingLeft: isMobile ? "40px" : "0" }}>
-          <span className="db-topbar-title">Dashboard</span>
+          <span className="db-topbar-title">{activeBranch?.branch_name || "Dashboard"}</span>
           {!isMobile && <span className="db-topbar-sep">/</span>}
-          {!isMobile && <span className="db-topbar-sub">Financial Overview</span>}
+          {!isMobile && <span className="db-topbar-sub">Branch Overview</span>}
         </div>
 
         <div className="db-topbar-right">

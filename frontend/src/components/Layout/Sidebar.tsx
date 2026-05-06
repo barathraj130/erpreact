@@ -279,11 +279,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
             <rect x="9" y="9" width="5" height="5" rx="1.2" fill="currentColor" opacity=".25"/>
           </svg>
         </div>
-        {!isCollapsed && <span className="logo-name-v2">Platform Hub</span>}
+        {!isCollapsed && (
+          <span className="logo-name-v2">
+            {mode === "HOST" ? "Platform Admin" : (user?.company || "Enterprise ERP")}
+          </span>
+        )}
       </div>
 
       {/* ── Branch Selector (Non-Host Mode) ── */}
-      {!isCollapsed && mode !== "HOST" && (
+      {!isCollapsed && mode !== "HOST" && (branches.length > 1 || user?.role === "admin") && (
         <div className="sb-branch-container" style={{ position: "relative" }}>
           <div className="branch-label-v2">Active Branch</div>
           <button

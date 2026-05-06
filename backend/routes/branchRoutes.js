@@ -32,13 +32,26 @@ router.get('/', authMiddleware, async (req, res) => {
     if (!companyId) return res.status(401).json({ error: "No active company context." });
 
     try {
-        const branches = await db.pgAll(`
+        const userRole = req.user?.role?.toLowerCase();
+        let query = `
             SELECT b.*, u.email as login_email 
             FROM branches b 
             LEFT JOIN users u ON b.manager_user_id = u.id 
-            WHERE b.company_id = $1 
-            ORDER BY b.created_at DESC
-        `, [companyId]);
+            WHERE b.company_id = $1
+        `;
+        let params = [companyId];
+
+        // 🏢 BRANCH ISOLATION: Non-admins only see their assigned branch
+        if (userRole !== 'admin' && userRole !== 'superadmin') {
+            if (req.user.branch_id) {
+                query += " AND b.id = $2";
+                params.push(req.user.branch_id);
+            }
+        }
+
+        query += " ORDER BY b.created_at DESC";
+        
+        const branches = await db.pgAll(query, params);
         res.json(branches);
     } catch (error) {
         console.error("Error fetching branches:", error);
