@@ -252,9 +252,15 @@ const AddBranchModal: React.FC<Props> = ({ onClose, onSuccess, initialData }) =>
                 <input required type="email" value={formData.login_email} onChange={e => updateForm("login_email", e.target.value)} style={inputStyle} placeholder="For branch staff login" />
               </div>
               <div>
-                <label style={labelStyle}>Temporary Password <span style={{ color: "#ef4444" }}>*</span></label>
+                <label style={labelStyle}>Temporary Password {initialData ? "" : <span style={{ color: "#ef4444" }}>*</span>}</label>
                 <div style={{ display: "flex", gap: "10px" }}>
-                    <input required value={formData.temporary_password} onChange={e => updateForm("temporary_password", e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                    <input 
+                      required={!initialData} 
+                      value={formData.temporary_password} 
+                      onChange={e => updateForm("temporary_password", e.target.value)} 
+                      style={{ ...inputStyle, flex: 1 }} 
+                      placeholder={initialData ? "Leave blank to keep current" : "Set password"}
+                    />
                     <button type="button" onClick={generatePassword} style={{ background: "#e0e7ff", color: "#4f46e5", border: "none", padding: "0 15px", borderRadius: "8px", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: "6px" }}>
                         <FaSync /> Gen
                     </button>

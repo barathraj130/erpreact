@@ -1,5 +1,6 @@
 
 import * as db from "../database/pg.js";
+import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
 
 /**
  * Record a notification in the database
@@ -65,6 +66,41 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
          VALUES ($1, $2, $3, 'Transfer', 0, $4, 'stock_transfer', NULL, $5)`,
         [company_id, to_branch_id, product_id, amount, `Received from branch ${from_branch_id || 'Main'}`]
     );
+
+    // 5. Create Ledger Entries (Debit Branch Inventory -> Credit Main Inventory)
+    try {
+        const productRes = await client.query(`SELECT purchase_price FROM products WHERE id = $1`, [product_id]);
+        const price = parseFloat(productRes.rows[0]?.purchase_price || 0);
+        const totalValue = price * amount;
+
+        const inventoryAccount = await getAccountByCode(company_id, '1400'); // Assuming 1400 is Inventory Asset
+        if (inventoryAccount && totalValue > 0) {
+            await createTransaction({
+                company_id,
+                branch_id: to_branch_id,
+                transaction_date: new Date(),
+                reference_type: 'STOCK_TRANSFER',
+                reference_id: reference_id || 0,
+                description: `Stock Transfer: ${amount} units of Product #${product_id}`,
+                created_by: userId
+            }, [
+                {
+                    account_id: inventoryAccount.id,
+                    debit_amount: totalValue,
+                    credit_amount: 0,
+                    description: `Debit Branch Inventory (Branch #${to_branch_id})`
+                },
+                {
+                    account_id: inventoryAccount.id,
+                    debit_amount: 0,
+                    credit_amount: totalValue,
+                    description: `Credit Main Inventory`
+                }
+            ]);
+        }
+    } catch (e) {
+        console.error("Ledger logging failed for transfer:", e.message);
+    }
 
     // 5. Notify destination branch
     await createNotification(client, {

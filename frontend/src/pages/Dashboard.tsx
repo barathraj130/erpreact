@@ -14,6 +14,12 @@ const Dashboard: React.FC = () => {
   const { user } = useAuthUser();
   const { activeBranch } = useTenant();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user && user.role !== 'admin' && user.branch_id) {
+      navigate("/branch/billing");
+    }
+  }, [user, navigate]);
   
   const [kpis, setKpis] = useState({
     cashBalance: 0,

@@ -418,12 +418,31 @@ const BranchBilling: React.FC = () => {
       <AnimatePresence>
         {successMessage && (
           <motion.div 
-            initial={{ opacity: 0, y: 20 }} 
+            initial={{ opacity: 0, y: 50 }} 
             animate={{ opacity: 1, y: 0 }} 
-            exit={{ opacity: 0, y: 20 }}
-            style={{ position: "fixed", bottom: "30px", left: "50%", transform: "translateX(-50%)", background: "#10b981", color: "#fff", padding: "15px 30px", borderRadius: "12px", fontWeight: 800, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: "10px", zIndex: 10000 }}
+            exit={{ opacity: 0, y: 50 }}
+            style={{ position: "fixed", bottom: "30px", right: "30px", background: "#fff", padding: "25px", borderRadius: "20px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", border: "1px solid #10b981", display: "flex", flexDirection: "column", gap: "15px", zIndex: 10000, minWidth: "300px" }}
           >
-            <FaCheckCircle /> {successMessage}
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "#10b981", fontWeight: 900 }}>
+               <FaCheckCircle size={24} /> {successMessage}
+            </div>
+            <div style={{ display: "flex", gap: "10px" }}>
+               <button 
+                 onClick={() => window.print()}
+                 style={{ flex: 1, padding: "10px", borderRadius: "10px", background: "#f1f5f9", border: "none", color: "#475569", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+               >
+                 <FaPrint /> Print
+               </button>
+               <button 
+                 onClick={() => {
+                   const msg = `Hello! Your bill ${successMessage.split('#')[1]} from ${activeBranch?.branch_name} is ready. Total: ₹${totals.netTotal.toLocaleString()}`;
+                   window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+                 }}
+                 style={{ flex: 1, padding: "10px", borderRadius: "10px", background: "#25d366", border: "none", color: "#fff", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+               >
+                 <FaWhatsapp /> Share
+               </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

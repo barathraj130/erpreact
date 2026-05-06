@@ -152,10 +152,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
         address_line1, address_line2, city, pincode, state, country,
         branch_phone, branch_email, whatsapp_number,
         manager_name, manager_phone, manager_email, manager_whatsapp,
-        gstin, bill_prefix, default_payment_mode, opening_cash_balance
+        gstin, bill_prefix, default_payment_mode, opening_cash_balance,
+        login_email
     } = req.body;
 
+    const client = await db.getClient();
     try {
+        await client.query("BEGIN");
+
+        // 1. Update Branch Record
         const sql = `
             UPDATE branches 
             SET branch_name = $1, branch_type = $2, is_active = $3,
@@ -165,8 +170,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
                 gstin = $17, bill_prefix = $18, default_payment_mode = $19, opening_cash_balance = $20,
                 city_pincode = $21
             WHERE id = $22 AND company_id = $23
+            RETURNING manager_user_id
         `;
-        const result = await db.pgRun(sql, [
+        const result = await client.query(sql, [
             branch_name, branch_type, is_active,
             address_line1, address_line2, city, pincode, state, country,
             branch_phone, branch_email, whatsapp_number,
@@ -176,32 +182,62 @@ router.put('/:id', authMiddleware, async (req, res) => {
             id, companyId
         ]);
         
-        if (result.rowCount === 0) return res.status(404).json({ error: "Branch not found or unauthorized." });
+        if (result.rowCount === 0) {
+            await client.query("ROLLBACK");
+            return res.status(404).json({ error: "Branch not found or unauthorized." });
+        }
+
+        const managerUserId = result.rows[0].manager_user_id;
+
+        // 2. Update associated User Record (if exists)
+        if (managerUserId && login_email) {
+            await client.query(
+                "UPDATE users SET email = $1, username = $2 WHERE id = $3 AND company_id = $4",
+                [login_email, manager_name || branch_name, managerUserId, companyId]
+            );
+        }
         
+        await client.query("COMMIT");
         res.json({ message: "Branch updated successfully." });
     } catch (error) {
+        await client.query("ROLLBACK");
         console.error("Error updating branch:", error);
         res.status(500).json({ error: "Failed to update branch." });
+    } finally {
+        client.release();
     }
 });
 
 // POST /api/branches/reset-password
 router.post('/reset-password', authMiddleware, async (req, res) => {
     const { email, new_password } = req.body;
+    const requesterRole = req.user?.role?.toLowerCase();
+    const companyId = req.user?.company_id || req.user?.active_company_id;
     
+    // 1. Security Check: Only admins or superadmins can reset passwords
+    if (requesterRole !== 'admin' && requesterRole !== 'superadmin') {
+        return res.status(403).json({ error: "Unauthorized. Only administrators can reset branch passwords." });
+    }
+
     if (!email || !new_password) {
         return res.status(400).json({ error: "Email and new password are required" });
     }
 
+    if (new_password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters long." });
+    }
+
     try {
         const hashedPwd = await bcrypt.hash(new_password, 10);
+        
+        // 2. Data Isolation: Ensure the target user belongs to the same company
         const result = await db.pgRun(
-            "UPDATE users SET password_hash = $1, failed_attempts = 0, lock_until = NULL WHERE email = $2",
-            [hashedPwd, email]
+            "UPDATE users SET password_hash = $1, failed_attempts = 0, lock_until = NULL WHERE email = $2 AND company_id = $3",
+            [hashedPwd, email, companyId]
         );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: "User not found with this email" });
+            return res.status(404).json({ error: "User not found with this email in your company context." });
         }
 
         res.json({ success: true, message: "Password reset successfully" });

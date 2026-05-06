@@ -480,7 +480,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
         await client.query("COMMIT");
-        res.status(201).json({ message: "Invoice saved", id: invoiceId });
+        res.status(201).json({ message: "Invoice saved", id: invoiceId, bill_number: finalInvoiceNumber });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Critical Invoice Error:", err.message);

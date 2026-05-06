@@ -92,9 +92,9 @@ const EnterpriseLayout: React.FC<{
 }> = ({ user, mode }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isBranchUser = user?.role !== 'admin' && user?.branch_id;
+  const hideSidebar = isBranchUser;
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
-  // useTenant kept for context; branch selection handled inside Sidebar
-  useTenant();
 
   useEffect(() => {
     const handleResize = () => {
@@ -108,19 +108,21 @@ const EnterpriseLayout: React.FC<{
 
   return (
     <div className="enterprise-shell">
-      <Sidebar
-        isOpen={sidebarOpen}
-        setIsOpen={setSidebarOpen}
-        isMobile={isMobile}
-        mode={mode}
-        isCollapsed={sidebarCollapsed}
-        setIsCollapsed={setSidebarCollapsed}
-      />
+      {!hideSidebar && (
+        <Sidebar
+          isOpen={sidebarOpen}
+          setIsOpen={setSidebarOpen}
+          isMobile={isMobile}
+          mode={mode}
+          isCollapsed={sidebarCollapsed}
+          setIsCollapsed={setSidebarCollapsed}
+        />
+      )}
 
       <div
         className={`shell-main ${sidebarOpen ? "blur-content" : ""}`}
         style={{
-          marginLeft: isMobile ? "0" : (sidebarCollapsed ? "80px" : "260px"),
+          marginLeft: (isMobile || hideSidebar) ? "0" : (sidebarCollapsed ? "80px" : "260px"),
           transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           display: "flex",
           flexDirection: "column",
@@ -129,7 +131,7 @@ const EnterpriseLayout: React.FC<{
           padding: 0,
         }}
       >
-        {isMobile && (
+        {isMobile && !hideSidebar && (
           <button
             onClick={() => setSidebarOpen(true)}
             style={{
