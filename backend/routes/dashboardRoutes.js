@@ -89,4 +89,19 @@ router.get("/kpis", async (req, res) => {
     }
 });
 
+/**
+ * GET /api/dashboard/branch-overview
+ * Get branch summary for main dashboard
+ */
+router.get("/branch-overview", async (req, res) => {
+    try {
+        const { user } = req;
+        const data = await dashboardService.getBranchOverview(user.active_company_id);
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error("❌ Branch overview error:", err);
+        res.status(500).json({ error: "Failed to fetch branch overview" });
+    }
+});
+
 export default router;

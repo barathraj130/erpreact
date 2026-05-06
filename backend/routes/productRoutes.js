@@ -126,6 +126,40 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
     }
 });
 
+router.get("/breakdown", authMiddleware, async (req, res) => {
+    const companyId = req.user?.active_company_id;
+    try {
+        const sql = `
+            SELECT 
+                p.id as product_id, 
+                p.name, 
+                p.sku, 
+                p.unit,
+                p.current_stock as main_stock,
+                p.min_stock as main_min_stock,
+                COALESCE(SUM(bi.current_stock), 0) as branches_total_stock,
+                JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'branch_id', b.id,
+                        'branch_name', b.branch_name,
+                        'stock', bi.current_stock
+                    )
+                ) FILTER (WHERE b.id IS NOT NULL) as branch_details
+            FROM products p
+            LEFT JOIN branch_inventory bi ON p.id = bi.product_id
+            LEFT JOIN branches b ON bi.branch_id = b.id
+            WHERE p.company_id = $1 AND p.is_deleted = false
+            GROUP BY p.id, p.name, p.sku, p.unit, p.current_stock, p.min_stock
+            ORDER BY p.name ASC
+        `;
+        const breakdown = await pgModule.pgAll(sql, [companyId]);
+        return res.json(breakdown);
+    } catch (err) {
+        console.error("Inventory breakdown error:", err);
+        return res.status(500).json({ error: "Failed to fetch inventory breakdown" });
+    }
+});
+
 router.get("/", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {

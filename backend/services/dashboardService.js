@@ -193,6 +193,51 @@ export const getSupplierAnalytics = async (companyId) => {
 /**
  * Get KPI summary
  */
+/**
+ * Get branch overview for main dashboard
+ */
+export const getBranchOverview = async (companyId) => {
+    try {
+        // 1. Branch Metrics
+        const branchMetrics = await db.pgAll(
+            `SELECT 
+                b.id, b.branch_name, b.branch_code,
+                COUNT(bi.id) as total_products,
+                COALESCE(SUM(bi.current_stock * p.selling_price), 0) as stock_value,
+                COUNT(CASE WHEN bi.current_stock <= bi.min_stock THEN 1 END) as low_stock_count
+             FROM branches b
+             LEFT JOIN branch_inventory bi ON b.id = bi.branch_id
+             LEFT JOIN products p ON bi.product_id = p.id
+             WHERE b.company_id = $1
+             GROUP BY b.id, b.branch_name, b.branch_code`,
+            [companyId]
+        );
+
+        // 2. Pending Requests Count
+        const pendingRequests = await db.pgGet(
+            `SELECT COUNT(*) as count FROM stock_requests WHERE company_id = $1 AND status = 'PENDING'`,
+            [companyId]
+        );
+
+        // 3. Consolidated Sales (Last 30 days)
+        const sales = await db.pgGet(
+            `SELECT COALESCE(SUM(total_amount), 0) as amount 
+             FROM invoices 
+             WHERE company_id = $1 AND created_at >= NOW() - INTERVAL '30 days'`,
+            [companyId]
+        );
+
+        return {
+            branch_metrics: branchMetrics,
+            pending_requests_count: parseInt(pendingRequests.count || 0),
+            total_sales_30d: parseFloat(sales.amount || 0)
+        };
+    } catch (err) {
+        console.error("❌ Get branch overview error:", err);
+        return { branch_metrics: [], pending_requests_count: 0, total_sales_30d: 0 };
+    }
+};
+
 export const getKPISummary = async (companyId) => {
     try {
         const startMonth = new Date();

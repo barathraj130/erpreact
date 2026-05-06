@@ -169,6 +169,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   useEffect(() => {
     if (mode === "USER" || mode === "ADMIN") {
@@ -187,6 +188,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
       return () => clearInterval(interval);
     }
   }, [mode]);
+
+  useEffect(() => {
+    if (user?.role === 'admin' || mode === 'ADMIN') {
+        const fetchRequests = async () => {
+            try {
+                const res = await apiFetch("/dashboard/branch-overview");
+                if (res.ok) {
+                    const { data } = await res.json();
+                    setPendingRequestsCount(data.pending_requests_count || 0);
+                }
+            } catch (e) {}
+        };
+        fetchRequests();
+        const interval = setInterval(fetchRequests, 30000);
+        return () => clearInterval(interval);
+    }
+  }, [user, mode]);
 
   useEffect(() => {
     for (const item of MENU_ITEMS) {
@@ -281,7 +299,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
         </div>
         {!isCollapsed && (
           <span className="logo-name-v2">
-            {mode === "HOST" ? "Platform Admin" : (user?.company || "Enterprise ERP")}
+            {mode === "HOST" ? "Platform Admin" : "Enterprise ERP"}
           </span>
         )}
       </div>
@@ -401,9 +419,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
                         }
                     }}
                   >
-                    <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: "8px", position: "relative" }}>
                        {item.icon}
                        {!isCollapsed && <span className="nav-item-text">{item.name}</span>}
+                       {!isCollapsed && item.name === "Inventory" && pendingRequestsCount > 0 && (
+                         <span style={{ 
+                            background: "#ef4444", 
+                            color: "white", 
+                            fontSize: "0.65rem", 
+                            padding: "2px 6px", 
+                            borderRadius: "10px",
+                            fontWeight: 900,
+                            marginLeft: "4px"
+                         }}>
+                            {pendingRequestsCount}
+                         </span>
+                       )}
                     </span>
                     {!isCollapsed && item.subItems && (
                       <FaChevronDown 

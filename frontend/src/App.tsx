@@ -76,6 +76,7 @@ import ConsolidatedInventory from "./pages/ConsolidatedInventory";
 import StockTransfer from "./pages/StockTransfer";
 import StockRequestsInbox from "./pages/StockRequestsInbox";
 import BranchBilling from "./pages/BranchBilling";
+import GlobalInventory from "./pages/GlobalInventory";
 import BillFormatSettings from "./pages/BillFormatSettings";
 
 
@@ -269,7 +270,7 @@ const App: React.FC = () => {
             <Route path="/purchase-bills/new" element={<SimplifiedPurchaseBill />} />
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/daybook" element={<DayBook />} />
-            <Route path="/inventory/consolidated" element={<ConsolidatedInventory />} />
+            <Route path="/inventory/consolidated" element={<GlobalInventory />} />
             <Route path="/inventory/transfer" element={<StockTransfer />} />
             <Route path="/inventory/requests" element={<StockRequestsInbox />} />
             <Route path="/branch/billing" element={<BranchBilling />} />

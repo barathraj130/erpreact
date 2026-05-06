@@ -38,6 +38,7 @@ const Dashboard: React.FC = () => {
   const [search, setSearch] = useState("");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [loading, setLoading] = useState(true);
+  const [branchSummary, setBranchSummary] = useState<any>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -50,10 +51,11 @@ const Dashboard: React.FC = () => {
     
     const fetchDashboard = async () => {
       try {
-        const [kpiRes, financeRes, txRes] = await Promise.all([
+        const [kpiRes, financeRes, txRes, branchRes] = await Promise.all([
           apiFetch("/dashboard/kpis").then(r => r.json()),
           apiFetch("/dashboard/finance").then(r => r.json()),
-          apiFetch("/transactions?limit=10").then(r => r.json())
+          apiFetch("/transactions?limit=10").then(r => r.json()),
+          apiFetch("/dashboard/branch-overview").then(r => r.json())
         ]);
 
         if (kpiRes?.data) {
@@ -78,6 +80,10 @@ const Dashboard: React.FC = () => {
           }));
           setExpenseCategories(f.expenses_by_category || []);
           setMonthlyTrend(f.monthly_trend || []);
+        }
+
+        if (branchRes?.success) {
+          setBranchSummary(branchRes.data);
         }
 
         if (Array.isArray(txRes)) {
@@ -196,7 +202,58 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {branchSummary && (
+            <div className="db-kpi-card" style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "#fff", position: "relative", overflow: "hidden" }} onClick={() => navigate("/inventory/requests")}>
+              <div style={{ position: "absolute", top: "-10px", right: "-10px", opacity: 0.1 }}><svg width="80" height="80" fill="currentColor"><path d="M10 10h60v60h-60z"/></svg></div>
+              <div className="db-kpi-top">
+                <span className="db-kpi-label" style={{ color: "rgba(255,255,255,0.8)" }}>Branch Requests</span>
+                {branchSummary.pending_requests_count > 0 && <span className="db-badge" style={{ background: "#ef4444", color: "#fff" }}>🔴 {branchSummary.pending_requests_count} New</span>}
+              </div>
+              <div className="db-kpi-value" style={{ color: "#fff" }}>{branchSummary.pending_requests_count} <span style={{ fontSize: "1rem", opacity: 0.8 }}>Pending</span></div>
+              <div className="db-kpi-footer" style={{ color: "rgba(255,255,255,0.7)" }}>
+                <span>Across all satellite branches</span>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Branch Overview Section */}
+        {branchSummary && (
+          <div className="db-card" style={{ marginBottom: "30px" }}>
+            <div className="db-card-header">
+              <span className="db-card-title">Multi-Branch Performance</span>
+              <button className="db-btn db-btn-ghost" onClick={() => navigate("/admin/branches")}>Manage Branches →</button>
+            </div>
+            <div className="db-card-body" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px", padding: "20px" }}>
+               {branchSummary.branch_metrics.map((bm: any) => (
+                  <div key={bm.id} className="glass-card" style={{ padding: "15px", border: "1px solid #f1f5f9", background: "#fcfdfe" }}>
+                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "15px" }}>
+                        <div>
+                           <h4 style={{ margin: 0, fontWeight: 900, color: "#1e293b" }}>{bm.branch_name}</h4>
+                           <span style={{ fontSize: "0.7rem", color: "#94a3b8", fontWeight: 700 }}>CODE: {bm.branch_code}</span>
+                        </div>
+                        {bm.low_stock_count > 0 && (
+                           <div style={{ background: "#fef2f2", color: "#ef4444", padding: "2px 8px", borderRadius: "6px", fontSize: "0.65rem", fontWeight: 900 }}>
+                              ⚠️ {bm.low_stock_count} LOW STOCK
+                           </div>
+                        )}
+                     </div>
+                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                        <div>
+                           <div style={{ fontSize: "0.65rem", color: "#64748b", fontWeight: 700 }}>Total Products</div>
+                           <div style={{ fontSize: "1rem", fontWeight: 900, color: "#0f172a" }}>{bm.total_products}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                           <div style={{ fontSize: "0.65rem", color: "#64748b", fontWeight: 700 }}>Stock Value</div>
+                           <div style={{ fontSize: "1rem", fontWeight: 900, color: "#4f46e5" }}>₹{fmt(bm.stock_value)}</div>
+                        </div>
+                     </div>
+                  </div>
+               ))}
+            </div>
+          </div>
+        )}
 
         {/* Charts row */}
         <div className="db-charts-row">
