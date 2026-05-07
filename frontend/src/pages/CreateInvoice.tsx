@@ -1796,6 +1796,7 @@ const CreateInvoice: React.FC = () => {
         )}
       </div>
     </div>
+  </div>
     );
   } catch (err: any) {
     console.error("FATAL RENDERING ERROR in CreateInvoice:", err);
