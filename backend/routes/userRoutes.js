@@ -154,7 +154,7 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
         await recomputeCustomerBalance(client, result.rows[0].id, req.user.active_company_id);
 
         await client.query("COMMIT");
-        res.json({ success: true, id: result.rows[0].id });
+        res.status(201).json({ success: true, id: result.rows[0].id });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Create customer error:", err);

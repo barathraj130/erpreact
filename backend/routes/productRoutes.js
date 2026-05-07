@@ -116,7 +116,7 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
         }
 
         await client.query("COMMIT");
-        return res.json({ message: "Product created and synced with inventory", product });
+        return res.status(201).json({ message: "Product created and synced with inventory", product });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("❌ Create Product Error:", err);
@@ -141,7 +141,7 @@ router.get("/breakdown", authMiddleware, async (req, res) => {
                 JSON_AGG(
                     JSON_BUILD_OBJECT(
                         'branch_id', b.id,
-                        'branch_name', b.branch_name,
+                        'branch_name', b.name,
                         'stock', bi.current_stock
                     )
                 ) FILTER (WHERE b.id IS NOT NULL) as branch_details

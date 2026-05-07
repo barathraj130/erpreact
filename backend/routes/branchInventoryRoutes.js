@@ -15,7 +15,7 @@ router.get("/requests/pending", authMiddleware, async (req, res) => {
     try {
         const companyId = req.user.active_company_id;
         const requests = await db.pgAll(
-            `SELECT sr.*, p.name as product_name, b.name as branch_name, 
+            `SELECT sr.*, p.name as product_name, b.branch_name, 
                     inv.current_stock as main_stock
              FROM stock_requests sr
              JOIN products p ON sr.product_id = p.id
