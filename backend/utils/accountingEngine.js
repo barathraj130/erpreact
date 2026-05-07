@@ -153,3 +153,27 @@ export async function getAccountByCode(companyId, code) {
     const sql = `SELECT id, account_type FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = $2 LIMIT 1;`;
     return await db.pgGet(sql, [companyId, code]);
 }
+/**
+ * Generates a Balance Sheet Report
+ */
+export async function getBalanceSheet(companyId) {
+    const sql = `
+        SELECT 
+            ca.account_type,
+            ca.name as account_name,
+            ca.current_balance
+        FROM chart_of_accounts ca
+        WHERE (ca.company_id = $1 OR ca.company_id IS NULL)
+          AND ca.account_type IN ('ASSET', 'LIABILITY', 'EQUITY')
+        ORDER BY ca.account_type, ca.name;
+    `;
+    const results = await db.pgAll(sql, [companyId]);
+    
+    const summary = results.reduce((acc, curr) => {
+        if (curr.account_type === 'ASSET') acc.totalAssets += parseFloat(curr.current_balance);
+        else acc.totalLiabilitiesEquity += parseFloat(curr.current_balance);
+        return acc;
+    }, { totalAssets: 0, totalLiabilitiesEquity: 0 });
+
+    return { details: results, ...summary };
+}

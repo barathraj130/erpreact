@@ -55,18 +55,19 @@ router.get('/sales/register', authMiddleware, async (req, res) => {
     try {
         let sql = `
             SELECT 
-                i.created_at as date,
-                i.invoice_no,
-                i.customer_name,
-                i.taxable_amount,
-                i.total_tax,
+                i.invoice_date as date,
+                i.invoice_number as invoice_no,
+                u.username as customer_name,
+                i.sub_total as taxable_amount,
+                i.tax_total as total_tax,
                 i.total_amount,
                 i.status,
                 b.name as broker_name
             FROM invoices i
+            JOIN users u ON i.customer_id = u.id
             LEFT JOIN brokers b ON i.broker_id = b.id
             WHERE i.company_id = $1
-            AND DATE(i.created_at) BETWEEN $2 AND $3
+            AND i.invoice_date BETWEEN $2 AND $3
         `;
         const params = [companyId, startDate, endDate];
 
@@ -124,16 +125,17 @@ router.get('/finance/day-book', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                created_at,
-                entry_type,
-                description,
-                CASE WHEN is_debit THEN amount ELSE 0 END as debit,
-                CASE WHEN NOT is_debit THEN amount ELSE 0 END as credit,
-                id
-            FROM ledger_entries
-            WHERE company_id = $1
-            AND DATE(created_at) BETWEEN $2 AND $3
-            ORDER BY created_at ASC
+                le.entry_date as date,
+                le.debit,
+                le.credit,
+                le.running_balance,
+                ca.name as account_name,
+                le.id
+            FROM ledger_entries le
+            JOIN chart_of_accounts ca ON le.account_id = ca.id
+            WHERE le.company_id = $1
+            AND le.entry_date BETWEEN $2 AND $3
+            ORDER BY le.entry_date DESC, le.id DESC
         `;
         const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
         res.json(rows || []);
@@ -349,11 +351,11 @@ router.get('/gst/itc', authMiddleware, async (req, res) => {
                 bill_date as date,
                 sub_total as taxable_amount,
                 tax_total,
-                (SELECT gstin FROM lenders WHERE name = supplier_name LIMIT 1) as gstin
+                (SELECT gstin FROM suppliers WHERE name = supplier_name LIMIT 1) as gstin
             FROM purchase_bills
             WHERE company_id = $1
             AND bill_date BETWEEN $2 AND $3
-            AND total_tax > 0
+            AND tax_total > 0
             ORDER BY bill_date DESC
         `;
         const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
