@@ -100,7 +100,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
         res.json(users);
     } catch (err) {
         console.error("Fetch customers error:", err);
-        res.status(500).json({ error: "Error fetching customers" });
+        res.status(500).json({ error: "Error fetching customers: " + err.message });
     }
 });
 
@@ -158,7 +158,7 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Create customer error:", err);
-        res.status(500).json({ error: "Failed to create customer" });
+        res.status(500).json({ error: "Failed to create customer: " + err.message });
     } finally {
         if (client) client.release();
     }

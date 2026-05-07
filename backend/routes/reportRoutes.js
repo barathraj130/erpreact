@@ -41,7 +41,7 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
         });
     } catch (err) {
         console.error("Dashboard Stats Error:", err);
-        res.status(500).json({ error: "Failed to fetch stats." });
+        res.status(500).json({ error: "Report failed: " + err.message });
     }
 });
 
@@ -85,8 +85,8 @@ router.get('/sales/register', authMiddleware, async (req, res) => {
         const rows = await db.pgAll(sql, params);
         res.json(rows || []);
     } catch (err) {
-        console.error("Sales Register Error:", err);
-        res.status(500).json({ error: "Failed to fetch sales register." });
+        console.error("Report Error:", err);
+        res.status(500).json({ error: "Report failed: " + err.message });
     }
 });
 
@@ -109,8 +109,8 @@ router.get('/inventory/summary', authMiddleware, async (req, res) => {
         const rows = await db.pgAll(sql, [companyId]);
         res.json(rows || []);
     } catch (err) {
-        console.error("Inventory Summary Error:", err);
-        res.status(500).json({ error: "Failed to fetch inventory summary." });
+        console.error("Report Error:", err);
+        res.status(500).json({ error: "Report failed: " + err.message });
     }
 });
 
