@@ -145,6 +145,7 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
         subItems: [
             { name: "Global Settings", path: "/admin/setup" },
             { name: "Bill Format", path: "/admin/bill-format" },
+            { name: "Payment Methods", path: "/admin/payment-methods" },
             { name: "Branches", path: "/admin/branches" },
             { name: "Subscriptions", path: "/admin/subscriptions" }
         ]

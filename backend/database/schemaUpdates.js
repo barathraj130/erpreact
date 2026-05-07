@@ -101,6 +101,41 @@ export const runSchemaUpdates = async () => {
             );
         `);
 
+        // 7. Create payment_qr_codes table
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS payment_qr_codes (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL REFERENCES companies(id),
+                label VARCHAR(100) NOT NULL,
+                upi_id VARCHAR(100),
+                image_url TEXT,
+                is_active BOOLEAN DEFAULT true,
+                sort_order INTEGER DEFAULT 0,
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
+        // 8. Create company_bank_accounts table
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS company_bank_accounts (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL REFERENCES companies(id),
+                bank_name VARCHAR(100) NOT NULL,
+                account_number VARCHAR(100) NOT NULL,
+                ifsc_code VARCHAR(50),
+                account_type VARCHAR(50) DEFAULT 'Current',
+                holder_name VARCHAR(100),
+                display_name VARCHAR(100),
+                upi_id VARCHAR(100),
+                is_active BOOLEAN DEFAULT true,
+                sort_order INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err.message);

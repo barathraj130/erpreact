@@ -4,13 +4,14 @@ import {
   FaSearch, FaShoppingCart, FaTrash, FaPlus, FaCheck, FaTimes, 
   FaBox, FaRegClock, FaUserAlt, FaFileUpload, FaPrint, FaWhatsapp,
   FaInbox, FaExclamationTriangle, FaBolt, FaUserEdit, FaCheckCircle, FaBuilding,
-  FaWallet, FaCalendarCheck, FaChartLine, FaHistory
+  FaWallet, FaCalendarCheck, FaChartLine, FaHistory, FaCreditCard
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTenant } from "../context/TenantContext";
 import CustomSelect from "../components/CustomSelect";
 import { useNavigate } from "react-router-dom";
+import PaymentPopup from "../components/PaymentPopup";
 
 const BranchBilling: React.FC = () => {
   const navigate = useNavigate();
@@ -28,6 +29,8 @@ const BranchBilling: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [paidAmount, setPaidAmount] = useState<string>("");
   const [paymentMode, setPaymentMode] = useState("CASH");
+  const [paymentRef, setPaymentRef] = useState<string>("");
+  const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [discount, setDiscount] = useState<number>(0);
 
   // UI State
@@ -570,7 +573,16 @@ const BranchBilling: React.FC = () => {
                     <option value="CASH">Cash</option>
                     <option value="BANK">Bank</option>
                     <option value="WALLET">Wallet</option>
+                    <option value="UPI">UPI / QR</option>
                   </select>
+                </div>
+                <div style={{ marginTop: "15px" }}>
+                   <button 
+                      onClick={() => setShowPaymentPopup(true)} 
+                      style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                   >
+                      <FaCreditCard /> Show Digital Payment Options
+                   </button>
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
