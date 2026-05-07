@@ -348,6 +348,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 referenceType: "INVOICE",
                 referenceId: invoiceId,
                 createdBy: req.user.id,
+                bill_purpose: bill_purpose || 'real'
             });
         }
 
@@ -377,6 +378,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                             referenceType: "PAYMENT",
                             referenceId: paymentRecord.rows[0].id,
                             createdBy: req.user.id,
+                            bill_purpose: bill_purpose || 'real',
                             meta: {
                                 payment_method: p.payment_method || "CASH",
                                 reference_no: p.reference_no || null,

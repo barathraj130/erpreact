@@ -182,6 +182,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
         `);
 
         console.log("✅ Schema Updates Completed.");

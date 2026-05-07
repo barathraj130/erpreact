@@ -57,7 +57,8 @@ router.post('/accounts', async (req, res) => {
 router.post('/transactions', async (req, res) => {
     try {
         const companyId = req.user.active_company_id;
-        const branchId = req.body.branch_id || req.user.branch_id; // Use provided branch or user's default
+        const branchId = req.body.branch_id || req.user.branch_id;
+        const billPurpose = req.body.bill_purpose || 'real';
         
         const txData = {
             company_id: companyId,
@@ -66,7 +67,8 @@ router.post('/transactions', async (req, res) => {
             reference_type: req.body.reference_type || 'JOURNAL',
             reference_id: req.body.reference_id,
             description: req.body.description,
-            created_by: req.user.id
+            created_by: req.user.id,
+            bill_purpose: billPurpose
         };
 
         const lines = req.body.lines; // Expected: [{ account_id, debit_amount, credit_amount, description }]

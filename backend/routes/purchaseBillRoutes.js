@@ -344,15 +344,17 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             }
 
             if (txLines.length > 0) {
-                await createTransaction({
+                const txData = {
                     company_id:       companyId,
                     branch_id:        branchId,
                     transaction_date: bill_date || new Date(),
                     reference_type:   "PURCHASE_BILL",
                     reference_id:     billId,
                     description:      `${isExpenseBill ? 'Expense' : 'Purchase'} Bill #${bill_number}`,
-                    created_by:       userId
-                }, txLines);
+                    created_by:       userId,
+                    bill_purpose:     req.body.bill_purpose || 'real'
+                };
+                await createTransaction(txData, txLines);
             }
         } catch (accErr) {
             console.warn("⚠️ Accounting failed:", accErr.message);
@@ -443,7 +445,8 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
                     reference_type:   "PURCHASE_PAYMENT",
                     reference_id:     Number(id),
                     description:      `Payment for Bill #${b.bill_number}`,
-                    created_by:       req.user.id
+                    created_by:       req.user.id,
+                    bill_purpose:     b.bill_purpose || 'real'
                 }, [
                     { account_id: apAccount.id,   debit_amount: payAmount, credit_amount: 0,          description: `Settle Bill #${b.bill_number}` },
                     { account_id: cashAccount.id, debit_amount: 0,         credit_amount: payAmount,   description: `Cash outflow Bill #${b.bill_number}` }

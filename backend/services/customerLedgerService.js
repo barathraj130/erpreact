@@ -247,6 +247,7 @@ export async function createCustomerLedgerEvent(
     createdBy = null,
     ledgerId = null,
     meta = {},
+    bill_purpose = 'real',
   },
 ) {
   const resolved = ledgerId ? { ledgerId } : await ensureCustomerLedgerMetadata(client, customerId, companyId);
@@ -257,11 +258,11 @@ export async function createCustomerLedgerEvent(
     `INSERT INTO transactions (
        company_id, branch_id, transaction_date, reference_type, reference_id,
        description, created_by, user_id, ledger_id, amount, type, category,
-       date, related_invoice_id, meta, created_at
+       date, related_invoice_id, meta, bill_purpose, created_at
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9, $10, $11, $12,
-       $13, $14, $15, NOW()
+       $13, $14, $15, $16, NOW()
      )
      RETURNING *`,
     [
@@ -280,6 +281,7 @@ export async function createCustomerLedgerEvent(
       eventDate,
       relatedInvoiceId,
       payload,
+      bill_purpose || 'real'
     ],
   );
 
