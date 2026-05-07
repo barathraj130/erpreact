@@ -424,4 +424,20 @@ router.get('/hr/attendance', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 💹 PROFIT & LOSS REPORT
+ */
+router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate, branchId } = req.query;
+    try {
+        const { getProfitAndLoss } = await import('../utils/accountingEngine.js');
+        const data = await getProfitAndLoss(companyId, branchId, startDate || '2000-01-01', endDate || '2099-12-31');
+        res.json(data);
+    } catch (err) {
+        console.error("P&L Error:", err);
+        res.status(500).json({ error: "Failed to fetch P&L report: " + err.message });
+    }
+});
+
 export default router;
