@@ -79,6 +79,7 @@ import BranchBilling from "./pages/BranchBilling";
 import GlobalInventory from "./pages/GlobalInventory";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
+import SystemTester from "./pages/SystemTester";
 
 
 
@@ -251,6 +252,7 @@ const App: React.FC = () => {
             <Route path="/admin/settings" element={<Settings />} />
             <Route path="/admin/bill-format" element={<BillFormatSettings />} />
             <Route path="/admin/payment-methods" element={<PaymentMethodsAdmin />} />
+            <Route path="/admin/system-test" element={<SystemTester />} />
             <Route path="/admin/reports" element={<Reports />} />
             <Route path="/admin/employees" element={<Employees />} />
           </Route>

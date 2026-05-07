@@ -147,7 +147,8 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
             { name: "Bill Format", path: "/admin/bill-format" },
             { name: "Payment Methods", path: "/admin/payment-methods" },
             { name: "Branches", path: "/admin/branches" },
-            { name: "Subscriptions", path: "/admin/subscriptions" }
+            { name: "Subscriptions", path: "/admin/subscriptions" },
+            { name: "🧪 System Test", path: "/admin/system-test" },
         ]
       });
   }
