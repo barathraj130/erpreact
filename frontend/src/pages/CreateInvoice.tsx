@@ -15,6 +15,7 @@ import { fetchProducts, Product } from "../api/productApi";
 import { Customer } from "../api/userApi";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useUsers } from "../hooks/useUsers";
+import PaymentPopup from "../components/PaymentPopup";
 import { apiFetch } from "../utils/api";
 import "./CreateInvoice.css";
 import "./Dashboard.css";
@@ -145,9 +146,11 @@ const CreateInvoice: React.FC = () => {
   });
   const [invoiceType, setInvoiceType] = useState<"TAX_INVOICE" | "NON_TAX_INVOICE" | "RETAIL_SALE" | "GIFTED_ITEM" | "NOMINAL_TAX_INVOICE">("TAX_INVOICE");
   const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [paymentRef, setPaymentRef] = useState("");
+  const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [discount, setDiscount] = useState<number>(0);
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<string>("CASH");
   const [customerInfo, setCustomerInfo] = useState({
     name: "---",
     address: "---",
@@ -356,7 +359,7 @@ const CreateInvoice: React.FC = () => {
         amount_paid: amountPaid,
         balance_due: totals.pendingAmount,
         payment_status: totals.paymentStatus,
-        payments: amountPaid > 0 ? [{ amount: amountPaid, payment_method: paymentMethod, payment_date: meta.invoiceDate }] : [],
+        payments: amountPaid > 0 ? [{ amount: amountPaid, payment_method: paymentMethod, payment_date: meta.invoiceDate, reference: paymentRef }] : [],
         tax_details: gstState,
         logistics: meta,
         broker_id: brokerId || null,
@@ -1040,6 +1043,15 @@ const CreateInvoice: React.FC = () => {
                     </CustomSelect>
                 </div>
               </div>
+            </div>
+
+            <div style={{ marginTop: "12px" }}>
+                <button 
+                  onClick={() => setShowPaymentPopup(true)}
+                  style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                >
+                  💳 Show Digital Payment Options
+                </button>
             </div>
 
             {/* Discount Row */}
@@ -1768,9 +1780,22 @@ const CreateInvoice: React.FC = () => {
           </div>
         </div>
         </div>
+        {showPaymentPopup && (
+           <PaymentPopup 
+              amount={totals.effectiveTotal} 
+              onClose={() => setShowPaymentPopup(false)} 
+              onConfirm={(method, details) => {
+                 setPaymentMethod(method);
+                 setAmountPaid(totals.effectiveTotal);
+                 if (details) {
+                    setPaymentRef(details.upi_id || details.account_number || "");
+                 }
+                 setShowPaymentPopup(false);
+              }} 
+           />
+        )}
       </div>
     </div>
-  </div>
     );
   } catch (err: any) {
     console.error("FATAL RENDERING ERROR in CreateInvoice:", err);
