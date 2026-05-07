@@ -22,8 +22,8 @@ export async function createTransaction(txData, lines) {
 
         // 2. Insert Transaction Header
         const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description, created_by, bill_purpose)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id;
         `;
         const txRes = await client.query(txSql, [
@@ -33,7 +33,8 @@ export async function createTransaction(txData, lines) {
             txData.reference_type,
             txData.reference_id,
             txData.description,
-            txData.created_by
+            txData.created_by,
+            txData.bill_purpose || 'real'
         ]);
         const transactionId = txRes.rows[0].id;
 
@@ -75,8 +76,8 @@ export async function createTransaction(txData, lines) {
             const newRunningBalance = previousBalance + balanceChange;
 
             const ledgerSql = `
-                INSERT INTO ledger_entries (company_id, branch_id, account_id, transaction_id, entry_date, debit, credit, running_balance)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+                INSERT INTO ledger_entries (company_id, branch_id, account_id, transaction_id, entry_date, debit, credit, running_balance, bill_purpose)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
             `;
             await client.query(ledgerSql, [
                 txData.company_id,
@@ -86,7 +87,8 @@ export async function createTransaction(txData, lines) {
                 txData.transaction_date,
                 line.debit_amount || 0,
                 line.credit_amount || 0,
-                newRunningBalance
+                newRunningBalance,
+                txData.bill_purpose || 'real'
             ]);
         }
 
@@ -105,7 +107,7 @@ export async function createTransaction(txData, lines) {
 /**
  * Generates a Profit & Loss Report
  */
-export async function getProfitAndLoss(companyId, branchId, startDate, endDate) {
+export async function getProfitAndLoss(companyId, branchId, startDate, endDate, filterType = 'real') {
     let params = [companyId, startDate, endDate];
     let branchFilter = branchId ? `AND l.branch_id = $4` : '';
     if (branchId) params.push(branchId);
@@ -126,12 +128,16 @@ export async function getProfitAndLoss(companyId, branchId, startDate, endDate) 
         WHERE l.company_id = $1 
           AND l.entry_date BETWEEN $2 AND $3
           AND ca.account_type IN ('INCOME', 'EXPENSE')
+          AND l.bill_purpose = ANY($${params.length + 1})
           ${branchFilter}
         GROUP BY ca.account_type, ca.name
         ORDER BY ca.account_type;
     `;
     
-    const results = await db.pgAll(sql, params);
+    const purposes = filterType === 'all' ? ['real', 'name_only'] : 
+                    (filterType === 'name_only' ? ['name_only'] : ['real']);
+
+    const results = await db.pgAll(sql, [...params, purposes]);
     
     const summary = results.reduce((acc, curr) => {
         if (curr.account_type === 'INCOME') acc.totalIncome += parseFloat(curr.net_impact);
@@ -156,18 +162,23 @@ export async function getAccountByCode(companyId, code) {
 /**
  * Generates a Balance Sheet Report
  */
-export async function getBalanceSheet(companyId) {
+export async function getBalanceSheet(companyId, filterType = 'real') {
+    const purposes = filterType === 'all' ? ['real', 'name_only'] : 
+                    (filterType === 'name_only' ? ['name_only'] : ['real']);
+
     const sql = `
         SELECT 
             ca.account_type,
             ca.name as account_name,
-            ca.current_balance
+            (ca.opening_balance + COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0)) as current_balance
         FROM chart_of_accounts ca
+        LEFT JOIN ledger_entries l ON ca.id = l.account_id AND l.bill_purpose = ANY($2)
         WHERE (ca.company_id = $1 OR ca.company_id IS NULL)
           AND ca.account_type IN ('ASSET', 'LIABILITY', 'EQUITY')
+        GROUP BY ca.id, ca.account_type, ca.name, ca.opening_balance
         ORDER BY ca.account_type, ca.name;
     `;
-    const results = await db.pgAll(sql, [companyId]);
+    const results = await db.pgAll(sql, [companyId, purposes]);
     
     const summary = results.reduce((acc, curr) => {
         if (curr.account_type === 'ASSET') acc.totalAssets += parseFloat(curr.current_balance);

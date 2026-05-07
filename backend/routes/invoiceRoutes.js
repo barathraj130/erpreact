@@ -91,7 +91,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         invoice_number, invoice_type, customer_id, items, notes,
         amount_paid, discount_amount, balance_due, payment_status, payments,
         transport_details, bundles_count, return_items,
-        broker_id, broker_commission_rate
+        broker_id, broker_commission_rate,
+        bill_purpose // 'real' or 'name_only'
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
@@ -230,8 +231,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 vehicle_number, transportation_mode, date_of_supply, reverse_charge,
                 broker_id, broker_commission_rate,
                 branch_id,
+                bill_purpose,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, NOW())
             RETURNING id
         `;
 
@@ -262,7 +264,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             transport_details?.reverse_charge || 'No',
             broker_id || null,
             broker_commission_rate || null,
-            branchId || null
+            branchId || null,
+            bill_purpose || 'real'
         ]);
 
         const invoiceId = result.rows[0].id;
@@ -297,6 +300,12 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                             await client.query('UPDATE inventory SET current_stock = current_stock - $1 WHERE product_id = $2', [item.qty, item.product_id]);
                         }
                     }
+
+                    // Record Movement
+                    await client.query(`
+                        INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_out, reference_type, reference_id, bill_purpose)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    `, [companyId, branchId || null, item.product_id, 'SALE', item.qty, 'INVOICE', invoiceId, bill_purpose || 'real']);
                 }
             }
 
@@ -456,7 +465,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     reference_type: 'INVOICE',
                     reference_id: invoiceId,
                     description: `Invoice #${finalInvoiceNumber}`,
-                    created_by: req.user.id
+                    created_by: req.user.id,
+                    bill_purpose: bill_purpose || 'real'
                 }, txLines);
             }
         }

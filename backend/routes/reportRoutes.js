@@ -62,14 +62,23 @@ router.get('/sales/register', authMiddleware, async (req, res) => {
                 i.tax_total as total_tax,
                 i.total_amount,
                 i.status,
-                b.name as broker_name
+                i.invoice_type,
+                i.bill_purpose,
+                b.name as broker_name,
+                (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = i.id AND payment_method = 'CASH') as cash_collected,
+                (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = i.id AND payment_method = 'UPI') as upi_collected,
+                (SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = i.id AND payment_method = 'BANK') as bank_collected,
+                (i.total_amount - COALESCE((SELECT SUM(amount) FROM invoice_payments WHERE invoice_id = i.id), 0)) as balance_due
             FROM invoices i
             JOIN users u ON i.customer_id = u.id
             LEFT JOIN brokers b ON i.broker_id = b.id
             WHERE i.company_id = $1
             AND i.invoice_date BETWEEN $2 AND $3
+            AND i.bill_purpose = ANY($4)
         `;
-        const params = [companyId, startDate, endDate];
+        const filterType = req.query.filterType || 'real';
+        const purposes = filterType === 'all' ? ['real', 'name_only'] : (filterType === 'name_only' ? ['name_only'] : ['real']);
+        const params = [companyId, startDate, endDate, purposes];
 
         if (taxType && taxType !== 'all') {
             sql += ` AND i.invoice_type = $${params.length + 1}`;
@@ -135,9 +144,12 @@ router.get('/finance/day-book', authMiddleware, async (req, res) => {
             JOIN chart_of_accounts ca ON le.account_id = ca.id
             WHERE le.company_id = $1
             AND le.entry_date BETWEEN $2 AND $3
+            AND le.bill_purpose = ANY($4)
             ORDER BY le.entry_date DESC, le.id DESC
         `;
-        const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
+        const filterType = req.query.filterType || 'real';
+        const purposes = filterType === 'all' ? ['real', 'name_only'] : (filterType === 'name_only' ? ['name_only'] : ['real']);
+        const rows = await db.pgAll(sql, [companyId, startDate, endDate, purposes]);
         res.json(rows || []);
     } catch (err) {
         console.error("Day Book Error:", err);
@@ -156,14 +168,16 @@ router.get('/finance/trial-balance', authMiddleware, async (req, res) => {
             SELECT 
                 name as ledger_name,
                 opening_balance as opening,
-                (SELECT COALESCE(SUM(debit), 0) FROM ledger_entries WHERE account_id = l.id) as debit,
-                (SELECT COALESCE(SUM(credit), 0) FROM ledger_entries WHERE account_id = l.id) as credit,
-                current_balance as closing
+                (SELECT COALESCE(SUM(debit), 0) FROM ledger_entries WHERE account_id = l.id AND bill_purpose = ANY($2)) as debit,
+                (SELECT COALESCE(SUM(credit), 0) FROM ledger_entries WHERE account_id = l.id AND bill_purpose = ANY($2)) as credit,
+                (opening_balance + (SELECT COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) FROM ledger_entries WHERE account_id = l.id AND bill_purpose = ANY($2))) as closing
             FROM chart_of_accounts l
             WHERE company_id = $1 OR company_id IS NULL
             ORDER BY name ASC
         `;
-        const rows = await db.pgAll(sql, [companyId]);
+        const filterType = req.query.filterType || 'real';
+        const purposes = filterType === 'all' ? ['real', 'name_only'] : (filterType === 'name_only' ? ['name_only'] : ['real']);
+        const rows = await db.pgAll(sql, [companyId, purposes]);
         res.json(rows || []);
     } catch (err) {
         console.error("Trial Balance Error:", err);
@@ -191,10 +205,13 @@ router.get('/sales/customer-wise', authMiddleware, async (req, res) => {
             JOIN users u ON i.customer_id = u.id
             WHERE i.company_id = $1
             AND i.invoice_date BETWEEN $2 AND $3
+            AND i.bill_purpose = ANY($4)
             GROUP BY u.nickname, u.username, i.customer_id
             ORDER BY total_sales DESC
         `;
-        const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
+        const filterType = req.query.filterType || 'real';
+        const purposes = filterType === 'all' ? ['real', 'name_only'] : (filterType === 'name_only' ? ['name_only'] : ['real']);
+        const rows = await db.pgAll(sql, [companyId, startDate, endDate, purposes]);
         res.json(rows || []);
     } catch (err) {
         console.error("Customer Sales Error:", err);
@@ -325,10 +342,13 @@ router.get('/gst/summary', authMiddleware, async (req, res) => {
                 FROM purchase_bills WHERE company_id = $1
             ) as combined
             WHERE DATE(date) BETWEEN $2 AND $3
+              AND bill_purpose = ANY($4)
             GROUP BY month
             ORDER BY month DESC
         `;
-        const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
+        const filterType = req.query.filterType || 'real';
+        const purposes = filterType === 'all' ? ['real', 'name_only'] : (filterType === 'name_only' ? ['name_only'] : ['real']);
+        const rows = await db.pgAll(sql, [companyId, startDate, endDate, purposes]);
         res.json(rows || []);
     } catch (err) {
         console.error("GST Summary Error:", err);
@@ -387,9 +407,12 @@ router.get('/inventory/movement', authMiddleware, async (req, res) => {
             JOIN products p ON m.product_id = p.id
             WHERE m.company_id = $1
             AND m.created_at BETWEEN $2 AND $3
+            AND m.bill_purpose = ANY($4)
             ORDER BY m.created_at DESC
         `;
-        const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
+        const filterType = req.query.filterType || 'real';
+        const purposes = filterType === 'all' ? ['real', 'name_only'] : (filterType === 'name_only' ? ['name_only'] : ['real']);
+        const rows = await db.pgAll(sql, [companyId, startDate, endDate, purposes]);
         res.json(rows || []);
     } catch (err) {
         console.error("Stock Movement Error:", err);
@@ -432,10 +455,10 @@ router.get('/hr/attendance', authMiddleware, async (req, res) => {
  */
 router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate, branchId } = req.query;
+    const { startDate, endDate, branchId, filterType } = req.query;
     try {
         const { getProfitAndLoss } = await import('../utils/accountingEngine.js');
-        const data = await getProfitAndLoss(companyId, branchId, startDate || '2000-01-01', endDate || '2099-12-31');
+        const data = await getProfitAndLoss(companyId, branchId, startDate || '2000-01-01', endDate || '2099-12-31', filterType || 'real');
         res.json(data);
     } catch (err) {
         console.error("P&L Error:", err);
@@ -448,9 +471,10 @@ router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
  */
 router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    const { filterType } = req.query;
     try {
         const { getBalanceSheet } = await import('../utils/accountingEngine.js');
-        const data = await getBalanceSheet(companyId);
+        const data = await getBalanceSheet(companyId, filterType || 'real');
         res.json(data);
     } catch (err) {
         console.error("Balance Sheet Error:", err);
