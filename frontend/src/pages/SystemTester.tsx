@@ -78,7 +78,7 @@ const DEEP_SCENARIOS: TestCase[] = [
       const p = rows.find((r: any) => r.name === "TEST_PRODUCT_DEEP");
       if (!p) return "FAIL: Test product not found in summary";
       ctx.stockBaseline = parseFloat(p.current_stock);
-      return `Baseline: ${ctx.stockBaseline} units`;
+      return null;
     }
   },
   {
@@ -87,7 +87,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async () => {
       const { diff } = await checkTrialBalance();
       if (diff > 0.01) return `FAIL: TB not zero-sum. Diff: ${diff}`;
-      return "TB Zero-sum verified";
+      return null;
     }
   },
   {
@@ -108,7 +108,7 @@ const DEEP_SCENARIOS: TestCase[] = [
         parseFloat(inv.gst_amount || 0) === 0
       ];
       if (checks.includes(false)) return "FAIL: Invoice field mismatch";
-      return "All fields verified (No GST)";
+      return null;
     }
   },
   {
@@ -118,7 +118,7 @@ const DEEP_SCENARIOS: TestCase[] = [
       const p = rows.find((r: any) => r.name === "TEST_PRODUCT_DEEP");
       const current = parseFloat(p.current_stock);
       if (current !== (ctx.stockBaseline || 0) - 100) return `FAIL: Stock wrong. Expected ${(ctx.stockBaseline || 0) - 100}, got ${current}`;
-      return "Stock decreased by 100 correctly";
+      return null;
     }
   },
   {
@@ -128,7 +128,7 @@ const DEEP_SCENARIOS: TestCase[] = [
       const m = rows.find((r: any) => r.product_name === "TEST_PRODUCT_DEEP" && r.reference.includes(String(ctx.invoiceId)));
       if (!m) return "FAIL: No movement log found";
       if (parseFloat(m.qty_out) !== 100) return "FAIL: Wrong movement qty";
-      return "Movement log verified";
+      return null;
     }
   },
   {
@@ -139,7 +139,7 @@ const DEEP_SCENARIOS: TestCase[] = [
       // Should find: Dr AR (10L), Cr Sales (10L), Dr Cash (2.5L), Cr AR (2.5L), Dr UPI (2.5L), Cr AR (2.5L)
       const gst = rows.filter((r: any) => r.account_name.includes("GST") && r.id === ctx.invoiceId);
       if (gst.length > 0) return "CRITICAL FAIL: GST entries found on Non-Tax bill";
-      return `Verified ${entries.length} isolation entries found`;
+      return null;
     }
   },
   {
@@ -148,7 +148,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async () => {
       const { diff } = await checkTrialBalance();
       if (diff > 0.01) return `CRITICAL FAIL: TB broken after S1. Diff: ${diff}`;
-      return "TB Zero-sum maintained";
+      return null;
     }
   },
   {
@@ -159,7 +159,7 @@ const DEEP_SCENARIOS: TestCase[] = [
       if (!row) return "FAIL: Invoice not in register";
       if (parseFloat(row.cash_collected) !== 250000 || parseFloat(row.upi_collected) !== 250000) 
         return "FAIL: Split payment columns combined or wrong";
-      return "Cash/UPI shown separately";
+      return null;
     }
   },
   {
@@ -168,7 +168,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async (data, ctx) => {
       const found = data.some((r: any) => r.invoice_id === ctx.invoiceId);
       if (found) return "CRITICAL FAIL: Non-tax invoice found in GST summary";
-      return "Correctly excluded from GST";
+      return null;
     }
   },
 
@@ -184,7 +184,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     expectStatus: 200,
     verifyFn: async (inv) => {
       if (inv.bill_purpose !== "name_only") return "FAIL: Bill not tagged as name_only";
-      return "Tag verified";
+      return null;
     }
   },
   {
@@ -193,7 +193,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async (rows, ctx) => {
       const c = rows.find((r: any) => r.customer_name === "TEST_CUSTOMER_DEEP");
       if (parseFloat(c.balance) !== 500000) return `FAIL: Real balance contaminated. Expected 5L, got ${c.balance}`;
-      return "Real balance isolated successfully";
+      return null;
     }
   },
   {
@@ -201,7 +201,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     expectStatus: 200,
     verifyFn: async (data, ctx) => {
       // Logic for GST summary check
-      return "GST Liability verified";
+      return null;
     }
   },
   {
@@ -209,7 +209,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     expectStatus: 200,
     verifyFn: async (data) => {
       if (data.totalIncome > 1500000) return `FAIL: Revenue inflated! Got ${data.totalIncome}, Expected ~10L`;
-      return "Real revenue isolated";
+      return null;
     }
   },
   {
@@ -218,7 +218,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async (data) => {
       const cash = data.details.find((d: any) => d.account_name === "Cash");
       if (parseFloat(cash.current_balance) > 250000) return "FAIL: Name-sake affected cash flow";
-      return "Cash flow safe";
+      return null;
     }
   },
   {
@@ -227,7 +227,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async () => {
       const { diff } = await checkTrialBalance();
       if (diff > 0.01) return `CRITICAL FAIL: TB broken after Name-sake. Diff: ${diff}`;
-      return "TB Zero-sum maintained";
+      return null;
     }
   },
 
@@ -318,13 +318,18 @@ const SystemTester: React.FC = () => {
 
       const passed = res.status === test.expectStatus || (test.expectStatus === 200 && res.status === 201);
       
-      let verifyNote = null;
+      let errorMsg = null;
+      let successNote = null;
+
       if (passed && test.verifyFn) {
-        verifyNote = await test.verifyFn(data, ctx.current);
+        const result = await test.verifyFn(data, ctx.current);
+        if (typeof result === "string") {
+          errorMsg = result;
+        }
       }
 
-      if (passed && !verifyNote) {
-        updateResult(test.id, { status: "pass", httpStatus: res.status, durationMs });
+      if (passed && !errorMsg) {
+        updateResult(test.id, { status: "pass", httpStatus: res.status, durationMs, verifyNote: successNote || undefined });
         return true;
       } else {
         updateResult(test.id, { 
@@ -332,7 +337,7 @@ const SystemTester: React.FC = () => {
           httpStatus: res.status, 
           durationMs, 
           errorBody: data, 
-          likelyCause: verifyNote || "Status code mismatch",
+          likelyCause: errorMsg || "Status code mismatch",
           fixSuggestion: passed ? "Deep verification failed" : "Backend rejected request"
         });
         return false;
