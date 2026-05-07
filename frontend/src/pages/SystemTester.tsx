@@ -101,10 +101,9 @@ const DEEP_SCENARIOS: TestCase[] = [
     expectStatus: 200,
     verifyFn: async (inv) => {
       const checks = [
-        inv.invoice_type === "NON-TAX",
+        inv.invoice_type === "NON_TAX_INVOICE",
         parseFloat(inv.total_amount) === 1000000,
-        parseFloat(inv.total_paid) === 500000,
-        parseFloat(inv.balance_amount) === 500000,
+        parseFloat(inv.paid_amount) === 500000,
         parseFloat(inv.gst_amount || 0) === 0
       ];
       if (checks.includes(false)) return "FAIL: Invoice field mismatch";
@@ -279,31 +278,25 @@ const SystemTester: React.FC = () => {
     if (test.id === "T1.5") {
       body = {
         customer_id: ctx.current.customerId,
-        invoice_type: "NON-TAX",
+        invoice_type: "NON_TAX_INVOICE",
         invoice_date: today,
         items: [{ product_id: ctx.current.productId, qty: 100, rate: 10000, gst_rate: 0 }],
-        total_amount: 1000000,
+        amount_paid: 500000,
         payments: [
-          { mode: "cash", amount: 250000 },
-          { mode: "upi", amount: 250000 }
+          { payment_method: "CASH", amount: 250000 },
+          { payment_method: "UPI", amount: 250000 }
         ],
-        total_paid: 500000,
-        balance_amount: 500000,
         bill_purpose: "real"
       };
     } else if (test.id === "T2.1") {
       body = {
         customer_id: ctx.current.customerId,
-        invoice_type: "TAX",
+        invoice_type: "TAX_INVOICE",
         invoice_date: today,
         items: [{ product_id: ctx.current.productId, qty: 200, rate: 10000, gst_rate: 18 }],
         bill_purpose: "name_only",
-        taxable_amount: 2000000,
-        cgst_amount: 180000,
-        sgst_amount: 180000,
-        total_amount: 2360000,
-        total_paid: 0,
-        balance_amount: 2360000
+        amount_paid: 0,
+        payments: []
       };
     }
 
