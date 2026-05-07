@@ -136,8 +136,41 @@ export const runSchemaUpdates = async () => {
             );
         `);
 
+        // 9. Fix Products, Users, and Purchase Bills
+        await db.pgRun(`
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS meta JSONB;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_category VARCHAR(50);
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS tax_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS sub_total NUMERIC(15,2) DEFAULT 0;
+        `);
+
+        // 10. Create Stock Requests and Branch Inventory
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS stock_requests (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                from_branch_id INTEGER,
+                to_branch_id INTEGER,
+                product_id INTEGER,
+                quantity NUMERIC(12,2) NOT NULL,
+                status VARCHAR(50) DEFAULT 'Pending',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS branch_inventory (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                branch_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                current_stock NUMERIC(12,2) DEFAULT 0,
+                UNIQUE(branch_id, product_id)
+            );
+        `);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
-        console.error("❌ Schema Update Error:", err.message);
+        console.error("❌ Schema Update Error:", err);
     }
 };

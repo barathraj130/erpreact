@@ -155,6 +155,11 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 // --- DATABASE INITIALIZATION ---
 runSchemaUpdates()
+    .then(async () => {
+        const db = await import("./database/pg.js");
+        const cols = await db.pgAll("SELECT column_name FROM information_schema.columns WHERE table_name = 'products'");
+        console.log("🛠️ PRODUCTS COLUMNS:", cols.map(c => c.column_name).join(", "));
+    })
     .catch(err => { console.error("❌ Database Init Failed:", err); });
 
 // --- ERROR HANDLING ---
