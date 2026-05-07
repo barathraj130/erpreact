@@ -36,28 +36,21 @@ interface TestContext {
   createdInvoiceId?: number;
 }
 
-// ─── Auto-detect failure cause ───────────────────────────
 function detectCause(errorBody: any): { cause: string; fix: string } {
   const msg = JSON.stringify(errorBody || "").toLowerCase();
   if (msg.includes("column") && msg.includes("does not exist"))
-    return { cause: "Database schema mismatch — column missing from table.", fix: "Run: ALTER TABLE <table> ADD COLUMN <column> <type>;" };
+    return { cause: "Database schema mismatch — column missing.", fix: `Message: ${msg}` };
   if (msg.includes("relation") && msg.includes("does not exist"))
-    return { cause: "Table does not exist in database.", fix: "Run schema migrations or restart backend to trigger schema updates." };
+    return { cause: "Table does not exist.", fix: "Run schema migrations." };
   if (msg.includes("null value") || msg.includes("not null"))
-    return { cause: "Required field is null — missing required body field.", fix: "Ensure all required fields are included in the request body." };
+    return { cause: "Required field is null.", fix: "Check request body." };
   if (msg.includes("duplicate") || msg.includes("unique"))
-    return { cause: "Unique constraint violation — duplicate record.", fix: "Check for existing records with the same unique key." };
-  if (msg.includes("foreign key") || msg.includes("violates foreign"))
-    return { cause: "Foreign key constraint — related record not found.", fix: "Ensure referenced record exists before inserting." };
+    return { cause: "Duplicate record violation.", fix: "Check unique constraints." };
   if (msg.includes("econnrefused"))
-    return { cause: "Database connection refused.", fix: "Check that PostgreSQL is running and DB credentials are correct." };
-  if (msg.includes("jwt") || msg.includes("malformed") || msg.includes("unauthorized"))
-    return { cause: "Invalid or expired auth token.", fix: "Re-login as admin to get a fresh token." };
-  if (msg.includes("timeout"))
-    return { cause: "Query timeout — query too slow.", fix: "Add an index to frequently queried columns." };
-  if (msg.includes("not found") || msg.includes("404"))
-    return { cause: "Route not implemented or record not found.", fix: "Verify the route exists in backend routes." };
-  return { cause: "Unexpected server error.", fix: "Check backend console logs for full stack trace." };
+    return { cause: "Database connection refused.", fix: "PostgreSQL is down." };
+  if (msg.includes("jwt") || msg.includes("unauthorized"))
+    return { cause: "Auth failed.", fix: "Re-login as admin." };
+  return { cause: "Backend Error Details", fix: msg };
 }
 
 // ─── All Test Definitions ─────────────────────────────────
@@ -65,7 +58,7 @@ const ALL_TESTS: TestCase[] = [
   // Auth
   { id: "health", name: "Health Check", category: "Auth", method: "GET", path: "/health", expectStatus: 200 },
   { id: "auth-verify", name: "Verify Token", category: "Auth", method: "GET", path: "/auth/verify", expectStatus: 200 },
-  { id: "company", name: "Get Company Profile", category: "Auth", method: "GET", path: "/company", expectStatus: 200 },
+  { id: "company", name: "Get Company Profile", category: "Auth", method: "GET", path: "/company/profile", expectStatus: 200 },
   // Products
   { id: "products-list", name: "List Products", category: "Products", method: "GET", path: "/products", expectStatus: 200 },
   {
@@ -76,10 +69,10 @@ const ALL_TESTS: TestCase[] = [
   { id: "products-get", name: "Get Product by ID", category: "Products", method: "GET", path: "/products/__productId__", expectStatus: 200 },
   { id: "products-update", name: "Update Test Product", category: "Products", method: "PUT", path: "/products/__productId__", body: { selling_price: 109 }, expectStatus: 200 },
   // Inventory
-  { id: "inventory-list", name: "List Inventory", category: "Inventory", method: "GET", path: "/inventory", expectStatus: 200 },
-  { id: "inventory-movements", name: "Inventory Movements", category: "Inventory", method: "GET", path: "/inventory/movements", expectStatus: 200 },
-  { id: "inventory-low", name: "Low Stock Report", category: "Inventory", method: "GET", path: "/inventory/low-stock", expectStatus: 200 },
-  { id: "bills-pending", name: "Pending Bill Balances", category: "Inventory", method: "GET", path: "/bills/pending-balance", expectStatus: 200 },
+  { id: "inventory-list", name: "List Inventory", category: "Inventory", method: "GET", path: "/reports/inventory/summary", expectStatus: 200 },
+  { id: "inventory-movements", name: "Inventory Movements", category: "Inventory", method: "GET", path: "/reports/inventory/movement", expectStatus: 200 },
+  { id: "inventory-low", name: "Low Stock Report", category: "Inventory", method: "GET", path: "/reports/inventory/summary", expectStatus: 200 },
+  { id: "bills-pending", name: "Pending Bill Balances", category: "Inventory", method: "GET", path: "/purchase-bills", expectStatus: 200 },
   // Suppliers
   { id: "suppliers-list", name: "List Suppliers", category: "Suppliers", method: "GET", path: "/suppliers", expectStatus: 200 },
   {
@@ -95,38 +88,38 @@ const ALL_TESTS: TestCase[] = [
     expectStatus: 201
   },
   // Customers
-  { id: "customers-list", name: "List Customers", category: "Customers", method: "GET", path: "/customers", expectStatus: 200 },
+  { id: "customers-list", name: "List Customers", category: "Customers", method: "GET", path: "/users", expectStatus: 200 },
   {
-    id: "customers-create", name: "Create Test Customer", category: "Customers", method: "POST", path: "/customers",
+    id: "customers-create", name: "Create Test Customer", category: "Customers", method: "POST", path: "/users",
     body: { username: "TEST_CUSTOMER_AUTO", email: "test_auto@test.com", phone: "8888888888" },
     expectStatus: 201
   },
-  { id: "customers-outstanding", name: "Outstanding Balances", category: "Customers", method: "GET", path: "/customers/outstanding-balances", expectStatus: 200 },
+  { id: "customers-outstanding", name: "Outstanding Balances", category: "Customers", method: "GET", path: "/reports/sales/customer-wise", expectStatus: 200 },
   // Sales
   { id: "sales-list", name: "List Sales Invoices", category: "Sales", method: "GET", path: "/invoice", expectStatus: 200 },
   // Finance
-  { id: "ledger-list", name: "Ledger Entries", category: "Finance", method: "GET", path: "/ledger-entries", expectStatus: 200 },
-  { id: "trial-balance", name: "Trial Balance", category: "Finance", method: "GET", path: "/reports/trial-balance", expectStatus: 200 },
-  { id: "profit-loss", name: "Profit & Loss", category: "Finance", method: "GET", path: "/reports/profit-loss", expectStatus: 200 },
+  { id: "ledger-list", name: "Ledger Entries", category: "Finance", method: "GET", path: "/reports/finance/day-book", expectStatus: 200 },
+  { id: "trial-balance", name: "Trial Balance", category: "Finance", method: "GET", path: "/reports/finance/trial-balance", expectStatus: 200 },
+  { id: "profit-loss", name: "Profit & Loss", category: "Finance", method: "GET", path: "/reports/finance/profit-loss", expectStatus: 200 },
   { id: "balance-sheet", name: "Balance Sheet", category: "Finance", method: "GET", path: "/reports/balance-sheet", expectStatus: 200 },
-  { id: "day-book", name: "Day Book", category: "Finance", method: "GET", path: "/reports/day-book", expectStatus: 200 },
-  { id: "gst-summary", name: "GST Summary", category: "Finance", method: "GET", path: "/reports/gst-summary", expectStatus: 200 },
+  { id: "day-book", name: "Day Book", category: "Finance", method: "GET", path: "/reports/finance/day-book", expectStatus: 200 },
+  { id: "gst-summary", name: "GST Summary", category: "Finance", method: "GET", path: "/reports/gst/summary", expectStatus: 200 },
   { id: "loans", name: "Loans", category: "Finance", method: "GET", path: "/loans", expectStatus: 200 },
   { id: "lenders", name: "Lenders", category: "Finance", method: "GET", path: "/lenders", expectStatus: 200 },
-  { id: "chit-funds", name: "Chit Funds", category: "Finance", method: "GET", path: "/chit-funds", expectStatus: 200 },
+  { id: "chit-funds", name: "Chit Funds", category: "Finance", method: "GET", path: "/chit-fund", expectStatus: 200 },
   // Employees
   { id: "employees-list", name: "List Employees", category: "Employees", method: "GET", path: "/employees", expectStatus: 200 },
-  { id: "attendance-today", name: "Today's Attendance", category: "Employees", method: "GET", path: "/attendance/today", expectStatus: 200 },
+  { id: "attendance-today", name: "Today's Attendance", category: "Employees", method: "GET", path: "/attendance/daily", expectStatus: 200 },
   // Branches
   { id: "branches-list", name: "List Branches", category: "Branches", method: "GET", path: "/branches", expectStatus: 200 },
-  { id: "stock-requests", name: "Stock Requests", category: "Branches", method: "GET", path: "/stock-requests", expectStatus: 200 },
-  { id: "stock-transfers", name: "Stock Transfers", category: "Branches", method: "GET", path: "/stock-transfers", expectStatus: 200 },
+  { id: "stock-requests", name: "Stock Requests", category: "Branches", method: "GET", path: "/branch-inventory/requests/pending", expectStatus: 200 },
+  { id: "stock-transfers", name: "Stock Transfers", category: "Branches", method: "GET", path: "/branch-inventory/consolidated", expectStatus: 200 },
   // Reports
-  { id: "rpt-sales", name: "Sales Register", category: "Reports", method: "GET", path: "/reports/sales-register", expectStatus: 200 },
-  { id: "rpt-purchases", name: "Purchase Register", category: "Reports", method: "GET", path: "/reports/purchase-register", expectStatus: 200 },
-  { id: "rpt-stock", name: "Stock Summary", category: "Reports", method: "GET", path: "/reports/stock-summary", expectStatus: 200 },
-  { id: "rpt-gstr1", name: "GSTR1 Report", category: "Reports", method: "GET", path: "/reports/gstr1", expectStatus: 200 },
-  { id: "rpt-itc", name: "ITC Report", category: "Reports", method: "GET", path: "/reports/itc", expectStatus: 200 },
+  { id: "rpt-sales", name: "Sales Register", category: "Reports", method: "GET", path: "/reports/sales/register", expectStatus: 200 },
+  { id: "rpt-purchases", name: "Purchase Register", category: "Reports", method: "GET", path: "/reports/purchase/register", expectStatus: 200 },
+  { id: "rpt-stock", name: "Stock Summary", category: "Reports", method: "GET", path: "/reports/inventory/summary", expectStatus: 200 },
+  { id: "rpt-gstr1", name: "GSTR1 Report", category: "Reports", method: "GET", path: "/reports/gst/summary", expectStatus: 200 },
+  { id: "rpt-itc", name: "ITC Report", category: "Reports", method: "GET", path: "/reports/gst/itc", expectStatus: 200 },
   // Payment Methods
   { id: "payment-methods", name: "Payment Methods", category: "Finance", method: "GET", path: "/payment-methods", expectStatus: 200 },
 ];
