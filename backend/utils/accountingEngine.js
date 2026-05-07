@@ -137,8 +137,6 @@ export async function getProfitAndLoss(companyId, branchId, startDate, endDate, 
     const purposes = filterType === 'all' ? ['real', 'name_only'] : 
                     (filterType === 'name_only' ? ['name_only'] : ['real']);
 
-    console.log("🔍 P&L SQL:", sql);
-    console.log("🔍 P&L Purposes:", purposes);
     const results = await db.pgAll(sql, [...params, purposes]);
     
     const summary = results.reduce((acc, curr) => {

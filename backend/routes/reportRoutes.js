@@ -129,7 +129,8 @@ router.get('/inventory/summary', authMiddleware, async (req, res) => {
  */
 router.get('/finance/day-book', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate } = req.query;
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || '2099-12-31';
 
     try {
         const sql = `
@@ -190,7 +191,8 @@ router.get('/finance/trial-balance', authMiddleware, async (req, res) => {
  */
 router.get('/sales/customer-wise', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate } = req.query;
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || '2099-12-31';
 
     try {
         const sql = `
@@ -323,7 +325,8 @@ router.get('/sales/payment-collection', authMiddleware, async (req, res) => {
  */
 router.get('/gst/summary', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate } = req.query;
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || '2099-12-31';
 
     try {
         const sql = `
@@ -391,7 +394,8 @@ router.get('/gst/itc', authMiddleware, async (req, res) => {
  */
 router.get('/inventory/movement', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate } = req.query;
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || '2099-12-31';
 
     try {
         const sql = `
@@ -453,8 +457,8 @@ router.get('/hr/attendance', authMiddleware, async (req, res) => {
 /**
  * 💹 PROFIT & LOSS REPORT
  */
-router.get('/finance/profit-loss', async (req, res) => {
-    const companyId = req.user?.active_company_id || 1;
+router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     const { startDate, endDate, branchId, filterType } = req.query;
     try {
         const { getProfitAndLoss } = await import('../utils/accountingEngine.js');
@@ -469,8 +473,8 @@ router.get('/finance/profit-loss', async (req, res) => {
 /**
  * 📊 BALANCE SHEET REPORT
  */
-router.get('/finance/balance-sheet', async (req, res) => {
-    const companyId = req.user?.active_company_id || 1;
+router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     const { filterType } = req.query;
     try {
         const { getBalanceSheet } = await import('../utils/accountingEngine.js');
