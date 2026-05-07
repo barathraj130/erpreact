@@ -441,4 +441,19 @@ router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 📊 BALANCE SHEET REPORT
+ */
+router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const { getBalanceSheet } = await import('../utils/accountingEngine.js');
+        const data = await getBalanceSheet(companyId);
+        res.json(data);
+    } catch (err) {
+        console.error("Balance Sheet Error:", err);
+        res.status(500).json({ error: "Failed to fetch balance sheet: " + err.message });
+    }
+});
+
 export default router;
