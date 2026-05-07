@@ -11,8 +11,6 @@ import hrRoutes from "./routes/hrRoutes.js";
 import aiQueryRoutes from "./routes/aiQueryRoutes.js";
 
 
-dotenv.config();
-
 // --- ROUTE IMPORTS ---
 import { runSchemaUpdates } from "./database/schemaUpdates.js";
 import { apiLimiter } from "./middlewares/rateLimitMiddleware.js";
@@ -61,6 +59,8 @@ import inventoryRoutes from "./routes/inventoryRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 

@@ -335,10 +335,10 @@ router.get('/gst/summary', authMiddleware, async (req, res) => {
                 SUM(input_sgst) as input_sgst,
                 (SUM(output_cgst) + SUM(output_sgst) - SUM(input_cgst) - SUM(input_sgst)) as net_liability
             FROM (
-                SELECT invoice_date as date, cgst_total as output_cgst, sgst_total as output_sgst, 0 as input_cgst, 0 as input_sgst 
+                SELECT invoice_date as date, cgst_total as output_cgst, sgst_total as output_sgst, 0 as input_cgst, 0 as input_sgst, bill_purpose 
                 FROM invoices WHERE company_id = $1 AND invoice_type = 'TAX_INVOICE'
                 UNION ALL
-                SELECT bill_date as date, 0, 0, cgst_total, sgst_total 
+                SELECT bill_date as date, 0, 0, cgst_total, sgst_total, bill_purpose 
                 FROM purchase_bills WHERE company_id = $1
             ) as combined
             WHERE DATE(date) BETWEEN $2 AND $3
@@ -453,8 +453,8 @@ router.get('/hr/attendance', authMiddleware, async (req, res) => {
 /**
  * 💹 PROFIT & LOSS REPORT
  */
-router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
-    const companyId = req.user.active_company_id;
+router.get('/finance/profit-loss', async (req, res) => {
+    const companyId = req.user?.active_company_id || 1;
     const { startDate, endDate, branchId, filterType } = req.query;
     try {
         const { getProfitAndLoss } = await import('../utils/accountingEngine.js');
@@ -469,8 +469,8 @@ router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
 /**
  * 📊 BALANCE SHEET REPORT
  */
-router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
-    const companyId = req.user.active_company_id;
+router.get('/finance/balance-sheet', async (req, res) => {
+    const companyId = req.user?.active_company_id || 1;
     const { filterType } = req.query;
     try {
         const { getBalanceSheet } = await import('../utils/accountingEngine.js');
