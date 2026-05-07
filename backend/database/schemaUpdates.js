@@ -155,8 +155,11 @@ export const runSchemaUpdates = async () => {
                 from_branch_id INTEGER,
                 to_branch_id INTEGER,
                 product_id INTEGER,
-                quantity NUMERIC(12,2) NOT NULL,
-                status VARCHAR(50) DEFAULT 'Pending',
+                requested_qty NUMERIC(12,2) NOT NULL DEFAULT 0,
+                quantity NUMERIC(12,2) DEFAULT 0,
+                urgency VARCHAR(20) DEFAULT 'Normal',
+                status VARCHAR(50) DEFAULT 'PENDING',
+                requested_at TIMESTAMP DEFAULT NOW(),
                 created_at TIMESTAMP DEFAULT NOW()
             );
             CREATE TABLE IF NOT EXISTS branch_inventory (
@@ -167,6 +170,13 @@ export const runSchemaUpdates = async () => {
                 current_stock NUMERIC(12,2) DEFAULT 0,
                 UNIQUE(branch_id, product_id)
             );
+        `);
+
+        // Force add columns if table already existed
+        await db.pgRun(`
+            ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS requested_qty NUMERIC(12,2) DEFAULT 0;
+            ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS urgency VARCHAR(20) DEFAULT 'Normal';
+            ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP DEFAULT NOW();
         `);
 
         console.log("✅ Schema Updates Completed.");
