@@ -185,13 +185,15 @@ const SystemTester: React.FC = () => {
     }
 
     try {
-      const opts: RequestInit = {
+      const opts: Record<string, any> = {
         method: test.method,
-        signal: AbortSignal.timeout(8000),
       };
       if (body) opts.body = JSON.stringify(body);
 
-      const res = await apiFetch(path, opts);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await apiFetch(path, opts as any);
+      clearTimeout(timer);
       const durationMs = Date.now() - t0;
       let data: any = {};
       try { data = await res.json(); } catch (_) {}
