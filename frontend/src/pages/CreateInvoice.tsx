@@ -145,10 +145,10 @@ const CreateInvoice: React.FC = () => {
     placeOfSupplyCode: "33",
   });
   const [invoiceType, setInvoiceType] = useState<"TAX_INVOICE" | "NON_TAX_INVOICE" | "RETAIL_SALE" | "GIFTED_ITEM" | "NOMINAL_TAX_INVOICE">("TAX_INVOICE");
-  const [amountPaid, setAmountPaid] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState("CASH");
-  const [paymentRef, setPaymentRef] = useState("");
+  const [paymentsList, setPaymentsList] = useState<{ amount: number; method: string; reference?: string }[]>([{ amount: 0, method: "CASH", reference: "" }]);
+  const amountPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [paymentsList]);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
+  const [activePaymentIndex, setActivePaymentIndex] = useState<number | null>(null);
   const [discount, setDiscount] = useState<number>(0);
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
   const [customerInfo, setCustomerInfo] = useState({
@@ -359,7 +359,12 @@ const CreateInvoice: React.FC = () => {
         amount_paid: amountPaid,
         balance_due: totals.pendingAmount,
         payment_status: totals.paymentStatus,
-        payments: amountPaid > 0 ? [{ amount: amountPaid, payment_method: paymentMethod, payment_date: meta.invoiceDate, reference: paymentRef }] : [],
+        payments: paymentsList.filter(p => p.amount > 0).map(p => ({
+            amount: p.amount,
+            payment_method: p.method,
+            payment_date: meta.invoiceDate,
+            reference: p.reference || ""
+        })),
         tax_details: gstState,
         logistics: meta,
         broker_id: brokerId || null,
@@ -1018,41 +1023,70 @@ const CreateInvoice: React.FC = () => {
 
           {/* Payment & Summary */}
           <div className="ci-card">
-            <div className="ci-card-title">Payment Details</div>
-            <div className="ci-row-2">
-              <div className="ci-field">
-                <label>Amount Paid (₹)</label>
-                <input
-                  type="number"
-                  value={amountPaid || ""}
-                  onChange={(e) => setAmountPaid(Number(e.target.value))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="ci-field">
-                <label>Payment Method</label>
-                <div style={{ marginTop: '8px' }}>
-                    <CustomSelect 
-                      value={paymentMethod} 
-                      onChange={(e: any) => setPaymentMethod(e.target.value)}
-                      disableSearch
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
+              <div className="ci-card-title" style={{ marginBottom: 0 }}>Payment Details</div>
+              <button 
+                onClick={() => setPaymentsList([...paymentsList, { amount: 0, method: "CASH", reference: "" }])}
+                style={{ padding: "6px 12px", background: "#f1f5f9", color: "#4f46e5", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <FaPlus /> Add Split
+              </button>
+            </div>
+            
+            {paymentsList.map((payment, index) => (
+              <div key={index} style={{ background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0", marginBottom: "10px", position: "relative" }}>
+                {paymentsList.length > 1 && (
+                  <button 
+                    onClick={() => setPaymentsList(paymentsList.filter((_, i) => i !== index))}
+                    style={{ position: "absolute", right: "-8px", top: "-8px", width: "24px", height: "24px", borderRadius: "50%", background: "#ef4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 }}
+                  >
+                    <FaTimes size={10} />
+                  </button>
+                )}
+                <div className="ci-row-2">
+                  <div className="ci-field">
+                    <label>Amount Paid (₹)</label>
+                    <input
+                      type="number"
+                      value={payment.amount || ""}
+                      onChange={(e) => {
+                        const newArr = [...paymentsList];
+                        newArr[index].amount = Number(e.target.value);
+                        setPaymentsList(newArr);
+                      }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="ci-field">
+                    <label>Payment Method</label>
+                    <div style={{ marginTop: '8px' }}>
+                        <CustomSelect 
+                          value={payment.method} 
+                          onChange={(e: any) => {
+                            const newArr = [...paymentsList];
+                            newArr[index].method = e.target.value;
+                            setPaymentsList(newArr);
+                          }}
+                          disableSearch
+                        >
+                          <option value="CASH">CASH</option>
+                          <option value="BANK">BANK {'/'} CARD</option>
+                          <option value="UPI">UPI {'/'} QR SCAN</option>
+                        </CustomSelect>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "12px" }}>
+                    <button 
+                      onClick={() => { setActivePaymentIndex(index); setShowPaymentPopup(true); }}
+                      style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontSize: "0.8rem" }}
                     >
-                      <option value="CASH">CASH</option>
-                      <option value="BANK">BANK {'/'} CARD</option>
-                      <option value="UPI">UPI {'/'} QR SCAN</option>
-                    </CustomSelect>
+                      💳 {payment.method === "CASH" ? "Show Digital Payment Options" : `Set via Digital (${payment.method})`}
+                    </button>
                 </div>
               </div>
-            </div>
-
-            <div style={{ marginTop: "12px" }}>
-                <button 
-                  onClick={() => setShowPaymentPopup(true)}
-                  style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
-                >
-                  💳 Show Digital Payment Options
-                </button>
-            </div>
+            ))}
 
             {/* Discount Row */}
             <div style={{ marginTop: '12px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
@@ -1780,17 +1814,22 @@ const CreateInvoice: React.FC = () => {
           </div>
         </div>
         </div>
-        {showPaymentPopup && (
+        {showPaymentPopup && activePaymentIndex !== null && (
            <PaymentPopup 
-              amount={totals.effectiveTotal} 
-              onClose={() => setShowPaymentPopup(false)} 
+              amount={paymentsList[activePaymentIndex]?.amount > 0 ? paymentsList[activePaymentIndex].amount : totals.pendingAmount > 0 ? totals.pendingAmount : totals.effectiveTotal} 
+              onClose={() => { setShowPaymentPopup(false); setActivePaymentIndex(null); }} 
               onConfirm={(method, details) => {
-                 setPaymentMethod(method);
-                 setAmountPaid(totals.effectiveTotal);
-                 if (details) {
-                    setPaymentRef(details.upi_id || details.account_number || "");
+                 const newArr = [...paymentsList];
+                 newArr[activePaymentIndex].method = method;
+                 if (newArr[activePaymentIndex].amount === 0) {
+                     newArr[activePaymentIndex].amount = totals.pendingAmount > 0 ? totals.pendingAmount : totals.effectiveTotal;
                  }
+                 if (details) {
+                    newArr[activePaymentIndex].reference = details.upi_id || details.account_number || "";
+                 }
+                 setPaymentsList(newArr);
                  setShowPaymentPopup(false);
+                 setActivePaymentIndex(null);
               }} 
            />
         )}
