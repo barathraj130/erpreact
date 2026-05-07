@@ -27,9 +27,8 @@ const BranchBilling: React.FC = () => {
   const [cart, setCart] = useState<any[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [paidAmount, setPaidAmount] = useState<string>("");
-  const [paymentMode, setPaymentMode] = useState("CASH");
-  const [paymentRef, setPaymentRef] = useState<string>("");
+  const [paymentsList, setPaymentsList] = useState<{ amount: number; method: string; reference?: string }[]>([{ amount: 0, method: "CASH", reference: "" }]);
+  const [activePaymentIndex, setActivePaymentIndex] = useState<number | null>(null);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [discount, setDiscount] = useState<number>(0);
 
@@ -127,9 +126,10 @@ const BranchBilling: React.FC = () => {
       sgst += (lineTotal * (item.gstRate / 2)) / 100;
     });
     const netTotal = subtotal + cgst + sgst - discount;
-    const balance = Math.max(0, netTotal - (parseFloat(paidAmount) || 0));
-    return { subtotal, cgst, sgst, netTotal, balance };
-  }, [cart, discount, paidAmount]);
+    const totalPaid = paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const balance = Math.max(0, netTotal - totalPaid);
+    return { subtotal, cgst, sgst, netTotal, balance, totalPaid };
+  }, [cart, discount, paymentsList]);
 
   // Save Bill
   const handleSaveBill = async () => {
@@ -152,8 +152,9 @@ const BranchBilling: React.FC = () => {
             tax_percent: item.gstRate
           })),
           discount_amount: discount,
-          paid_amount: parseFloat(paidAmount) || 0,
-          payment_mode: paymentMode,
+          paid_amount: totals.totalPaid,
+          payment_mode: paymentsList[0]?.method || "CASH",
+          payments: paymentsList.filter(p => p.amount > 0),
           source: "BRANCH_BILLING"
         })
       });
@@ -177,7 +178,7 @@ const BranchBilling: React.FC = () => {
   const handleClear = () => {
     setCart([]);
     setSelectedCustomerId("");
-    setPaidAmount("");
+    setPaymentsList([{ amount: 0, method: "CASH", reference: "" }]);
     setDiscount(0);
     setSearchTerm("");
   };
@@ -554,39 +555,64 @@ const BranchBilling: React.FC = () => {
 
             {/* Payment Section */}
             <div style={{ background: "#fff", borderRadius: "16px", padding: "20px", border: "1px solid #e2e8f0", marginBottom: "25px" }}>
-              <div style={{ marginBottom: "15px" }}>
-                <label style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>Payment Details (F8)</label>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <input 
-                    id="paid-input"
-                    type="number" 
-                    placeholder="Amt Paid" 
-                    value={paidAmount}
-                    onChange={e => setPaidAmount(e.target.value)}
-                    style={{ flex: 1, padding: "12px", borderRadius: "10px", border: "2px solid #10b981", fontSize: "1.25rem", fontWeight: 800, outline: "none" }}
-                  />
-                  <select 
-                    value={paymentMode}
-                    onChange={e => setPaymentMode(e.target.value)}
-                    style={{ width: "120px", padding: "12px", borderRadius: "10px", border: "1px solid #e2e8f0", outline: "none", fontWeight: 700 }}
-                  >
-                    <option value="CASH">Cash</option>
-                    <option value="BANK">Bank</option>
-                    <option value="WALLET">Wallet</option>
-                    <option value="UPI">UPI / QR</option>
-                  </select>
-                </div>
-                <div style={{ marginTop: "15px" }}>
-                   <button 
-                      onClick={() => setShowPaymentPopup(true)} 
-                      style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
-                   >
-                      <FaCreditCard /> Show Digital Payment Options
-                   </button>
-                </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <label style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase" }}>Payment Details (F8)</label>
+                <button
+                  onClick={() => setPaymentsList([...paymentsList, { amount: 0, method: "CASH", reference: "" }])}
+                  style={{ padding: "5px 12px", background: "#f1f5f9", color: "#4f46e5", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                >
+                  <FaPlus size={10} /> Add Split
+                </button>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "0.85rem", color: "#64748b" }}>Balance Change</span>
+
+              {paymentsList.map((payment, index) => (
+                <div key={index} style={{ background: "#f8fafc", borderRadius: "10px", padding: "12px", marginBottom: "10px", border: "1px solid #e2e8f0", position: "relative" }}>
+                  {paymentsList.length > 1 && (
+                    <button
+                      onClick={() => setPaymentsList(paymentsList.filter((_, i) => i !== index))}
+                      style={{ position: "absolute", right: "-8px", top: "-8px", width: "22px", height: "22px", borderRadius: "50%", background: "#ef4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 }}
+                    >
+                      <FaTimes size={9} />
+                    </button>
+                  )}
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                    <input
+                      type="number"
+                      placeholder="Amount"
+                      value={payment.amount || ""}
+                      onChange={e => {
+                        const arr = [...paymentsList];
+                        arr[index].amount = Number(e.target.value);
+                        setPaymentsList(arr);
+                      }}
+                      style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "2px solid #10b981", fontSize: "1.1rem", fontWeight: 800, outline: "none" }}
+                    />
+                    <select
+                      value={payment.method}
+                      onChange={e => {
+                        const arr = [...paymentsList];
+                        arr[index].method = e.target.value;
+                        setPaymentsList(arr);
+                      }}
+                      style={{ width: "110px", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", outline: "none", fontWeight: 700 }}
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="BANK">Bank</option>
+                      <option value="WALLET">Wallet</option>
+                      <option value="UPI">UPI / QR</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => { setActivePaymentIndex(index); setShowPaymentPopup(true); }}
+                    style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontSize: "0.75rem" }}
+                  >
+                    <FaCreditCard /> {payment.method === "CASH" ? "Show Digital Options" : `Set via Digital (${payment.method})`}
+                  </button>
+                </div>
+              ))}
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "5px" }}>
+                <span style={{ fontSize: "0.85rem", color: "#64748b" }}>Balance Due</span>
                 <span style={{ fontWeight: 800, color: totals.balance > 0 ? "#ef4444" : "#10b981" }}>₹{totals.balance.toLocaleString()}</span>
               </div>
             </div>

@@ -8,6 +8,7 @@ import {
   FaPrint,
   FaSave,
   FaTrash,
+  FaTimes,
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { fetchProfile } from "../api/companyApi";
