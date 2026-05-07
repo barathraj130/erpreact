@@ -141,7 +141,7 @@ router.get("/breakdown", authMiddleware, async (req, res) => {
                 JSON_AGG(
                     JSON_BUILD_OBJECT(
                         'branch_id', b.id,
-                        'branch_name', b.name,
+                        'branch_name', b.branch_name,
                         'stock', bi.current_stock
                     )
                 ) FILTER (WHERE b.id IS NOT NULL) as branch_details

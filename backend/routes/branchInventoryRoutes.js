@@ -217,10 +217,10 @@ router.get("/breakdown/:productId", authMiddleware, async (req, res) => {
     try {
         const { productId } = req.params;
         const branches = await db.pgAll(
-            `SELECT b.name as branch_name, COALESCE(bi.current_stock, 0) as stock
+            `SELECT b.branch_name, COALESCE(bi.current_stock, 0) as stock
              FROM branches b
              LEFT JOIN branch_inventory bi ON b.id = bi.branch_id AND bi.product_id = $1
-             WHERE b.is_deleted = false`,
+             WHERE b.is_active = true`,
             [productId]
         );
         res.json(branches);
