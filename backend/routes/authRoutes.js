@@ -11,6 +11,14 @@ import * as authService from "../services/authService.js";
 const router = express.Router();
 
 /* ============================================================
+   0. VERIFY TOKEN (For SystemTester)
+   ============================================================ */
+router.get("/verify", (req, res) => {
+    // If it reaches here, the middleware passed (or we can add middleware here)
+    res.json({ success: true, message: "Token is valid" });
+});
+
+/* ============================================================
    1. LOGIN ROUTE
 ============================================================ */
 /* ============================================================

@@ -22,7 +22,7 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
         const purchases = await db.pgGet(purchaseSql, [companyId, today]);
 
         // Cash Position (Cash Ledger Balance)
-        const cashSql = `SELECT current_balance FROM ledgers WHERE company_id = $1 AND name = 'Cash in Hand'`;
+        const cashSql = `SELECT current_balance FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = '1000'`;
         const cash = await db.pgGet(cashSql, [companyId]);
 
         // GST Liability (Output - Input)
@@ -154,11 +154,11 @@ router.get('/finance/trial-balance', authMiddleware, async (req, res) => {
             SELECT 
                 name as ledger_name,
                 opening_balance as opening,
-                (SELECT COALESCE(SUM(amount), 0) FROM ledger_entries WHERE ledger_id = l.id AND is_debit = TRUE) as debit,
-                (SELECT COALESCE(SUM(amount), 0) FROM ledger_entries WHERE ledger_id = l.id AND is_debit = FALSE) as credit,
+                (SELECT COALESCE(SUM(debit), 0) FROM ledger_entries WHERE account_id = l.id) as debit,
+                (SELECT COALESCE(SUM(credit), 0) FROM ledger_entries WHERE account_id = l.id) as credit,
                 current_balance as closing
-            FROM ledgers l
-            WHERE company_id = $1
+            FROM chart_of_accounts l
+            WHERE company_id = $1 OR company_id IS NULL
             ORDER BY name ASC
         `;
         const rows = await db.pgAll(sql, [companyId]);

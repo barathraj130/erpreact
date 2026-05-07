@@ -167,7 +167,8 @@ router.get("/", authMiddleware, async (req, res) => {
         const list = await pgModule.pgAll(sql, [companyId]);
         return res.json(list || []);
     } catch (err) {
-        return res.status(500).json({ error: "Failed to fetch products" });
+        console.error("List Products Error:", err);
+        return res.status(500).json({ error: "Failed to fetch products: " + err.message });
     }
 });
 
@@ -178,7 +179,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
         if (!product) return res.status(404).json({ error: "Product not found" });
         return res.json(product);
     } catch (err) {
-        return res.status(500).json({ error: "Failed to fetch product" });
+        console.error("Get Product Error:", err);
+        return res.status(500).json({ error: "Failed to fetch product: " + err.message });
     }
 });
 

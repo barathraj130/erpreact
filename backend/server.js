@@ -56,6 +56,8 @@ import branchInventoryRoutes from "./routes/branchInventoryRoutes.js";
 import billingConfigRoutes from "./routes/billingConfigRoutes.js";
 import customerNotificationsRoutes from "./routes/customerNotificationsRoutes.js";
 import paymentMethodsRoutes from "./routes/paymentMethodsRoutes.js";
+import reportRoutes from "./routes/reportRoutes.js";
+import inventoryRoutes from "./routes/inventoryRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,6 +147,10 @@ app.use("/api/branch-inventory", branchInventoryRoutes);
 app.use("/api/billing-config", billingConfigRoutes);
 app.use("/api/customer-notifications", customerNotificationsRoutes);
 app.use("/api/payment-methods", paymentMethodsRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/inventory", inventoryRoutes);
+
+app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 
 // --- DATABASE INITIALIZATION ---
