@@ -90,7 +90,8 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 id, username, nickname, email, phone, role, gstin, 
                 address_line1, city_pincode, state, state_code,
                 initial_balance, COALESCE(initial_balance, 0) as remaining_balance, 
-                NULLIF(meta->>'customer_ledger_id', '')::INTEGER as ledger_id,
+                CASE WHEN meta IS NOT NULL AND (meta->>'customer_ledger_id') IS NOT NULL AND (meta->>'customer_ledger_id') != ''
+                     THEN (meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 bank_name, bank_account_no, bank_ifsc_code, created_at
             FROM users 
             WHERE role IN ('user', 'customer') AND company_id = $1

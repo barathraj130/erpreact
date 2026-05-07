@@ -100,10 +100,10 @@ router.get('/inventory/summary', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 name, sku, current_stock, unit,
-                COALESCE(avg_purchase_price, 0) as avg_cost,
-                (current_stock * COALESCE(avg_purchase_price, 0)) as stock_value
+                COALESCE(cost_price, 0) as avg_cost,
+                (current_stock * COALESCE(cost_price, 0)) as stock_value
             FROM products
-            WHERE company_id = $1
+            WHERE company_id = $1 AND is_deleted = false
             ORDER BY current_stock ASC
         `;
         const rows = await db.pgAll(sql, [companyId]);
@@ -179,16 +179,17 @@ router.get('/sales/customer-wise', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                customer_name,
-                COUNT(*) as invoice_count,
-                SUM(total_amount) as total_sales,
-                SUM(total_amount - (SELECT COALESCE(SUM(amount), 0) FROM ledger_entries WHERE ledger_id = i.customer_id AND is_debit = TRUE)) as total_paid,
-                (SUM(total_amount) - SUM(total_amount)) as balance,
-                MAX(created_at) as last_date
+                COALESCE(u.nickname, u.username) as customer_name,
+                COUNT(i.id) as invoice_count,
+                SUM(i.total_amount) as total_sales,
+                SUM(i.paid_amount) as total_paid,
+                SUM(i.total_amount - i.paid_amount) as balance,
+                MAX(i.invoice_date) as last_date
             FROM invoices i
-            WHERE company_id = $1
-            AND DATE(created_at) BETWEEN $2 AND $3
-            GROUP BY customer_name, customer_id
+            JOIN users u ON i.customer_id = u.id
+            WHERE i.company_id = $1
+            AND i.invoice_date BETWEEN $2 AND $3
+            GROUP BY u.nickname, u.username, i.customer_id
             ORDER BY total_sales DESC
         `;
         const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
@@ -210,10 +211,10 @@ router.get('/purchase/register', authMiddleware, async (req, res) => {
         let sql = `
             SELECT 
                 bill_date as date,
-                bill_no,
+                bill_number as bill_no,
                 supplier_name,
-                taxable_amount,
-                total_tax,
+                sub_total as taxable_amount,
+                tax_total as total_tax,
                 total_amount,
                 status
             FROM purchase_bills
@@ -315,10 +316,10 @@ router.get('/gst/summary', authMiddleware, async (req, res) => {
                 SUM(input_sgst) as input_sgst,
                 (SUM(output_cgst) + SUM(output_sgst) - SUM(input_cgst) - SUM(input_sgst)) as net_liability
             FROM (
-                SELECT created_at as date, total_tax/2 as output_cgst, total_tax/2 as output_sgst, 0 as input_cgst, 0 as input_sgst 
+                SELECT invoice_date as date, cgst_total as output_cgst, sgst_total as output_sgst, 0 as input_cgst, 0 as input_sgst 
                 FROM invoices WHERE company_id = $1 AND invoice_type = 'TAX_INVOICE'
                 UNION ALL
-                SELECT bill_date as date, 0, 0, total_tax/2, total_tax/2 
+                SELECT bill_date as date, 0, 0, cgst_total, sgst_total 
                 FROM purchase_bills WHERE company_id = $1
             ) as combined
             WHERE DATE(date) BETWEEN $2 AND $3
@@ -344,11 +345,11 @@ router.get('/gst/itc', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 supplier_name,
-                bill_no,
+                bill_number as bill_no,
                 bill_date as date,
-                taxable_amount,
-                total_tax,
-                (SELECT gstin FROM suppliers WHERE name = supplier_name LIMIT 1) as gstin
+                sub_total as taxable_amount,
+                tax_total,
+                (SELECT gstin FROM lenders WHERE name = supplier_name LIMIT 1) as gstin
             FROM purchase_bills
             WHERE company_id = $1
             AND bill_date BETWEEN $2 AND $3
@@ -373,18 +374,18 @@ router.get('/inventory/movement', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                created_at as date,
+                m.created_at as date,
                 p.name as product_name,
-                'Sale' as type,
-                'Inv #' || invoice_id as reference,
-                0 as qty_in,
-                quantity as qty_out,
+                m.type,
+                m.reference_type || ' #' || m.reference_id as reference,
+                m.qty_in,
+                m.qty_out,
                 0 as balance
-            FROM invoice_items ii
-            JOIN products p ON ii.product_id = p.id
-            WHERE p.company_id = $1
-            AND DATE(created_at) BETWEEN $2 AND $3
-            ORDER BY created_at DESC
+            FROM inventory_movements m
+            JOIN products p ON m.product_id = p.id
+            WHERE m.company_id = $1
+            AND m.created_at BETWEEN $2 AND $3
+            ORDER BY m.created_at DESC
         `;
         const rows = await db.pgAll(sql, [companyId, startDate, endDate]);
         res.json(rows || []);

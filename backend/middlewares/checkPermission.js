@@ -30,8 +30,8 @@ export default function checkPermission(module, action) {
 
             next();
         } catch (err) {
-            console.error(err);
-            res.status(500).json({ error: "Permission check failed" });
+            console.error("❌ Permission Check Error:", err);
+            res.status(500).json({ error: "Permission check failed: " + err.message });
         }
     };
 }
