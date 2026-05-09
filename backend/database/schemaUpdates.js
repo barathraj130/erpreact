@@ -219,6 +219,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id);
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS ledger_id INTEGER;
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS amount NUMERIC(15,2) DEFAULT 0;
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS lender_id INTEGER;
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS agreement_id INTEGER;
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS related_invoice_id INTEGER;
