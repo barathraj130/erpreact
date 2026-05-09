@@ -157,7 +157,35 @@ export async function getProfitAndLoss(companyId, branchId, startDate, endDate, 
  */
 export async function getAccountByCode(companyId, code) {
     const sql = `SELECT id, account_type FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = $2 LIMIT 1;`;
-    return await db.pgGet(sql, [companyId, code]);
+    let account = await db.pgGet(sql, [companyId, code]);
+    
+    // Auto-seed missing essential accounts
+    if (!account && companyId) {
+        const defaults = {
+            '1000': { name: 'Cash', type: 'ASSET' },
+            '1100': { name: 'Accounts Receivable', type: 'ASSET' },
+            '1400': { name: 'Inventory', type: 'ASSET' },
+            '2100': { name: 'GST Payable', type: 'LIABILITY' },
+            '3000': { name: 'Opening Stock Adj', type: 'EQUITY' },
+            '4000': { name: 'Sales Revenue', type: 'EQUITY' },
+            '5100': { name: 'Discount Allowed', type: 'EQUITY' }
+        };
+        
+        if (defaults[code]) {
+            const { name, type } = defaults[code];
+            try {
+                await db.pgRun(
+                    `INSERT INTO chart_of_accounts (company_id, account_code, name, account_type, opening_balance, current_balance)
+                     VALUES ($1, $2, $3, $4, 0, 0) ON CONFLICT DO NOTHING`,
+                    [companyId, code, name, type]
+                );
+                account = await db.pgGet(sql, [companyId, code]);
+            } catch (e) {
+                console.error("Auto-seed account failed:", e);
+            }
+        }
+    }
+    return account;
 }
 /**
  * Generates a Balance Sheet Report
@@ -174,7 +202,7 @@ export async function getBalanceSheet(companyId, filterType = 'real') {
         FROM chart_of_accounts ca
         LEFT JOIN ledger_entries l ON ca.id = l.account_id AND l.bill_purpose = ANY($2)
         WHERE (ca.company_id = $1 OR ca.company_id IS NULL)
-          AND ca.account_type IN ('ASSET', 'LIABILITY', 'EQUITY')
+          AND UPPER(ca.account_type) IN ('ASSET', 'LIABILITY', 'EQUITY')
         GROUP BY ca.id, ca.account_type, ca.name, ca.opening_balance
         ORDER BY ca.account_type, ca.name;
     `;
