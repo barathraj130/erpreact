@@ -79,6 +79,7 @@ export const runSchemaUpdates = async () => {
             ADD COLUMN IF NOT EXISTS manager_user_id INTEGER,
             ADD COLUMN IF NOT EXISTS gstin VARCHAR(50),
             ADD COLUMN IF NOT EXISTS bill_prefix VARCHAR(20),
+            ADD COLUMN IF NOT EXISTS bill_sequence INTEGER DEFAULT 0,
             ADD COLUMN IF NOT EXISTS default_payment_mode VARCHAR(50) DEFAULT 'Cash',
             ADD COLUMN IF NOT EXISTS opening_cash_balance NUMERIC(15,2) DEFAULT 0,
             ADD COLUMN IF NOT EXISTS city_pincode TEXT;
