@@ -133,9 +133,8 @@ export const scanProductFromBill = async (
  * Deletes a product by ID.
  */
 export const deleteProduct = async (id: number): Promise<ApiResponse> => {
-  // FIX: Corrected endpoint path to match the backend routes file name convention
-  const res = await apiFetch(`/products/${id}`, {
-    method: "DELETE",
+  const res = await apiFetch(`/products/${id}/archive`, {
+    method: "PATCH",
   });
   return res.json();
 };

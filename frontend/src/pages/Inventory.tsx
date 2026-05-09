@@ -30,15 +30,21 @@ const Inventory: React.FC = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const filteredProducts = products.filter((p) => {
+  const filteredProducts = (products || []).filter((p) => {
+    if (!p) return false;
+    const nameStr = p.name || "";
+    const skuStr = p.sku || "";
     const matchesSearch =
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchTerm.toLowerCase());
+      nameStr.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      skuStr.toLowerCase().includes(searchTerm.toLowerCase());
 
     let matchesStock = true;
+    const currentStock = Number(p.current_stock) || 0;
+    const minStock = Number(p.min_stock || 5);
+
     if (stockFilter === "low")
-      matchesStock = p.current_stock <= (p.min_stock || 5);
-    if (stockFilter === "out") matchesStock = p.current_stock === 0;
+      matchesStock = currentStock <= minStock;
+    if (stockFilter === "out") matchesStock = currentStock === 0;
 
     return matchesSearch && matchesStock;
   });
@@ -192,7 +198,7 @@ const Inventory: React.FC = () => {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: "0.75rem", color: "var(--erp-text-muted)" }}>Selling Price</div>
-                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--erp-primary)" }}>₹{p.selling_price.toLocaleString()}</div>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--erp-primary)" }}>₹{(Number(p.selling_price) || 0).toLocaleString()}</div>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
@@ -262,7 +268,7 @@ const Inventory: React.FC = () => {
                         </span>
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 800, color: "var(--erp-primary)" }}>₹{p.selling_price.toLocaleString()}</div>
+                        <div style={{ fontWeight: 800, color: "var(--erp-primary)" }}>₹{(Number(p.selling_price) || 0).toLocaleString()}</div>
                         <div style={{ fontSize: "0.7rem", color: "#16a34a", fontWeight: 700 }}>Cost: ₹{(p.cost_price || 0).toFixed(2)}</div>
                       </td>
                       <td style={{ textAlign: "center" }}>
