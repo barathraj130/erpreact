@@ -19,7 +19,7 @@ export const processTransaction = async (txData, user) => {
         // 1. Insert into Master Transactions table
         const txSql = `
             INSERT INTO transactions (
-                company_id, branch_id, user_id, type, amount, 
+                company_id, branch_id, created_by, type, amount, 
                 description, date, category, reference_type, reference_id,
                 proof_url, bank_name, bank_ref_no, expense_category,
                 created_at, transaction_date
