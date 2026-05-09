@@ -69,7 +69,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     id: "T1.2", name: "Create Test Product", category: "Scenario 1", method: "POST", path: "/products",
     body: { name: "TEST_PRODUCT_DEEP", cost_price: 8000, selling_price: 10000, opening_stock: 200, gst_percent: 18, unit: "Pcs" },
     expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.productId = res.id; return null; }
+    verifyFn: async (res, ctx) => { ctx.productId = res.product?.id ?? res.id; return null; }
   },
   {
     id: "T1.3", name: "Get Inventory Baseline", category: "Scenario 1", method: "GET", path: "/reports/inventory/summary",
@@ -240,7 +240,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     expectStatus: 200
   },
   {
-    id: "T5.3", name: "Cleanup: Delete Test Product", category: "Cleanup", method: "DELETE", path: "/products/__productId__",
+    id: "T5.3", name: "Cleanup: Archive Test Product", category: "Cleanup", method: "PATCH", path: "/products/__productId__/archive",
     expectStatus: 200
   }
 ];
@@ -408,8 +408,16 @@ const SystemTester: React.FC = () => {
                 </div>
               </div>
               {r.status === "fail" && (
-                <div style={{ width: "300px", padding: "12px", background: "#450a0a", borderRadius: "8px", color: "#fecaca", fontSize: "0.75rem", border: "1px solid #7f1d1d" }}>
-                  <strong>CRITICAL FAIL:</strong> {r.likelyCause}
+                <div style={{ width: "340px", padding: "14px", background: "#450a0a", borderRadius: "8px", color: "#fecaca", fontSize: "0.72rem", border: "1px solid #7f1d1d", lineHeight: "1.6" }}>
+                  <div style={{ fontWeight: 900, marginBottom: "6px" }}>
+                    CRITICAL FAIL {r.httpStatus ? <span style={{ color: "#f87171" }}>[HTTP {r.httpStatus}]</span> : ""}
+                  </div>
+                  <div style={{ color: "#fca5a5", marginBottom: "4px" }}>{r.likelyCause}</div>
+                  {r.errorBody && (
+                    <div style={{ marginTop: "6px", padding: "6px", background: "#3b0000", borderRadius: "4px", color: "#fcd34d", fontFamily: "monospace", wordBreak: "break-all" }}>
+                      {typeof r.errorBody === "object" ? JSON.stringify(r.errorBody) : String(r.errorBody)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
