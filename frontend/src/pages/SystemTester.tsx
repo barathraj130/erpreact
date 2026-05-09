@@ -31,7 +31,9 @@ interface TestResult {
 
 interface TestContext {
   customerId?: number;
+  customerName?: string;
   productId?: number;
+  productName?: string;
   supplierId?: number;
   stockBaseline?: number;
   tbBaselineDeits?: number;
