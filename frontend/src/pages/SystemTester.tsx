@@ -61,13 +61,13 @@ const DEEP_SCENARIOS: TestCase[] = [
   // --- SCENARIO 1: NON-TAX INVOICE WITH SPLIT PAYMENT ---
   {
     id: "T1.1", name: "Create Test Customer", category: "Scenario 1", method: "POST", path: "/users",
-    body: { nickname: "TEST_CUSTOMER_DEEP", phone: "9000000001", state: "Tamil Nadu", role: "customer", username: "deep_tester_" + Date.now() },
+    body: null, // dynamic
     expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.customerId = res.id; return null; }
   },
   {
     id: "T1.2", name: "Create Test Product", category: "Scenario 1", method: "POST", path: "/products",
-    body: { name: "TEST_PRODUCT_DEEP", cost_price: 8000, selling_price: 10000, opening_stock: 200, gst_percent: 18, unit: "Pcs" },
+    body: null, // dynamic
     expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.productId = res.product?.id ?? res.id; return null; }
   },
@@ -75,7 +75,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     id: "T1.3", name: "Get Inventory Baseline", category: "Scenario 1", method: "GET", path: "/reports/inventory/summary",
     expectStatus: 200,
     verifyFn: async (rows, ctx) => {
-      const p = rows.find((r: any) => r.name === "TEST_PRODUCT_DEEP");
+      const p = rows.find((r: any) => r.name === ctx.productName);
       if (!p) return "FAIL: Test product not found in summary";
       ctx.stockBaseline = parseFloat(p.current_stock);
       return null;
@@ -114,7 +114,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     id: "T1.7", name: "Verify Inventory Decreased", category: "Scenario 1", method: "GET", path: "/reports/inventory/summary",
     expectStatus: 200,
     verifyFn: async (rows, ctx) => {
-      const p = rows.find((r: any) => r.name === "TEST_PRODUCT_DEEP");
+      const p = rows.find((r: any) => r.name === ctx.productName);
       const current = parseFloat(p.current_stock);
       if (current !== (ctx.stockBaseline || 0) - 100) return `FAIL: Stock wrong. Expected ${(ctx.stockBaseline || 0) - 100}, got ${current}`;
       return null;
@@ -124,7 +124,7 @@ const DEEP_SCENARIOS: TestCase[] = [
     id: "T1.8", name: "Verify Movement Logged", category: "Scenario 1", method: "GET", path: "/reports/inventory/movement",
     expectStatus: 200,
     verifyFn: async (rows, ctx) => {
-      const m = rows.find((r: any) => r.product_name === "TEST_PRODUCT_DEEP" && r.reference.includes(String(ctx.invoiceId)));
+      const m = rows.find((r: any) => r.product_name === ctx.productName && r.reference.includes(String(ctx.invoiceId)));
       if (!m) return "FAIL: No movement log found";
       if (parseFloat(m.qty_out) !== 100) return "FAIL: Wrong movement qty";
       return null;
@@ -275,7 +275,13 @@ const SystemTester: React.FC = () => {
     let body = test.body;
     const today = new Date().toISOString().split("T")[0];
 
-    if (test.id === "T1.5") {
+    if (test.id === "T1.1") {
+      ctx.current.customerName = "deep_cust_" + Math.random().toString(36).substring(7);
+      body = { username: ctx.current.customerName, role: "customer" };
+    } else if (test.id === "T1.2") {
+      ctx.current.productName = "DEEP_PROD_" + Math.random().toString(36).substring(7);
+      body = { name: ctx.current.productName, cost_price: 8000, selling_price: 10000, opening_stock: 200, gst_percent: 18, unit: "Pcs" };
+    } else if (test.id === "T1.5") {
       body = {
         customer_id: ctx.current.customerId,
         invoice_type: "NON_TAX_INVOICE",
