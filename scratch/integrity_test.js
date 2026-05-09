@@ -7,9 +7,7 @@ const TOKEN = '...'; // I need a token. I'll fetch it from the user's session if
 
 async function runIntegrityTest() {
     try {
-        // 1. Get Token (Assuming I can get it from somewhere or user provides it)
-        // For now, I'll assume the server is open or I can bypass for local test if I add a debug flag.
-        
+
         console.log("Starting Integrity Scenarios...");
         
         // Step 1: Create NON-TAX Invoice

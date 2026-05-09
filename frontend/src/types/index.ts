@@ -10,6 +10,7 @@ export interface User {
   company_id: number;
   branch_id: number;
   active_company_id?: number;
+  company?: string;
   iat?: number;
   exp?: number;
 }
