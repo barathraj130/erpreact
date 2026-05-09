@@ -218,8 +218,10 @@ const DEEP_SCENARIOS: TestCase[] = [
     id: "T2.6", name: "Verify Cash Flow Unaffected", category: "Scenario 2", method: "GET", path: "/reports/finance/balance-sheet?filterType=real",
     expectStatus: 200,
     verifyFn: async (data) => {
-      const cash = data.details.find((d: any) => d.account_name === "Cash");
-      if (parseFloat(cash.current_balance) > 250000) return "FAIL: Name-sake affected cash flow";
+      if (!data?.details) return "FAIL: No details in balance sheet";
+      const cash = data.details.find((d: any) => d.account_name.toLowerCase().includes("cash"));
+      if (!cash) return "FAIL: Cash account not found in balance sheet";
+      if (parseFloat(cash.current_balance) > 250000) return `FAIL: Name-sake affected cash flow. Got ${cash.current_balance}`;
       return null;
     }
   },
