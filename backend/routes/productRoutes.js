@@ -76,6 +76,16 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
             opening_stock || 0, min_stock || 0, max_stock_level || 0, cost_price || 0, selling_price || 0,
             hsn_code || null, gst_percent || 0, category || "Other", location || null
         ]);
+        
+        // 2.1 Branch Inventory Sync (If created within a branch context)
+        if (branchId && parseFloat(opening_stock || 0) > 0) {
+            await client.query(`
+                INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (branch_id, product_id)
+                DO UPDATE SET current_stock = branch_inventory.current_stock + $4;
+            `, [companyId, branchId, product.id, opening_stock]);
+        }
 
         // 3. Inventory Movement Log (opening stock entry)
         if (parseFloat(opening_stock || 0) > 0) {
