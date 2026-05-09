@@ -1,106 +1,105 @@
 // backend/routes/dashboardRoutes.js
-import express from "express";
-import { authMiddleware, checkAuth } from "../middlewares/jwtAuthMiddleware.js";
-import * as dashboardService from "../services/dashboardService.js";
+import express from 'express';
+import * as db from '../database/pg.js';
+import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 
 const router = express.Router();
 
-// Protect all routes
-router.use(authMiddleware);
-router.use(checkAuth);
-
 /**
- * GET /api/dashboard
- * Get complete dashboard
+ * 📊 DASHBOARD SUMMARY
+ * Separation of Real TAX, Real NON-TAX, and Name-sake revenue
  */
-router.get("/", async (req, res) => {
+router.get('/summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId = req.user.branch_id;
+    const isMain = req.user.role === 'admin';
+
     try {
-        const { user } = req;
-        const dashboard = await dashboardService.getCompleteDashboard(user.company_id);
-        res.json({ success: true, data: dashboard });
+        let branchFilter = isMain ? "" : "AND branch_id = " + branchId;
+
+        // 1. Available Cash (Live)
+        const cashSql = `SELECT COALESCE(SUM(current_balance), 0) as total FROM chart_of_accounts WHERE company_id = $1 AND account_code LIKE '10%'`;
+        const cashRes = await db.pgGet(cashSql, [companyId]);
+
+        // 2. Sales Breakdown (MTD)
+        const salesSql = `
+            SELECT 
+                SUM(CASE WHEN invoice_type = 'TAX' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as tax_sales,
+                SUM(CASE WHEN invoice_type = 'NON_TAX' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as anon_sales,
+                SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END) as name_sake_sales
+            FROM invoices
+            WHERE company_id = $1 ${branchFilter}
+              AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
+        `;
+        const salesRes = await db.pgGet(salesSql, [companyId]);
+
+        // 3. Pending Branch Requests
+        const reqSql = `SELECT COUNT(*) as pending FROM inventory_movements WHERE company_id = $1 AND type = 'Transfer' AND note LIKE '%Pending%'`;
+        const reqRes = await db.pgGet(reqSql, [companyId]);
+
+        res.json({
+            available_cash: parseFloat(cashRes.total),
+            total_monthly_sales: parseFloat(salesRes.tax_sales || 0) + parseFloat(salesRes.anon_sales || 0),
+            sales_breakdown: {
+                tax_sales: parseFloat(salesRes.tax_sales || 0),
+                anon_sales: parseFloat(salesRes.anon_sales || 0),
+                name_sake_sales: parseFloat(salesRes.name_sake_sales || 0)
+            },
+            branch_requests_pending: parseInt(reqRes.pending || 0)
+        });
     } catch (err) {
-        console.error("❌ Dashboard error:", err);
-        res.status(500).json({ error: "Failed to fetch dashboard" });
+        console.error("Dashboard summary error:", err);
+        res.status(500).json({ error: "Failed to fetch dashboard summary" });
     }
 });
 
 /**
- * GET /api/dashboard/finance
- * Get financial dashboard
+ * 📈 MONTHLY SALES TREND
  */
-router.get("/finance", async (req, res) => {
+router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     try {
-        const { user } = req;
-        const { startDate, endDate } = req.query;
-
-        const start = new Date(startDate || new Date().setDate(1));
-        const end = new Date(endDate || new Date());
-
-        const dashboard = await dashboardService.getFinancialDashboard(user.company_id, start, end);
-        res.json({ success: true, data: dashboard });
+        const sql = `
+            SELECT 
+                TO_CHAR(invoice_date, 'Mon YYYY') as month,
+                SUM(CASE WHEN bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as real_revenue,
+                SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END) as name_sake_revenue
+            FROM invoices
+            WHERE company_id = $1 AND invoice_date >= CURRENT_DATE - INTERVAL '12 months'
+            GROUP BY month, DATE_TRUNC('month', invoice_date)
+            ORDER BY DATE_TRUNC('month', invoice_date) ASC
+        `;
+        const trend = await db.pgAll(sql, [companyId]);
+        res.json(trend);
     } catch (err) {
-        console.error("❌ Financial dashboard error:", err);
-        res.status(500).json({ error: "Failed to fetch financial dashboard" });
+        res.status(500).json({ error: "Failed to fetch sales trend" });
     }
 });
 
 /**
- * GET /api/dashboard/customers
- * Get customer analytics
+ * 💸 EXPENSE BREAKDOWN
  */
-router.get("/customers", async (req, res) => {
+router.get('/expense-breakdown', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     try {
-        const { user } = req;
-        const analytics = await dashboardService.getCustomerAnalytics(user.company_id);
-        res.json({ success: true, data: analytics });
+        // Typically fetching from ledger entries or specialized expense table
+        // For now, grouping by transaction description categories or expense-type accounts
+        const sql = `
+            SELECT 
+                ca.name as category,
+                SUM(ABS(l.amount)) as amount
+            FROM ledger_entries l
+            JOIN chart_of_accounts ca ON l.account_id = ca.id
+            WHERE l.company_id = $1 
+              AND ca.account_type = 'EXPENSE'
+              AND l.date >= DATE_TRUNC('month', CURRENT_DATE)
+            GROUP BY ca.name
+            ORDER BY amount DESC
+        `;
+        const expenses = await db.pgAll(sql, [companyId]);
+        res.json(expenses);
     } catch (err) {
-        console.error("❌ Customer analytics error:", err);
-        res.status(500).json({ error: "Failed to fetch customer analytics" });
-    }
-});
-
-/**
- * GET /api/dashboard/suppliers
- * Get supplier analytics
- */
-router.get("/suppliers", async (req, res) => {
-    try {
-        const { user } = req;
-        const analytics = await dashboardService.getSupplierAnalytics(user.company_id);
-        res.json({ success: true, data: analytics });
-    } catch (err) {
-        console.error("❌ Supplier analytics error:", err);
-        res.status(500).json({ error: "Failed to fetch supplier analytics" });
-    }
-});
-
-/**
- * GET /api/dashboard/kpis
- * Get KPI summary
- */
-router.get("/kpis", async (req, res) => {
-    try {
-        const { user } = req;
-        const kpis = await dashboardService.getKPISummary(user.company_id);
-        res.json({ success: true, data: kpis });
-    } catch (err) {
-        console.error("❌ KPI summary error:", err);
-        res.status(500).json({ error: "Failed to fetch KPIs" });
-    }
-});
-
-/**
- * GET /api/dashboard/branch-overview
- * Get branch summary for main dashboard
- */
-router.get("/branch-overview", async (req, res) => {
-    try {
-        const { user } = req;
-        const data = await dashboardService.getBranchOverview(user.active_company_id);
-        res.json({ success: true, data });
-    } catch (err) {
-        console.error("❌ Branch overview error:", err);
-        res.status(500).json({ error: "Failed to fetch branch overview" });
+        res.status(500).json({ error: "Failed to fetch expense breakdown" });
     }
 });
 

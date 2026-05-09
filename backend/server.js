@@ -56,6 +56,9 @@ import customerNotificationsRoutes from "./routes/customerNotificationsRoutes.js
 import paymentMethodsRoutes from "./routes/paymentMethodsRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import inventoryRoutes from "./routes/inventoryRoutes.js";
+import testRoutes from "./routes/testRoutes.js";
+import intelligenceRoutes from "./routes/intelligenceRoutes.js";
+import attendanceRoutes from "./routes/attendanceRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,6 +152,9 @@ app.use("/api/customer-notifications", customerNotificationsRoutes);
 app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/inventory", inventoryRoutes);
+app.use("/api/test", testRoutes);
+app.use("/api/intelligence", intelligenceRoutes);
+app.use("/api/attendance", attendanceRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 

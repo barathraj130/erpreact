@@ -247,6 +247,10 @@ const DEEP_SCENARIOS: TestCase[] = [
   {
     id: "T5.3", name: "Cleanup: Archive Test Product", category: "Cleanup", method: "PATCH", path: "/products/__productId__/archive",
     expectStatus: 200
+  },
+  {
+    id: "T6.1", name: "Global Database Cleanup", category: "Cleanup", method: "POST", path: "/test/cleanup",
+    expectStatus: 200
   }
 ];
 

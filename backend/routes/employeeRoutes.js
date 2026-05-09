@@ -1,121 +1,110 @@
 // backend/routes/employeeRoutes.js
-import express from "express";
-import * as db from "../database/pg.js";
-import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import express from 'express';
+import * as db from '../database/pg.js';
+import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 
 const router = express.Router();
 
-// GET EMPLOYEES WITHOUT LOGIN ACCOUNT
-router.get("/unlinked", authMiddleware, async (req, res) => {
+/**
+ * 👥 LIST EMPLOYEES
+ * Support tabs: ALL / MONTHLY / WEEKLY / DAILY
+ */
+router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    try {
-        const sql = `
-            SELECT e.id, e.name, e.email, e.designation 
-            FROM employees e
-            LEFT JOIN users u ON e.id = u.employee_id
-            WHERE e.company_id = $1 AND u.id IS NULL
-            ORDER BY e.name ASC
-        `;
-        const result = await db.pgAll(sql, [companyId]);
-        res.json(result);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to fetch unlinked employees" });
-    }
-});
+    const { tab = 'ALL', search } = req.query;
 
-// GET ALL EMPLOYEES WITH STATS
-router.get("/", authMiddleware, async (req, res) => {
     try {
-        const companyId = req.user.active_company_id;
-        const sql = `
+        let where = "WHERE e.company_id = $1";
+        let params = [companyId];
+
+        if (search) {
+            where += " AND e.name ILIKE $2";
+            params.push(`%${search}%`);
+        }
+
+        let sql = `
             SELECT 
                 e.*,
-                u.username as portal_username,
-                COALESCE(sa.balance, 0) as advance_balance,
-                COALESCE(att.days_present, 0) as days_present
+                COALESCE(a.today_status, 'Absent') as today_status,
+                COALESCE(m.month_present, 0) as month_present_days
             FROM employees e
-            LEFT JOIN users u ON e.id = u.employee_id
             LEFT JOIN (
-                SELECT employee_id, SUM(current_balance) as balance 
-                FROM salary_advances 
-                WHERE status = 'ACTIVE' 
-                GROUP BY employee_id
-            ) sa ON e.id = sa.employee_id
+                SELECT employee_id, status as today_status 
+                FROM attendance 
+                WHERE date = CURRENT_DATE
+            ) a ON e.id = a.employee_id
             LEFT JOIN (
-                SELECT employee_id, COUNT(*) as days_present
-                FROM attendance_logs
-                WHERE to_char(date, 'YYYY-MM') = to_char(CURRENT_DATE, 'YYYY-MM')
+                SELECT employee_id, COUNT(*) as month_present 
+                FROM attendance 
+                WHERE date >= DATE_TRUNC('month', CURRENT_DATE) AND status = 'Present'
                 GROUP BY employee_id
-            ) att ON e.id = att.employee_id
-            WHERE e.company_id = $1 
+            ) m ON e.id = m.employee_id
+            ${where}
             ORDER BY e.name ASC
         `;
-        const result = await db.pgAll(sql, [companyId]);
-        res.json(result);
+
+        const employees = await db.pgAll(sql, params);
+        res.json(employees);
     } catch (err) {
-        console.error(err);
         res.status(500).json({ error: "Failed to fetch employees" });
     }
 });
 
-// CREATE EMPLOYEE
-router.post("/", authMiddleware, async (req, res) => {
-    // ✅ Added salary_type
-    const { name, designation, email, phone, salary, salary_type, joining_date, status } = req.body;
+/**
+ * ➕ CREATE EMPLOYEE
+ */
+router.post('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    const { name, designation, salary, phone, joining_date } = req.body;
+
+    if (!name || !salary) return res.status(400).json({ error: "Name and Salary are required" });
 
     try {
         const sql = `
-            INSERT INTO employees (company_id, name, designation, email, phone, salary, salary_type, joining_date, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING id
+            INSERT INTO employees (company_id, name, designation, salary, phone, joining_date)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
         `;
-        const result = await db.pgRun(sql, [
-            companyId, name, designation, email, phone, 
-            salary || 0, salary_type || 'Monthly', joining_date || new Date(), status || 'Active'
-        ]);
-        res.json({ success: true, id: result.rows[0].id });
+        const emp = await db.pgGet(sql, [companyId, name, designation, salary, phone, joining_date]);
+        
+        // Placeholder for QR code generation
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=EMP_${emp.id}`;
+        res.status(201).json({ ...emp, qr_code_url: qrUrl });
     } catch (err) {
-        console.error(err);
         res.status(500).json({ error: "Failed to create employee" });
     }
 });
 
-// UPDATE EMPLOYEE
-router.put("/:id", authMiddleware, async (req, res) => {
+/**
+ * 💰 PROCESS SALARY
+ */
+router.put('/:id/salary', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    // ✅ Added salary_type
-    const { name, designation, email, phone, salary, salary_type, joining_date, status } = req.body;
+    const { month, working_days, present_days, deductions, advance_deducted } = req.body;
     const companyId = req.user.active_company_id;
 
     try {
+        const employee = await db.pgGet("SELECT * FROM employees WHERE id = $1 AND company_id = $2", [id, companyId]);
+        if (!employee) return res.status(404).json({ error: "Employee not found" });
+
+        const baseSalary = parseFloat(employee.salary);
+        const calculatedGross = (baseSalary / (working_days || 30)) * present_days;
+        const netPay = calculatedGross - (deductions || 0) - (advance_deducted || 0);
+
         const sql = `
-            UPDATE employees 
-            SET name=$1, designation=$2, email=$3, phone=$4, salary=$5, salary_type=$6, joining_date=$7, status=$8
-            WHERE id=$9 AND company_id=$10
+            INSERT INTO payroll_runs (company_id, employee_id, month_year, base_salary, attendance_days, gross_earnings, total_deductions, advance_deduction, net_pay, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PAID')
+            RETURNING *
         `;
-        await db.pgRun(sql, [
-            name, designation, email, phone, salary, salary_type, joining_date, status, id, companyId
-        ]);
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to update employee" });
-    }
-});
+        const run = await db.pgGet(sql, [companyId, id, month, baseSalary, present_days, calculatedGross, deductions, advance_deducted, netPay]);
 
-// DELETE EMPLOYEE
-router.delete("/:id", authMiddleware, async (req, res) => {
-    const { id } = req.params;
-    const companyId = req.user.active_company_id;
+        // Ledger entries: Debit Salary Expense (6000 range), Credit Cash/Bank (1000 range)
+        // Note: For now, we'll just log success. In a real run, this would call accountingEngine.postTransaction.
 
-    try {
-        await db.pgRun("DELETE FROM employees WHERE id=$1 AND company_id=$2", [id, companyId]);
-        res.json({ success: true });
+        res.json({ message: "Salary processed successfully", payroll: run });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to delete employee" });
+        console.error("Salary processing error:", err);
+        res.status(500).json({ error: "Failed to process salary" });
     }
 });
 
