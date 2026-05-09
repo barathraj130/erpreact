@@ -302,7 +302,7 @@ const SystemTester: React.FC = () => {
 
     try {
       const opts: any = { method: test.method };
-      if (body) opts.body = JSON.stringify(body);
+      if (body) opts.body = body; // apiFetch handles JSON.stringify internally
 
       const res = await apiFetch(path, opts);
       const durationMs = Date.now() - t0;

@@ -18,9 +18,9 @@ export const checkAccess = (moduleName, actionName) => {
 
             const user = req.user;
 
-            // 2. Admin Bypass
-            // Admins always have access, no need to check DB
-            if (user.role === 'admin') {
+            // 2. Admin / Superadmin Bypass
+            // These roles always have full access — no DB lookup needed
+            if (user.role === 'admin' || user.role === 'superadmin') {
                 return next();
             }
 
