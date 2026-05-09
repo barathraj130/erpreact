@@ -102,9 +102,9 @@ const DEEP_SCENARIOS: TestCase[] = [
     verifyFn: async (inv) => {
       const checks = [
         inv.invoice_type === "NON_TAX_INVOICE",
-        parseFloat(inv.total_amount) === 1000000,
-        parseFloat(inv.paid_amount) === 500000,
-        parseFloat(inv.gst_amount || 0) === 0
+        Math.abs(parseFloat(inv.total_amount) - 1000000) < 0.01,
+        Math.abs(parseFloat(inv.paid_amount) - 500000) < 0.01,
+        Math.abs(parseFloat(inv.tax_total || 0) - 0) < 0.01
       ];
       if (checks.includes(false)) return "FAIL: Invoice field mismatch";
       return null;
