@@ -282,7 +282,7 @@ const SystemTester: React.FC = () => {
       body = { username: ctx.current.customerName, role: "customer" };
     } else if (test.id === "T1.2") {
       ctx.current.productName = "DEEP_PROD_" + Math.random().toString(36).substring(7);
-      body = { name: ctx.current.productName, cost_price: 8000, selling_price: 10000, opening_stock: 200, gst_percent: 18, unit: "Pcs" };
+      body = { name: ctx.current.productName, cost_price: 8000, selling_price: 10000, opening_stock: 1000, gst_percent: 18, unit: "Pcs" };
     } else if (test.id === "T1.5") {
       body = {
         customer_id: ctx.current.customerId,
