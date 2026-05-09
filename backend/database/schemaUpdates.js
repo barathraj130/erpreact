@@ -217,6 +217,10 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id);
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS lender_id INTEGER;
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS agreement_id INTEGER;
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS related_invoice_id INTEGER;
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS branch_id INTEGER;
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS type VARCHAR(50);
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_date DATE;
@@ -228,6 +232,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reference_id INTEGER;
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS date DATE; -- Some routes use 'date', some use 'transaction_date'
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS meta JSONB; -- Required by customerLedgerService.js
         `);
 
         console.log("✅ Schema Updates Completed.");
