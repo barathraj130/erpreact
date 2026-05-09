@@ -191,6 +191,12 @@ export async function getAccountByCode(companyId, code) {
  * Generates a Balance Sheet Report
  */
 export async function getBalanceSheet(companyId, filterType = 'real') {
+    // Ensure core accounts exist before running the report
+    const coreCodes = ['1000', '1100', '1400', '2100', '3000', '4000'];
+    for (const code of coreCodes) {
+        await getAccountByCode(companyId, code);
+    }
+
     const purposes = filterType === 'all' ? ['real', 'name_only'] : 
                     (filterType === 'name_only' ? ['name_only'] : ['real']);
 
