@@ -50,11 +50,14 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
  */
 router.get('/sales/register', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate, taxType, branchId } = req.query;
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || '2099-12-31';
+    const { taxType, branchId } = req.query;
 
     try {
         let sql = `
             SELECT 
+                i.id as id,
                 i.invoice_date as date,
                 i.invoice_number as invoice_no,
                 u.username as customer_name,
@@ -226,7 +229,9 @@ router.get('/sales/customer-wise', authMiddleware, async (req, res) => {
  */
 router.get('/purchase/register', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate, taxType } = req.query;
+    const startDate = req.query.startDate || '2000-01-01';
+    const endDate = req.query.endDate || '2099-12-31';
+    const { taxType } = req.query;
 
     try {
         let sql = `
