@@ -199,6 +199,19 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS branch_id INTEGER;
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+            -- Invoice Line Items: all columns used by invoiceRoutes.js
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id);
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS tax_percent NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS cgst_rate NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS sgst_rate NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS igst_rate NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS cgst_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS sgst_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS igst_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS is_return BOOLEAN DEFAULT false;
+
             ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
