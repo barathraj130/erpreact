@@ -179,7 +179,26 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS urgency VARCHAR(20) DEFAULT 'Normal';
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP DEFAULT NOW();
             
+            -- Invoices: all extended columns used by invoiceRoutes.js INSERT
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS financial_month VARCHAR(20);
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sub_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cgst_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sgst_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS igst_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_type VARCHAR(20) DEFAULT 'INTRA_STATE';
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS return_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bundles_count INTEGER DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vehicle_number VARCHAR(50);
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS transportation_mode VARCHAR(50);
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS date_of_supply DATE;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reverse_charge VARCHAR(10) DEFAULT 'No';
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS broker_id INTEGER;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS broker_commission_rate NUMERIC(5,2);
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS branch_id INTEGER;
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
             ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
