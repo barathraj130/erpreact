@@ -192,8 +192,9 @@ const DEEP_SCENARIOS: TestCase[] = [
     id: "T2.3", name: "Verify Real Balance Safe", category: "Scenario 2", method: "GET", path: "/reports/sales/customer-wise?filterType=real",
     expectStatus: 200,
     verifyFn: async (rows, ctx) => {
-      const c = rows.find((r: any) => r.customer_name === "TEST_CUSTOMER_DEEP");
-      if (parseFloat(c.balance) !== 500000) return `FAIL: Real balance contaminated. Expected 5L, got ${c.balance}`;
+      const c = rows.find((r: any) => r.customer_name === ctx.customerName);
+      if (!c) return "FAIL: Customer not found in real report";
+      if (Math.abs(parseFloat(c.balance) - 500000) > 0.01) return `FAIL: Real balance contaminated. Expected 5L, got ${c.balance}`;
       return null;
     }
   },
