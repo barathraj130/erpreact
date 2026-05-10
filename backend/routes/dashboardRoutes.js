@@ -52,7 +52,6 @@ router.get('/summary', authMiddleware, async (req, res) => {
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
               AND bill_purpose != 'name_only'
-              AND is_deleted = false
         `;
         const salesRes = await db.pgGet(salesSql, [companyId]);
 
@@ -151,7 +150,6 @@ router.get('/kpis', authMiddleware, async (req, res) => {
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
               AND bill_purpose != 'name_only'
-              AND is_deleted = false
         `;
         const salesRes = await db.pgGet(salesSql, [companyId]);
 
@@ -161,7 +159,6 @@ router.get('/kpis', authMiddleware, async (req, res) => {
             FROM invoices 
             WHERE company_id = $1 AND ${branchFilter} 
               AND total_amount > paid_amount 
-              AND is_deleted = false
         `;
         const outstandingRes = await db.pgGet(outstandingSql, [companyId]);
 
@@ -229,7 +226,6 @@ router.get('/finance', authMiddleware, async (req, res) => {
             WHERE company_id = $1 AND ${branchFilter} 
               AND invoice_date >= CURRENT_DATE - INTERVAL '12 months'
               AND bill_purpose != 'name_only'
-              AND is_deleted = false
             GROUP BY DATE_TRUNC('month', invoice_date) 
             ORDER BY DATE_TRUNC('month', invoice_date) ASC
         `;

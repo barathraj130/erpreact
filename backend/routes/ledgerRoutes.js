@@ -171,7 +171,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             SELECT 
                 COALESCE(SUM(total_amount), 0) as total_invoice,
                 COALESCE(SUM(paid_amount), 0) as total_payments
-            FROM invoices WHERE company_id=$1 AND ${branchFilter} AND bill_purpose != 'name_only' AND is_deleted = false
+            FROM invoices WHERE company_id=$1 AND ${branchFilter} AND bill_purpose != 'name_only'
         `, queryParams);
         
         let totalSales = Number(invoiceRows[0]?.total_invoice || 0);
@@ -196,7 +196,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             }
         });
         const billRows = await db.pgAll(`
-            SELECT SUM(total_amount) as total FROM purchase_bills WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+            SELECT SUM(total_amount) as total FROM purchase_bills WHERE company_id=$1 AND ${branchFilter}
         `, queryParams);
         totalExpenses += Number(billRows[0]?.total || 0);
 
