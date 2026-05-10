@@ -346,7 +346,39 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
                   No branches found
                 </div>
               ) : (
-                branches.map(branch => (
+                <>
+                  {user?.role === 'admin' && (
+                    <button
+                      onClick={() => {
+                        // @ts-ignore
+                        setActiveBranch({ id: 'all', branch_name: 'All Branches', branch_code: 'ALL' });
+                        setBranchDropdownOpen(false);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        width: "100%",
+                        padding: "10px 14px",
+                        background: activeBranch?.id === 'all' ? "#f0f9ff" : "transparent",
+                        border: "none",
+                        borderBottom: "1px solid #f1f5f9",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: "0.82rem",
+                        fontWeight: activeBranch?.id === 'all' ? 700 : 500,
+                        color: activeBranch?.id === 'all' ? "#0284c7" : "#374151",
+                      }}
+                    >
+                      <FaBuilding style={{ opacity: 0.6 }} />
+                      <div>
+                        <div>All Branches (Consolidated)</div>
+                        <div style={{ fontSize: "0.72rem", color: "#9ca3af", fontWeight: 400 }}>GLOBAL VIEW</div>
+                      </div>
+                    </button>
+                  )}
+                  {branches.map(branch => (
+
                   <button
                     key={branch.id}
                     onClick={() => {
