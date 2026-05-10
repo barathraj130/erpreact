@@ -87,17 +87,40 @@ router.get('/report/:id', authMiddleware, async (req, res) => {
         console.error("Ledger report error:", err);
         res.status(500).json({ error: "Failed to fetch report" });
     }
-});
+});// Helper for branch filtering
+const getBranchFilter = (req) => {
+    const headerBranch = req.headers['x-branch-id'];
+    const userBranch = req.user.branch_id;
+    const role = req.user.role;
+
+    // If explicit header provided, use it
+    if (headerBranch && headerBranch !== 'all' && headerBranch !== 'null' && !isNaN(Number(headerBranch))) {
+        return { filter: 'branch_id = $2', params: [Number(headerBranch)] };
+    }
+
+    // If user is admin and no header, show ALL
+    if (role === 'admin') {
+        return { filter: '1=1', params: [] };
+    }
+
+    // For regular users, force their branch
+    if (userBranch) {
+        return { filter: 'branch_id = $2', params: [userBranch] };
+    }
+
+    // Fallback to ALL
+    return { filter: '1=1', params: [] };
+};
 
 router.get('/cash', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    let branchId = req.headers['x-branch-id'] || req.user.branch_id;
     const { startDate, endDate } = req.query;
+    const { filter: branchFilter, params: branchParams } = getBranchFilter(req);
 
     try {
-        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND branch_id = $2 AND is_deleted = false`;
-        let params = [companyId, branchId];
-        let pIndex = 3;
+        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
+        let params = [companyId, ...branchParams];
+        let pIndex = params.length + 1;
 
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
         if (endDate) { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
@@ -113,13 +136,13 @@ router.get('/cash', authMiddleware, async (req, res) => {
 
 router.get('/bank', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    let branchId = req.headers['x-branch-id'] || req.user.branch_id;
     const { startDate, endDate } = req.query;
+    const { filter: branchFilter, params: branchParams } = getBranchFilter(req);
 
     try {
-        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND branch_id = $2 AND is_deleted = false`;
-        let params = [companyId, branchId];
-        let pIndex = 3;
+        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
+        let params = [companyId, ...branchParams];
+        let pIndex = params.length + 1;
 
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
         if (endDate) { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
@@ -135,21 +158,11 @@ router.get('/bank', authMiddleware, async (req, res) => {
 
 router.get('/health-summary', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const branchId = req.headers['x-branch-id'] || req.user.branch_id;
+    const { filter: branchFilter, params: branchParams } = getBranchFilter(req);
+    const queryParams = [companyId, ...branchParams];
 
     try {
-
-        let branchFilter = 'branch_id = $2';
-        let queryParams = [companyId, branchId];
-
-        // If branchId is not a valid number or is null/undefined, show consolidated
-        if (!branchId || isNaN(Number(branchId)) || branchId === 'all' || branchId === 'null') {
-            branchFilter = '1=1';
-            queryParams = [companyId];
-        }
-
-        console.log(`📊 Health Summary [Co:${companyId} Br:${branchId}] using Filter: ${branchFilter}`);
-
+        console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
 
         const cashRows = await db.pgAll(`SELECT direction, SUM(amount) as total FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`, queryParams);
         let totalCash = 0;
@@ -166,29 +179,59 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             FROM invoices WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
         `, queryParams);
         
-        const totalSales = Number(invoiceRows[0]?.total_invoice || 0);
-        const totalPayments = Number(invoiceRows[0]?.total_payments || 0);
+        let totalSales = Number(invoiceRows[0]?.total_invoice || 0);
+        let totalPayments = Number(invoiceRows[0]?.total_payments || 0);
 
         const txRows = await db.pgAll(`
-            SELECT category, SUM(amount) as total
+            SELECT type, category, SUM(amount) as total
             FROM transactions
             WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
-            GROUP BY category
+            GROUP BY type, category
         `, queryParams);
 
         let totalExpenses = 0;
         txRows.forEach(r => {
-            if(r.category === 'EXPENSE') totalExpenses += Number(r.total);
+            const amt = Number(r.total);
+            if (['EXPENSE', 'EXPENSE_PAYMENT', 'PURCHASE'].includes(r.type)) {
+                totalExpenses += amt;
+            }
+            // Add non-invoice income to totalSales
+            if (['RECEIPT', 'INCOME'].includes(r.type)) {
+                totalSales += amt;
+            }
         });
-
         const billRows = await db.pgAll(`
             SELECT SUM(total_amount) as total FROM purchase_bills WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
         `, queryParams);
         totalExpenses += Number(billRows[0]?.total || 0);
 
+
+
+        // Aggregation for Daily Chart (Current Month)
+        const chartRows = await db.pgAll(`
+            SELECT 
+                DATE(date) as day,
+                SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END) as income,
+                SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) as expense
+            FROM (
+                SELECT date, amount, direction FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+                UNION ALL
+                SELECT date, amount, direction FROM bank_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+            ) as combined
+            WHERE date >= date_trunc('month', CURRENT_DATE)
+            GROUP BY DATE(date)
+            ORDER BY DATE(date) ASC
+        `, queryParams);
+
         res.json({
-            baseMetrics: { totalCash, totalBank, totalSales, totalPayments, totalExpenses }
+            baseMetrics: { totalCash, totalBank, totalSales, totalPayments, totalExpenses },
+            chartData: chartRows.map(r => ({
+                date: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+                inflow: Number(r.income),
+                outflow: Number(r.expense)
+            }))
         });
+
     } catch (err) {
         console.error("Health summary error:", err);
         res.status(500).json({ error: "Failed to calculate health summary" });
