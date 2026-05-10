@@ -305,7 +305,7 @@ const AddProductModal: React.FC<Props> = ({
         location: productToEdit.location || "",
       });
       if (productToEdit.image_url) {
-        setImagePreview(productToEdit.image_url.startsWith('http') ? productToEdit.image_url : `http://${window.location.hostname}:3001${productToEdit.image_url}`);
+        setImagePreview(productToEdit.image_url.startsWith('http') ? productToEdit.image_url : `http://${window.location.hostname}:3000${productToEdit.image_url}`);
       }
     }
   }, [productToEdit]);

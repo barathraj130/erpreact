@@ -20,10 +20,13 @@ export interface Product {
   min_stock: number;
   barcode: string | null;
   image_url?: string | null;
+  category?: string | null;
+  location?: string | null;
   is_active: number;
   updated_at: string;
   created_at: string;
 }
+
 
 export interface ScannedProductFields {
   product_name: string;

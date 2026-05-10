@@ -138,13 +138,18 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     const branchId = req.headers['x-branch-id'] || req.user.branch_id;
 
     try {
+
         let branchFilter = 'branch_id = $2';
         let queryParams = [companyId, branchId];
 
-        if (!branchId || branchId === 'all') {
+        // If branchId is not a valid number or is null/undefined, show consolidated
+        if (!branchId || isNaN(Number(branchId)) || branchId === 'all' || branchId === 'null') {
             branchFilter = '1=1';
             queryParams = [companyId];
         }
+
+        console.log(`📊 Health Summary [Co:${companyId} Br:${branchId}] using Filter: ${branchFilter}`);
+
 
         const cashRows = await db.pgAll(`SELECT direction, SUM(amount) as total FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`, queryParams);
         let totalCash = 0;

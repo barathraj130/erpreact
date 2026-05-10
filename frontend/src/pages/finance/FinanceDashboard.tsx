@@ -3,6 +3,8 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { motion } from "framer-motion";
 import "./Finance.css";
 import { FaWallet, FaUniversity, FaChartLine, FaHistory, FaShieldAlt, FaCoins } from "react-icons/fa";
+import { apiFetch } from "../../utils/api";
+
 
 const FinanceDashboard: React.FC = () => {
   const [metrics, setMetrics] = useState({
@@ -28,12 +30,7 @@ const FinanceDashboard: React.FC = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:3001/api"}/ledger/health-summary`, {
-          headers: {
-            "Authorization": `Bearer ${localStorage.getItem("erp-token")}`,
-            "x-branch-id": localStorage.getItem("active-branch-id") || ""
-          }
-        });
+        const response = await apiFetch("/ledger/health-summary");
 
         if (response.ok) {
           const data = await response.json();
@@ -49,9 +46,7 @@ const FinanceDashboard: React.FC = () => {
           setDebugInfo(data.debugInfo);
         }
 
-        const finRes = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:3001/api"}/loans/summary`, {
-          headers: { "Authorization": `Bearer ${localStorage.getItem("erp-token")}` }
-        });
+        const finRes = await apiFetch("/loans/summary");
         if (finRes.ok) {
           const finData = await finRes.json();
           setFinanceSummary(finData);

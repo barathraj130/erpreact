@@ -175,7 +175,7 @@ const Inventory: React.FC = () => {
                     <div style={{ width: "64px", height: "64px", borderRadius: "12px", overflow: "hidden", background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
                       {p.image_url ? (
                         <img 
-                          src={p.image_url.startsWith('http') ? p.image_url : `http://${window.location.hostname}:3001${p.image_url}`} 
+                          src={p.image_url.startsWith('http') ? p.image_url : `http://${window.location.hostname}:3000${p.image_url}`} 
                           style={{ width: "100%", height: "100%", objectFit: "cover" }} 
                         />
                       ) : (
@@ -242,7 +242,7 @@ const Inventory: React.FC = () => {
                           <div style={{ width: "52px", height: "52px", borderRadius: "12px", overflow: "hidden", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
                             {p.image_url ? (
                               <img 
-                                src={p.image_url.startsWith('http') ? p.image_url : `http://${window.location.hostname}:3001${p.image_url}`} 
+                                src={p.image_url.startsWith('http') ? p.image_url : `http://${window.location.hostname}:3000${p.image_url}`} 
                                 style={{ width: "100%", height: "100%", objectFit: "cover" }} 
                               />
                             ) : (

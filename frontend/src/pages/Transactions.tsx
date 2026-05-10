@@ -102,7 +102,7 @@ const Transactions: React.FC = () => {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/transactions`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+        headers: { "Authorization": `Bearer ${localStorage.getItem("erp-token")}` },
         body: data
       });
       if (res.ok) {
@@ -208,7 +208,7 @@ const Transactions: React.FC = () => {
                       </td>
                       <td>
                         <span className={`status-badge status-${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? 'success' : 'error'}`}>
-                          {tx.type.replace(/_/g, ' ')}
+                          {tx.type?.replace(/_/g, ' ') || 'GENERAL'}
                         </span>
                       </td>
                       <td className="text-center">
@@ -219,7 +219,7 @@ const Transactions: React.FC = () => {
                       </td>
                       <td className="text-body">{tx.description}</td>
                       <td className={`currency-cell ${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? 'positive' : 'negative'}`}>
-                         {['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? '+ ' : '- '} {Number(tx.amount).toLocaleString()}
+                         {['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? '+ ' : '- '} {Number(tx.amount || 0).toLocaleString()}
                       </td>
                       <td className="text-center">
                          <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
