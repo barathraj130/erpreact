@@ -23,7 +23,7 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
             WHERE company_id = $1 AND bill_purpose != 'name_only'
         `;
         const f = await db.pgGet(fulfillmentSql, [companyId]);
-        const fulfillment_rate = f.total_count > 0 ? (f.paid_count / f.total_count) * 100 : 0;
+        const fulfillment_rate = (f?.total_count || 0) > 0 ? (f.paid_count / f.total_count) * 100 : 0;
 
         // 2. Inventory Movement (Rotation)
         const rotationSql = `
@@ -34,7 +34,7 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
             WHERE company_id = $1 AND date >= DATE_TRUNC('month', CURRENT_DATE)
         `;
         const r = await db.pgGet(rotationSql, [companyId]);
-        const rotation_rate = r.inflow > 0 ? (r.outflow / r.inflow) * 100 : 0;
+        const rotation_rate = (r?.inflow || 0) > 0 ? (r.outflow / r.inflow) * 100 : 0;
 
         // 3. Operational Health Score Calculation (0-100)
         // Weightage: Fulfillment (30%), Rotation (25%), Procurement (25%), Liquidity (20%)
@@ -60,12 +60,12 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
             health_score: Math.min(health_score, 100).toFixed(1),
             fulfillment: {
                 rate: fulfillment_rate.toFixed(1),
-                total_billed: f.total_amt,
-                total_collected: f.paid_amt
+                total_billed: f?.total_amt || 0,
+                total_collected: f?.paid_amt || 0
             },
             inventory: {
-                inflow: r.inflow,
-                outflow: r.outflow,
+                inflow: r?.inflow || 0,
+                outflow: r?.outflow || 0,
                 rotation: rotation_rate.toFixed(1)
             },
             supplier_performance: suppliers

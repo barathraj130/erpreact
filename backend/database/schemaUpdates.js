@@ -235,6 +235,17 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS date DATE; -- Some routes use 'date', some use 'transaction_date'
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category VARCHAR(100);
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS meta JSONB; -- Required by customerLedgerService.js
+
+            -- Attendance unique constraint for ON CONFLICT
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'attendance_emp_date_unique') THEN
+                    ALTER TABLE attendance ADD CONSTRAINT attendance_emp_date_unique UNIQUE (employee_id, date);
+                END IF;
+            END $$;
+
+            ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS current_balance NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE employees ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active';
         `);
 
         console.log("✅ Schema Updates Completed.");

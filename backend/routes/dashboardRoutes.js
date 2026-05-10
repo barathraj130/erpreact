@@ -38,14 +38,14 @@ router.get('/summary', authMiddleware, async (req, res) => {
         const reqRes = await db.pgGet(reqSql, [companyId]);
 
         res.json({
-            available_cash: parseFloat(cashRes.total),
-            total_monthly_sales: parseFloat(salesRes.tax_sales || 0) + parseFloat(salesRes.anon_sales || 0),
+            available_cash: parseFloat(cashRes?.total || 0),
+            total_monthly_sales: parseFloat(salesRes?.tax_sales || 0) + parseFloat(salesRes?.anon_sales || 0),
             sales_breakdown: {
-                tax_sales: parseFloat(salesRes.tax_sales || 0),
-                anon_sales: parseFloat(salesRes.anon_sales || 0),
-                name_sake_sales: parseFloat(salesRes.name_sake_sales || 0)
+                tax_sales: parseFloat(salesRes?.tax_sales || 0),
+                anon_sales: parseFloat(salesRes?.anon_sales || 0),
+                name_sake_sales: parseFloat(salesRes?.name_sake_sales || 0)
             },
-            branch_requests_pending: parseInt(reqRes.pending || 0)
+            branch_requests_pending: parseInt(reqRes?.pending || 0)
         });
     } catch (err) {
         console.error("Dashboard summary error:", err);
