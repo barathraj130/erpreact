@@ -131,13 +131,13 @@ router.get('/expense-breakdown', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 ca.name as category,
-                SUM(ABS(l.amount)) as amount
+                SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) as amount
             FROM ledger_entries l
             JOIN chart_of_accounts ca ON l.account_id = ca.id
             WHERE l.company_id = $1 
               AND ${branchFilter.replace('branch_id', 'l.branch_id')}
               AND ca.account_type = 'EXPENSE'
-              AND l.date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND l.entry_date >= DATE_TRUNC('month', CURRENT_DATE)
             GROUP BY ca.name
             ORDER BY amount DESC
         `;
@@ -222,13 +222,13 @@ router.get('/finance', authMiddleware, async (req, res) => {
         ]);
 
         const expenseSql = `
-            SELECT ca.name as category, SUM(ABS(l.amount)) as amount
+            SELECT ca.name as category, SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) as amount
             FROM ledger_entries l
             JOIN chart_of_accounts ca ON l.account_id = ca.id
             WHERE l.company_id = $1 
               AND ${branchFilter.replace('branch_id', 'l.branch_id')}
               AND ca.account_type = 'EXPENSE'
-              AND l.date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND l.entry_date >= DATE_TRUNC('month', CURRENT_DATE)
             GROUP BY ca.name
         `;
         const expenses = await db.pgAll(expenseSql, [companyId]);
