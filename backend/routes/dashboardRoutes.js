@@ -75,7 +75,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
 
     } catch (err) {
         console.error("Dashboard summary error:", err);
-        res.status(500).json({ error: "Failed to fetch dashboard summary", details: err.message });
+        res.status(500).json({ error: "Failed to fetch dashboard summary" });
     }
 });
 
@@ -176,7 +176,7 @@ router.get('/kpis', authMiddleware, async (req, res) => {
         });
     } catch (err) {
         console.error("Dashboard KPIs error:", err);
-        res.status(500).json({ error: "Failed to fetch KPIs", details: err.message });
+        res.status(500).json({ error: "Failed to fetch KPIs" });
     }
 });
 
