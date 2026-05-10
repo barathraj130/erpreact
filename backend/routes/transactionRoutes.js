@@ -9,12 +9,29 @@ const router = express.Router();
  * Direct transaction routes
  */
 
+// Helper for branch filtering
+const getBranchFilter = (req) => {
+    const headerBranch = req.headers['x-branch-id'];
+    const role = req.user.role;
+    const userBranch = req.user.branch_id;
+
+    if (headerBranch && headerBranch !== 'all' && headerBranch !== 'null' && !isNaN(Number(headerBranch))) {
+        return 't.branch_id = ' + Number(headerBranch);
+    }
+    if (role === 'admin' && (!headerBranch || headerBranch === 'all')) {
+        return '1=1';
+    }
+    if (userBranch) {
+        return 't.branch_id = ' + userBranch;
+    }
+    return '1=1';
+};
+
 // GET /api/transactions - Get all transactions (with optional filters)
 router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const { lender_id, user_id, type, category } = req.query;
-
-    console.log('📊 Transaction API called:', { companyId, lender_id, user_id, type, category });
+    const branchFilter = getBranchFilter(req);
 
     try {
         let sql = `
@@ -26,8 +43,9 @@ router.get('/', authMiddleware, async (req, res) => {
             LEFT JOIN lenders l ON t.lender_id = l.id
             LEFT JOIN users u ON t.user_id = u.id
             LEFT JOIN ledgers ledg ON t.ledger_id = ledg.id
-            WHERE t.company_id = $1
+            WHERE t.company_id = $1 AND ${branchFilter}
         `;
+
         const params = [companyId];
         let paramCount = 2;
 

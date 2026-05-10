@@ -156,7 +156,9 @@ const Dashboard: React.FC = () => {
             <p className="db-page-sub">
               {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
               {activeBranch && !isMobile ? ` · ${activeBranch.branch_name}` : ""}
+              <span style={{ marginLeft: '10px', fontSize: '10px', opacity: 0.5 }}>v2.4.1-STABLE</span>
             </p>
+
           </div>
         </div>
 

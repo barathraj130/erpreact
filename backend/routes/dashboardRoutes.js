@@ -149,4 +149,146 @@ router.get('/expense-breakdown', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 📊 DASHBOARD KPIs (Used by Dashboard.tsx)
+ */
+router.get('/kpis', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { filter: branchFilter } = getBranchFilter(req);
+
+    try {
+        const salesSql = `
+            SELECT 
+                SUM(total_amount) as monthly_sales,
+                SUM(CASE WHEN invoice_type = 'TAX' THEN total_amount ELSE 0 END) as tax_amount,
+                SUM(CASE WHEN invoice_type = 'NON_TAX' THEN total_amount ELSE 0 END) as anon_amount
+            FROM invoices
+            WHERE company_id = $1 AND ${branchFilter}
+              AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND is_deleted = false
+        `;
+        const salesRes = await db.pgGet(salesSql, [companyId]);
+
+        const outstandingSql = `
+            SELECT 
+                SUM(total_amount - paid_amount) as outstanding_receivables
+            FROM invoices 
+            WHERE company_id = $1 AND ${branchFilter} AND status != 'PAID' AND is_deleted = false
+        `;
+        const outstandingRes = await db.pgGet(outstandingSql, [companyId]);
+
+        res.json({
+            success: true,
+            data: {
+                monthly_sales: parseFloat(salesRes?.monthly_sales || 0),
+                sales_breakdown: {
+                    tax_amount: parseFloat(salesRes?.tax_amount || 0),
+                    anon_amount: parseFloat(salesRes?.anon_amount || 0)
+                },
+                outstanding_receivables: parseFloat(outstandingRes?.outstanding_receivables || 0),
+                outstanding_payables: 0 // Placeholder
+            }
+        });
+    } catch (err) {
+        console.error("Dashboard KPIs error:", err);
+        res.status(500).json({ error: "Failed to fetch KPIs" });
+    }
+});
+
+/**
+ * 💰 DASHBOARD FINANCE (Used by Dashboard.tsx)
+ */
+router.get('/finance', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { filter: branchFilter } = getBranchFilter(req);
+
+    try {
+        const cashSql = `
+            SELECT 
+                SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance
+            FROM cash_ledger
+            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
+        `;
+        const bankSql = `
+            SELECT 
+                SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance
+            FROM bank_ledger
+            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
+        `;
+        
+        const [cashRes, bankRes] = await Promise.all([
+            db.pgGet(cashSql, [companyId]),
+            db.pgGet(bankSql, [companyId])
+        ]);
+
+        const expenseSql = `
+            SELECT ca.name as category, SUM(ABS(l.amount)) as amount
+            FROM ledger_entries l
+            JOIN chart_of_accounts ca ON l.account_id = ca.id
+            WHERE l.company_id = $1 
+              AND ${branchFilter.replace('branch_id', 'l.branch_id')}
+              AND ca.account_type = 'EXPENSE'
+              AND l.date >= DATE_TRUNC('month', CURRENT_DATE)
+            GROUP BY ca.name
+        `;
+        const expenses = await db.pgAll(expenseSql, [companyId]);
+
+        const trendSql = `
+            SELECT 
+                DATE_TRUNC('month', invoice_date) as month,
+                SUM(total_amount) as sales
+            FROM invoices
+            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
+            GROUP BY month ORDER BY month DESC LIMIT 6
+        `;
+        const trend = await db.pgAll(trendSql, [companyId]);
+
+        res.json({
+            success: true,
+            data: {
+                summary: {
+                    cash_balance: parseFloat(cashRes?.balance || 0),
+                    total_income: parseFloat(bankRes?.balance || 0),
+                    net_profit: parseFloat(cashRes?.balance || 0) + parseFloat(bankRes?.balance || 0)
+                },
+                expenses_by_category: expenses,
+                monthly_trend: trend.reverse()
+            }
+        });
+    } catch (err) {
+        console.error("Dashboard finance error:", err);
+        res.status(500).json({ error: "Failed to fetch finance data" });
+    }
+});
+
+/**
+ * 🏢 BRANCH OVERVIEW
+ */
+router.get('/branch-overview', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const branches = await db.pgAll(`
+            SELECT b.id, b.branch_name, b.branch_code,
+                   (SELECT COUNT(*) FROM products p WHERE p.company_id = $1) as total_products,
+                   (SELECT COUNT(*) FROM products p WHERE p.company_id = $1 AND p.stock_quantity < 10) as low_stock_count
+            FROM branches b
+            WHERE b.company_id = $1
+        `, [companyId]);
+
+        res.json({
+            success: true,
+            data: {
+                pending_requests_count: 0,
+                branch_metrics: branches.map(b => ({
+                    ...b,
+                    stock_value: 0
+                }))
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch branch overview" });
+    }
+});
+
+
 export default router;
