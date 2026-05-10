@@ -38,17 +38,30 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Set default branch if none selected
         const savedBranchId = localStorage.getItem("active-branch-id");
-        if (savedBranchId) {
+        if (savedBranchId === 'all' && user?.role === 'admin') {
+          // @ts-ignore
+          setActiveBranchState({ id: 'all', branch_name: 'All Branches', branch_code: 'ALL' });
+        } else if (savedBranchId) {
           const found = data.find(
             (b: Branch) => b.id.toString() === savedBranchId,
           );
           if (found) {
             setActiveBranchState(found);
           } else if (data.length > 0) {
-            setActiveBranch(data[0]);
+             if (user?.role === 'admin') {
+                // @ts-ignore
+                setActiveBranch({ id: 'all', branch_name: 'All Branches', branch_code: 'ALL' });
+             } else {
+                setActiveBranch(data[0]);
+             }
           }
         } else if (data.length > 0) {
-          setActiveBranch(data[0]);
+          if (user?.role === 'admin') {
+            // @ts-ignore
+            setActiveBranch({ id: 'all', branch_name: 'All Branches', branch_code: 'ALL' });
+          } else {
+            setActiveBranch(data[0]);
+          }
         }
       }
     } catch (err) {
@@ -56,6 +69,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({
     } finally {
       setIsLoadingBranches(false);
     }
+
   };
 
   const setActiveBranch = (branch: Branch) => {

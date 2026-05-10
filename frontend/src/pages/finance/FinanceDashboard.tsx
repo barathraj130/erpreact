@@ -34,6 +34,7 @@ const FinanceDashboard: React.FC = () => {
 
         if (response.ok) {
           const data = await response.json();
+          console.log("📊 Finance Dashboard Data:", data);
           setMetrics({
             totalSales: data.baseMetrics?.totalSales || 0,
             totalExpenses: data.baseMetrics?.totalExpenses || 0,
@@ -43,8 +44,9 @@ const FinanceDashboard: React.FC = () => {
             totalBank: data.baseMetrics?.totalBank || 0,
           });
           setChartData(data.chartData || []);
-          setDebugInfo(data.debugInfo);
+          setDebugInfo(data.debugInfo || { companyId: '?', branchId: '?', filter: '?' });
         }
+
 
         const finRes = await apiFetch("/loans/summary");
         if (finRes.ok) {

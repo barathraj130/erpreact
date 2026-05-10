@@ -577,6 +577,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
             <div className="admin-info-v2" style={{ flex: 1, minWidth: 0 }}>
               <div className="admin-name-v2">{user?.name || "demo_user"}</div>
               <div className="admin-role-v2">{user?.role || "Admin"}</div>
+              <div style={{ fontSize: "9px", opacity: 0.5, marginTop: "2px" }}>v2.4.1-PROD-STABLE</div>
             </div>
           )}
           {!isCollapsed && (
@@ -586,6 +587,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
           )}
         </div>
       </div>
+
     </aside>
     </>
   );
