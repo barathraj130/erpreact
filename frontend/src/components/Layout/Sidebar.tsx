@@ -350,12 +350,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
                   {user?.role === "admin" && (
                     <button
                       onClick={() => {
-                        // @ts-ignore
                         setActiveBranch({
                           id: "all",
                           branch_name: "All Branches",
                           branch_code: "ALL",
-                        });
+                        } as any);
+
                         setBranchDropdownOpen(false);
                       }}
                       style={{
