@@ -2,14 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy backend package files ONLY (not root package.json which has broken install script)
+COPY backend/package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install production dependencies
+RUN npm install --omit=dev
 
-# Copy application code
-COPY . .
+# Copy backend source code
+COPY backend/ .
 
 # Create necessary directories
 RUN mkdir -p uploads/signatures uploads/products uploads/reports backups logs
@@ -18,9 +18,8 @@ RUN mkdir -p uploads/signatures uploads/products uploads/reports backups logs
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD node --eval "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
-
 
 # Start application
 CMD ["node", "server.js"]
