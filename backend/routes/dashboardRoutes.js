@@ -9,44 +9,83 @@ const router = express.Router();
  * 📊 DASHBOARD SUMMARY
  * Separation of Real TAX, Real NON-TAX, and Name-sake revenue
  */
+// Helper for branch filtering (matching ledgerRoutes.js)
+const getBranchFilter = (req) => {
+    const headerBranch = req.headers['x-branch-id'];
+    const userBranch = req.user.branch_id;
+    const role = req.user.role;
+
+    if (headerBranch && headerBranch !== 'all' && headerBranch !== 'null' && !isNaN(Number(headerBranch))) {
+        return { filter: 'branch_id = ' + Number(headerBranch), params: [] };
+    }
+    if (role === 'admin' && (!headerBranch || headerBranch === 'all')) {
+        return { filter: '1=1', params: [] };
+    }
+    if (userBranch) {
+        return { filter: 'branch_id = ' + userBranch, params: [] };
+    }
+    return { filter: '1=1', params: [] };
+};
+
 router.get('/summary', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const branchId = req.user.branch_id;
-    const isMain = req.user.role === 'admin';
+    const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        let branchFilter = isMain ? "" : "AND branch_id = " + branchId;
+        // 1. Available Cash (Aggregate from cash_ledger and bank_ledger for accuracy)
+        const cashSql = `SELECT direction, SUM(amount) as total FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`;
+        const bankSql = `SELECT direction, SUM(amount) as total FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`;
+        
+        const [cashRes, bankRes] = await Promise.all([
+            db.pgAll(cashSql, [companyId]),
+            db.pgAll(bankSql, [companyId])
+        ]);
 
-        // 1. Available Cash (Live)
-        const cashSql = `SELECT COALESCE(SUM(current_balance), 0) as total FROM chart_of_accounts WHERE company_id = $1 AND account_code LIKE '10%'`;
-        const cashRes = await db.pgGet(cashSql, [companyId]);
+        let availableCash = 0;
+        cashRes.forEach(r => { if(r.direction === 'in') availableCash += Number(r.total); else availableCash -= Number(r.total); });
+        bankRes.forEach(r => { if(r.direction === 'in') availableCash += Number(r.total); else availableCash -= Number(r.total); });
 
-        // 2. Sales Breakdown (MTD)
+        // 2. Sales Breakdown (MTD) - Include both Invoices AND Receipts/Income Transactions
         const salesSql = `
             SELECT 
                 SUM(CASE WHEN invoice_type = 'TAX' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as tax_sales,
                 SUM(CASE WHEN invoice_type = 'NON_TAX' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as anon_sales,
                 SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END) as name_sake_sales
             FROM invoices
-            WHERE company_id = $1 ${branchFilter}
+            WHERE company_id = $1 AND ${branchFilter}
               AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
         `;
         const salesRes = await db.pgGet(salesSql, [companyId]);
+
+        const txIncomeSql = `
+            SELECT SUM(amount) as total
+            FROM transactions
+            WHERE company_id = $1 AND ${branchFilter}
+              AND type IN ('RECEIPT', 'INCOME')
+              AND transaction_date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND is_deleted = false
+        `;
+        const txIncomeRes = await db.pgGet(txIncomeSql, [companyId]);
+
+        const totalMonthlySales = parseFloat(salesRes?.tax_sales || 0) + 
+                                  parseFloat(salesRes?.anon_sales || 0) + 
+                                  parseFloat(txIncomeRes?.total || 0);
 
         // 3. Pending Branch Requests
         const reqSql = `SELECT COUNT(*) as pending FROM inventory_movements WHERE company_id = $1 AND type = 'Transfer' AND note LIKE '%Pending%'`;
         const reqRes = await db.pgGet(reqSql, [companyId]);
 
         res.json({
-            available_cash: parseFloat(cashRes?.total || 0),
-            total_monthly_sales: parseFloat(salesRes?.tax_sales || 0) + parseFloat(salesRes?.anon_sales || 0),
+            available_cash: availableCash,
+            total_monthly_sales: totalMonthlySales,
             sales_breakdown: {
                 tax_sales: parseFloat(salesRes?.tax_sales || 0),
-                anon_sales: parseFloat(salesRes?.anon_sales || 0),
+                anon_sales: parseFloat(salesRes?.anon_sales || 0) + parseFloat(txIncomeRes?.total || 0),
                 name_sake_sales: parseFloat(salesRes?.name_sake_sales || 0)
             },
             branch_requests_pending: parseInt(reqRes?.pending || 0)
         });
+
     } catch (err) {
         console.error("Dashboard summary error:", err);
         res.status(500).json({ error: "Failed to fetch dashboard summary" });
@@ -58,6 +97,8 @@ router.get('/summary', authMiddleware, async (req, res) => {
  */
 router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    const { filter: branchFilter } = getBranchFilter(req);
+
     try {
         const sql = `
             SELECT 
@@ -65,13 +106,14 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
                 SUM(CASE WHEN bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as real_revenue,
                 SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END) as name_sake_revenue
             FROM invoices
-            WHERE company_id = $1 AND invoice_date >= CURRENT_DATE - INTERVAL '12 months'
+            WHERE company_id = $1 AND ${branchFilter} AND invoice_date >= CURRENT_DATE - INTERVAL '12 months'
             GROUP BY month, DATE_TRUNC('month', invoice_date)
             ORDER BY DATE_TRUNC('month', invoice_date) ASC
         `;
         const trend = await db.pgAll(sql, [companyId]);
         res.json(trend);
     } catch (err) {
+        console.error("Trend error:", err);
         res.status(500).json({ error: "Failed to fetch sales trend" });
     }
 });
@@ -81,9 +123,9 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
  */
 router.get('/expense-breakdown', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    const { filter: branchFilter } = getBranchFilter(req);
+
     try {
-        // Typically fetching from ledger entries or specialized expense table
-        // For now, grouping by transaction description categories or expense-type accounts
         const sql = `
             SELECT 
                 ca.name as category,
@@ -91,6 +133,7 @@ router.get('/expense-breakdown', authMiddleware, async (req, res) => {
             FROM ledger_entries l
             JOIN chart_of_accounts ca ON l.account_id = ca.id
             WHERE l.company_id = $1 
+              AND ${branchFilter.replace('branch_id', 'l.branch_id')}
               AND ca.account_type = 'EXPENSE'
               AND l.date >= DATE_TRUNC('month', CURRENT_DATE)
             GROUP BY ca.name
@@ -99,6 +142,7 @@ router.get('/expense-breakdown', authMiddleware, async (req, res) => {
         const expenses = await db.pgAll(sql, [companyId]);
         res.json(expenses);
     } catch (err) {
+        console.error("Expense breakdown error:", err);
         res.status(500).json({ error: "Failed to fetch expense breakdown" });
     }
 });
