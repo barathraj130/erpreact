@@ -56,7 +56,7 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/groups', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
-        const groups = await db.pgAll('SELECT * FROM ledger_groups WHERE company_id = $1 AND is_deleted = false ORDER BY name', [companyId]);
+        const groups = await db.pgAll('SELECT * FROM ledger_groups WHERE company_id = $1 ORDER BY name', [companyId]);
         res.json(groups);
     } catch (error) {
         console.error("Error fetching ledger groups:", error.message);
@@ -69,12 +69,12 @@ router.get('/report/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     
     try {
-        const ledger = await db.pgGet(`SELECT * FROM ledgers WHERE id = $1 AND company_id = $2 AND is_deleted = false`, [id, companyId]);
+        const ledger = await db.pgGet(`SELECT * FROM ledgers WHERE id = $1 AND company_id = $2`, [id, companyId]);
         if (!ledger) return res.status(404).json({ error: "Ledger not found" });
 
         const transactions = await db.pgAll(`
             SELECT * FROM transactions 
-            WHERE ledger_id = $1 AND company_id = $2 AND is_deleted = false
+            WHERE ledger_id = $1 AND company_id = $2
             ORDER BY transaction_date ASC, created_at ASC
         `, [id, companyId]);
 
@@ -112,7 +112,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
+        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
         const params = [companyId];
 
         let pIndex = params.length + 1;
@@ -135,7 +135,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
+        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
         const params = [companyId];
 
         let pIndex = params.length + 1;
@@ -161,10 +161,10 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     try {
         console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
 
-        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false`, queryParams);
+        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalCash = Number(cashRows?.balance || 0);
 
-        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false`, queryParams);
+        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalBank = Number(bankRows?.balance || 0);
 
         const invoiceRows = await db.pgAll(`
@@ -180,7 +180,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
         const txRows = await db.pgAll(`
             SELECT type, category, SUM(amount) as total
             FROM transactions
-            WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+            WHERE company_id=$1 AND ${branchFilter}
             GROUP BY type, category
         `, queryParams);
 
@@ -209,9 +209,9 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
                 SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END) as income,
                 SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) as expense
             FROM (
-                SELECT date, amount, direction FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+                SELECT date, amount, direction FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}
                 UNION ALL
-                SELECT date, amount, direction FROM bank_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+                SELECT date, amount, direction FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}
             ) as combined
             WHERE date >= date_trunc('month', CURRENT_DATE)
             GROUP BY DATE(date)

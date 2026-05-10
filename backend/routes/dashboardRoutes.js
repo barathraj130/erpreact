@@ -33,8 +33,8 @@ router.get('/summary', authMiddleware, async (req, res) => {
 
     try {
         // 1. Available Cash (cash_ledger + bank_ledger net balance)
-        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
-        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
+        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
         
         const [cashRes, bankRes] = await Promise.all([
             db.pgGet(cashSql, [companyId]),
@@ -192,13 +192,13 @@ router.get('/finance', authMiddleware, async (req, res) => {
             SELECT 
                 SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance
             FROM cash_ledger
-            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
+            WHERE company_id = $1 AND ${branchFilter}
         `;
         const bankSql = `
             SELECT 
                 SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END) as balance
             FROM bank_ledger
-            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
+            WHERE company_id = $1 AND ${branchFilter}
         `;
         
         const [cashRes, bankRes] = await Promise.all([
