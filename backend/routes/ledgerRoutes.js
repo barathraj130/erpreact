@@ -87,39 +87,34 @@ router.get('/report/:id', authMiddleware, async (req, res) => {
         console.error("Ledger report error:", err);
         res.status(500).json({ error: "Failed to fetch report" });
     }
-});// Helper for branch filtering
+});// Helper for branch filtering (centralized)
 const getBranchFilter = (req) => {
     const headerBranch = req.headers['x-branch-id'];
-    const userBranch = req.user.branch_id;
     const role = req.user.role;
+    const userBranch = req.user.branch_id;
 
-    // If explicit header provided, use it
     if (headerBranch && headerBranch !== 'all' && headerBranch !== 'null' && !isNaN(Number(headerBranch))) {
-        return { filter: 'branch_id = $2', params: [Number(headerBranch)] };
+        return { filter: 'branch_id = ' + Number(headerBranch), branchId: Number(headerBranch) };
     }
-
-    // If user is admin and no header, show ALL
-    if (role === 'admin') {
-        return { filter: '1=1', params: [] };
+    if (role === 'admin' && (!headerBranch || headerBranch === 'all')) {
+        return { filter: '1=1', branchId: 'ALL' };
     }
-
-    // For regular users, force their branch
     if (userBranch) {
-        return { filter: 'branch_id = $2', params: [userBranch] };
+        return { filter: 'branch_id = ' + userBranch, branchId: userBranch };
     }
-
-    // Fallback to ALL
-    return { filter: '1=1', params: [] };
+    return { filter: '1=1', branchId: 'ALL' };
 };
+
 
 router.get('/cash', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const { startDate, endDate } = req.query;
-    const { filter: branchFilter, params: branchParams } = getBranchFilter(req);
+    const { filter: branchFilter } = getBranchFilter(req);
 
     try {
         let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
-        let params = [companyId, ...branchParams];
+        const params = [companyId];
+
         let pIndex = params.length + 1;
 
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
@@ -137,11 +132,12 @@ router.get('/cash', authMiddleware, async (req, res) => {
 router.get('/bank', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const { startDate, endDate } = req.query;
-    const { filter: branchFilter, params: branchParams } = getBranchFilter(req);
+    const { filter: branchFilter } = getBranchFilter(req);
 
     try {
         let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
-        let params = [companyId, ...branchParams];
+        const params = [companyId];
+
         let pIndex = params.length + 1;
 
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
@@ -158,8 +154,9 @@ router.get('/bank', authMiddleware, async (req, res) => {
 
 router.get('/health-summary', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { filter: branchFilter, params: branchParams } = getBranchFilter(req);
-    const queryParams = [companyId, ...branchParams];
+    const { filter: branchFilter, branchId } = getBranchFilter(req);
+    const queryParams = [companyId];
+
 
     try {
         console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
@@ -226,11 +223,19 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
         res.json({
             baseMetrics: { totalCash, totalBank, totalSales, totalPayments, totalExpenses },
             chartData: chartRows.map(r => ({
-                date: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-                inflow: Number(r.income),
-                outflow: Number(r.expense)
-            }))
+                month: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+                sales: Number(r.income), // For the sales vs expenses chart
+                expenses: Number(r.expense),
+                payments: Number(r.income), // For the cash flow trend chart
+            })),
+            debugInfo: {
+                companyId,
+                branchId: branchId || 'ALL',
+                filter: branchFilter
+            }
+
         });
+
 
     } catch (err) {
         console.error("Health summary error:", err);
