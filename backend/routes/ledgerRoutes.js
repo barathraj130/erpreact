@@ -161,19 +161,17 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     try {
         console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
 
-        const cashRows = await db.pgAll(`SELECT direction, SUM(amount) as total FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`, queryParams);
-        let totalCash = 0;
-        cashRows.forEach(r => { if(r.direction==='in') totalCash += Number(r.total); else totalCash -= Number(r.total); });
+        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false`, queryParams);
+        let totalCash = Number(cashRows?.balance || 0);
 
-        const bankRows = await db.pgAll(`SELECT direction, SUM(amount) as total FROM bank_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`, queryParams);
-        let totalBank = 0;
-        bankRows.forEach(r => { if(r.direction==='in') totalBank += Number(r.total); else totalBank -= Number(r.total); });
+        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false`, queryParams);
+        let totalBank = Number(bankRows?.balance || 0);
 
         const invoiceRows = await db.pgAll(`
             SELECT 
-                SUM(total_amount) as total_invoice,
-                SUM(paid_amount) as total_payments
-            FROM invoices WHERE company_id=$1 AND ${branchFilter} AND is_deleted = false
+                COALESCE(SUM(total_amount), 0) as total_invoice,
+                COALESCE(SUM(paid_amount), 0) as total_payments
+            FROM invoices WHERE company_id=$1 AND ${branchFilter} AND bill_purpose != 'name_only' AND is_deleted = false
         `, queryParams);
         
         let totalSales = Number(invoiceRows[0]?.total_invoice || 0);

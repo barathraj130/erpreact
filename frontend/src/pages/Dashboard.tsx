@@ -178,12 +178,12 @@ const Dashboard: React.FC = () => {
 
           <div className="db-kpi-card db-kpi-card--bank">
             <div className="db-kpi-top">
-              <span className="db-kpi-label">Total Monthly Sales</span>
-              <span className="db-badge bg-blue">MTD</span>
+              <span className="db-kpi-label">Total Sales Revenue</span>
+              <span className="db-badge bg-blue">All Time</span>
             </div>
             <div className="db-kpi-value"><span className="db-kpi-cur">₹</span>{fmt(kpis.monthlySales)}</div>
             <div className="db-kpi-footer">
-              <span>Gross revenue for this month</span>
+              <span>Gross revenue across all invoices</span>
             </div>
           </div>
 

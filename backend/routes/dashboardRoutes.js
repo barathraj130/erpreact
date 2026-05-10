@@ -32,61 +32,47 @@ router.get('/summary', authMiddleware, async (req, res) => {
     const { filter: branchFilter, branchId } = getBranchFilter(req);
 
     try {
-        // 1. Available Cash
-        const cashSql = `SELECT direction, SUM(amount) as total FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`;
-        const bankSql = `SELECT direction, SUM(amount) as total FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false GROUP BY direction`;
+        // 1. Available Cash (cash_ledger + bank_ledger net balance)
+        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
+        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false`;
         
         const [cashRes, bankRes] = await Promise.all([
-            db.pgAll(cashSql, [companyId]),
-            db.pgAll(bankSql, [companyId])
+            db.pgGet(cashSql, [companyId]),
+            db.pgGet(bankSql, [companyId])
         ]);
+        const availableCash = Number(cashRes?.balance || 0) + Number(bankRes?.balance || 0);
 
-        let availableCash = 0;
-        cashRes.forEach(r => { if(r.direction === 'in') availableCash += Number(r.total); else availableCash -= Number(r.total); });
-        bankRes.forEach(r => { if(r.direction === 'in') availableCash += Number(r.total); else availableCash -= Number(r.total); });
-
-        // 2. Sales Breakdown
+        // 2. Sales — ALL TIME (no date filter on summary card)
         const salesSql = `
             SELECT 
-                SUM(CASE WHEN invoice_type = 'TAX' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as tax_sales,
-                SUM(CASE WHEN invoice_type = 'NON_TAX' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as anon_sales,
-                SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END) as name_sake_sales
+                COALESCE(SUM(total_amount), 0) as total_sales,
+                COALESCE(SUM(CASE WHEN invoice_type = 'TAX_INVOICE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
+                COALESCE(SUM(CASE WHEN invoice_type = 'RETAIL_SALE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
+                COALESCE(SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END), 0) as name_sake_sales
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
-              AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
-        `;
-        const salesRes = await db.pgGet(salesSql, [companyId]);
-
-        const txIncomeSql = `
-            SELECT SUM(amount) as total
-            FROM transactions
-            WHERE company_id = $1 AND ${branchFilter}
-              AND type IN ('RECEIPT', 'INCOME')
-              AND transaction_date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND bill_purpose != 'name_only'
               AND is_deleted = false
         `;
-        const txIncomeRes = await db.pgGet(txIncomeSql, [companyId]);
-
-        const totalMonthlySales = parseFloat(salesRes?.tax_sales || 0) + 
-                                  parseFloat(salesRes?.anon_sales || 0) + 
-                                  parseFloat(txIncomeRes?.total || 0);
+        const salesRes = await db.pgGet(salesSql, [companyId]);
 
         // 3. Pending Branch Requests
         const reqSql = `SELECT COUNT(*) as pending FROM inventory_movements WHERE company_id = $1 AND type = 'Transfer' AND note LIKE '%Pending%'`;
         const reqRes = await db.pgGet(reqSql, [companyId]);
 
+        const totalSales = parseFloat(salesRes?.total_sales || 0);
+
         res.json({
             available_cash: availableCash,
-            total_monthly_sales: totalMonthlySales,
+            total_monthly_sales: totalSales,
             sales_breakdown: {
                 tax_sales: parseFloat(salesRes?.tax_sales || 0),
-                anon_sales: parseFloat(salesRes?.anon_sales || 0) + parseFloat(txIncomeRes?.total || 0),
+                anon_sales: parseFloat(salesRes?.anon_sales || 0),
                 name_sake_sales: parseFloat(salesRes?.name_sake_sales || 0)
             },
             branch_requests_pending: parseInt(reqRes?.pending || 0),
             debugInfo: { companyId, branchId, filter: branchFilter }
         });
-
 
     } catch (err) {
         console.error("Dashboard summary error:", err);
@@ -159,21 +145,23 @@ router.get('/kpis', authMiddleware, async (req, res) => {
     try {
         const salesSql = `
             SELECT 
-                SUM(total_amount) as monthly_sales,
-                SUM(CASE WHEN invoice_type = 'TAX' THEN total_amount ELSE 0 END) as tax_amount,
-                SUM(CASE WHEN invoice_type = 'NON_TAX' THEN total_amount ELSE 0 END) as anon_amount
+                COALESCE(SUM(total_amount), 0) as monthly_sales,
+                COALESCE(SUM(CASE WHEN invoice_type = 'TAX_INVOICE' THEN total_amount ELSE 0 END), 0) as tax_amount,
+                COALESCE(SUM(CASE WHEN invoice_type = 'RETAIL_SALE' THEN total_amount ELSE 0 END), 0) as anon_amount
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
-              AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND bill_purpose != 'name_only'
               AND is_deleted = false
         `;
         const salesRes = await db.pgGet(salesSql, [companyId]);
 
         const outstandingSql = `
             SELECT 
-                SUM(total_amount - paid_amount) as outstanding_receivables
+                COALESCE(SUM(total_amount - paid_amount), 0) as outstanding_receivables
             FROM invoices 
-            WHERE company_id = $1 AND ${branchFilter} AND status != 'PAID' AND is_deleted = false
+            WHERE company_id = $1 AND ${branchFilter} 
+              AND total_amount > paid_amount 
+              AND is_deleted = false
         `;
         const outstandingRes = await db.pgGet(outstandingSql, [companyId]);
 
@@ -236,10 +224,14 @@ router.get('/finance', authMiddleware, async (req, res) => {
         const trendSql = `
             SELECT 
                 DATE_TRUNC('month', invoice_date) as month,
-                SUM(total_amount) as sales
+                COALESCE(SUM(total_amount), 0) as sales
             FROM invoices
-            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
-            GROUP BY month ORDER BY month DESC LIMIT 6
+            WHERE company_id = $1 AND ${branchFilter} 
+              AND invoice_date >= CURRENT_DATE - INTERVAL '12 months'
+              AND bill_purpose != 'name_only'
+              AND is_deleted = false
+            GROUP BY DATE_TRUNC('month', invoice_date) 
+            ORDER BY DATE_TRUNC('month', invoice_date) ASC
         `;
         const trend = await db.pgAll(trendSql, [companyId]);
 
@@ -252,7 +244,7 @@ router.get('/finance', authMiddleware, async (req, res) => {
                     net_profit: parseFloat(cashRes?.balance || 0) + parseFloat(bankRes?.balance || 0)
                 },
                 expenses_by_category: expenses,
-                monthly_trend: trend.reverse()
+                monthly_trend: trend
             }
         });
     } catch (err) {
