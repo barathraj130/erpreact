@@ -237,7 +237,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
 
     } catch (err) {
         console.error("Health summary error:", err);
-        res.status(500).json({ error: "Failed to calculate health summary" });
+        res.status(500).json({ error: "Failed to calculate health summary", details: err.message });
     }
 });
 
