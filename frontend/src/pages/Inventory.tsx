@@ -269,7 +269,7 @@ const Inventory: React.FC = () => {
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <div style={{ fontWeight: 800, color: "var(--erp-primary)" }}>₹{(Number(p.selling_price) || 0).toLocaleString()}</div>
-                        <div style={{ fontSize: "0.7rem", color: "#16a34a", fontWeight: 700 }}>Cost: ₹{(p.cost_price || 0).toFixed(2)}</div>
+                        <div style={{ fontSize: "0.7rem", color: "#16a34a", fontWeight: 700 }}>Cost: ₹{(Number(p.cost_price) || 0).toFixed(2)}</div>
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`status-badge ${isOut ? "status-error" : isLow ? "status-warning" : "status-success"}`}>
