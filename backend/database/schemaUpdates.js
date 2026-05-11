@@ -171,6 +171,19 @@ export const runSchemaUpdates = async () => {
                 current_stock NUMERIC(12,2) DEFAULT 0,
                 UNIQUE(branch_id, product_id)
             );
+            CREATE TABLE IF NOT EXISTS stock_transfers (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER,
+                from_branch_id INTEGER,
+                to_branch_id INTEGER,
+                product_id INTEGER,
+                qty NUMERIC(15,3) NOT NULL,
+                transferred_by INTEGER,
+                transferred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT,
+                reference_type VARCHAR(50),
+                reference_id INTEGER
+            );
         `);
 
         // Force add columns if table already existed
