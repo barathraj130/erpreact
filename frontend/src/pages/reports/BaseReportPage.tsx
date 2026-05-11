@@ -183,7 +183,7 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
                         </div>
                     </div>
                     <div style={{ flex: '0 0 auto' }}>
-                        <button style={{ padding: '10px 20px', borderRadius: '8px', background: '#1e293b', color: 'white', border: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', height: '40px' }} onClick={fetchData}>
+                        <button style={{ padding: '10px 20px', borderRadius: '8px', background: '#1e293b', color: 'white', border: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', height: '40px' }} onClick={() => fetchData()}>
                             <FaFilter size={14} /> Apply
                         </button>
                     </div>
