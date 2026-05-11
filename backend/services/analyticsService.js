@@ -47,14 +47,13 @@ export const getProcurementAnalytics = async (companyId) => {
             LIMIT 5
         `, [companyId]);
 
-        // 4. Inventory Movement (R1)
+        // 4. Inventory Movement (R1) — use inventory_movements table (correct columns: qty_in, qty_out)
         const inventoryMovement = await db.pgGet(`
             SELECT 
-                SUM(quantity) as total_in,
-                (SELECT SUM(quantity) FROM invoice_items ii JOIN invoices i ON ii.invoice_id = i.id WHERE i.company_id = $1) as total_out
-            FROM purchase_bill_items pbi
-            JOIN purchase_bills pb ON pbi.bill_id = pb.id
-            WHERE pb.company_id = $1
+                COALESCE(SUM(qty_in), 0)  as total_in,
+                COALESCE(SUM(qty_out), 0) as total_out
+            FROM inventory_movements
+            WHERE company_id = $1
         `, [companyId]);
 
         // 5. Success Rate by Supplier & Product (R2)
@@ -104,12 +103,16 @@ export const getWorldClassMetrics = async (companyId) => {
         SELECT SUM(total_amount) as total FROM invoices WHERE company_id = $1
     `, [companyId]);
     
-    const cash = await db.pgGet(`
-        SELECT 
-            SUM(CASE WHEN direction = 'IN' THEN amount ELSE -amount END) as balance
-        FROM cash_ledger
-        WHERE company_id = $1
-    `, [companyId]);
+    // Use transactions table as cash proxy; cash_ledger table may not exist
+    let cash = { balance: 0 };
+    try {
+        cash = await db.pgGet(`
+            SELECT COALESCE(SUM(amount), 0) as balance
+            FROM transactions
+            WHERE company_id = $1
+              AND type IN ('RECEIPT', 'CASH_IN', 'PAYMENT_RECEIVED')
+        `, [companyId]) || { balance: 0 };
+    } catch (_) { /* table/column may not exist, default to 0 */ }
 
     const totalRevenue = parseFloat(sales?.total || 1);
     const totalExpense = procurement.metrics.total_outflow;

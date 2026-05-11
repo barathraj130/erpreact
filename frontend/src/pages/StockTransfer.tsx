@@ -98,7 +98,7 @@ const StockTransfer: React.FC = () => {
                 style={{ width: "100%", padding: "15px", borderRadius: "12px", border: "2px solid #e2e8f0", outline: "none", fontSize: "1rem" }}
               >
                 <option value="">-- Select Destination --</option>
-                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {branches.map(b => <option key={b.id} value={b.id}>{b.branch_name}</option>)}
               </select>
             </div>
           </div>
