@@ -178,6 +178,9 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS requested_qty NUMERIC(12,2) DEFAULT 0;
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS urgency VARCHAR(20) DEFAULT 'Normal';
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP DEFAULT NOW();
+
+            -- Fix branch_inventory: add missing last_updated column
+            ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW();
             
             -- Invoices: all extended columns used by invoiceRoutes.js INSERT
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS financial_month VARCHAR(20);
