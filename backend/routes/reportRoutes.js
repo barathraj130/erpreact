@@ -18,7 +18,7 @@ router.get('/sales/register', authMiddleware, async (req, res) => {
         let params = [companyId];
 
         if (startDate && endDate) {
-            where += " AND i.invoice_date BETWEEN $2 AND $3";
+            where += " AND i.invoice_date >= $2::date AND i.invoice_date < $3::date + INTERVAL '1 day'";
             params.push(startDate, endDate);
         }
 
@@ -124,6 +124,37 @@ router.get('/sales/customer-wise', authMiddleware, async (req, res) => {
         res.json(data);
     } catch (err) {
         res.status(500).json({ error: "Failed to generate report" });
+    }
+});
+
+/**
+ * 📈 DASHBOARD STATS (Top Cards for Reports Landing Page)
+ */
+router.get('/dashboard-stats', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const todaySales = await db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices WHERE company_id = $1 AND DATE(invoice_date) = CURRENT_DATE AND bill_purpose != 'name_only'`, [companyId]);
+        const todayPurchases = await db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_bills WHERE company_id = $1 AND DATE(bill_date) = CURRENT_DATE AND bill_purpose != 'name_only'`, [companyId]);
+        const cashPosition = await db.pgGet(`SELECT COALESCE(SUM(balance_amount), 0) as balance FROM invoices WHERE company_id = $1 AND balance_amount > 0 AND bill_purpose != 'name_only'`, [companyId]);
+        
+        const outputGst = await db.pgGet(`SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) as total FROM invoices WHERE company_id = $1 AND bill_purpose != 'name_only'`, [companyId]);
+        const inputGst = await db.pgGet(`SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) as total FROM purchase_bills WHERE company_id = $1 AND bill_purpose != 'name_only'`, [companyId]);
+        const gstLiability = (parseFloat(outputGst?.total || 0) - parseFloat(inputGst?.total || 0));
+
+        const totalReceivables = await db.pgGet(`SELECT COALESCE(SUM(current_balance), 0) as balance FROM customers WHERE company_id = $1`, [companyId]);
+        const activeCustomers = await db.pgGet(`SELECT COUNT(*) as count FROM customers WHERE company_id = $1`, [companyId]);
+
+        res.json({
+            today_sales: parseFloat(todaySales?.total || 0),
+            today_purchases: parseFloat(todayPurchases?.total || 0),
+            cash_balance: parseFloat(cashPosition?.balance || 0),
+            gst_liability: gstLiability,
+            total_receivables: parseFloat(totalReceivables?.balance || 0),
+            active_customers: parseInt(activeCustomers?.count || 0)
+        });
+    } catch (err) {
+        console.error("Dashboard stats error:", err);
+        res.status(500).json({ error: "Failed to generate dashboard stats" });
     }
 });
 

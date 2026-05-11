@@ -124,10 +124,12 @@ const ReportsDashboard: React.FC = () => {
     }, []);
 
     const statCards = [
-        { label: "Today's Sales", value: stats?.today_sales || 0, color: "#6366f1" },
-        { label: "Today's Purchases", value: stats?.today_purchases || 0, color: "#10b981" },
-        { label: "Cash Position", value: stats?.cash_balance || 0, color: "#3b82f6" },
-        { label: "GST Liability", value: stats?.gst_liability || 0, color: "#f59e0b" }
+        { label: "Today's Sales", value: stats?.today_sales || 0, color: "#6366f1", isCurrency: true },
+        { label: "Today's Purchases", value: stats?.today_purchases || 0, color: "#10b981", isCurrency: true },
+        { label: "Cash Position", value: stats?.cash_balance || 0, color: "#3b82f6", isCurrency: true },
+        { label: "GST Liability", value: stats?.gst_liability || 0, color: "#f59e0b", isCurrency: true },
+        { label: "Total Receivables", value: stats?.total_receivables || 0, color: "#ec4899", isCurrency: true },
+        { label: "Active Customers", value: stats?.active_customers || 0, color: "#8b5cf6", isCurrency: false }
     ];
 
     return (
@@ -156,7 +158,7 @@ const ReportsDashboard: React.FC = () => {
                     >
                         <div className="stat-label">{s.label}</div>
                         <div className="stat-value" style={{ color: s.color }}>
-                            ₹{new Intl.NumberFormat('en-IN').format(s.value)}
+                            {s.isCurrency ? '₹' : ''}{new Intl.NumberFormat('en-IN').format(s.value)}
                         </div>
                     </motion.div>
                 ))}

@@ -21,23 +21,43 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
     showBranchFilter = true,
     showTaxFilter = false
 }) => {
+    const defaultFrom = new Date();
+    defaultFrom.setDate(defaultFrom.getDate() - 30);
+
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [autoExpandedMsg, setAutoExpandedMsg] = useState("");
     const [filters, setFilters] = useState({
-        startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+        startDate: defaultFrom.toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
         branchId: 'all',
         searchTerm: '',
         taxType: 'all'
     });
 
-    const fetchData = async () => {
+    const fetchData = async (currentFilters = filters, isRetry = false) => {
         setLoading(true);
+        if (!isRetry) setAutoExpandedMsg("");
         try {
-            const query = new URLSearchParams(filters).toString();
+            const query = new URLSearchParams(currentFilters as any).toString();
             const res = await apiFetch(`${endpoint}?${query}`);
             const json = await res.json();
-            setData(Array.isArray(json) ? json : []);
+            const resultData = Array.isArray(json) ? json : [];
+
+            if (resultData.length === 0 && !isRetry) {
+                const expandedDate = new Date();
+                expandedDate.setDate(expandedDate.getDate() - 90);
+                const newFilters = { ...currentFilters, startDate: expandedDate.toISOString().split('T')[0] };
+                setFilters(newFilters);
+                setAutoExpandedMsg("No data for selected period. Showing last 90 days.");
+                // Fetch again with expanded dates
+                const retryQuery = new URLSearchParams(newFilters as any).toString();
+                const retryRes = await apiFetch(`${endpoint}?${retryQuery}`);
+                const retryJson = await retryRes.json();
+                setData(Array.isArray(retryJson) ? retryJson : []);
+            } else {
+                setData(resultData);
+            }
         } catch (err) {
             console.error("Failed to fetch report data:", err);
             setData([]);
@@ -166,6 +186,22 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
                         <button style={{ padding: '10px 20px', borderRadius: '8px', background: '#1e293b', color: 'white', border: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', height: '40px' }} onClick={fetchData}>
                             <FaFilter size={14} /> Apply
                         </button>
+                    </div>
+                </div>
+
+                {/* Messages & Record Count */}
+                <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <div>
+                        {autoExpandedMsg && (
+                            <div style={{ padding: '8px 12px', background: '#fef3c7', color: '#b45309', borderRadius: '8px', fontSize: '13px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                ⚠️ {autoExpandedMsg}
+                            </div>
+                        )}
+                        {!loading && data.length > 0 && (
+                            <div style={{ color: '#64748b', fontSize: '14px', fontWeight: 500 }}>
+                                Showing <strong style={{ color: '#1e293b' }}>{data.length}</strong> records for selected period
+                            </div>
+                        )}
                     </div>
                 </div>
 
