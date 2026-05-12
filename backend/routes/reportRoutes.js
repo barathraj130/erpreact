@@ -124,7 +124,7 @@ router.get('/inventory/summary', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                name, sku, current_stock, unit, cost_price as avg_cost,
+                id, name, sku, current_stock, unit, cost_price as avg_cost,
                 (current_stock * cost_price) as stock_value
             FROM products
             WHERE company_id = $1 AND is_deleted = false

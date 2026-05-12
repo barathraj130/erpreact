@@ -88,9 +88,9 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // CREATE NEW BILL (Atomic with Inventory & Accounting)
 // ─────────────────────────────────────────────────────────
 router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) => {
-    const companyId = req.user.active_company_id;
-    const branchId  = req.user.branch_id;
-    const userId    = req.user.id;
+    const companyId = sanitizeInt(req.user.active_company_id);
+    const branchId  = sanitizeInt(req.user.branch_id);
+    const userId    = sanitizeInt(req.user.id);
 
     let data = req.body;
     if (typeof req.body.data === 'string') {
@@ -104,15 +104,11 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
     } = data;
 
     // Safety: ensure no NaN values reach the DB
-    const sanitizeInt = (val) => {
-        const p = parseInt(val);
-        return isNaN(p) ? null : p;
-    };
     const safeSupplierId = sanitizeInt(supplier_id);
     const safeBrokerId = sanitizeInt(broker_id);
     const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
-    const safeBranchId = sanitizeInt(branchId);
-    const safeUserId = sanitizeInt(userId);
+    const safeBranchId = branchId;
+    const safeUserId = userId;
 
     let client;
     try {
@@ -252,9 +248,17 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await client.query(`
                     UPDATE products 
                     SET current_stock = current_stock + $1, 
-                        cost_price = $2,
-                        updated_at = NOW() 
+                        cost_price = $2
                     WHERE id = $3
+                `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
+
+                // Sync with inventory table
+                await client.query(`
+                    UPDATE inventory 
+                    SET current_stock = current_stock + $1, 
+                        cost_price = $2,
+                        last_updated = NOW()
+                    WHERE product_id = $3
                 `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
 
                 // Record inventory movement

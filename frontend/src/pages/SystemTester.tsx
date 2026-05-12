@@ -202,14 +202,14 @@ const SystemTester: React.FC = () => {
       
       if (isOk) {
         // ID Collection
-        if (test.id === "T1.1") ctx.current.supplierId = data.id;
-        if (test.id === "T1.2") ctx.current.productId = data.id;
-        if (test.id === "T1.4") ctx.current.purchaseBillId = data.id;
-        if (test.id === "T2.1") ctx.current.customerId = data.id;
-        if (test.id === "T2.2") ctx.current.invoiceId = data.id;
-        if (test.id === "T3.1") ctx.current.loanId = data.id;
-        if (test.id === "T3.4") ctx.current.employeeId = data.id;
-        if (test.id === "T3.6") ctx.current.brokerId = data.id;
+        if (test.id === "T1.1") ctx.current.supplierId = data.id || data.supplier?.id;
+        if (test.id === "T1.2") ctx.current.productId = data.product?.id || data.id;
+        if (test.id === "T1.4") ctx.current.purchaseBillId = data.id || data.purchaseBill?.id;
+        if (test.id === "T2.1") ctx.current.customerId = data.id || data.user?.id;
+        if (test.id === "T2.2") ctx.current.invoiceId = data.id || data.invoice?.id;
+        if (test.id === "T3.1") ctx.current.loanId = data.id || data.loan?.id;
+        if (test.id === "T3.4") ctx.current.employeeId = data.id || data.employee?.id;
+        if (test.id === "T3.6") ctx.current.brokerId = data.id || data.broker?.id;
 
         // VERIFICATION LOGIC
         if (test.id === "T1.3") ctx.current.initialTrialBalance = data;
