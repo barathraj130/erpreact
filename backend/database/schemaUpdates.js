@@ -288,12 +288,16 @@ export const runSchemaUpdates = async () => {
             -- Force correction of foreign key to reference ledgers instead of chart_of_accounts
             DO $$ 
             BEGIN 
-                -- Drop if exists
+                -- 1. Drop old constraint if exists
                 IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'transaction_lines_account_id_fkey') THEN
                     ALTER TABLE transaction_lines DROP CONSTRAINT transaction_lines_account_id_fkey;
                 END IF;
                 
-                -- Re-add correctly
+                -- 2. Cleanup orphan records that would prevent the new constraint
+                DELETE FROM transaction_lines 
+                WHERE account_id NOT IN (SELECT id FROM ledgers);
+
+                -- 3. Re-add correctly pointing to LEDGERS
                 ALTER TABLE transaction_lines ADD CONSTRAINT transaction_lines_account_id_fkey 
                 FOREIGN KEY (account_id) REFERENCES ledgers(id);
             END $$;
