@@ -32,7 +32,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
     const { filter: branchFilter, branchId } = getBranchFilter(req);
 
     try {
-        // 1. Available Cash (cash_ledger + bank_ledger net balance)
+        // 1. Available Cash
         const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
         const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
         
@@ -42,12 +42,12 @@ router.get('/summary', authMiddleware, async (req, res) => {
         ]);
         const availableCash = Number(cashRes?.balance || 0) + Number(bankRes?.balance || 0);
 
-        // 2. Sales — ALL TIME (no date filter on summary card)
+        // 2. Sales & Breakdown
         const salesSql = `
             SELECT 
                 COALESCE(SUM(total_amount), 0) as total_sales,
-                COALESCE(SUM(CASE WHEN UPPER(invoice_type) IN ('TAX','TAX INVOICE','GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
-                COALESCE(SUM(CASE WHEN UPPER(invoice_type) NOT IN ('TAX','TAX INVOICE','GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
+                COALESCE(SUM(CASE WHEN (UPPER(invoice_type) LIKE '%TAX%' OR UPPER(invoice_type) = 'GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
+                COALESCE(SUM(CASE WHEN (UPPER(invoice_type) NOT LIKE '%TAX%' AND UPPER(invoice_type) != 'GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
                 COALESCE(SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END), 0) as name_sake_sales
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
@@ -55,21 +55,25 @@ router.get('/summary', authMiddleware, async (req, res) => {
         `;
         const salesRes = await db.pgGet(salesSql, [companyId]);
 
-        // 3. Pending Branch Requests
-        const reqSql = `SELECT COUNT(*) as pending FROM inventory_movements WHERE company_id = $1 AND type = 'Transfer' AND note LIKE '%Pending%'`;
-        const reqRes = await db.pgGet(reqSql, [companyId]);
+        // 3. Outstanding Receivables
+        const outstandingSql = `
+            SELECT COALESCE(SUM(total_amount - paid_amount), 0) as outstanding 
+            FROM invoices 
+            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false AND total_amount > paid_amount
+        `;
+        const outstandingRes = await db.pgGet(outstandingSql, [companyId]);
 
         const totalSales = parseFloat(salesRes?.total_sales || 0);
 
         res.json({
             available_cash: availableCash,
             total_monthly_sales: totalSales,
+            outstanding_receivables: parseFloat(outstandingRes?.outstanding || 0),
             sales_breakdown: {
                 tax_sales: parseFloat(salesRes?.tax_sales || 0),
                 anon_sales: parseFloat(salesRes?.anon_sales || 0),
                 name_sake_sales: parseFloat(salesRes?.name_sake_sales || 0)
             },
-            branch_requests_pending: parseInt(reqRes?.pending || 0),
             debugInfo: { companyId, branchId, filter: branchFilter }
         });
 

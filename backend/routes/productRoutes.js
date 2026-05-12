@@ -102,26 +102,20 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
 
             if (inventoryAccount.rows[0] && openingStockAdjAccount.rows[0]) {
                 const stockValue = parseFloat(cost_price || 0) * parseFloat(opening_stock);
+                const { createTransaction } = await import("../utils/accountingEngine.js");
                 
-                // Transaction Header
-                const txRes = await client.query(`
-                    INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description, created_by)
-                    VALUES ($1, $2, NOW(), 'OPENING_STOCK', $3, $4, $5)
-                    RETURNING id
-                `, [companyId, branchId, product.id, `Opening stock for ${name}`, userId]);
-                const txId = txRes.rows[0].id;
-
-                // Debit Inventory Account
-                await client.query(`
-                    INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                    VALUES ($1, $2, $3, 0, 'Opening stock debit')
-                `, [txId, inventoryAccount.rows[0].id, stockValue]);
-
-                // Credit Opening Stock Adjustment Account
-                await client.query(`
-                    INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                    VALUES ($1, $2, 0, $3, 'Opening stock adjustment credit')
-                `, [txId, openingStockAdjAccount.rows[0].id, stockValue]);
+                await createTransaction({
+                    company_id: companyId,
+                    branch_id: branchId,
+                    transaction_date: new Date(),
+                    reference_type: 'OPENING_STOCK',
+                    reference_id: product.id,
+                    description: `Opening stock for ${name}`,
+                    created_by: userId
+                }, [
+                    { account_id: inventoryAccount.rows[0].id, debit_amount: stockValue, credit_amount: 0, description: 'Opening stock debit' },
+                    { account_id: openingStockAdjAccount.rows[0].id, debit_amount: 0, credit_amount: stockValue, description: 'Opening stock adjustment credit' }
+                ]);
             }
         }
 

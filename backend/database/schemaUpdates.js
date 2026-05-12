@@ -275,6 +275,25 @@ export const runSchemaUpdates = async () => {
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS transaction_lines (
+                id SERIAL PRIMARY KEY,
+                transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+                account_id INTEGER NOT NULL REFERENCES chart_of_accounts(id),
+                debit_amount NUMERIC(15,2) DEFAULT 0,
+                credit_amount NUMERIC(15,2) DEFAULT 0,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS source VARCHAR(100);
+            ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS reference_id INTEGER;
+            ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS date DATE;
+            
+            ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS source VARCHAR(100);
+            ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS reference_id INTEGER;
+            ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS bank_account_id INTEGER;
+            ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS date DATE;
+
             ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS current_balance NUMERIC(15,2) DEFAULT 0;
             ALTER TABLE employees ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active';
         `);

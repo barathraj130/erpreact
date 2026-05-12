@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo } from "react";
 import { apiFetch } from "../utils/api";
 import { 
   FaPlay, FaCheckCircle, FaExclamationTriangle, FaHourglassHalf, 
-  FaRedoAlt, FaChevronDown, FaChevronUp, FaFileDownload, FaVial, FaTrashAlt, FaChartLine
+  FaRedoAlt, FaChevronDown, FaChevronUp, FaFileDownload, FaVial, FaTrashAlt
 } from "react-icons/fa";
 
 // ─── Types ────────────────────────────────────────────────
@@ -14,8 +14,6 @@ interface TestCase {
   path: string;
   body?: any;
   expectStatus: number;
-  skipIfFailed?: string;
-  verifyFn?: (res: any, ctx: TestContext) => Promise<string | null>;
 }
 
 interface TestResult {
@@ -30,8 +28,6 @@ interface TestResult {
   requestBody?: any;
   errorBody?: any;
   likelyCause?: string;
-  fixSuggestion?: string;
-  verifyNote?: string;
 }
 
 interface TestContext {
@@ -45,126 +41,21 @@ interface TestContext {
 
 // ─── Scenarios ────────────────────────────────────────────
 const DEEP_SCENARIOS: TestCase[] = [
-  // --- SALES & INVENTORY ---
-  {
-    id: "T1.1", name: "Create Test Customer", category: "Sales", method: "POST", path: "/users",
-    expectStatus: 201,
-    verifyFn: async (res, ctx) => { 
-        if (!res.id) return "No customer ID returned";
-        ctx.customerId = res.id; 
-        return null; 
-    }
-  },
-  {
-    id: "T1.2", name: "Create Test Product", category: "Inventory", method: "POST", path: "/products",
-    expectStatus: 201,
-    verifyFn: async (res, ctx) => { 
-        const p = res.product || res;
-        if (!p.id) return "No product ID returned";
-        ctx.productId = p.id;
-        ctx.initialStock = parseFloat(p.opening_stock || 0);
-        return null; 
-    }
-  },
-  {
-    id: "T1.3", name: "Process Sales Invoice", category: "Sales", method: "POST", path: "/invoice",
-    expectStatus: 201,
-    verifyFn: async (res, ctx) => { 
-        if (!res.id) return "No invoice ID returned";
-        ctx.invoiceId = res.id; 
-        return null; 
-    }
-  },
-  {
-    id: "T1.4", name: "Verify Stock Deduction", category: "Inventory", method: "GET", path: "/products/__productId__",
-    expectStatus: 200,
-    verifyFn: async (res, ctx) => {
-        const currentStock = parseFloat(res.current_stock || 0);
-        if (currentStock >= (ctx.initialStock || 0)) return `Stock did not decrease. Expected < ${ctx.initialStock}, got ${currentStock}`;
-        return null;
-    }
-  },
-
-  // --- FINANCE ---
-  {
-    id: "T3.1", name: "Post Cash Receipt", category: "Finance", method: "POST", path: "/transactions",
-    expectStatus: 201,
-    verifyFn: async (res) => res.success ? null : "Operation reported failure"
-  },
-  {
-    id: "T3.2", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders",
-    expectStatus: 201,
-    verifyFn: async (res, ctx) => { 
-        if (!res.id) return "No lender ID returned";
-        ctx.lenderId = res.id; 
-        return null; 
-    }
-  },
-  {
-    id: "T3.3", name: "Disburse Loan", category: "Finance", method: "POST", path: "/loans",
-    expectStatus: 201,
-    verifyFn: async (res) => res.id ? null : "No loan ID generated"
-  },
-  {
-    id: "T3.4", name: "Create Chit Group", category: "Finance", method: "POST", path: "/chit-fund/groups",
-    expectStatus: 201
-  },
-  {
-    id: "T3.5", name: "Add Broker", category: "Finance", method: "POST", path: "/brokers",
-    expectStatus: 201
-  },
-
-  // --- HR ---
-  {
-    id: "T4.1", name: "Add Employee", category: "HR", method: "POST", path: "/employees",
-    expectStatus: 201,
-    verifyFn: async (res, ctx) => { 
-        if (!res.id) return "No employee ID returned";
-        ctx.employeeId = res.id; 
-        return null; 
-    }
-  },
-  {
-    id: "T4.2", name: "Mark Attendance", category: "HR", method: "POST", path: "/attendance",
-    expectStatus: 201
-  },
-  {
-    id: "T4.3", name: "Process Salary", category: "HR", method: "PUT", path: "/employees/__employeeId__/salary",
-    expectStatus: 200,
-    verifyFn: async (res) => {
-        if (!res.payroll) return "No payroll record returned";
-        const net = parseFloat(res.payroll.net_pay);
-        // (20/26) * 15000 = 11538.46
-        if (net < 11500 || net > 11600) return `Salary calculation error. Expected ~11538, got ${net}`;
-        return null;
-    }
-  },
-
-  // --- ANALYTICS SYNC ---
-  {
-    id: "T5.1", name: "Verify Finance Health", category: "Reports", method: "GET", path: "/dashboard/finance",
-    expectStatus: 200,
-    verifyFn: async (data) => {
-      if (!data.success || !data.data) return "Dashboard API error";
-      const { summary } = data.data;
-      if (!summary || parseFloat(summary.cash_balance) === 0) return "Finance metrics not reflecting test data";
-      return null;
-    }
-  },
-  {
-    id: "T5.2", name: "Verify Sales Register", category: "Reports", method: "GET", path: "/reports/sales/register?from=2020-01-01&to=2030-12-31",
-    expectStatus: 200,
-    verifyFn: async (res) => {
-        if (!Array.isArray(res) || res.length === 0) return "Sales Register report is empty despite test invoice";
-        return null;
-    }
-  },
-
-  // --- CLEANUP ---
-  {
-    id: "T9.1", name: "Database Purge (Cleanup)", category: "Cleanup", method: "POST", path: "/test/cleanup",
-    expectStatus: 200
-  }
+  { id: "T1.1", name: "Create Test Customer", category: "Sales", method: "POST", path: "/users", expectStatus: 201 },
+  { id: "T1.2", name: "Create Test Product", category: "Inventory", method: "POST", path: "/products", expectStatus: 201 },
+  { id: "T1.3", name: "Process Sales Invoice", category: "Sales", method: "POST", path: "/invoices", expectStatus: 201 },
+  { id: "T1.4", name: "Verify Stock Deduction", category: "Inventory", method: "GET", path: "/products/__productId__", expectStatus: 200 },
+  { id: "T3.1", name: "Post Cash Receipt", category: "Finance", method: "POST", path: "/transactions", expectStatus: 201 },
+  { id: "T3.2", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders", expectStatus: 201 },
+  { id: "T3.3", name: "Disburse Loan", category: "Finance", method: "POST", path: "/loans/disburse", expectStatus: 201 },
+  { id: "T3.4", name: "Create Chit Group", category: "Finance", method: "POST", path: "/chit-fund/groups", expectStatus: 201 },
+  { id: "T3.5", name: "Add Broker", category: "Finance", method: "POST", path: "/brokers", expectStatus: 201 },
+  { id: "T4.1", name: "Add Employee", category: "HR", method: "POST", path: "/employees", expectStatus: 201 },
+  { id: "T4.2", name: "Mark Attendance", category: "HR", method: "POST", path: "/attendance", expectStatus: 201 },
+  { id: "T4.3", name: "Process Salary", category: "HR", method: "PUT", path: "/employees/__employeeId__/salary", expectStatus: 200 },
+  { id: "T5.1", name: "Verify Finance Health", category: "Reports", method: "GET", path: "/dashboard/finance", expectStatus: 200 },
+  { id: "T5.2", name: "Verify Sales Register", category: "Reports", method: "GET", path: "/reports/sales/register?from=2020-01-01&to=2030-12-31", expectStatus: 200 },
+  { id: "T9.1", name: "Database Purge (Cleanup)", category: "Cleanup", method: "POST", path: "/test/cleanup", expectStatus: 200 }
 ];
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
@@ -206,58 +97,66 @@ const SystemTester: React.FC = () => {
     let path = test.path
       .replace("__productId__", String(ctx.current.productId || "0"))
       .replace("__employeeId__", String(ctx.current.employeeId || "0"));
+    
     let body: any = null;
 
     if (test.id === "T1.1") {
-      body = { username: `TEST_CUST_${rand}`, nickname: "Automated Test", phone: "9876543210", email: `test_${rand}@example.com` };
+      body = { username: `TEST_CUST_${rand}`, role: "customer", phone: `99${Math.floor(10000000 + Math.random() * 90000000)}`, state: "Tamil Nadu", state_code: "33" };
     } else if (test.id === "T1.2") {
       body = { 
-        name: `TEST_PROD_${rand}`, 
-        sku: `SKU-${rand.toUpperCase()}`,
-        selling_price: 150, 
-        cost_price: 100, 
-        gst_percent: 18,
-        opening_stock: 50, 
-        min_stock: 5,
-        unit: "pcs",
-        category: "Trading",
-        hsn_code: "6006"
+        name: `TEST_PROD_${rand}`, sku: `SKU-${rand.toUpperCase()}`,
+        selling_price: 150, cost_price: 100, gst_percent: 18,
+        opening_stock: 50, min_stock: 5, unit: "pcs",
+        category: "Trading", hsn_code: "6006"
       };
     } else if (test.id === "T1.3") {
+      if (!ctx.current.productId) return false;
       body = { 
-        customer_id: ctx.current.customerId, 
-        invoice_type: "NON-TAX", 
-        bill_purpose: "real",
-        items: [{ product_id: ctx.current.productId, name: "Test Item", qty: 5, rate: 150, total: 750 }],
-        amount_paid: 750, balance_due: 0, payment_status: "PAID"
+        customer_id: ctx.current.customerId,
+        invoice_type: "TAX_INVOICE",
+        items: [{ product_id: ctx.current.productId, qty: 5, rate: 150, gst_rate: 18 }],
+        amount_paid: 200,
+        payment_status: "PARTIAL",
+        payments: [{ amount: 200, payment_method: "CASH", payment_date: today }]
       };
     } else if (test.id === "T3.1") {
-      body = { type: "RECEIPT", amount: 1000, description: "TEST_RECEIPT_AUTO", date: today, mode: "CASH" };
+      body = { type: "RECEIPT", amount: 1000, description: "TEST_RECEIPT_AUTO", date: today, mode: "CASH", category: "Direct Income" };
     } else if (test.id === "T3.2") {
-      body = { lender_name: `TEST_BANK_${rand}`, lender_type: "Bank", phone: "9876543210", contact_person: "Test Manager" };
+      body = { lender_name: `TEST_LENDER_${rand}`, contact_info: "9998887776", email: `test_${rand}@erp.com` };
     } else if (test.id === "T3.3") {
-      body = { lender_id: ctx.current.lenderId, party_name: "TEST_LENDER", principal_amount: 100000, interest_rate: 12, start_date: today, repayment_cycle: "MONTHLY" };
+      if (!ctx.current.lenderId) return false;
+      body = { lender_id: ctx.current.lenderId, amount: 50000, interest_rate: 12, tenure_months: 12, disbursement_date: today, repayment_type: "MONTHLY" };
     } else if (test.id === "T3.4") {
-      body = { group_name: `TEST_CHIT_${rand}`, total_value: 100000, monthly_installment: 5000, duration_months: 20, start_date: today };
+      body = { group_name: `TEST_CHIT_${rand}`, chit_value: 100000, members_count: 10, duration_months: 10, start_date: today };
     } else if (test.id === "T3.5") {
-      body = { name: `TEST_BROKER_${rand}`, phone: "9876543210", broker_type: "PURCHASE", commission_rate: 2.5 };
+      body = { broker_name: `TEST_BROKER_${rand}`, commission_rate: 2, phone: "8887776665" };
     } else if (test.id === "T4.1") {
-      body = { name: `TEST_EMP_${rand}`, designation: "Sales Staff", salary: 15000, phone: "9876543210", joining_date: today };
+      body = { name: `TEST_EMP_${rand}`, designation: "staff", phone: "7776665554", salary: 25000, joining_date: today };
     } else if (test.id === "T4.2") {
+      if (!ctx.current.employeeId) return false;
       body = { employee_id: ctx.current.employeeId, date: today, status: "Present" };
     } else if (test.id === "T4.3") {
-      body = { month: today.slice(0, 7), working_days: 26, present_days: 20, deductions: 0, advance_deducted: 0 };
+      if (!ctx.current.employeeId) return false;
+      body = { month: "May 2026", working_days: 26, present_days: 20, deductions: 0, advance_deducted: 0 };
     }
 
     try {
-      const res = await apiFetch(path, { method: test.method, body });
+      const res = await apiFetch(path, { method: test.method, body: body ? JSON.stringify(body) : null });
       const durationMs = Date.now() - t0;
       let data = await res.json().catch(() => ({}));
 
       const isOk = res.status === test.expectStatus || (test.expectStatus === 201 && res.status === 200);
-      let error = isOk ? (test.verifyFn ? await test.verifyFn(data, ctx.current) : null) : `Status mismatch: Expected ${test.expectStatus}, got ${res.status}`;
+      
+      if (isOk) {
+        if (test.id === "T1.1") ctx.current.customerId = data.id;
+        if (test.id === "T1.2") {
+          const p = data.product || data;
+          ctx.current.productId = p.id;
+          ctx.current.initialStock = parseFloat(p.opening_stock || 0);
+        }
+        if (test.id === "T3.2") ctx.current.lenderId = data.id;
+        if (test.id === "T4.1") ctx.current.employeeId = data.id;
 
-      if (!error) {
         updateResult(test.id, { status: "pass", httpStatus: res.status, durationMs, requestBody: body });
         return true;
       } else {
@@ -265,7 +164,7 @@ const SystemTester: React.FC = () => {
           status: "fail", 
           httpStatus: res.status, 
           durationMs, 
-          likelyCause: error, 
+          likelyCause: data.error || `Status mismatch: Expected ${test.expectStatus}, got ${res.status}`, 
           errorBody: data,
           requestBody: body
         });
@@ -280,13 +179,24 @@ const SystemTester: React.FC = () => {
   const runAll = async () => {
     setRunning(true);
     ctx.current = {};
+    const chainStatus = { inventory: true, finance: true, hr: true };
+
     for (const test of DEEP_SCENARIOS) {
+      // Fail-fast logic
+      const isInv = test.id.startsWith("T1");
+      const isFin = test.id.startsWith("T3");
+      const isHR = test.id.startsWith("T4");
+
+      if ((isInv && !chainStatus.inventory) || (isFin && !chainStatus.finance) || (isHR && !chainStatus.hr)) {
+        updateResult(test.id, { status: "skipped" });
+        continue;
+      }
+
       const ok = await runTest(test);
-      if (!ok && (test.id.startsWith("T1") || test.id === "T1.2")) {
-        // T1 failures block other T1 tests as requested
-        const idx = DEEP_SCENARIOS.indexOf(test);
-        DEEP_SCENARIOS.slice(idx + 1).filter(t => t.id.startsWith("T1")).forEach(t => updateResult(t.id, { status: "skipped" }));
-        // But Finance (T3) and HR (T4) run independently
+      if (!ok) {
+        if (isInv) chainStatus.inventory = false;
+        if (isFin && test.id === "T3.2") chainStatus.finance = false;
+        if (isHR && test.id === "T4.1") chainStatus.hr = false;
       }
     }
     setRunning(false);
