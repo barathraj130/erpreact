@@ -47,7 +47,7 @@ const DEEP_SCENARIOS: TestCase[] = [
   { id: "T1.4", name: "Verify Stock Deduction", category: "Inventory", method: "GET", path: "/products/__productId__", expectStatus: 200 },
   { id: "T3.1", name: "Post Cash Receipt", category: "Finance", method: "POST", path: "/transactions", expectStatus: 201 },
   { id: "T3.2", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders", expectStatus: 201 },
-  { id: "T3.3", name: "Disburse Loan", category: "Finance", method: "POST", path: "/loans/disburse", expectStatus: 201 },
+  { id: "T3.3", name: "Disburse Loan", category: "Finance", method: "POST", path: "/loans", expectStatus: 201 },
   { id: "T3.4", name: "Create Chit Group", category: "Finance", method: "POST", path: "/chit-fund/groups", expectStatus: 201 },
   { id: "T3.5", name: "Add Broker", category: "Finance", method: "POST", path: "/brokers", expectStatus: 201 },
   { id: "T4.1", name: "Add Employee", category: "HR", method: "POST", path: "/employees", expectStatus: 201 },
@@ -125,11 +125,25 @@ const SystemTester: React.FC = () => {
       body = { lender_name: `TEST_LENDER_${rand}`, contact_info: "9998887776", email: `test_${rand}@erp.com` };
     } else if (test.id === "T3.3") {
       if (!ctx.current.lenderId) return false;
-      body = { lender_id: ctx.current.lenderId, amount: 50000, interest_rate: 12, tenure_months: 12, disbursement_date: today, repayment_type: "MONTHLY" };
+      body = { 
+        lender_id: ctx.current.lenderId, 
+        principal_amount: 50000, 
+        interest_rate: 12, 
+        start_date: today, 
+        duration_months: 12, 
+        repayment_cycle: "MONTHLY",
+        party_name: "TEST_LOAN"
+      };
     } else if (test.id === "T3.4") {
-      body = { group_name: `TEST_CHIT_${rand}`, chit_value: 100000, members_count: 10, duration_months: 10, start_date: today };
+      body = { 
+        group_name: `TEST_CHIT_${rand}`, 
+        total_value: 100000, 
+        monthly_installment: 10000, 
+        duration_months: 10, 
+        start_date: today 
+      };
     } else if (test.id === "T3.5") {
-      body = { broker_name: `TEST_BROKER_${rand}`, commission_rate: 2, phone: "8887776665" };
+      body = { name: `TEST_BROKER_${rand}`, commission_rate: 2, phone: "8887776665" };
     } else if (test.id === "T4.1") {
       body = { name: `TEST_EMP_${rand}`, designation: "staff", phone: "7776665554", salary: 25000, joining_date: today };
     } else if (test.id === "T4.2") {

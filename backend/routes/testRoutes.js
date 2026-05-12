@@ -19,7 +19,6 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
     
     try {
         const client = await db.getClient();
-        await client.query('BEGIN');
 
         const targets = [
             { table: 'suppliers', column: 'name' },
@@ -57,7 +56,6 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
         const userResult = await client.query(userSql, [companyId]);
         results[`deleted_users`] = userResult.rowCount;
 
-        await client.query('COMMIT');
         client.release();
 
         res.json({ message: "Cleanup successful", results });

@@ -21,8 +21,8 @@ const upload = multer({ storage });
 const router = express.Router();
 
 router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
-    const companyId = req.user?.active_company_id;
-    const branchId = req.user?.branch_id;
+    const companyId = parseInt(req.user?.active_company_id);
+    const branchId = parseInt(req.user?.branch_id || 1);
     const userId = req.user?.id;
 
     const {
@@ -179,7 +179,7 @@ router.get("/", authMiddleware, async (req, res) => {
 router.get("/:id", authMiddleware, async (req, res) => {
     try {
         const sql = `SELECT * FROM products WHERE id = $1 AND company_id = $2 AND is_deleted = false`;
-        const product = await pgModule.pgGet(sql, [req.params.id, req.user.active_company_id]);
+        const product = await pgModule.pgGet(sql, [parseInt(req.params.id), req.user.active_company_id]);
         if (!product) return res.status(404).json({ error: "Product not found" });
         return res.json(product);
     } catch (err) {
@@ -209,7 +209,7 @@ router.put("/:id", upload.single("image"), authMiddleware, async (req, res) => {
         index++;
     }
 
-    values.push(req.params.id);
+    values.push(parseInt(req.params.id));
     values.push(companyId);
 
     const sql = `
