@@ -146,11 +146,11 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const isNonTax = invoice_type === 'NON_TAX_INVOICE';
 
         const processedItems = items.map(i => {
-            const qty = Number(i.qty) || 0;
-            const rate = Number(i.rate) || 0;
+            const qty = isNaN(parseFloat(i.qty)) ? 0 : parseFloat(i.qty);
+            const rate = isNaN(parseFloat(i.rate)) ? 0 : parseFloat(i.rate);
             const amount = qty * rate;
             // FIX: If NON_TAX, tax is always 0. Also fix 0% fallback issue.
-            const taxRate = isNonTax ? 0 : ( (i.gst_rate !== undefined && i.gst_rate !== null) ? Number(i.gst_rate) : 5);
+            const taxRate = isNonTax ? 0 : ( (i.gst_rate !== undefined && i.gst_rate !== null) ? (isNaN(parseFloat(i.gst_rate)) ? 5 : parseFloat(i.gst_rate)) : 5);
             
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;

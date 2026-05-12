@@ -152,10 +152,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         const isExpenseBill = bill_category === 'EXPENSE';
 
         const processedItems = (!isExpenseBill ? (items || []) : []).map(item => {
-            const qty          = parseFloat(item.quantity || 0);
-            const price        = parseFloat(item.unit_price || 0);
+            const qty          = isNaN(parseFloat(item.quantity)) ? 0 : parseFloat(item.quantity);
+            const price        = isNaN(parseFloat(item.unit_price)) ? 0 : parseFloat(item.unit_price);
             const lineSubtotal = qty * price;
-            const taxRate      = parseFloat(item.tax_percent || 0);
+            const taxRate      = isNaN(parseFloat(item.tax_percent)) ? 0 : parseFloat(item.tax_percent);
 
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;
@@ -218,7 +218,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             return { ...exp, cgst_amount: cgstA, sgst_amount: sgstA, igst_amount: igstA, total_amount: lineTotal };
         });
 
-        const discount = parseFloat(discount_amount || 0);
+        const discount = isNaN(parseFloat(discount_amount)) ? 0 : parseFloat(discount_amount);
         const grossTotal = subTotal + taxTotal;
         const netAmount = grossTotal - discount;
         const paid = parseFloat(paid_amount || 0);
