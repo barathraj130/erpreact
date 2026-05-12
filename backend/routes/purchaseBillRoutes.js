@@ -1,15 +1,16 @@
 import express from "express";
+import db from "../config/db.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import * as db from "../database/pg.js";
-import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import * as brokerService from "../services/brokerService.js";
 import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
 
+const router = express.Router();
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dir = "./uploads/purchase_bills";
+        const dir = "uploads/purchase_bills/";
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
     },
@@ -18,8 +19,6 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage });
-
-const router = express.Router();
 
 // ─────────────────────────────────────────────────────────
 // GET ALL BILLS
@@ -30,12 +29,12 @@ router.get("/", authMiddleware, async (req, res) => {
 
     try {
         let sql = `
-            SELECT pb.*, s.name AS supplier_display_name
+            SELECT pb.*, s.name as supplier_name, s.gstin
             FROM purchase_bills pb
-            LEFT JOIN suppliers s ON s.id = pb.supplier_id
+            JOIN suppliers s ON pb.supplier_id = s.id
             WHERE pb.company_id = $1 AND pb.is_deleted = false
         `;
-        let params = [companyId];
+        const params = [companyId];
         let pIndex = 2;
 
         if (supplier) {
@@ -60,35 +59,27 @@ router.get("/", authMiddleware, async (req, res) => {
         }
 
         sql += ` ORDER BY pb.bill_date DESC`;
-        const result = await db.pgAll(sql, params);
-        res.json(result);
+        const data = await db.pgAll(sql, params);
+        res.json(data);
     } catch (err) {
-        console.error("Fetch Bills Error:", err);
         res.status(500).json({ error: "Failed to fetch purchase bills" });
     }
 });
 
 // ─────────────────────────────────────────────────────────
-// GET SINGLE BILL WITH ITEMS
+// GET SINGLE BILL
 // ─────────────────────────────────────────────────────────
 router.get("/:id", authMiddleware, async (req, res) => {
-    const companyId = req.user.active_company_id;
     const { id } = req.params;
     try {
-        const bill = await db.pgGet(
-            `SELECT pb.*, s.name AS supplier_display_name
-             FROM purchase_bills pb
-             LEFT JOIN suppliers s ON s.id = pb.supplier_id
-             WHERE pb.id = $1 AND pb.company_id = $2 AND pb.is_deleted = false`,
-            [id, companyId]
-        );
+        const bill = await db.pgOne(`SELECT * FROM purchase_bills WHERE id = $1`, [id]);
         if (!bill) return res.status(404).json({ error: "Bill not found" });
 
-        const items = await db.pgAll(`SELECT pbi.*, p.image_url FROM purchase_bill_items pbi LEFT JOIN products p ON p.id = pbi.product_id WHERE pbi.bill_id = $1`, [id]);
+        const items = await db.pgAll(`SELECT * FROM purchase_bill_items WHERE bill_id = $1`, [id]);
         const expenses = await db.pgAll(`SELECT * FROM purchase_bill_expenses WHERE bill_id = $1`, [id]);
+
         res.json({ ...bill, items, expenses });
     } catch (err) {
-        console.error("Fetch Bill Details Error:", err);
         res.status(500).json({ error: "Failed to fetch bill" });
     }
 });
@@ -128,11 +119,11 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         client = await db.getClient();
         await client.query("BEGIN");
 
-        const fileUrl = req.file ? `/uploads/purchase_bills/${req.file.filename}` : null;
+        const fileUrl = req.file ? \`/uploads/purchase_bills/\${req.file.filename}\` : null;
 
-        const branchRes  = await client.query(`SELECT state, state_code FROM branches WHERE id = $1`, [branchId]);
+        const branchRes  = await client.query(\`SELECT state, state_code FROM branches WHERE id = $1\`, [branchId]);
         const supplierRes = supplier_id
-            ? await client.query(`SELECT name, state, state_code FROM suppliers WHERE id = $1`, [supplier_id])
+            ? await client.query(\`SELECT name, state, state_code FROM suppliers WHERE id = $1\`, [supplier_id])
             : { rows: [{ name: supplier_name }] };
 
         const branchStateCode   = branchRes.rows[0]?.state_code;
@@ -205,12 +196,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     igstA = (amount * taxRate) / 100;
                 }
             }
-
-            const lineTax = cgstA + sgstA + igstA;
-            const lineTotal = amount + lineTax;
+            const lineTotal = amount + cgstA + sgstA + igstA;
 
             subTotal  += amount;
-            taxTotal  += lineTax;
+            taxTotal  += (cgstA + sgstA + igstA);
             cgstTotal += cgstA;
             sgstTotal += sgstA;
             igstTotal += igstA;
@@ -225,7 +214,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         const balance = Math.max(0, netAmount - paid);
         const status = paid >= netAmount ? "PAID" : (paid > 0 ? "PARTIAL" : "PENDING");
 
-        const billRes = await client.query(`
+        const billRes = await client.query(\`
             INSERT INTO purchase_bills
             (company_id, branch_id, supplier_id, supplier_name, bill_number, bill_date,
              sub_total, tax_total, cgst_total, sgst_total, igst_total, total_amount,
@@ -233,7 +222,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
              file_url, broker_id, broker_commission_rate, bill_category, is_deleted)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,false)
             RETURNING id
-        `, [
+        \`, [
             companyId, safeBranchId, safeSupplierId,
             supplierRes.rows[0]?.name || supplier_name || "Unknown",
             bill_number, bill_date || new Date(),
@@ -245,12 +234,12 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         const billId = billRes.rows[0].id;
 
         for (const pItem of processedItems) {
-            await client.query(`
+            await client.query(\`
                 INSERT INTO purchase_bill_items
                 (bill_id, product_id, description, hsn_code, quantity, unit_price, tax_percent,
                  cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, line_total)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-            `, [
+            \`, [
                 billId, sanitizeInt(pItem.product_id), pItem.description || null,
                 pItem.hsn_code || null, pItem.quantity, pItem.unit_price,
                 pItem.tax_percent || 0, 
@@ -260,28 +249,28 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
             if (pItem.product_id) {
                 // Update product stock and last purchase price
-                await client.query(`
+                await client.query(\`
                     UPDATE products 
                     SET current_stock = current_stock + $1, 
                         cost_price = $2,
                         updated_at = NOW() 
                     WHERE id = $3
-                `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
+                \`, [pItem.quantity, pItem.unit_price, pItem.product_id]);
 
                 // Record inventory movement
-                await client.query(`
+                await client.query(\`
                     INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
                     VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
-                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId, `Purchased via Bill #${bill_number}`]);
+                \`, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId, \`Purchased via Bill #\${bill_number}\`]);
             }
         }
 
         for (const exp of processedExpenses) {
-            await client.query(`
+            await client.query(\`
                 INSERT INTO purchase_bill_expenses
                 (bill_id, expense_type, description, amount, tax_percent, cgst_amount, sgst_amount, igst_amount, total_amount)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            `, [
+            \`, [
                 billId, exp.expense_type, exp.description || null, exp.amount, exp.tax_percent || 0,
                 exp.cgst_amount, exp.sgst_amount, exp.igst_amount, exp.total_amount
             ]);
@@ -289,7 +278,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         if (safeSupplierId && balance > 0) {
             await client.query(
-                `UPDATE suppliers SET current_balance = current_balance + $1 WHERE id = $2`,
+                \`UPDATE suppliers SET current_balance = current_balance + $1 WHERE id = $2\`,
                 [balance, safeSupplierId]
             );
         }
@@ -315,31 +304,31 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     const accCode = expenseTypeMap[exp.expense_type] || '5999';
                     const acc = await getAccountByCode(companyId, accCode);
                     if (acc) {
-                        txLines.push({ account_id: acc.id, debit_amount: exp.amount, credit_amount: 0, description: `${exp.expense_type} - Bill #${bill_number}` });
+                        txLines.push({ account_id: acc.id, debit_amount: exp.amount, credit_amount: 0, description: \`\${exp.expense_type} - Bill #\${bill_number}\` });
                     }
                 }
             } else {
                 const inventoryAccount = await getAccountByCode(companyId, "1400");
                 if (inventoryAccount) {
-                    txLines.push({ account_id: inventoryAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Inventory Purchase - Bill #${bill_number}` });
+                    txLines.push({ account_id: inventoryAccount.id, debit_amount: subTotal, credit_amount: 0, description: \`Inventory Purchase - Bill #\${bill_number}\` });
                 }
             }
 
             if (taxTotal > 0 && gstInputAccount) {
-                txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
+                txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: \`GST Input - Bill #\${bill_number}\` });
             }
 
             if (apAccount) {
-                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to ${supplierRes.rows[0]?.name || "Supplier"} - Bill #${bill_number}` });
+                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: \`Liability to \${supplierRes.rows[0]?.name || "Supplier"} - Bill #\${bill_number}\` });
                 
                 if (discount > 0 && discountAccount) {
-                    txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: `Discount on Bill #${bill_number}` });
-                    txLines.push({ account_id: discountAccount.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount - Bill #${bill_number}` });
+                    txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: \`Discount on Bill #\${bill_number}\` });
+                    txLines.push({ account_id: discountAccount.id, debit_amount: 0, credit_amount: discount, description: \`Purchase Discount - Bill #\${bill_number}\` });
                 }
 
                 if (paid > 0 && cashAccount) {
-                    txLines.push({ account_id: apAccount.id, debit_amount: paid, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
-                    txLines.push({ account_id: cashAccount.id, debit_amount: 0, credit_amount: paid, description: `Payment out via ${payment_mode} - Bill #${bill_number}` });
+                    txLines.push({ account_id: apAccount.id, debit_amount: paid, credit_amount: 0, description: \`Payment for Bill #\${bill_number}\` });
+                    txLines.push({ account_id: cashAccount.id, debit_amount: 0, credit_amount: paid, description: \`Payment out via \${payment_mode} - Bill #\${bill_number}\` });
                 }
             }
 
@@ -350,7 +339,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     transaction_date: bill_date || new Date(),
                     reference_type:   "PURCHASE_BILL",
                     reference_id:     billId,
-                    description:      `${isExpenseBill ? 'Expense' : 'Purchase'} Bill #${bill_number}`,
+                    description:      \`\${isExpenseBill ? 'Expense' : 'Purchase'} Bill #\${bill_number}\`,
                     created_by:       safeUserId,
                     bill_purpose:     req.body.bill_purpose || 'real'
                 };
@@ -394,7 +383,7 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
         await client.query("BEGIN");
 
         const bill = await client.query(
-            `SELECT * FROM purchase_bills WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+            \`SELECT * FROM purchase_bills WHERE id = $1 AND company_id = $2 FOR UPDATE\`,
             [id, companyId]
         );
         if (!bill.rows[0]) throw new Error("Bill not found");
@@ -404,32 +393,32 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
         const newBalance = Math.max(0, Number(b.total_amount) - newPaid);
         const newStatus  = newPaid >= Number(b.total_amount) ? "PAID" : "PARTIAL";
 
-        await client.query(`
+        await client.query(\`
             UPDATE purchase_bills
             SET paid_amount = $1, balance_amount = $2, status = $3
             WHERE id = $4
-        `, [newPaid, newBalance, newStatus, id]);
+        \`, [newPaid, newBalance, newStatus, id]);
 
         if (b.supplier_id) {
             await client.query(
-                `UPDATE suppliers SET current_balance = current_balance - $1 WHERE id = $2`,
+                \`UPDATE suppliers SET current_balance = current_balance - $1 WHERE id = $2\`,
                 [payAmount, b.supplier_id]
             );
         }
 
         const pMode = (payment_mode || "CASH").toUpperCase();
         if (pMode === "CASH") {
-            await client.query(`
+            await client.query(\`
                 INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
                 VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4)
-            `, [companyId, b.branch_id, payAmount, payment_date || new Date()]);
+            \`, [companyId, b.branch_id, payAmount, payment_date || new Date()]);
         } else {
-            await client.query(`
+            await client.query(\`
                 INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
                 VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4,$5,$6)
-            `, [
+            \`, [
                 companyId, b.branch_id, payAmount,
-                pMode, `BPAY-${id}-${Date.now()}`,
+                pMode, \`BPAY-\${id}-\${Date.now()}\`,
                 payment_date || new Date()
             ]);
         }
@@ -444,12 +433,12 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
                     transaction_date: payment_date || new Date(),
                     reference_type:   "PURCHASE_PAYMENT",
                     reference_id:     Number(id),
-                    description:      `Payment for Bill #${b.bill_number}`,
+                    description:      \`Payment for Bill #\${b.bill_number}\`,
                     created_by:       req.user.id,
                     bill_purpose:     b.bill_purpose || 'real'
                 }, [
-                    { account_id: apAccount.id,   debit_amount: payAmount, credit_amount: 0,          description: `Settle Bill #${b.bill_number}` },
-                    { account_id: cashAccount.id, debit_amount: 0,         credit_amount: payAmount,   description: `Cash outflow Bill #${b.bill_number}` }
+                    { account_id: apAccount.id,   debit_amount: payAmount, credit_amount: 0,          description: \`Settle Bill #\${b.bill_number}\` },
+                    { account_id: cashAccount.id, debit_amount: 0,         credit_amount: payAmount,   description: \`Cash outflow Bill #\${b.bill_number}\` }
                 ]);
             }
         } catch (accErr) {
@@ -472,7 +461,7 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
 router.patch("/:id/archive", authMiddleware, async (req, res) => {
     try {
         await db.pgRun(
-            `UPDATE purchase_bills SET is_deleted = true, deleted_at = NOW() WHERE id = $1 AND company_id = $2`,
+            \`UPDATE purchase_bills SET is_deleted = true, deleted_at = NOW() WHERE id = $1 AND company_id = $2\`,
             [req.params.id, req.user.active_company_id]
         );
         res.json({ success: true, message: "Bill archived" });
@@ -482,4 +471,3 @@ router.patch("/:id/archive", authMiddleware, async (req, res) => {
 });
 
 export default router;
-// Force redeploy Tue May 12 17:15:18 IST 2026
