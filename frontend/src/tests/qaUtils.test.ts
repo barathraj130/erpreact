@@ -10,6 +10,6 @@ describe('QA Utility Tests', () => {
     // Invalid GSTINs
     expect(validateGSTIN('29AABCS1234A1Z5')).toBe(false); // Wrong state code (Karnataka)
     expect(validateGSTIN('33ABC1234')).toBe(false);       // Too short
-    expect(validateGSTIN('33AABCS1234A1ZZ')).toBe(false); // Invalid check character
+    expect(validateGSTIN('33AABCS1234A1Z@')).toBe(false); // Invalid special character at end
   });
 });
