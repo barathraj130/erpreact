@@ -187,4 +187,79 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * ⚖️ TRIAL BALANCE
+ */
+router.get('/finance/trial-balance', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { filterType } = req.query;
+    try {
+        const { getTrialBalance } = await import('../utils/accountingEngine.js');
+        const report = await getTrialBalance(companyId, filterType);
+        res.json(report);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to generate trial balance" });
+    }
+});
+
+/**
+ * 📈 PROFIT & LOSS
+ */
+router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate, filterType } = req.query;
+    try {
+        const { getProfitAndLoss } = await import('../utils/accountingEngine.js');
+        const report = await getProfitAndLoss(companyId, null, startDate || '2000-01-01', endDate || '2099-12-31', filterType);
+        res.json(report);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to generate P&L" });
+    }
+});
+
+/**
+ * 🏦 BALANCE SHEET
+ */
+router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { filterType } = req.query;
+    try {
+        const { getBalanceSheet } = await import('../utils/accountingEngine.js');
+        const report = await getBalanceSheet(companyId, filterType);
+        res.json(report);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to generate balance sheet" });
+    }
+});
+
+/**
+ * 📔 DAY BOOK
+ */
+router.get('/finance/day-book', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate, filterType } = req.query;
+    try {
+        let params = [companyId];
+        let where = "WHERE l.company_id = $1";
+        
+        if (startDate && endDate) {
+            where += " AND l.entry_date BETWEEN $2 AND $3";
+            params.push(startDate, endDate);
+        }
+
+        const sql = `
+            SELECT l.*, ca.name as account_name, t.description as tx_desc, t.reference_type, t.reference_id
+            FROM ledger_entries l
+            JOIN chart_of_accounts ca ON l.account_id = ca.id
+            LEFT JOIN transactions t ON l.transaction_id = t.id
+            ${where}
+            ORDER BY l.entry_date DESC, l.id DESC
+        `;
+        const rows = await db.pgAll(sql, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to generate day book" });
+    }
+});
+
 export default router;

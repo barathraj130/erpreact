@@ -224,3 +224,34 @@ export async function getBalanceSheet(companyId, filterType = 'real') {
 
     return { details: results, ...summary };
 }
+/**
+ * Generates a Trial Balance Report
+ */
+export async function getTrialBalance(companyId, filterType = 'real') {
+    const purposes = filterType === 'all' ? ['real', 'name_only'] : 
+                    (filterType === 'name_only' ? ['name_only'] : ['real']);
+
+    const sql = `
+        SELECT 
+            ca.name as account_name,
+            ca.account_type,
+            COALESCE(SUM(l.debit), 0) as total_debit,
+            COALESCE(SUM(l.credit), 0) as total_credit,
+            (ca.opening_balance + COALESCE(SUM(l.debit), 0) - COALESCE(SUM(l.credit), 0)) as closing_balance
+        FROM chart_of_accounts ca
+        LEFT JOIN ledger_entries l ON ca.id = l.account_id AND l.bill_purpose = ANY($2)
+        WHERE (ca.company_id = $1 OR ca.company_id IS NULL)
+        GROUP BY ca.id, ca.name, ca.account_type, ca.opening_balance
+        ORDER BY ca.account_type, ca.name;
+    `;
+    
+    const results = await db.pgAll(sql, [companyId, purposes]);
+    
+    const summary = results.reduce((acc, curr) => {
+        acc.total_debits += parseFloat(curr.total_debit);
+        acc.total_credits += parseFloat(curr.total_credit);
+        return acc;
+    }, { total_debits: 0, total_credits: 0 });
+
+    return { details: results, ...summary };
+}
