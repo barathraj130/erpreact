@@ -244,48 +244,37 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         const billId = billRes.rows[0].id;
 
-        for (const item of processedItems) {
-            // ... (keep product item saving logic)
+        for (const pItem of processedItems) {
             await client.query(`
                 INSERT INTO purchase_bill_items
-                (bill_id, product_id, description, hsn_code, quantity, unit_price,
-                 tax_percent, cgst_rate, sgst_rate, igst_rate,
-                 cgst_amount, sgst_amount, igst_amount, line_total)
+                (bill_id, product_id, description, hsn_code, quantity, unit_price, tax_percent,
+                 cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, line_total)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `, [
-                billId, sanitizeInt(item.product_id), item.description || null,
-                item.hsn_code || null, item.quantity, item.unit_price,
-                item.tax_percent || 0, 
-                parseFloat(item.cgst_rate || 0), parseFloat(item.sgst_rate || 0), parseFloat(item.igst_rate || 0),
-                parseFloat(item.cgst_amount || 0), parseFloat(item.sgst_amount || 0), parseFloat(item.igst_amount || 0), 
-                parseFloat(item.line_total || 0)
+                billId, sanitizeInt(pItem.product_id), pItem.description || null,
+                pItem.hsn_code || null, pItem.quantity, pItem.unit_price,
+                pItem.tax_percent || 0, 
+                pItem.cgst_rate, pItem.sgst_rate, pItem.igst_rate,
+                pItem.cgst_amount, pItem.sgst_amount, pItem.igst_amount, pItem.line_total
             ]);
 
-            if (item.product_id) {
-                const inv = await client.query(`SELECT current_stock, cost_price FROM inventory WHERE product_id = $1`, [item.product_id]);
-                const currStock = parseFloat(inv.rows[0]?.current_stock || 0);
-                const currCost = parseFloat(inv.rows[0]?.cost_price || 0);
+            if (pItem.product_id) {
+                // Update product stock and last purchase price
+                await client.query(`
+                    UPDATE products 
+                    SET current_stock = current_stock + $1, 
+                        cost_price = $2,
+                        updated_at = NOW() 
+                    WHERE id = $3
+                `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
 
-                const newQty = currStock + item.quantity;
-                const newVal = item.quantity * item.unit_price;
-                const existingVal = currStock * currCost;
-                const newWAC = newQty > 0 ? (existingVal + newVal) / newQty : item.unit_price;
-
-                await client.query(
-                    `UPDATE products SET current_stock = $1, cost_price = $2, updated_at = NOW() WHERE id = $3`,
-                    [newQty, newWAC, item.product_id]
-                );
-
-                await client.query(
-                    `UPDATE inventory SET current_stock = $1, cost_price = $2, last_updated = NOW() WHERE product_id = $3`,
-                    [newQty, newWAC, item.product_id]
-                );
-
+                // Record inventory movement
                 await client.query(`
                     INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
                     VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
-                `, [companyId, safeBranchId, item.product_id, item.quantity, billId, `Purchased via Bill #${bill_number}`]);
+                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId, `Purchased via Bill #${bill_number}`]);
             }
+        }
         }
 
         for (const exp of processedExpenses) {
