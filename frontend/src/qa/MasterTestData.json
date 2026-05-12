@@ -88,64 +88,65 @@
   ],
   "suppliers": [
     {
-      "id": "sup-001",
       "name": "Sri Murugan Yarn Traders",
       "gstin": "33AABCS1234A1Z5",
-      "contact": "+91 98422 11111",
+      "phone": "+91 98422 11111",
       "type": "Yarn Supplier",
+      "state": "Tamil Nadu",
       "address": "123, Avinashi Road, Tiruppur"
     },
     {
-      "id": "sup-002",
       "name": "Senthil Fabric House",
       "gstin": "33BBCFS5678B2Z6",
-      "contact": "+91 94433 22222",
+      "phone": "+91 94433 22222",
       "type": "Fabric Supplier",
+      "state": "Tamil Nadu",
       "address": "45, Brough Road, Erode"
+    }
+  ],
+  "expenses": [
+    {
+      "type": "PAYMENT",
+      "category": "Office Rent",
+      "amount": 15000,
+      "description": "Monthly Office Rent - May 2026",
+      "date": "2026-05-01",
+      "mode": "BANK"
+    },
+    {
+      "type": "PAYMENT",
+      "category": "Electricity Bill",
+      "amount": 4500,
+      "description": "EB Bill TNEB - Unit 1",
+      "date": "2026-05-05",
+      "mode": "CASH"
     }
   ],
   "purchaseBills": [
     {
-      "id": "bill-001",
       "billNumber": "INV/24-25/001",
-      "supplier": "Sri Murugan Yarn",
+      "supplierName": "Sri Murugan Yarn Traders",
       "type": "GST Invoice",
       "date": "2026-05-10",
       "amount": 45000,
-      "status": "Paid"
+      "status": "PAID"
     },
     {
-      "id": "bill-002",
       "billNumber": "INV/24-25/089",
-      "supplier": "Senthil Fabric House",
+      "supplierName": "Senthil Fabric House",
       "type": "GST Invoice",
       "date": "2026-05-11",
       "amount": 120000,
-      "status": "Pending"
+      "status": "PENDING"
     }
   ],
   "employees": [
     {
-      "id": "emp-001",
       "name": "Murugan K",
-      "role": "Supervisor",
+      "designation": "Supervisor",
       "salary": 25000,
-      "payType": "Monthly",
-      "status": "Active"
-    },
-    {
-      "id": "emp-002",
-      "name": "Senthil R",
-      "role": "Machine Operator",
-      "salary": 18000,
-      "payType": "Daily",
-      "status": "Active"
+      "phone": "+91 98422 11122",
+      "joining_date": "2025-01-01"
     }
-  ],
-  "attendance": [
-    { "employeeId": "emp-001", "name": "Murugan K", "status": "Present", "date": "2026-05-12" },
-    { "employeeId": "emp-002", "name": "Senthil R", "status": "Absent", "date": "2026-05-12" },
-    { "employeeId": "emp-003", "name": "Kavitha S", "status": "Present", "date": "2026-05-12" },
-    { "employeeId": "emp-004", "name": "Rajan P", "status": "Late", "date": "2026-05-12" }
   ]
 }

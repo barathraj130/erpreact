@@ -252,6 +252,7 @@ const SystemTester: React.FC = () => {
     setRunning(true);
     try {
       const data = await import("../qa/MasterTestData.json");
+      const supplierMap: Record<string, number> = {};
       
       // 1. Seed Lenders
       for (const lender of data.lenders) {
@@ -263,12 +264,32 @@ const SystemTester: React.FC = () => {
         await apiFetch("/employees", { method: "POST", body: JSON.stringify(emp) });
       }
       
-      // 3. Seed Suppliers
+      // 3. Seed Suppliers & collect IDs for Bills
       for (const sup of data.suppliers) {
-        await apiFetch("/suppliers", { method: "POST", body: JSON.stringify(sup) });
+        const res = await apiFetch("/suppliers", { method: "POST", body: JSON.stringify(sup) });
+        if (res.ok) {
+          const s = await res.json();
+          supplierMap[sup.name] = s.id;
+        }
+      }
+
+      // 4. Seed Purchase Bills
+      for (const bill of data.purchaseBills) {
+        const supplierId = supplierMap[bill.supplierName];
+        if (supplierId) {
+          await apiFetch("/purchase-bills", { 
+            method: "POST", 
+            body: JSON.stringify({ ...bill, supplier_id: supplierId, bill_date: bill.date, total_amount: bill.amount }) 
+          });
+        }
+      }
+
+      // 5. Seed Expenses
+      for (const exp of data.expenses) {
+        await apiFetch("/transactions", { method: "POST", body: JSON.stringify(exp) });
       }
       
-      alert("✅ Realistic Data Seeded Successfully!");
+      alert("✅ Realistic Data (Suppliers, Bills, Expenses) Seeded Successfully!");
     } catch (err: any) {
       alert("❌ Seeding Failed: " + err.message);
     }
