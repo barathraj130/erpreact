@@ -315,6 +315,8 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE loans ADD COLUMN IF NOT EXISTS interest_type VARCHAR(20);
             ALTER TABLE loans ADD COLUMN IF NOT EXISTS duration_months INTEGER;
             ALTER TABLE loans ADD COLUMN IF NOT EXISTS repayment_cycle VARCHAR(50);
+            
+            ALTER TABLE lenders ADD COLUMN IF NOT EXISTS type VARCHAR(50);
         `);
 
         console.log("✅ Schema Updates Completed.");

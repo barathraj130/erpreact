@@ -48,9 +48,14 @@ export async function createTransaction(txData, lines) {
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id;
             `;
+            const sanitizeInt = (val) => {
+                const p = parseInt(val);
+                return isNaN(p) ? null : p;
+            };
+
             await client.query(lineSql, [
                 transactionId,
-                line.account_id,
+                sanitizeInt(line.account_id),
                 line.debit_amount || 0,
                 line.credit_amount || 0,
                 line.description

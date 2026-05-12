@@ -271,7 +271,7 @@ router.get('/gst/itc', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 id as bill_id, bill_number, bill_date, supplier_name, gstin,
-                sub_total as taxable_amount, cgst_total, sgst_total, igst_total, tax_total as eligible_itc
+                COALESCE(sub_total, 0) as taxable_amount, COALESCE(cgst_total, 0) as cgst_total, COALESCE(sgst_total, 0) as sgst_total, COALESCE(igst_total, 0) as igst_total, COALESCE(tax_total, 0) as eligible_itc
             FROM purchase_bills
             WHERE company_id = $1 AND bill_type = 'TAX' AND is_deleted = false
             ORDER BY bill_date DESC
