@@ -21,16 +21,21 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
         const client = await db.getClient();
 
         const targets = [
-            { table: 'suppliers', column: 'name' },
-            { table: 'products', column: 'name' },
+            { table: 'transaction_lines', column: 'description' },
+            { table: 'transactions', column: 'description' },
+            { table: 'invoice_line_items', column: 'product_name' }, // Check if col exists
             { table: 'invoices', column: 'invoice_number' },
             { table: 'purchase_bills', column: 'bill_number' },
-            { table: 'transactions', column: 'description' },
-            { table: 'transaction_lines', column: 'description' },
-            { table: 'ledger_entries', column: 'description' },
             { table: 'inventory_movements', column: 'note' },
-            { table: 'brokers', column: 'broker_name' },
+            { table: 'attendance', column: 'status' },
+            { table: 'payroll_runs', column: 'month_year' },
+            { table: 'chit_installments', column: 'notes' },
+            { table: 'loan_payments', column: 'notes' },
+            { table: 'loans', column: 'party_name' },
             { table: 'chit_groups', column: 'group_name' },
+            { table: 'suppliers', column: 'name' },
+            { table: 'products', column: 'name' },
+            { table: 'brokers', column: 'broker_name' },
             { table: 'lenders', column: 'lender_name' },
             { table: 'employees', column: 'name' }
         ];
@@ -39,7 +44,6 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
 
         for (const target of targets) {
             try {
-                // Check if table exists first to avoid crashing the transaction
                 const tableCheck = await client.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [target.table]);
                 if (tableCheck.rowCount > 0) {
                     const sql = `DELETE FROM ${target.table} WHERE company_id = $1 AND ${target.column} LIKE 'TEST_%'`;
@@ -51,7 +55,7 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
             }
         }
 
-        // Special case: users table
+        // Special case: users table (test customers are here)
         const userSql = `DELETE FROM users WHERE company_id = $1 AND (username LIKE 'TEST_%' OR nickname LIKE 'TEST_%' OR phone LIKE 'TEST_%')`;
         const userResult = await client.query(userSql, [companyId]);
         results[`deleted_users`] = userResult.rowCount;

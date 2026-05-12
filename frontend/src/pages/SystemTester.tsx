@@ -43,7 +43,7 @@ interface TestContext {
 const DEEP_SCENARIOS: TestCase[] = [
   { id: "T1.1", name: "Create Test Customer", category: "Sales", method: "POST", path: "/users", expectStatus: 201 },
   { id: "T1.2", name: "Create Test Product", category: "Inventory", method: "POST", path: "/products", expectStatus: 201 },
-  { id: "T1.3", name: "Process Sales Invoice", category: "Sales", method: "POST", path: "/invoices", expectStatus: 201 },
+  { id: "T1.3", name: "Process Sales Invoice", category: "Sales", method: "POST", path: "/invoice", expectStatus: 201 },
   { id: "T1.4", name: "Verify Stock Deduction", category: "Inventory", method: "GET", path: "/products/__productId__", expectStatus: 200 },
   { id: "T3.1", name: "Post Cash Receipt", category: "Finance", method: "POST", path: "/transactions", expectStatus: 201 },
   { id: "T3.2", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders", expectStatus: 201 },

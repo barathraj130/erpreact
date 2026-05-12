@@ -296,6 +296,15 @@ export const runSchemaUpdates = async () => {
 
             ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS current_balance NUMERIC(15,2) DEFAULT 0;
             ALTER TABLE employees ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active';
+
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS lender_id INTEGER;
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS party_name VARCHAR(255);
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS party_type VARCHAR(50);
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS loan_direction VARCHAR(50);
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS principal_amount NUMERIC(15,2);
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS interest_type VARCHAR(20);
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS duration_months INTEGER;
+            ALTER TABLE loans ADD COLUMN IF NOT EXISTS repayment_cycle VARCHAR(50);
         `);
 
         console.log("✅ Schema Updates Completed.");
