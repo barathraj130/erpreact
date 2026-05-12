@@ -138,7 +138,7 @@ const SystemTester: React.FC = () => {
     } else if (test.id === "T1.4") {
       body = {
         supplier_id: ctx.current.supplierId, bill_type: "TAX", bill_date: today,
-        items: [{ product_id: ctx.current.productId, qty: 10, rate: 1000, gst_rate: 18 }],
+        items: [{ product_id: ctx.current.productId, quantity: 10, unit_price: 1000, tax_percent: 18 }],
         taxable_amount: 10000, cgst_amount: 900, sgst_amount: 900, total_amount: 11800,
         payments: [{ mode: "CASH", amount: 5000, payment_date: today }, { mode: "BANK", amount: 3000, payment_date: today }],
         total_paid: 8000, balance_amount: 3800

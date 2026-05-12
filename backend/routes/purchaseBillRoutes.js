@@ -112,6 +112,12 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         broker_id, broker_commission_rate, discount_amount, bill_category
     } = data;
 
+    // Safety: ensure no NaN values reach the DB
+    const sanitizeInt = (val) => (isNaN(parseInt(val)) ? null : parseInt(val));
+    const safeSupplierId = sanitizeInt(supplier_id);
+    const safeBrokerId = sanitizeInt(broker_id);
+    const safeBranchId = sanitizeInt(branchId);
+
     let client;
     try {
         client = await db.getClient();
@@ -223,12 +229,12 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,false)
             RETURNING id
         `, [
-            companyId, branchId, supplier_id || null,
+            companyId, safeBranchId, safeSupplierId,
             supplierRes.rows[0]?.name || supplier_name || "Unknown",
             bill_number, bill_date || new Date(),
             subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, netAmount,
             discount, gstType, paid, balance, status, bill_type || "TAX",
-            fileUrl, broker_id || null, broker_commission_rate || null,
+            fileUrl, safeBrokerId, broker_commission_rate || null,
             bill_category || 'PRODUCT'
         ]);
 
