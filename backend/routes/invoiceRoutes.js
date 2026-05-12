@@ -114,6 +114,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const branchId = sanitizeInt(rawBranchId);
         const safeCustomerId = sanitizeInt(customer_id);
         const safeBrokerId = sanitizeInt(broker_id);
+        const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
         
         if (!finalInvoiceNumber) {
             const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId);
@@ -254,7 +255,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, effectiveTotal,
             gstType, finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
             transport_details?.vehicle_number || '', transport_details?.mode || '', transport_details?.supply_date || null, transport_details?.reverse_charge || 'No',
-            safeBrokerId, Number(broker_commission_rate) || 0,
+            safeBrokerId, safeBrokerCommission,
             branchId,
             bill_purpose || 'real'
         ]);

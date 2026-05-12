@@ -22,7 +22,7 @@ export const createLoan = async (user, loanData) => {
         let lenderId = sanitizeInt(loanData.lender_id);
         if (!lenderId && loanData.lender_name) {
             const lRes = await client.query(
-                "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (lender_name) DO UPDATE SET phone=$4 RETURNING id",
+                "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (lender_name, company_id) DO UPDATE SET phone=$4 RETURNING id",
                 [companyId, loanData.lender_name, loanData.type || 'Bank', loanData.phone]
             );
             lenderId = lRes.rows[0].id;

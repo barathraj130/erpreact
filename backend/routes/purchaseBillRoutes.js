@@ -119,6 +119,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
     };
     const safeSupplierId = sanitizeInt(supplier_id);
     const safeBrokerId = sanitizeInt(broker_id);
+    const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
     const safeBranchId = sanitizeInt(branchId);
     const safeUserId = sanitizeInt(userId);
 
@@ -238,8 +239,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             bill_number, bill_date || new Date(),
             subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, netAmount,
             discount, gstType, paid, balance, status, bill_type || "TAX",
-            fileUrl, safeBrokerId, broker_commission_rate || null,
-            bill_category || 'PRODUCT'
+            fileUrl, safeBrokerId, safeBrokerCommission, bill_category || 'PRODUCT'
         ]);
 
         const billId = billRes.rows[0].id;
@@ -374,7 +374,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         if (safeBrokerId) {
             await brokerService.recordCommission(client, req.user, {
-                broker_id: safeBrokerId, commission_rate: broker_commission_rate, bill_id: billId,
+                broker_id: safeBrokerId, commission_rate: safeBrokerCommission, bill_id: billId,
                 bill_number, bill_amount: netAmount, bill_type: "PURCHASE",
                 date: bill_date || new Date(), line_items: processedItems
             });
