@@ -285,15 +285,17 @@ export const runSchemaUpdates = async () => {
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
-            -- Force correction of foreign key if it was pointing to wrong table
+            -- Force correction of foreign key to reference ledgers instead of chart_of_accounts
             DO $$ 
             BEGIN 
-                IF EXISTS (SELECT 1 FROM information_schema.key_column_usage WHERE constraint_name = 'transaction_lines_account_id_fkey') THEN
+                -- Drop if exists
+                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'transaction_lines_account_id_fkey') THEN
                     ALTER TABLE transaction_lines DROP CONSTRAINT transaction_lines_account_id_fkey;
                 END IF;
-                ALTER TABLE transaction_lines ADD CONSTRAINT transaction_lines_account_id_fkey FOREIGN KEY (account_id) REFERENCES ledgers(id);
-            EXCEPTION WHEN OTHERS THEN 
-                RAISE NOTICE 'Constraint update skipped or failed: %', SQLERRM;
+                
+                -- Re-add correctly
+                ALTER TABLE transaction_lines ADD CONSTRAINT transaction_lines_account_id_fkey 
+                FOREIGN KEY (account_id) REFERENCES ledgers(id);
             END $$;
 
             ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS source VARCHAR(100);

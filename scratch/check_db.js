@@ -1,27 +1,31 @@
 
 import * as db from '../backend/database/pg.js';
 
-async function check() {
+async function checkConstraints() {
     try {
-        const invCount = await db.pgGet('SELECT COUNT(*) FROM invoices');
-        const invBranchCount = await db.pgAll('SELECT branch_id, COUNT(*) FROM invoices GROUP BY branch_id');
-        const cashCount = await db.pgGet('SELECT COUNT(*) FROM cash_ledger');
-        const bankCount = await db.pgGet('SELECT COUNT(*) FROM bank_ledger');
-        
-        const productCount = await db.pgGet('SELECT COUNT(*) FROM products');
-        const activeProductCount = await db.pgGet('SELECT COUNT(*) FROM products WHERE is_active = 1');
-        
-        console.log("Total Invoices:", invCount.count);
-        console.log("Invoices by Branch:", invBranchCount);
-        console.log("Cash Ledger Entries:", cashCount.count);
-        console.log("Bank Ledger Entries:", bankCount.count);
-        console.log("Total Products:", productCount.count);
-        console.log("Active Products:", activeProductCount.count);
+        const sql = `
+            SELECT 
+                conname as constraint_name,
+                pg_get_constraintdef(c.oid) as definition
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE conrelid = 'transaction_lines'::regclass;
+        `;
+        const constraints = await db.pgAll(sql);
+        console.log("TRANSACTION_LINES CONSTRAINTS:");
+        console.log(JSON.stringify(constraints, null, 2));
 
+        const coaSql = "SELECT id FROM chart_of_accounts LIMIT 5";
+        const coa = await db.pgAll(coaSql);
+        console.log("COA IDs:", coa?.map(c => c.id));
 
+        const ledgerSql = "SELECT id FROM ledgers LIMIT 5";
+        const ledgers = await db.pgAll(ledgerSql);
+        console.log("LEDGER IDs:", ledgers?.map(l => l.id));
 
-    } catch (err) {
-        console.error(err);
+    } catch (e) {
+        console.error("Error:", e.message);
     }
 }
-check();
+
+checkConstraints();
