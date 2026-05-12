@@ -32,23 +32,16 @@ router.get('/summary', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // 1. Unified Available Cash (from ledger_entries or direct ledgers)
-        const cashSql = `
-            SELECT COALESCE(SUM(debit - credit), 0) as balance 
-            FROM ledger_entries l
-            JOIN ledgers led ON l.account_id = led.id
-            JOIN ledger_groups lg ON led.group_id = lg.id
-            WHERE l.company_id = $1 
-              AND (lg.name = 'Cash-in-Hand' OR lg.name = 'Bank Accounts')
-              AND ${branchFilter.replace('branch_id', 'l.branch_id')}
-        `;
-        
-        // 2. Total Revenue (ALL TIME - No Date Filter)
+        // 1. Available Cash (from cash_ledger + bank_ledger — these are confirmed working)
+        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
+
+        // 2. Total Revenue ALL TIME (no date filter, handle NULL is_deleted)
         const totalRevSql = `
             SELECT COALESCE(SUM(total_amount), 0) as total_revenue
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
-              AND is_deleted = false
+              AND COALESCE(is_deleted, false) = false
               AND COALESCE(bill_purpose, '') != 'name_only'
         `;
 
@@ -57,42 +50,47 @@ router.get('/summary', authMiddleware, async (req, res) => {
             SELECT COALESCE(SUM(total_amount), 0) as month_revenue
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
-              AND is_deleted = false
+              AND COALESCE(is_deleted, false) = false
               AND COALESCE(bill_purpose, '') != 'name_only'
               AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
               AND invoice_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
         `;
 
-        // 4. Sales Breakdown (TAX vs NON-TAX)
+        // 4. Sales Breakdown
         const salesBreakdownSql = `
             SELECT 
-                COALESCE(SUM(CASE WHEN UPPER(TRIM(invoice_type)) IN ('TAX', 'TAX INVOICE', 'GST', 'TAXABLE') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
-                COALESCE(SUM(CASE WHEN UPPER(TRIM(invoice_type)) NOT IN ('TAX', 'TAX INVOICE', 'GST', 'TAXABLE') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
-                COALESCE(SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END), 0) as name_sake_sales
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) IN ('TAX', 'TAX INVOICE', 'GST', 'TAXABLE', 'TAX_INVOICE') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) NOT IN ('TAX', 'TAX INVOICE', 'GST', 'TAXABLE', 'TAX_INVOICE') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
+                COALESCE(SUM(CASE WHEN COALESCE(bill_purpose,'') = 'name_only' THEN total_amount ELSE 0 END), 0) as name_sake_sales
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
-              AND is_deleted = false
+              AND COALESCE(is_deleted, false) = false
         `;
 
-        // 5. Outstanding Receivables (Total)
+        // 5. Outstanding Receivables
         const outstandingSql = `
             SELECT COALESCE(SUM(total_amount - paid_amount), 0) as outstanding 
             FROM invoices 
-            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false AND total_amount > paid_amount
+            WHERE company_id = $1 AND ${branchFilter}
+              AND COALESCE(is_deleted, false) = false
+              AND total_amount > paid_amount
         `;
 
-        const [cashRes, totalRevRes, monthRevRes, salesRes, outstandingRes] = await Promise.all([
+        const [cashRes, bankRes, totalRevRes, monthRevRes, salesRes, outstandingRes] = await Promise.all([
             db.pgGet(cashSql, [companyId]),
+            db.pgGet(bankSql, [companyId]),
             db.pgGet(totalRevSql, [companyId]),
             db.pgGet(monthRevSql, [companyId]),
             db.pgGet(salesBreakdownSql, [companyId]),
             db.pgGet(outstandingSql, [companyId])
         ]);
 
+        const availableCash = Number(cashRes?.balance || 0) + Number(bankRes?.balance || 0);
+
         res.json({
-            available_cash: parseFloat(cashRes?.balance || 0),
+            available_cash: availableCash,
             total_revenue: parseFloat(totalRevRes?.total_revenue || 0),
-            total_monthly_sales: parseFloat(monthRevRes?.month_revenue || 0), // Card "This Month"
+            total_monthly_sales: parseFloat(monthRevRes?.month_revenue || 0),
             outstanding_receivables: parseFloat(outstandingRes?.outstanding || 0),
             sales_breakdown: {
                 tax_sales: parseFloat(salesRes?.tax_sales || 0),
@@ -106,6 +104,8 @@ router.get('/summary', authMiddleware, async (req, res) => {
         res.status(500).json({ error: "Failed to fetch dashboard summary" });
     }
 });
+
+
 
 /**
  * 📈 MONTHLY SALES TREND
