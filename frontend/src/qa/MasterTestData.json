@@ -1,0 +1,151 @@
+{
+  "loans": [
+    {
+      "id": "loan-001",
+      "lender": "SBI Commercial Branch Tiruppur",
+      "principal": 2500000,
+      "rate": 9.5,
+      "startDate": "2025-01-15",
+      "cycle": "Monthly",
+      "status": "Active"
+    },
+    {
+      "id": "loan-002",
+      "lender": "Murugan Finance Corp",
+      "principal": 500000,
+      "rate": 18.0,
+      "startDate": "2024-06-10",
+      "cycle": "Monthly",
+      "status": "Overdue"
+    },
+    {
+      "id": "loan-003",
+      "lender": "HDFC Business Loan",
+      "principal": 5000000,
+      "rate": 11.2,
+      "startDate": "2023-12-01",
+      "cycle": "Quarterly",
+      "status": "Closed"
+    }
+  ],
+  "lenders": [
+    {
+      "id": "lend-001",
+      "name": "SBI Tiruppur Main",
+      "type": "Bank",
+      "totalBorrowed": 5000000,
+      "totalRepaid": 2000000,
+      "outstanding": 3000000,
+      "contact": "+91 98422 12345"
+    },
+    {
+      "id": "lend-002",
+      "name": "Murugan Finance",
+      "type": "NBFC",
+      "totalBorrowed": 500000,
+      "totalRepaid": 100000,
+      "outstanding": 400000,
+      "contact": "+91 98940 11223"
+    }
+  ],
+  "chits": [
+    {
+      "id": "chit-001",
+      "name": "Murugan Chit - 1L",
+      "totalValue": 100000,
+      "monthly": 5000,
+      "duration": 20,
+      "startDate": "2025-05-01",
+      "status": "Active"
+    },
+    {
+      "id": "chit-002",
+      "name": "Selvam Chit - 50K",
+      "totalValue": 50000,
+      "monthly": 2500,
+      "duration": 20,
+      "startDate": "2024-10-15",
+      "status": "Completed"
+    }
+  ],
+  "brokers": [
+    {
+      "id": "brk-001",
+      "name": "Rajan Textiles Broker",
+      "type": "Both",
+      "commissionRate": 2.5,
+      "earned": 45000,
+      "outstanding": 5000
+    },
+    {
+      "id": "brk-002",
+      "name": "Selvam Commission Agent",
+      "type": "Purchase",
+      "commissionRate": 2.0,
+      "earned": 12000,
+      "outstanding": 0
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "sup-001",
+      "name": "Sri Murugan Yarn Traders",
+      "gstin": "33AABCS1234A1Z5",
+      "contact": "+91 98422 11111",
+      "type": "Yarn Supplier",
+      "address": "123, Avinashi Road, Tiruppur"
+    },
+    {
+      "id": "sup-002",
+      "name": "Senthil Fabric House",
+      "gstin": "33BBCFS5678B2Z6",
+      "contact": "+91 94433 22222",
+      "type": "Fabric Supplier",
+      "address": "45, Brough Road, Erode"
+    }
+  ],
+  "purchaseBills": [
+    {
+      "id": "bill-001",
+      "billNumber": "INV/24-25/001",
+      "supplier": "Sri Murugan Yarn",
+      "type": "GST Invoice",
+      "date": "2026-05-10",
+      "amount": 45000,
+      "status": "Paid"
+    },
+    {
+      "id": "bill-002",
+      "billNumber": "INV/24-25/089",
+      "supplier": "Senthil Fabric House",
+      "type": "GST Invoice",
+      "date": "2026-05-11",
+      "amount": 120000,
+      "status": "Pending"
+    }
+  ],
+  "employees": [
+    {
+      "id": "emp-001",
+      "name": "Murugan K",
+      "role": "Supervisor",
+      "salary": 25000,
+      "payType": "Monthly",
+      "status": "Active"
+    },
+    {
+      "id": "emp-002",
+      "name": "Senthil R",
+      "role": "Machine Operator",
+      "salary": 18000,
+      "payType": "Daily",
+      "status": "Active"
+    }
+  ],
+  "attendance": [
+    { "employeeId": "emp-001", "name": "Murugan K", "status": "Present", "date": "2026-05-12" },
+    { "employeeId": "emp-002", "name": "Senthil R", "status": "Absent", "date": "2026-05-12" },
+    { "employeeId": "emp-003", "name": "Kavitha S", "status": "Present", "date": "2026-05-12" },
+    { "employeeId": "emp-004", "name": "Rajan P", "status": "Late", "date": "2026-05-12" }
+  ]
+}
