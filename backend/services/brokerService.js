@@ -33,9 +33,16 @@ export const createBroker = async (user, brokerData) => {
         ]);
         const broker = res.rows[0];
 
-        // 3. Create Ledger for this specific broker
-        const ledgerSql = `INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, $2, $3, $4, $5) RETURNING id`;
-        const ledgerRes = await client.query(ledgerSql, [companyId, broker.name + ' - Commission Payable', groupId, 0, 0]);
+        // 3. Create Ledger for this specific broker (if not exists)
+        const ledgerName = broker.name + ' - Commission Payable';
+        const ledgerCheck = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = $2", [companyId, ledgerName]);
+        
+        if (!ledgerCheck.rows[0]) {
+            await client.query(
+                `INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, $2, $3, $4, $5)`,
+                [companyId, ledgerName, groupId, 0, 0]
+            );
+        }
 
         await client.query('COMMIT');
         return broker;

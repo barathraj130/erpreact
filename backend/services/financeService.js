@@ -16,14 +16,26 @@ export const createLoan = async (user, loanData) => {
         // 1. Insert into loans table
         const loanSql = `
             INSERT INTO loans (
-                company_id, branch_id, lender_id, principal_amount, 
-                interest_rate, start_date, repayment_cycle, notes
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                company_id, branch_id, lender_id, party_name, party_type, 
+                loan_direction, principal_amount, interest_rate, interest_type,
+                start_date, duration_months, repayment_cycle, notes, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ACTIVE')
             RETURNING *
         `;
         const loanRes = await client.query(loanSql, [
-            companyId, branchId, loanData.lender_id, loanData.principal_amount,
-            loanData.interest_rate, loanData.start_date, loanData.repayment_cycle || 'MONTHLY', loanData.notes
+            companyId, 
+            branchId, 
+            loanData.lender_id, 
+            loanData.party_name || 'Lender', 
+            loanData.party_type || 'BANK',
+            loanData.loan_direction || 'BORROWED',
+            loanData.principal_amount,
+            loanData.interest_rate,
+            loanData.interest_type || 'SIMPLE',
+            loanData.start_date,
+            loanData.duration_months || 12,
+            loanData.repayment_cycle || 'MONTHLY',
+            loanData.notes
         ]);
         const loan = loanRes.rows[0];
 
@@ -38,8 +50,8 @@ export const createLoan = async (user, loanData) => {
         const lenderLedgerId = ledgerRes.rows[0]?.id || 10; // Fallback to 10 if not found
         
         const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description)
-            VALUES ($1, $2, $3, 'LOAN_DISBURSEMENT', $4, $5)
+            INSERT INTO transactions (company_id, branch_id, transaction_date, date, reference_type, reference_id, description)
+            VALUES ($1, $2, $3, $3, 'LOAN_DISBURSEMENT', $4, $5)
             RETURNING id
         `;
         const txRes = await client.query(txSql, [

@@ -34,17 +34,8 @@ def base_url(request):
     if port:
         return f"http://localhost:{port}"
     
-    # Interactive prompt if not provided
-    print("\n" + "="*50)
-    print(" 🚀 ERP TESTING SUITE (PHASE 2)")
-    print("="*50)
-    user_input = input("Please enter the ERP port (default 5173): ").strip()
-    if not user_input:
-        user_input = "5173"
-    
-    if user_input.startswith("http"):
-        return user_input.rstrip('/')
-    return f"http://localhost:{user_input}"
+    # Default to 5173 if not provided
+    return "http://localhost:5173"
 
 @pytest.fixture(scope="session")
 def driver():
