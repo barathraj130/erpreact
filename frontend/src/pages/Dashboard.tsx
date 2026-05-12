@@ -20,6 +20,16 @@ const fmtCr = (v: number) => {
 
 const CHART_COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#0EA5E9'];
 
+const calcTrend = (current: number, previous: number) => {
+  if (!current || current === 0) return null;
+  if (!previous || previous === 0) return null;
+  const change = ((current - previous) / previous) * 100;
+  return {
+    value: change.toFixed(1),
+    isUp: change >= 0
+  };
+};
+
 /* ─────────────────── component ─────────────────── */
 const Dashboard: React.FC = () => {
   const { user } = useAuthUser();
@@ -55,21 +65,32 @@ const Dashboard: React.FC = () => {
         ]);
 
         if (kpiRes) {
-          const totalRev = Number(kpiRes.total_monthly_sales || 0);
+          console.log('DASHBOARD DEBUG - KPI Response:', kpiRes);
+          const totalRev = Number(kpiRes.total_revenue || 0); // ALL TIME
+          const monthRev = Number(kpiRes.total_monthly_sales || 0); // THIS MONTH
+          
           setStats({
             totalRevenue: totalRev,
-            monthlyRevenue: totalRev * 0.15, // Mocking current month as 15% of total for demo
-            outstanding: Number(kpiRes.outstanding_receivables || 16350000),
-            cashAvailable: Number(kpiRes.available_cash || 3000000),
+            monthlyRevenue: monthRev,
+            outstanding: Number(kpiRes.outstanding_receivables || 0),
+            cashAvailable: Number(kpiRes.available_cash || 0),
             taxSales: Number(kpiRes.sales_breakdown?.tax_sales || 0),
             anonSales: Number(kpiRes.sales_breakdown?.anon_sales || 0),
             namesakeSales: Number(kpiRes.sales_breakdown?.name_sake_sales || 0)
           });
         }
+        
+        if (trendRes) {
+          console.log('DASHBOARD DEBUG - Monthly Trend:', trendRes);
+          if (Array.isArray(trendRes)) setMonthlyTrend(trendRes);
+        }
+        
+        if (outstandingRes) {
+          console.log('DASHBOARD DEBUG - Top Outstanding:', outstandingRes);
+          if (Array.isArray(outstandingRes)) setOutstandingCustomers(outstandingRes);
+        }
 
-        if (Array.isArray(trendRes)) setMonthlyTrend(trendRes);
         if (Array.isArray(expenseRes)) setExpenseData(expenseRes.map(e => ({ name: e.category, amount: parseFloat(e.amount) })));
-        if (Array.isArray(outstandingRes)) setOutstandingCustomers(outstandingRes);
         if (Array.isArray(txRes)) setTransactions(txRes);
 
       } catch (err) {
@@ -109,10 +130,35 @@ const Dashboard: React.FC = () => {
 
         {/* ── KPI Row ── */}
         <div className="db-kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-          <KPICard title="TOTAL REVENUE" value={stats.totalRevenue} sub="↑ 12% vs last" icon="💰" color="indigo" />
-          <KPICard title="THIS MONTH" value={stats.monthlyRevenue} sub="↑ 8% vs last" icon="📅" color="blue" />
-          <KPICard title="OUTSTANDING" value={stats.outstanding} sub="27 customers" icon="⚠️" color="amber" />
-          <KPICard title="CASH AVAILABLE" value={stats.cashAvailable} sub="Live balance" icon="🏦" color="green" />
+          <KPICard 
+            title="TOTAL REVENUE" 
+            value={stats.totalRevenue} 
+            sub="All time" 
+            icon="💰" 
+            color="indigo" 
+          />
+          <KPICard 
+            title="THIS MONTH" 
+            value={stats.monthlyRevenue} 
+            trend={calcTrend(stats.monthlyRevenue, monthlyTrend[monthlyTrend.length - 2]?.revenue)}
+            sub={new Date().toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} 
+            icon="📅" 
+            color="blue" 
+          />
+          <KPICard 
+            title="OUTSTANDING" 
+            value={stats.outstanding} 
+            sub={`${outstandingCustomers.length} customers`} 
+            icon="⚠️" 
+            color="amber" 
+          />
+          <KPICard 
+            title="CASH AVAILABLE" 
+            value={stats.cashAvailable} 
+            sub="Live balance" 
+            icon="🏦" 
+            color="green" 
+          />
         </div>
 
         {/* ── Main Charts ── */}
@@ -199,7 +245,7 @@ const Dashboard: React.FC = () => {
   );
 };
 
-const KPICard = ({ title, value, sub, icon, color }: any) => (
+const KPICard = ({ title, value, sub, icon, color, trend }: any) => (
   <div className={`db-kpi-card db-kpi-card--${color}`}>
     <div className="db-kpi-top">
       <span className="db-kpi-label">{title}</span>
@@ -207,7 +253,13 @@ const KPICard = ({ title, value, sub, icon, color }: any) => (
     </div>
     <div className="db-kpi-value">{fmtCr(value)}</div>
     <div className="db-kpi-footer">
-      <span className={sub.includes('↑') ? 'trend-up' : ''}>{sub}</span>
+      {trend ? (
+        <span className={`db-kpi-trend ${trend.isUp ? 'up' : 'down'}`}>
+          {trend.isUp ? '↑' : '↓'} {Math.abs(trend.value)}% vs last
+        </span>
+      ) : (
+        <span className="db-kpi-sub">{sub}</span>
+      )}
     </div>
   </div>
 );
