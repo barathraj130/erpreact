@@ -222,6 +222,12 @@ const SystemTester: React.FC = () => {
     const chainStatus = { inventory: true, finance: true, hr: true };
 
     for (const test of DEEP_SCENARIOS) {
+      // Skip the cleanup step in "Run All" so data persists if user wants
+      if (test.id === "T9.1") {
+        updateResult(test.id, { status: "skipped" });
+        continue;
+      }
+
       // Fail-fast logic
       const isInv = test.id.startsWith("T1");
       const isFin = test.id.startsWith("T3");
@@ -238,6 +244,46 @@ const SystemTester: React.FC = () => {
         if (isFin && test.id === "T3.2") chainStatus.finance = false;
         if (isHR && test.id === "T4.1") chainStatus.hr = false;
       }
+    }
+    setRunning(false);
+  };
+
+  const seedRealisticData = async () => {
+    setRunning(true);
+    try {
+      const data = await import("../qa/MasterTestData.json");
+      
+      // 1. Seed Lenders
+      for (const lender of data.lenders) {
+        await apiFetch("/lenders", { method: "POST", body: JSON.stringify(lender) });
+      }
+      
+      // 2. Seed Employees
+      for (const emp of data.employees) {
+        await apiFetch("/employees", { method: "POST", body: JSON.stringify(emp) });
+      }
+      
+      // 3. Seed Suppliers
+      for (const sup of data.suppliers) {
+        await apiFetch("/suppliers", { method: "POST", body: JSON.stringify(sup) });
+      }
+      
+      alert("✅ Realistic Data Seeded Successfully!");
+    } catch (err: any) {
+      alert("❌ Seeding Failed: " + err.message);
+    }
+    setRunning(false);
+  };
+
+  const clearAllData = async () => {
+    if (!window.confirm("⚠️ Are you sure you want to PURGE all transaction and master data?")) return;
+    setRunning(true);
+    try {
+      await apiFetch("/test/cleanup", { method: "POST" });
+      alert("🗑️ Database Cleared Successfully!");
+      setResults(DEEP_SCENARIOS.map(t => ({ id: t.id, name: t.name, category: t.category, method: t.method, path: t.path, status: "idle" })));
+    } catch (err: any) {
+      alert("❌ Cleanup Failed: " + err.message);
     }
     setRunning(false);
   };
@@ -263,6 +309,12 @@ const SystemTester: React.FC = () => {
             <p style={{ color: "#64748b", margin: "8px 0 0", fontSize: "16px" }}>Full transaction chain diagnostic & database health engine.</p>
           </div>
           <div style={{ display: "flex", gap: "12px" }}>
+            <button onClick={seedRealisticData} disabled={running} className="btn-secondary" style={{ background: "#064e3b", color: "#6ee7b7", padding: "10px 20px" }}>
+              🌱 Seed Realistic Data
+            </button>
+            <button onClick={clearAllData} disabled={running} className="btn-secondary" style={{ background: "#450a0a", color: "#fca5a5", padding: "10px 20px" }}>
+              <FaTrashAlt /> Clear All
+            </button>
             <button onClick={exportResults} className="btn-secondary" style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 20px" }}>
               <FaFileDownload /> Export JSON
             </button>
@@ -274,7 +326,7 @@ const SystemTester: React.FC = () => {
               boxShadow: running ? "none" : "0 4px 15px rgba(59, 130, 246, 0.4)",
               transition: "all 0.2s"
             }}>
-              {running ? "Executing Chain..." : <><FaPlay size={14} /> Start Deep Test</>}
+              {running ? "Executing..." : <><FaPlay size={14} /> Start Deep Test</>}
             </button>
           </div>
         </header>
