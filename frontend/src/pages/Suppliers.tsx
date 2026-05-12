@@ -9,7 +9,9 @@ import {
   FaSync,
   FaTrash,
   FaUserTie,
+  FaFileInvoice,
 } from "react-icons/fa";
+import { Link } from "react-router-dom";
 import { Supplier, deleteSupplier, fetchSuppliers } from "../api/supplierApi";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import AddSupplierModal from "./AddSupplierModal";
@@ -267,6 +269,13 @@ const Suppliers: React.FC = () => {
                       >
                         <FaHistory /> History
                       </button>
+                      <Link 
+                        className="action-btn"
+                        to={`/suppliers/${s.id}/ledger`}
+                        style={{ flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        <FaFileInvoice /> Ledger
+                      </Link>
                       <button className="action-btn edit" style={{ flex: 1 }}>
                         <FaEdit /> Edit
                       </button>
@@ -393,6 +402,21 @@ const Suppliers: React.FC = () => {
                         >
                           <FaHistory size={14} />
                         </button>
+                        <Link
+                          className="control-btn"
+                          style={{
+                            background: "white",
+                            border: "1px solid #e2e8f0",
+                            color: "#2563eb",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center"
+                          }}
+                          to={`/suppliers/${s.id}/ledger`}
+                          title="View Ledger"
+                        >
+                          <FaFileInvoice size={14} />
+                        </Link>
                         <button
                           className="control-btn"
                           style={{

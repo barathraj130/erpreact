@@ -12,7 +12,9 @@ import {
   FaUserCircle,
   FaUsers,
   FaWallet,
+  FaFileInvoice,
 } from "react-icons/fa";
+import { Link } from "react-router-dom";
 import { deleteCustomer } from "../api/userApi";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import { useUsers } from "../hooks/useUsers";
@@ -183,6 +185,13 @@ const Customers: React.FC = () => {
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); }}>
                     <FaHistory size={11} /> History
                   </button>
+                  <Link 
+                    className="page-btn-round" 
+                    style={{ flex: 1, textDecoration: 'none', color: '#6366f1' }}
+                    to={`/customers/${user.id}/ledger`}
+                  >
+                    <FaFileInvoice size={11} /> Ledger
+                  </Link>
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => handleEdit(user)}>
                     <FaEdit size={11} /> Edit
                   </button>
@@ -256,6 +265,14 @@ const Customers: React.FC = () => {
                         >
                           <FaHistory size={12} />
                         </button>
+                        <Link
+                          className="page-btn-round-sm"
+                          style={{ color: '#6366f1' }}
+                          to={`/customers/${user.id}/ledger`}
+                          title="View Ledger"
+                        >
+                          <FaFileInvoice size={12} />
+                        </Link>
                         <button
                           className="page-btn-round-sm"
                           onClick={() => handleEdit(user)}

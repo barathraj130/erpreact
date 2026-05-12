@@ -241,6 +241,83 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     }
 });
 
+router.get('/party/:type/:id', authMiddleware, async (req, res) => {
+    const { type, id } = req.params;
+    const companyId = req.user.active_company_id;
+    
+    try {
+        // 1. Find the Account ID for this party
+        // This is a simplified mapping. In a real system, you'd have a column in users/suppliers table for account_id.
+        // For now, we'll search by name or a specific naming convention.
+        
+        let partyName = "";
+        if (type === 'supplier') {
+            const s = await db.pgGet("SELECT name FROM suppliers WHERE id = $1 AND company_id = $2", [id, companyId]);
+            partyName = s?.name;
+        } else if (type === 'customer') {
+            const c = await db.pgGet("SELECT username FROM users WHERE id = $1 AND company_id = $2", [id, companyId]);
+            partyName = c?.username;
+        } else if (type === 'lender') {
+            const l = await db.pgGet("SELECT name FROM lenders WHERE id = $1 AND company_id = $2", [id, companyId]);
+            partyName = l?.name;
+        } else if (type === 'employee') {
+            const e = await db.pgGet("SELECT name FROM employees WHERE id = $1 AND company_id = $2", [id, companyId]);
+            partyName = e?.name;
+        }
+
+        if (!partyName) return res.status(404).json({ error: "Party not found" });
+
+        // Search COA for this party
+        const account = await db.pgGet(
+            "SELECT id, name, account_type, opening_balance FROM chart_of_accounts WHERE company_id = $1 AND name ILIKE $2 LIMIT 1",
+            [companyId, `%${partyName}%`]
+        );
+
+        if (!account) {
+            return res.json({ 
+                summary: { opening_balance: 0, total_debit: 0, total_credit: 0, balance: 0 },
+                transactions: [],
+                party_name: partyName,
+                message: "No accounting record found for this party yet."
+            });
+        }
+
+        const entries = await db.pgAll(
+            `SELECT l.*, t.description as tx_desc, t.reference_type, t.reference_id
+             FROM ledger_entries l
+             LEFT JOIN transactions t ON l.transaction_id = t.id
+             WHERE l.account_id = $1 AND l.company_id = $2
+             ORDER BY l.entry_date ASC, l.id ASC`,
+            [account.id, companyId]
+        );
+
+        const totalDebit = entries.reduce((sum, e) => sum + parseFloat(e.debit), 0);
+        const totalCredit = entries.reduce((sum, e) => sum + parseFloat(e.credit), 0);
+        
+        // For Liability (Supplier/Lender): Balance = Opening + Credit - Debit
+        // For Asset (Customer): Balance = Opening + Debit - Credit
+        const isLiability = ['LIABILITY', 'EQUITY'].includes(account.account_type.toUpperCase());
+        const opening = parseFloat(account.opening_balance || 0);
+        const balance = isLiability ? (opening + totalCredit - totalDebit) : (opening + totalDebit - totalCredit);
+
+        res.json({
+            party_name: partyName,
+            account_name: account.name,
+            summary: {
+                opening_balance: opening,
+                total_debit: totalDebit,
+                total_credit: totalCredit,
+                balance: balance
+            },
+            transactions: entries
+        });
+
+    } catch (err) {
+        console.error("Party ledger error:", err);
+        res.status(500).json({ error: "Failed to fetch party ledger" });
+    }
+});
+
 router.get('/supplier/:id', authMiddleware, async (req, res) => {
     try {
         const companyId = req.user?.active_company_id;

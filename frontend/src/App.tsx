@@ -80,6 +80,7 @@ import GlobalInventory from "./pages/GlobalInventory";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
 import SystemTester from "./pages/SystemTester";
+import LedgerViewer from "./pages/LedgerViewer";
 
 
 
@@ -280,6 +281,11 @@ const App: React.FC = () => {
             <Route path="/branch/billing" element={<BranchBilling />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/employees" element={<Employees />} />
+            
+            <Route path="/suppliers/:id/ledger" element={<LedgerViewer type="supplier" />} />
+            <Route path="/customers/:id/ledger" element={<LedgerViewer type="customer" />} />
+            <Route path="/lenders/:id/ledger" element={<LedgerViewer type="lender" />} />
+            <Route path="/employees/:id/ledger" element={<LedgerViewer type="employee" />} />
 
             <Route path="/finance/dashboard" element={<FinanceDashboard />} />
             <Route path="/finance/loans" element={<LoanManagement />} />

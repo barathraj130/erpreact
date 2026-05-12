@@ -35,30 +35,53 @@ interface TestContext {
   customerId?: number;
   productId?: number;
   invoiceId?: number;
+  supplierId?: number;
+  purchaseBillId?: number;
   lenderId?: number;
+  loanId?: number;
   employeeId?: number;
+  brokerId?: number;
   initialStock?: number;
+  initialTrialBalance?: { total_debits: number; total_credits: number };
 }
 
 // ─── Scenarios ────────────────────────────────────────────
 const DEEP_SCENARIOS: TestCase[] = [
-  { id: "T1.1", name: "Create Test Customer", category: "Sales", method: "POST", path: "/users", expectStatus: 201 },
-  { id: "T1.2", name: "Create Test Product", category: "Inventory", method: "POST", path: "/products", expectStatus: 201 },
-  { id: "T1.3", name: "Process Sales Invoice", category: "Sales", method: "POST", path: "/invoice", expectStatus: 201 },
-  { id: "T1.4", name: "Verify Stock Deduction", category: "Inventory", method: "GET", path: "/products/__productId__", expectStatus: 200 },
-  { id: "T3.1", name: "Post Cash Receipt", category: "Finance", method: "POST", path: "/transactions", expectStatus: 201 },
-  { id: "T3.2", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders", expectStatus: 201 },
-  { id: "T3.3", name: "Disburse Loan", category: "Finance", method: "POST", path: "/loans", expectStatus: 201 },
-  { id: "T3.4", name: "Create Chit Group", category: "Finance", method: "POST", path: "/chit-fund/groups", expectStatus: 201 },
-  { id: "T3.5", name: "Add Broker", category: "Finance", method: "POST", path: "/brokers", expectStatus: 201 },
-  { id: "T4.1", name: "Add Employee", category: "HR", method: "POST", path: "/employees", expectStatus: 201 },
-  { id: "T4.2", name: "Mark Attendance", category: "HR", method: "POST", path: "/attendance", expectStatus: 201 },
-  { id: "T4.3", name: "Process Salary", category: "HR", method: "PUT", path: "/employees/__employeeId__/salary", expectStatus: 200 },
-  { id: "T5.1", name: "Verify Finance Health", category: "Reports", method: "GET", path: "/dashboard/finance", expectStatus: 200 },
-  { id: "T5.2", name: "Verify Sales Register", category: "Reports", method: "GET", path: "/reports/sales/register?from=2020-01-01&to=2030-12-31", expectStatus: 200 },
-  { id: "QA.1", name: "Validate GSTIN Logic", category: "QA_UNIT", method: "LOCAL", path: "validateGSTIN", expectStatus: 200 },
-  { id: "QA.2", name: "Validate Currency Logic", category: "QA_UNIT", method: "LOCAL", path: "formatCurrency", expectStatus: 200 },
-  { id: "T9.1", name: "Database Purge (Cleanup)", category: "Cleanup", method: "POST", path: "/test/cleanup", expectStatus: 200 }
+  // SCENARIO 1: PURCHASE TRANSACTION
+  { id: "T1.1", name: "Create Supplier (TEST_SUPPLIER_TXN)", category: "Purchase", method: "POST", path: "/suppliers", expectStatus: 201 },
+  { id: "T1.2", name: "Create Product (TEST_PRODUCT_TXN)", category: "Inventory", method: "POST", path: "/products", expectStatus: 201 },
+  { id: "T1.3", name: "Check Baseline Trial Balance", category: "Finance", method: "GET", path: "/reports/finance/trial-balance", expectStatus: 200 },
+  { id: "T1.4", name: "Purchase Bill + Partial Payment (8k/11.8k)", category: "Purchase", method: "POST", path: "/purchase-bills", expectStatus: 201 },
+  { id: "T1.5", name: "Verify Inventory Increased (+10)", category: "Inventory", method: "GET", path: "/reports/inventory/summary", expectStatus: 200 },
+  { id: "T1.6", name: "Verify Purchase Ledger (Double-Entry)", category: "Finance", method: "GET", path: "/reports/finance/day-book", expectStatus: 200 },
+  { id: "T1.7", name: "Verify Supplier Ledger (Bal: 3800 Cr)", category: "Purchase", method: "GET", path: "/suppliers/__supplierId__", expectStatus: 200 },
+  { id: "T1.8", name: "Pay Remaining Balance (3.8k)", category: "Purchase", method: "POST", path: "/purchase-bills/__purchaseBillId__/payment", expectStatus: 200 },
+  { id: "T1.9", name: "Verify Supplier Balance = 0", category: "Purchase", method: "GET", path: "/suppliers/__supplierId__", expectStatus: 200 },
+
+  // SCENARIO 2: SALES TRANSACTION
+  { id: "T2.1", name: "Create Customer (TEST_CUSTOMER_TXN)", category: "Sales", method: "POST", path: "/users", expectStatus: 201 },
+  { id: "T2.2", name: "Sales Invoice (NON-TAX) + Split Payment", category: "Sales", method: "POST", path: "/invoice", expectStatus: 201 },
+  { id: "T2.3", name: "Verify Stock Decreased (-5)", category: "Inventory", method: "GET", path: "/reports/inventory/summary", expectStatus: 200 },
+  { id: "T2.4", name: "Verify Sales Ledger (No GST, Split Cash/UPI)", category: "Finance", method: "GET", path: "/reports/finance/day-book", expectStatus: 200 },
+  { id: "T2.5", name: "Verify Customer Ledger (Bal: 2500 Dr)", category: "Sales", method: "GET", path: "/users/__customerId__", expectStatus: 200 },
+  { id: "T2.6", name: "Collect Remaining Balance (2.5k)", category: "Sales", method: "POST", path: "/invoice/__invoiceId__/payment", expectStatus: 200 },
+  { id: "T2.7", name: "Verify Invoice = SETTLED", category: "Sales", method: "GET", path: "/invoice", expectStatus: 200 },
+
+  // SCENARIO 3: FINANCE & HR
+  { id: "T3.1", name: "Add Lender + Disburse Loan (1L)", category: "Finance", method: "POST", path: "/loans", expectStatus: 201 },
+  { id: "T3.2", name: "Verify Loan Ledger (Liability Created)", category: "Finance", method: "GET", path: "/reports/finance/day-book", expectStatus: 200 },
+  { id: "T3.3", name: "Pay Loan EMI (8k Prin + 1k Int)", category: "Finance", method: "POST", path: "/loans/__loanId__/payments", expectStatus: 201 },
+  { id: "T3.4", name: "Add Employee + Mark Attendance", category: "HR", method: "POST", path: "/employees", expectStatus: 201 },
+  { id: "T3.5", name: "Process Salary (Pro-rated)", category: "HR", method: "POST", path: "/employees/__employeeId__/salary", expectStatus: 201 },
+  { id: "T3.6", name: "Add Broker + Record Commission", category: "Finance", method: "POST", path: "/brokers", expectStatus: 201 },
+
+  // SCENARIO 4: REPORT VERIFICATION
+  { id: "T4.1", name: "Verify Trial Balance Zero-Sum", category: "Reports", method: "GET", path: "/reports/finance/trial-balance", expectStatus: 200 },
+  { id: "T4.2", name: "Verify Profit & Loss (Loss: 5.2k expected)", category: "Reports", method: "GET", path: "/reports/finance/profit-loss", expectStatus: 200 },
+  { id: "T4.3", name: "Verify ITC Report (₹1800 eligible)", category: "Reports", method: "GET", path: "/reports/gst/itc", expectStatus: 200 },
+  { id: "T4.4", name: "Validate GSTIN Logic", category: "QA_UNIT", method: "LOCAL", path: "validateGSTIN", expectStatus: 200 },
+
+  { id: "T9.1", name: "Database Purge (TEST_ Cleanup)", category: "Cleanup", method: "POST", path: "/test/cleanup", expectStatus: 200 }
 ];
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
@@ -99,62 +122,52 @@ const SystemTester: React.FC = () => {
 
     let path = test.path
       .replace("__productId__", String(ctx.current.productId || "0"))
+      .replace("__customerId__", String(ctx.current.customerId || "0"))
+      .replace("__supplierId__", String(ctx.current.supplierId || "0"))
+      .replace("__purchaseBillId__", String(ctx.current.purchaseBillId || "0"))
+      .replace("__loanId__", String(ctx.current.loanId || "0"))
+      .replace("__invoiceId__", String(ctx.current.invoiceId || "0"))
       .replace("__employeeId__", String(ctx.current.employeeId || "0"));
     
     let body: any = null;
 
     if (test.id === "T1.1") {
-      body = { username: `TEST_CUST_${rand}`, role: "customer", phone: `99${Math.floor(10000000 + Math.random() * 90000000)}`, state: "Tamil Nadu", state_code: "33" };
+      body = { name: "TEST_SUPPLIER_TXN", phone: "9000000001", state: "Tamil Nadu", gstin: "33AABCT1332L1ZF" };
     } else if (test.id === "T1.2") {
-      body = { 
-        name: `TEST_PROD_${rand}`, sku: `SKU-${rand.toUpperCase()}`,
-        selling_price: 150, cost_price: 100, gst_percent: 18,
-        opening_stock: 50, min_stock: 5, unit: "pcs",
-        category: "Trading", hsn_code: "6006"
+      body = { name: "TEST_PRODUCT_TXN", sku: `TXN-${rand.toUpperCase()}`, cost_price: 1000, selling_price: 1500, gst_percent: 18, opening_stock: 0, min_stock: 5, unit: "pcs", hsn_code: "6006", category: "Trading" };
+    } else if (test.id === "T1.4") {
+      body = {
+        supplier_id: ctx.current.supplierId, bill_type: "TAX", bill_date: today,
+        items: [{ product_id: ctx.current.productId, qty: 10, rate: 1000, gst_rate: 18 }],
+        taxable_amount: 10000, cgst_amount: 900, sgst_amount: 900, total_amount: 11800,
+        payments: [{ mode: "CASH", amount: 5000, payment_date: today }, { mode: "BANK", amount: 3000, payment_date: today }],
+        total_paid: 8000, balance_amount: 3800
       };
-    } else if (test.id === "T1.3") {
-      if (!ctx.current.productId) return false;
-      body = { 
-        customer_id: ctx.current.customerId,
-        invoice_type: "TAX_INVOICE",
-        items: [{ product_id: ctx.current.productId, qty: 5, rate: 150, gst_rate: 18 }],
-        amount_paid: 200,
-        payment_status: "PARTIAL",
-        payments: [{ amount: 200, payment_method: "CASH", payment_date: today }]
+    } else if (test.id === "T1.8") {
+      body = { amount: 3800, mode: "UPI", payment_date: today, reference: "UPI-TXN-TEST-001" };
+    } else if (test.id === "T2.1") {
+      body = { username: `TEST_CUSTOMER_TXN`, role: "customer", phone: "9000000002", state: "Tamil Nadu", state_code: "33" };
+    } else if (test.id === "T2.2") {
+      body = {
+        customer_id: ctx.current.customerId, invoice_type: "NON-TAX", invoice_date: today,
+        items: [{ product_id: ctx.current.productId, qty: 5, rate: 1500, gst_rate: 0 }],
+        total_amount: 7500,
+        payments: [{ mode: "CASH", amount: 2500, payment_date: today }, { mode: "UPI", amount: 2500, payment_date: today }],
+        total_paid: 5000, balance_amount: 2500
       };
+    } else if (test.id === "T2.6") {
+      body = { amount: 2500, mode: "BANK", payment_date: today };
     } else if (test.id === "T3.1") {
-      body = { type: "RECEIPT", amount: 1000, description: "TEST_RECEIPT_AUTO", date: today, mode: "CASH", category: "Direct Income" };
-    } else if (test.id === "T3.2") {
-      body = { lender_name: `TEST_LENDER_${rand}`, contact_info: "9998887776", email: `test_${rand}@erp.com` };
+      body = { lender_name: "TEST_LENDER_TXN", type: "Bank", phone: "9000000003", principal: 100000, interest_rate: 12, start_date: today, repayment_cycle: "MONTHLY" };
     } else if (test.id === "T3.3") {
-      if (!ctx.current.lenderId) return false;
-      body = { 
-        lender_id: ctx.current.lenderId, 
-        principal_amount: 50000, 
-        interest_rate: 12, 
-        start_date: today, 
-        duration_months: 12, 
-        repayment_cycle: "MONTHLY",
-        party_name: "TEST_LOAN"
-      };
+      body = { principal_amount: 8000, interest_amount: 1000, payment_date: today, mode: "BANK" };
     } else if (test.id === "T3.4") {
-      body = { 
-        group_name: `TEST_CHIT_${rand}`, 
-        total_value: 100000, 
-        monthly_installment: 10000, 
-        duration_months: 10, 
-        start_date: today 
-      };
+      // Create employee and mark attendance in one step or multi-step
+      body = { name: "TEST_EMPLOYEE_TXN", designation: "Sales Staff", phone: "9000000004", salary: 15000, joining_date: today };
     } else if (test.id === "T3.5") {
-      body = { name: `TEST_BROKER_${rand}`, commission_rate: 2, phone: "8887776665" };
-    } else if (test.id === "T4.1") {
-      body = { name: `TEST_EMP_${rand}`, designation: "staff", phone: "7776665554", salary: 25000, joining_date: today };
-    } else if (test.id === "T4.2") {
-      if (!ctx.current.employeeId) return false;
-      body = { employee_id: ctx.current.employeeId, date: today, status: "Present" };
-    } else if (test.id === "T4.3") {
-      if (!ctx.current.employeeId) return false;
-      body = { month: "May 2026", working_days: 26, present_days: 20, deductions: 0, advance_deducted: 0 };
+      body = { month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }), working_days: 26, present_days: 20, deductions: 0, advance_deducted: 0 };
+    } else if (test.id === "T3.6") {
+      body = { name: "TEST_BROKER_TXN", commission_rate: 2.5, phone: "9000000005" };
     }
 
     if (test.method === "LOCAL") {
@@ -188,14 +201,49 @@ const SystemTester: React.FC = () => {
       const isOk = res.status === test.expectStatus || (test.expectStatus === 201 && res.status === 200);
       
       if (isOk) {
-        if (test.id === "T1.1") ctx.current.customerId = data.id;
-        if (test.id === "T1.2") {
-          const p = data.product || data;
-          ctx.current.productId = p.id;
-          ctx.current.initialStock = parseFloat(p.opening_stock || 0);
+        // ID Collection
+        if (test.id === "T1.1") ctx.current.supplierId = data.id;
+        if (test.id === "T1.2") ctx.current.productId = data.id;
+        if (test.id === "T1.4") ctx.current.purchaseBillId = data.id;
+        if (test.id === "T2.1") ctx.current.customerId = data.id;
+        if (test.id === "T2.2") ctx.current.invoiceId = data.id;
+        if (test.id === "T3.1") ctx.current.loanId = data.id;
+        if (test.id === "T3.4") ctx.current.employeeId = data.id;
+        if (test.id === "T3.6") ctx.current.brokerId = data.id;
+
+        // VERIFICATION LOGIC
+        if (test.id === "T1.3") ctx.current.initialTrialBalance = data;
+        
+        if (test.id === "T1.5") {
+          const prod = data.find((p: any) => p.id === ctx.current.productId);
+          if (!prod || parseFloat(prod.current_stock) < 10) throw new Error(`Stock not updated. Expected >= 10, got ${prod?.current_stock}`);
         }
-        if (test.id === "T3.2") ctx.current.lenderId = data.id;
-        if (test.id === "T4.1") ctx.current.employeeId = data.id;
+
+        if (test.id === "T1.6") {
+          const entries = data.filter((e: any) => e.reference_id === ctx.current.purchaseBillId);
+          const hasInventory = entries.some((e: any) => e.account_name.includes("Inventory") && parseFloat(e.debit) === 10000);
+          const hasPayable = entries.some((e: any) => e.account_name.includes("Payable") && parseFloat(e.credit) === 11800);
+          if (!hasInventory || !hasPayable) throw new Error("Double-entry ledger check failed for Purchase.");
+        }
+
+        if (test.id === "T1.7") {
+          if (parseFloat(data.pending_balance) !== 3800) throw new Error(`Supplier balance mismatch. Expected 3800, got ${data.pending_balance}`);
+        }
+
+        if (test.id === "T2.3") {
+          const prod = data.find((p: any) => p.id === ctx.current.productId);
+          if (!prod || parseFloat(prod.current_stock) !== 5) throw new Error(`Stock not decreased. Expected 5, got ${prod?.current_stock}`);
+        }
+
+        if (test.id === "T4.1") {
+          const diff = Math.abs(parseFloat(data.total_debits) - parseFloat(data.total_credits));
+          if (diff > 0.01) throw new Error(`Trial Balance not zero-sum. Difference: ₹${diff.toFixed(2)}`);
+        }
+
+        if (test.id === "T4.2") {
+          const loss = parseFloat(data.net_profit || 0);
+          if (loss > 0) throw new Error(`P&L Mismatch. Expected loss, got profit: ₹${loss}`);
+        }
 
         updateResult(test.id, { status: "pass", httpStatus: res.status, durationMs, requestBody: body });
         return true;

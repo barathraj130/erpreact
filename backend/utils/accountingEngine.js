@@ -22,19 +22,21 @@ export async function createTransaction(txData, lines) {
 
         // 2. Insert Transaction Header
         const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description, created_by, bill_purpose)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO transactions (company_id, branch_id, transaction_date, date, reference_type, reference_id, description, created_by, bill_purpose, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id;
         `;
         const txRes = await client.query(txSql, [
             txData.company_id,
             txData.branch_id,
             txData.transaction_date,
+            txData.transaction_date, // Use same date for both columns
             txData.reference_type,
             txData.reference_id,
             txData.description,
             txData.created_by,
-            txData.bill_purpose || 'real'
+            txData.bill_purpose || 'real',
+            'success'
         ]);
         const transactionId = txRes.rows[0].id;
 

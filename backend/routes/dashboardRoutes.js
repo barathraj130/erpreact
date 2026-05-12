@@ -114,16 +114,14 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 TO_CHAR(DATE_TRUNC('month', invoice_date), 'Mon YY') as month,
-                TO_CHAR(DATE_TRUNC('month', invoice_date), 'YYYY-MM-01') as month_date,
-                COALESCE(SUM(total_amount), 0) as revenue,
-                COUNT(*) as invoice_count
+                COALESCE(SUM(total_amount), 0) as revenue
             FROM invoices
-            WHERE company_id = $1
+            WHERE company_id = $1 
+              AND COALESCE(bill_purpose, '') != 'name_only'
             GROUP BY DATE_TRUNC('month', invoice_date)
             ORDER BY DATE_TRUNC('month', invoice_date) ASC
         `;
         const trend = await db.pgAll(sql, [companyId]);
-        console.log('Monthly trend result:', trend);
         res.json(trend);
     } catch (err) {
         console.error("Trend error:", err);
@@ -140,18 +138,17 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 u.username as name,
-                u.id as customer_id,
-                COALESCE(SUM(i.total_amount - i.paid_amount), 0) as amount
+                COALESCE(SUM(i.total_amount - i.paid_amount), 0) as outstanding
             FROM users u
             JOIN invoices i ON i.customer_id = u.id
             WHERE i.company_id = $1
+              AND COALESCE(i.is_deleted, false) = false
               AND (i.total_amount - i.paid_amount) > 0
             GROUP BY u.id, u.username
-            ORDER BY amount DESC
+            ORDER BY outstanding DESC
             LIMIT 10
         `;
         const data = await db.pgAll(sql, [companyId]);
-        console.log('Top outstanding customers:', data.length, 'records');
         res.json(data);
     } catch (err) {
         console.error("Outstanding error:", err);
@@ -165,38 +162,24 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
 router.get('/expense-breakdown', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
-        // Try ledger_entries EXPENSE accounts first
-        let expenses = [];
-        try {
-            const ledgerSql = `
-                SELECT 
-                    ca.name as category,
-                    SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) as amount
-                FROM ledger_entries l
-                JOIN chart_of_accounts ca ON l.account_id = ca.id
-                WHERE l.company_id = $1
-                  AND UPPER(ca.account_type) = 'EXPENSE'
-                GROUP BY ca.name
-                HAVING SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) > 0
-                ORDER BY amount DESC
-            `;
-            expenses = await db.pgAll(ledgerSql, [companyId]);
-        } catch(e) { expenses = []; }
-
-        // Fallback: use purchase_bills as COGS proxy
+        const ledgerSql = `
+            SELECT 
+                ca.name as category,
+                SUM(COALESCE(le.debit, 0) - COALESCE(le.credit, 0)) as amount
+            FROM ledger_entries le
+            JOIN chart_of_accounts ca ON le.account_id = ca.id
+            WHERE le.company_id = $1
+              AND (ca.name ILIKE '%expense%' OR ca.name ILIKE '%salary%' OR ca.name ILIKE '%commission%')
+            GROUP BY ca.name
+            HAVING SUM(COALESCE(le.debit, 0) - COALESCE(le.credit, 0)) > 0
+            ORDER BY amount DESC
+        `;
+        const expenses = await db.pgAll(ledgerSql, [companyId]);
+        
         if (!expenses || expenses.length === 0) {
-            try {
-                const cogsSql = `
-                    SELECT 'Purchases (COGS)' as category, COALESCE(SUM(total_amount), 0) as amount
-                    FROM purchase_bills
-                    WHERE company_id = $1
-                `;
-                const cogs = await db.pgGet(cogsSql, [companyId]);
-                if (cogs && parseFloat(cogs.amount) > 0) expenses = [cogs];
-            } catch(e) { expenses = []; }
+            return res.json([{ category: "No expenses recorded", amount: 0 }]);
         }
-
-        console.log('Expense breakdown:', expenses.length, 'categories');
+        
         res.json(expenses);
     } catch (err) {
         console.error("Expense breakdown error:", err);
