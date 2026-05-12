@@ -255,8 +255,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             `, [
                 billId, sanitizeInt(item.product_id), item.description || null,
                 item.hsn_code || null, item.quantity, item.unit_price,
-                item.tax_percent || 0, item.cgst_rate, item.sgst_rate, item.igst_rate,
-                item.cgst_amount, item.sgst_amount, item.igst_amount, item.line_total
+                item.tax_percent || 0, 
+                parseFloat(item.cgst_rate || 0), parseFloat(item.sgst_rate || 0), parseFloat(item.igst_rate || 0),
+                parseFloat(item.cgst_amount || 0), parseFloat(item.sgst_amount || 0), parseFloat(item.igst_amount || 0), 
+                parseFloat(item.line_total || 0)
             ]);
 
             if (item.product_id) {

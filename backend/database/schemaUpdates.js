@@ -317,6 +317,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE loans ADD COLUMN IF NOT EXISTS repayment_cycle VARCHAR(50);
             
             ALTER TABLE lenders ADD COLUMN IF NOT EXISTS type VARCHAR(50);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_lenders_name_company ON lenders(lender_name, company_id);
         `);
 
         console.log("✅ Schema Updates Completed.");

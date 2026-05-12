@@ -270,11 +270,16 @@ router.get('/gst/itc', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                id as bill_id, bill_number, bill_date, supplier_name, gstin,
-                COALESCE(sub_total, 0) as taxable_amount, COALESCE(cgst_total, 0) as cgst_total, COALESCE(sgst_total, 0) as sgst_total, COALESCE(igst_total, 0) as igst_total, COALESCE(tax_total, 0) as eligible_itc
-            FROM purchase_bills
-            WHERE company_id = $1 AND bill_type = 'TAX' AND is_deleted = false
-            ORDER BY bill_date DESC
+                pb.id as bill_id, pb.bill_number, pb.bill_date, pb.supplier_name, s.gstin,
+                COALESCE(pb.sub_total, 0) as taxable_amount, 
+                COALESCE(pb.cgst_total, 0) as cgst_total, 
+                COALESCE(pb.sgst_total, 0) as sgst_total, 
+                COALESCE(pb.igst_total, 0) as igst_total, 
+                COALESCE(pb.tax_total, 0) as eligible_itc
+            FROM purchase_bills pb
+            LEFT JOIN suppliers s ON pb.supplier_id = s.id
+            WHERE pb.company_id = $1 AND pb.bill_type = 'TAX' AND pb.is_deleted = false
+            ORDER BY pb.bill_date DESC
         `;
         const data = await db.pgAll(sql, [companyId]);
         res.json(data);
