@@ -1,6 +1,6 @@
 import express from "express";
-import db from "../config/db.js";
-import authMiddleware from "../middleware/authMiddleware.js";
+import * as db from "../database/pg.js";
+import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -72,7 +72,7 @@ router.get("/", authMiddleware, async (req, res) => {
 router.get("/:id", authMiddleware, async (req, res) => {
     const { id } = req.params;
     try {
-        const bill = await db.pgOne(`SELECT * FROM purchase_bills WHERE id = $1`, [id]);
+        const bill = await db.pgGet(`SELECT * FROM purchase_bills WHERE id = $1`, [id]);
         if (!bill) return res.status(404).json({ error: "Bill not found" });
 
         const items = await db.pgAll(`SELECT * FROM purchase_bill_items WHERE bill_id = $1`, [id]);
