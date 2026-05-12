@@ -13,6 +13,21 @@ export const createLoan = async (user, loanData) => {
     try {
         await client.query('BEGIN');
 
+        const sanitizeInt = (val) => {
+            const p = parseInt(val);
+            return isNaN(p) ? null : p;
+        };
+
+        // 0. Ensure Lender exists or create it
+        let lenderId = sanitizeInt(loanData.lender_id);
+        if (!lenderId && loanData.lender_name) {
+            const lRes = await client.query(
+                "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (lender_name) DO UPDATE SET phone=$4 RETURNING id",
+                [companyId, loanData.lender_name, loanData.type || 'Bank', loanData.phone]
+            );
+            lenderId = lRes.rows[0].id;
+        }
+
         // 1. Insert into loans table
         const loanSql = `
             INSERT INTO loans (
@@ -25,9 +40,9 @@ export const createLoan = async (user, loanData) => {
         const loanRes = await client.query(loanSql, [
             companyId, 
             branchId, 
-            loanData.lender_id, 
-            loanData.party_name || 'Lender', 
-            loanData.party_type || 'BANK',
+            lenderId, 
+            loanData.party_name || loanData.lender_name || 'Lender', 
+            loanData.party_type || loanData.type || 'BANK',
             loanData.loan_direction || 'BORROWED',
             loanData.principal_amount || loanData.principal,
             loanData.interest_rate,
@@ -44,7 +59,7 @@ export const createLoan = async (user, loanData) => {
         // Credit: Lender's Loan Payable Account (Liability)
         
         // Find the specific ledger account for this lender
-        const lender = await client.query("SELECT lender_name FROM lenders WHERE id = $1", [loanData.lender_id]);
+        const lender = await client.query("SELECT lender_name FROM lenders WHERE id = $1", [lenderId]);
         const lenderName = lender.rows[0].lender_name;
         const ledgerRes = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = $2", [companyId, lenderName]);
         

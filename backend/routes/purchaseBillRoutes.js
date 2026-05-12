@@ -253,7 +253,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                  cgst_amount, sgst_amount, igst_amount, line_total)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `, [
-                billId, item.product_id || null, item.description || null,
+                billId, sanitizeInt(item.product_id), item.description || null,
                 item.hsn_code || null, item.quantity, item.unit_price,
                 item.tax_percent || 0, item.cgst_rate, item.sgst_rate, item.igst_rate,
                 item.cgst_amount, item.sgst_amount, item.igst_amount, item.line_total
