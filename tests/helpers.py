@@ -104,6 +104,26 @@ def fill(driver, selector, value):
         print(f"DEBUG: Could not fill {selector}: {e}")
         return False
 
+def wait(seconds):
+    """Alias for time.sleep to match test imports."""
+    time.sleep(seconds)
+
+def click(driver, selector):
+    """Click an element using CSS selector."""
+    try:
+        el = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+        )
+        el.click()
+        return True
+    except Exception as e:
+        print(f"DEBUG: Could not click {selector}: {e}")
+        return False
+
+def text_present(driver, text):
+    """Check if specific text is present in the page body."""
+    return text.lower() in body(driver)
+
 def click_text(driver, text):
     """Click a button or element that contains specific text."""
     try:

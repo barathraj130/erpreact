@@ -64,8 +64,8 @@ export const addBroker = (name: string, type: string, commissionRate: number) =>
  * SUPPLIER HELPERS
  */
 export const validateGSTIN = (gstin: string) => {
-  // Format: State code (33), 10-char PAN, 1-char entity code, 'Z' (default), 1-char check digit
-  const gstinRegex = /^33[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  // Format: 2-digit state code (01-99), 10-char PAN, 1-char entity code, 'Z' placeholder, 1-char check digit
+  const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
   return gstinRegex.test(gstin);
 };
 
