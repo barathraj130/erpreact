@@ -30,7 +30,12 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
             { table: 'purchase_bills', column: 'bill_number' },
             { table: 'transactions', column: 'description' },
             { table: 'ledger_entries', column: 'description' },
-            { table: 'inventory_movements', column: 'note' }
+            { table: 'inventory_movements', column: 'note' },
+            { table: 'brokers', column: 'name' },
+            { table: 'chit_groups', column: 'group_name' },
+            { table: 'lenders', column: 'lender_name' },
+            { table: 'loans', column: 'party_name' },
+            { table: 'employees', column: 'name' }
         ];
 
         const results = {};

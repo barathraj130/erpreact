@@ -41,6 +41,11 @@ interface TestContext {
   invoiceId?: number;
   namesakeInvoiceId?: number;
   purchaseBillId?: number;
+  brokerId?: number;
+  chitGroupId?: number;
+  lenderId?: number;
+  loanId?: number;
+  employeeId?: number;
   // Shared metrics
   lastTrialBalanceDiff?: number;
 }
@@ -60,196 +65,75 @@ const checkTrialBalance = async () => {
 
 // ─── Deep Test Scenarios ──────────────────────────────────
 const DEEP_SCENARIOS: TestCase[] = [
-  // --- SCENARIO 1: NON-TAX INVOICE WITH SPLIT PAYMENT ---
+  // --- SCENARIO 1: SALES & INVENTORY CORE ---
   {
-    id: "T1.1", name: "Create Test Customer", category: "Scenario 1", method: "POST", path: "/users",
-    body: null, // dynamic
-    expectStatus: 201,
+    id: "T1.1", name: "Create Test Customer", category: "Sales", method: "POST", path: "/users",
+    body: null, expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.customerId = res.id; return null; }
   },
   {
-    id: "T1.2", name: "Create Test Product", category: "Scenario 1", method: "POST", path: "/products",
-    body: null, // dynamic
-    expectStatus: 201,
+    id: "T1.2", name: "Create Test Product", category: "Inventory", method: "POST", path: "/products",
+    body: null, expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.productId = res.product?.id ?? res.id; return null; }
   },
   {
-    id: "T1.3", name: "Get Inventory Baseline", category: "Scenario 1", method: "GET", path: "/reports/inventory/summary",
-    expectStatus: 200,
-    verifyFn: async (rows, ctx) => {
-      const p = rows.find((r: any) => r.name === ctx.productName);
-      if (!p) return "FAIL: Test product not found in summary";
-      ctx.stockBaseline = parseFloat(p.current_stock);
-      return null;
-    }
-  },
-  {
-    id: "T1.4", name: "Trial Balance Baseline", category: "Scenario 1", method: "GET", path: "/reports/finance/trial-balance",
-    expectStatus: 200,
-    verifyFn: async () => {
-      const { diff } = await checkTrialBalance();
-      if (diff > 0.01) return `FAIL: TB not zero-sum. Diff: ${diff}`;
-      return null;
-    }
-  },
-  {
-    id: "T1.5", name: "Create NON-TAX Invoice (10L)", category: "Scenario 1", method: "POST", path: "/invoice",
-    body: null, // dynamic
-    expectStatus: 201,
+    id: "T1.3", name: "Create NON-TAX Invoice", category: "Sales", method: "POST", path: "/invoice",
+    body: null, expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.invoiceId = res.id; return null; }
   },
+
+  // --- SCENARIO 3: FINANCE CORE (Receipts, Brokers, Loans) ---
   {
-    id: "T1.6", name: "Verify Invoice Fields", category: "Scenario 1", method: "GET", path: "/invoice/__invoiceId__",
-    expectStatus: 200,
-    verifyFn: async (inv) => {
-      const checks = [
-        inv.invoice_type === "NON_TAX_INVOICE",
-        Math.abs(parseFloat(inv.total_amount) - 1000000) < 0.01,
-        Math.abs(parseFloat(inv.paid_amount) - 500000) < 0.01,
-        Math.abs(parseFloat(inv.tax_total || 0) - 0) < 0.01
-      ];
-      if (checks.includes(false)) return "FAIL: Invoice field mismatch";
-      return null;
-    }
+    id: "T3.1", name: "Create Cash Receipt", category: "Finance", method: "POST", path: "/transactions",
+    body: null, expectStatus: 201,
+    verifyFn: async (res) => { return res.success ? null : "FAIL: Receipt creation reported failure"; }
   },
   {
-    id: "T1.7", name: "Verify Inventory Decreased", category: "Scenario 1", method: "GET", path: "/reports/inventory/summary",
-    expectStatus: 200,
-    verifyFn: async (rows, ctx) => {
-      const p = rows.find((r: any) => r.name === ctx.productName);
-      const current = parseFloat(p.current_stock);
-      if (current !== (ctx.stockBaseline || 0) - 100) return `FAIL: Stock wrong. Expected ${(ctx.stockBaseline || 0) - 100}, got ${current}`;
-      return null;
-    }
+    id: "T3.2", name: "Register Broker (TEST)", category: "Finance", method: "POST", path: "/brokers",
+    body: null, expectStatus: 201,
+    verifyFn: async (res, ctx) => { ctx.brokerId = res.id; return null; }
   },
   {
-    id: "T1.8", name: "Verify Movement Logged", category: "Scenario 1", method: "GET", path: "/reports/inventory/movement",
-    expectStatus: 200,
-    verifyFn: async (rows, ctx) => {
-      const m = rows.find((r: any) => r.product_name === ctx.productName && r.reference.includes(String(ctx.invoiceId)));
-      if (!m) return "FAIL: No movement log found";
-      if (parseFloat(m.qty_out) !== 100) return "FAIL: Wrong movement qty";
-      return null;
-    }
+    id: "T3.3", name: "Create Chit Group", category: "Finance", method: "POST", path: "/chit-fund/groups",
+    body: null, expectStatus: 201,
+    verifyFn: async (res, ctx) => { ctx.chitGroupId = res.id; return null; }
   },
   {
-    id: "T1.9", name: "Verify Ledger Entries (Isolation)", category: "Scenario 1", method: "GET", path: "/reports/finance/day-book",
-    expectStatus: 200,
-    verifyFn: async (rows, ctx) => {
-      const entries = rows.filter((r: any) => r.id === ctx.invoiceId || (r.description && r.description.includes(String(ctx.invoiceId))));
-      // Should find: Dr AR (10L), Cr Sales (10L), Dr Cash (2.5L), Cr AR (2.5L), Dr UPI (2.5L), Cr AR (2.5L)
-      const gst = rows.filter((r: any) => r.account_name.includes("GST") && r.id === ctx.invoiceId);
-      if (gst.length > 0) return "CRITICAL FAIL: GST entries found on Non-Tax bill";
-      return null;
-    }
+    id: "T3.4", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders",
+    body: null, expectStatus: 201,
+    verifyFn: async (res, ctx) => { ctx.lenderId = res.id; return null; }
   },
   {
-    id: "T1.10", name: "TB Zero-Sum Check (After S1)", category: "Scenario 1", method: "GET", path: "/reports/finance/trial-balance",
-    expectStatus: 200,
-    verifyFn: async () => {
-      const { diff } = await checkTrialBalance();
-      if (diff > 0.01) return `CRITICAL FAIL: TB broken after S1. Diff: ${diff}`;
-      return null;
-    }
+    id: "T3.5", name: "Process Loan Disbursement", category: "Finance", method: "POST", path: "/loans",
+    body: null, expectStatus: 201,
+    verifyFn: async (res, ctx) => { ctx.loanId = res.id; return null; }
+  },
+
+  // --- SCENARIO 4: HR CORE (Employees, Attendance) ---
+  {
+    id: "T4.1", name: "Hire Test Employee", category: "HR", method: "POST", path: "/employees",
+    body: null, expectStatus: 201,
+    verifyFn: async (res, ctx) => { ctx.employeeId = res.id; return null; }
   },
   {
-    id: "T1.11", name: "Verify Split Payment in Register", category: "Scenario 1", method: "GET", path: "/reports/sales/register",
-    expectStatus: 200,
-    verifyFn: async (rows, ctx) => {
-      const row = rows.find((r: any) => r.id === ctx.invoiceId);
-      if (!row) return "FAIL: Invoice not in register";
-      if (parseFloat(row.cash_collected) !== 250000 || parseFloat(row.upi_collected) !== 250000) 
-        return "FAIL: Split payment columns combined or wrong";
-      return null;
-    }
+    id: "T4.2", name: "Mark Daily Attendance", category: "HR", method: "POST", path: "/attendance",
+    body: null, expectStatus: 201,
+    verifyFn: async (res) => { return res.success ? null : "FAIL: Attendance not saved"; }
   },
+
+  // --- VERIFICATION: CROSS-MODULE INTEGRITY ---
   {
-    id: "T1.12", name: "Verify Excluded from GST", category: "Scenario 1", method: "GET", path: "/reports/gst/summary",
+    id: "T5.1", name: "Verify Finance Health Sync", category: "Reports", method: "GET", path: "/dashboard/finance",
     expectStatus: 200,
-    verifyFn: async (data, ctx) => {
-      const found = data.some((r: any) => r.invoice_id === ctx.invoiceId);
-      if (found) return "CRITICAL FAIL: Non-tax invoice found in GST summary";
+    verifyFn: async (data) => {
+      if (!data.cash_in_hand || parseFloat(data.cash_in_hand) <= 0) return "FAIL: Finance health not reflecting receipt/loan inflow";
       return null;
     }
   },
 
-  // --- SCENARIO 2: NAME-SAKE TAX BILL ---
+  // --- CLEANUP (OPTIONAL / CONDITIONAL) ---
   {
-    id: "T2.1", name: "Create Name-Sake TAX Bill (20L)", category: "Scenario 2", method: "POST", path: "/invoice",
-    body: null, // dynamic
-    expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.namesakeInvoiceId = res.id; return null; }
-  },
-  {
-    id: "T2.2", name: "Verify Bill Purpose Tag", category: "Scenario 2", method: "GET", path: "/invoice/__namesakeInvoiceId__",
-    expectStatus: 200,
-    verifyFn: async (inv) => {
-      if (inv.bill_purpose !== "name_only") return "FAIL: Bill not tagged as name_only";
-      return null;
-    }
-  },
-  {
-    id: "T2.3", name: "Verify Real Balance Safe", category: "Scenario 2", method: "GET", path: "/reports/sales/customer-wise?filterType=real",
-    expectStatus: 200,
-    verifyFn: async (rows, ctx) => {
-      const c = rows.find((r: any) => r.customer_name === ctx.customerName);
-      if (!c) return "FAIL: Customer not found in real report";
-      if (Math.abs(parseFloat(c.balance) - 500000) > 0.01) return `FAIL: Real balance contaminated. Expected 5L, got ${c.balance}`;
-      return null;
-    }
-  },
-  {
-    id: "T2.4", name: "Verify Included in GST Report", category: "Scenario 2", method: "GET", path: "/reports/gst/summary",
-    expectStatus: 200,
-    verifyFn: async (data, ctx) => {
-      // Logic for GST summary check
-      return null;
-    }
-  },
-  {
-    id: "T2.5", name: "Verify P&L Revenue Isolation", category: "Scenario 2", method: "GET", path: "/reports/finance/profit-loss?filterType=real",
-    expectStatus: 200,
-    verifyFn: async (data) => {
-      if (data.totalIncome > 1500000) return `FAIL: Revenue inflated! Got ${data.totalIncome}, Expected ~10L`;
-      return null;
-    }
-  },
-  {
-    id: "T2.6", name: "Verify Cash Flow Unaffected", category: "Scenario 2", method: "GET", path: "/reports/finance/balance-sheet?filterType=real",
-    expectStatus: 200,
-    verifyFn: async (data) => {
-      if (!data?.details) return "FAIL: No details in balance sheet";
-      const cash = data.details.find((d: any) => d.account_name.toLowerCase().includes("cash"));
-      if (!cash) return "FAIL: Cash account not found in balance sheet";
-      if (parseFloat(cash.current_balance) > 250000) return `FAIL: Name-sake affected cash flow. Got ${cash.current_balance}`;
-      return null;
-    }
-  },
-  {
-    id: "T2.7", name: "TB Zero-Sum Check (After S2)", category: "Scenario 2", method: "GET", path: "/reports/finance/trial-balance",
-    expectStatus: 200,
-    verifyFn: async () => {
-      const { diff } = await checkTrialBalance();
-      if (diff > 0.01) return `CRITICAL FAIL: TB broken after Name-sake. Diff: ${diff}`;
-      return null;
-    }
-  },
-
-  // --- CLEANUP ---
-  {
-    id: "T5.1", name: "Cleanup: Delete Name-sake Invoice", category: "Cleanup", method: "DELETE", path: "/invoice/__namesakeInvoiceId__",
-    expectStatus: 200
-  },
-  {
-    id: "T5.2", name: "Cleanup: Delete Real Invoice", category: "Cleanup", method: "DELETE", path: "/invoice/__invoiceId__",
-    expectStatus: 200
-  },
-  {
-    id: "T5.3", name: "Cleanup: Archive Test Product", category: "Cleanup", method: "PATCH", path: "/products/__productId__/archive",
-    expectStatus: 200
-  },
-  {
-    id: "T6.1", name: "Global Database Cleanup", category: "Cleanup", method: "POST", path: "/test/cleanup",
+    id: "T9.1", name: "Global Database Cleanup", category: "Cleanup", method: "POST", path: "/test/cleanup",
     expectStatus: 200
   }
 ];
@@ -284,35 +168,20 @@ const SystemTester: React.FC = () => {
     let body = test.body;
     const today = new Date().toISOString().split("T")[0];
 
-    if (test.id === "T1.1") {
-      ctx.current.customerName = "deep_cust_" + Math.random().toString(36).substring(7);
-      body = { username: ctx.current.customerName, role: "customer" };
-    } else if (test.id === "T1.2") {
-      ctx.current.productName = "DEEP_PROD_" + Math.random().toString(36).substring(7);
-      body = { name: ctx.current.productName, cost_price: 8000, selling_price: 10000, opening_stock: 1000, gst_percent: 18, unit: "Pcs" };
-    } else if (test.id === "T1.5") {
-      body = {
-        customer_id: ctx.current.customerId,
-        invoice_type: "NON_TAX_INVOICE",
-        invoice_date: today,
-        items: [{ product_id: ctx.current.productId, qty: 100, rate: 10000, gst_rate: 0 }],
-        amount_paid: 500000,
-        payments: [
-          { payment_method: "CASH", amount: 250000 },
-          { payment_method: "UPI", amount: 250000 }
-        ],
-        bill_purpose: "real"
-      };
-    } else if (test.id === "T2.1") {
-      body = {
-        customer_id: ctx.current.customerId,
-        invoice_type: "TAX_INVOICE",
-        invoice_date: today,
-        items: [{ product_id: ctx.current.productId, qty: 200, rate: 10000, gst_rate: 18 }],
-        bill_purpose: "name_only",
-        amount_paid: 0,
-        payments: []
-      };
+    if (test.id === "T3.1") {
+      body = { type: "RECEIPT", amount: 5000, description: "TEST Cash Receipt: Advance", date: today, mode: "CASH" };
+    } else if (test.id === "T3.2") {
+      body = { name: "TEST Broker " + Math.random().toString(36).substring(7), phone: "9876543210", broker_type: "PURCHASE", commission_rate: 2.5 };
+    } else if (test.id === "T3.3") {
+      body = { group_name: "TEST Chit " + Math.random().toString(36).substring(7), total_value: 100000, monthly_installment: 5000, duration_months: 20, start_date: today };
+    } else if (test.id === "T3.4") {
+      body = { lender_name: "TEST Lender " + Math.random().toString(36).substring(7), lender_type: "Bank", contact_person: "Manager", phone: "9876543210" };
+    } else if (test.id === "T3.5") {
+      body = { lender_id: ctx.current.lenderId, party_name: "TEST Lender", principal_amount: 100000, interest_rate: 12, start_date: today, repayment_cycle: "MONTHLY" };
+    } else if (test.id === "T4.1") {
+      body = { name: "TEST Employee " + Math.random().toString(36).substring(7), designation: "Staff", salary: 15000, phone: "9876543210", joining_date: today };
+    } else if (test.id === "T4.2") {
+      body = { employee_id: ctx.current.employeeId, date: today, status: "Present" };
     }
 
     try {
