@@ -103,9 +103,17 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         client = await db.getClient();
         await client.query("BEGIN");
 
+        const sanitizeInt = (val) => {
+            const p = parseInt(val);
+            return isNaN(p) ? null : p;
+        };
+
         let finalInvoiceNumber = invoice_number;
         let financial_month;
-        const branchId = req.body.branch_id || req.user.branch_id;
+        const rawBranchId = req.body.branch_id || req.user.branch_id;
+        const branchId = sanitizeInt(rawBranchId);
+        const safeCustomerId = sanitizeInt(customer_id);
+        const safeBrokerId = sanitizeInt(broker_id);
         
         if (!finalInvoiceNumber) {
             const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId);
@@ -117,7 +125,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         // 1. Get Company/Branch and Customer State for GST Detection
         const company = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);
-        const customer = await client.query(`SELECT state, state_code FROM users WHERE id = $1`, [customer_id]);
+        const customer = await client.query(`SELECT state, state_code FROM users WHERE id = $1`, [safeCustomerId]);
         
         const companyStateCode = company.rows[0]?.state_code;
         const customerStateCode = customer.rows[0]?.state_code;
@@ -241,33 +249,13 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         `;
 
         const result = await client.query(headerSQL, [
-            companyId,
-            customer_id || null,
-            finalInvoiceNumber,
-            invoice_type || 'TAX_INVOICE',
-            financial_month,
-            new Date(), // invoice_date
-            new Date(), // due_date
-            payment_status || 'UNPAID',
-            totalTaxable - totalReturnTaxable, // sub_total
-            totalGST - totalReturnGST, // tax_total
-            totalCGST - totalReturnCGST,
-            totalSGST - totalReturnSGST,
-            totalIGST - totalReturnIGST,
-            effectiveTotal,
-            gstType,
-            finalAmountPaid,
-            discountAmt,
-            totalReturnAmount,
-            notes || null,
-            bundles_count || 0,
-            transport_details?.vehicle || null,
-            transport_details?.mode || null,
-            transport_details?.supply_date || null,
-            transport_details?.reverse_charge || 'No',
-            broker_id || null,
-            broker_commission_rate || null,
-            branchId || null,
+            companyId, safeCustomerId, finalInvoiceNumber, invoice_type || 'TAX_INVOICE',
+            financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(), payment_status || 'UNPAID',
+            totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, effectiveTotal,
+            gstType, finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
+            transport_details?.vehicle_number || '', transport_details?.mode || '', transport_details?.supply_date || null, transport_details?.reverse_charge || 'No',
+            safeBrokerId, Number(broker_commission_rate) || 0,
+            branchId,
             bill_purpose || 'real'
         ]);
 

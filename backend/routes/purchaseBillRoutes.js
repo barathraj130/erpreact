@@ -113,10 +113,14 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
     } = data;
 
     // Safety: ensure no NaN values reach the DB
-    const sanitizeInt = (val) => (isNaN(parseInt(val)) ? null : parseInt(val));
+    const sanitizeInt = (val) => {
+        const p = parseInt(val);
+        return isNaN(p) ? null : p;
+    };
     const safeSupplierId = sanitizeInt(supplier_id);
     const safeBrokerId = sanitizeInt(broker_id);
     const safeBranchId = sanitizeInt(branchId);
+    const safeUserId = sanitizeInt(userId);
 
     let client;
     try {
@@ -278,7 +282,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await client.query(`
                     INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
                     VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
-                `, [companyId, branchId, item.product_id, item.quantity, billId, `Purchased via Bill #${bill_number}`]);
+                `, [companyId, safeBranchId, item.product_id, item.quantity, billId, `Purchased via Bill #${bill_number}`]);
             }
         }
 
@@ -293,10 +297,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             ]);
         }
 
-        if (supplier_id && balance > 0) {
+        if (safeSupplierId && balance > 0) {
             await client.query(
                 `UPDATE suppliers SET current_balance = current_balance + $1 WHERE id = $2`,
-                [balance, supplier_id]
+                [balance, safeSupplierId]
             );
         }
 
@@ -352,12 +356,12 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             if (txLines.length > 0) {
                 const txData = {
                     company_id:       companyId,
-                    branch_id:        branchId,
+                    branch_id:        safeBranchId,
                     transaction_date: bill_date || new Date(),
                     reference_type:   "PURCHASE_BILL",
                     reference_id:     billId,
                     description:      `${isExpenseBill ? 'Expense' : 'Purchase'} Bill #${bill_number}`,
-                    created_by:       userId,
+                    created_by:       safeUserId,
                     bill_purpose:     req.body.bill_purpose || 'real'
                 };
                 await createTransaction(txData, txLines);
@@ -366,9 +370,9 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             console.warn("⚠️ Accounting failed:", accErr.message);
         }
 
-        if (broker_id) {
+        if (safeBrokerId) {
             await brokerService.recordCommission(client, req.user, {
-                broker_id, commission_rate: broker_commission_rate, bill_id: billId,
+                broker_id: safeBrokerId, commission_rate: broker_commission_rate, bill_id: billId,
                 bill_number, bill_amount: netAmount, bill_type: "PURCHASE",
                 date: bill_date || new Date(), line_items: processedItems
             });
