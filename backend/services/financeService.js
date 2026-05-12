@@ -47,7 +47,20 @@ export const createLoan = async (user, loanData) => {
         const lender = await client.query("SELECT lender_name FROM lenders WHERE id = $1", [loanData.lender_id]);
         const lenderName = lender.rows[0].lender_name;
         const ledgerRes = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = $2", [companyId, lenderName]);
-        const lenderLedgerId = ledgerRes.rows[0]?.id || 10; // Fallback to 10 if not found
+        
+        let lenderLedgerId = ledgerRes.rows[0]?.id;
+        if (!lenderLedgerId) {
+            const creditorsGroup = await client.query("SELECT id FROM ledger_groups WHERE (company_id = $1 OR company_id = 1) AND name = 'Sundry Creditors'", [companyId]);
+            const gId = creditorsGroup.rows[0]?.id || 1;
+            const newLedger = await client.query("INSERT INTO ledgers (company_id, name, group_id) VALUES ($1, $2, $3) RETURNING id", [companyId, lenderName + ' (Auto)', gId]);
+            lenderLedgerId = newLedger.rows[0].id;
+        }
+
+        let bankAccountId = loanData.bank_account_id;
+        if (!bankAccountId) {
+            const defaultCash = await client.query("SELECT id FROM ledgers WHERE (company_id = $1 OR company_id = 1) AND name = 'Cash' LIMIT 1", [companyId]);
+            bankAccountId = defaultCash.rows[0]?.id || 1;
+        }
         
         const txSql = `
             INSERT INTO transactions (company_id, branch_id, transaction_date, date, reference_type, reference_id, description)
@@ -63,7 +76,7 @@ export const createLoan = async (user, loanData) => {
         await client.query(`
             INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
             VALUES ($1, $2, $3, 0, 'Loan amount received')
-        `, [transactionId, loanData.bank_account_id || 1, loanData.principal_amount]); // 1 = Default Cash
+        `, [transactionId, bankAccountId, loanData.principal_amount]);
 
         // Credit Loan Payable
         await client.query(`

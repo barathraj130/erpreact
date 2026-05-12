@@ -278,7 +278,7 @@ export const runSchemaUpdates = async () => {
             CREATE TABLE IF NOT EXISTS transaction_lines (
                 id SERIAL PRIMARY KEY,
                 transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-                account_id INTEGER NOT NULL REFERENCES chart_of_accounts(id),
+                account_id INTEGER NOT NULL REFERENCES ledgers(id),
                 debit_amount NUMERIC(15,2) DEFAULT 0,
                 credit_amount NUMERIC(15,2) DEFAULT 0,
                 description TEXT,
