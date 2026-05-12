@@ -46,12 +46,12 @@ router.get('/summary', authMiddleware, async (req, res) => {
         const salesSql = `
             SELECT 
                 COALESCE(SUM(total_amount), 0) as total_sales,
-                COALESCE(SUM(CASE WHEN invoice_type = 'TAX_INVOICE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
-                COALESCE(SUM(CASE WHEN invoice_type = 'RETAIL_SALE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
+                COALESCE(SUM(CASE WHEN UPPER(invoice_type) IN ('TAX','TAX INVOICE','GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_sales,
+                COALESCE(SUM(CASE WHEN UPPER(invoice_type) NOT IN ('TAX','TAX INVOICE','GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as anon_sales,
                 COALESCE(SUM(CASE WHEN bill_purpose = 'name_only' THEN total_amount ELSE 0 END), 0) as name_sake_sales
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
-              AND bill_purpose != 'name_only'
+              AND is_deleted = false
         `;
         const salesRes = await db.pgGet(salesSql, [companyId]);
 
@@ -90,34 +90,19 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
         // First try last 12 months
         let sql = `
             SELECT 
-                TO_CHAR(invoice_date, 'Mon YYYY') as month,
-                SUM(CASE WHEN bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as revenue,
-                SUM(CASE WHEN invoice_type = 'TAX_INVOICE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as tax_revenue,
-                SUM(CASE WHEN invoice_type != 'TAX_INVOICE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as nontax_revenue,
+                TO_CHAR(invoice_date, 'Mon YY') as month,
+                COALESCE(SUM(total_amount), 0) as revenue,
+                COALESCE(SUM(CASE WHEN UPPER(invoice_type) IN ('TAX','TAX INVOICE','GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as tax_revenue,
+                COALESCE(SUM(CASE WHEN UPPER(invoice_type) NOT IN ('TAX','TAX INVOICE','GST') AND COALESCE(bill_purpose,'') != 'name_only' THEN total_amount ELSE 0 END), 0) as nontax_revenue,
                 COUNT(*) as invoice_count
             FROM invoices
-            WHERE company_id = $1 AND ${branchFilter} AND invoice_date >= CURRENT_DATE - INTERVAL '12 months'
+            WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false
             GROUP BY DATE_TRUNC('month', invoice_date), month
             ORDER BY DATE_TRUNC('month', invoice_date) ASC
         `;
         let trend = await db.pgAll(sql, [companyId]);
         
-        // If empty, fetch ALL TIME
-        if (trend.length === 0) {
-            sql = `
-                SELECT 
-                    TO_CHAR(invoice_date, 'Mon YYYY') as month,
-                    SUM(CASE WHEN bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as revenue,
-                    SUM(CASE WHEN invoice_type = 'TAX_INVOICE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as tax_revenue,
-                    SUM(CASE WHEN invoice_type != 'TAX_INVOICE' AND bill_purpose != 'name_only' THEN total_amount ELSE 0 END) as nontax_revenue,
-                    COUNT(*) as invoice_count
-                FROM invoices
-                WHERE company_id = $1 AND ${branchFilter}
-                GROUP BY DATE_TRUNC('month', invoice_date), month
-                ORDER BY DATE_TRUNC('month', invoice_date) ASC
-            `;
-            trend = await db.pgAll(sql, [companyId]);
-        }
+        // Trend endpoint handles everything above.
         
         res.json(trend);
     } catch (err) {
@@ -136,15 +121,16 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                u.username as name,
-                SUM(i.total_amount - i.paid_amount) as amount
-            FROM invoices i
-            JOIN users u ON i.customer_id = u.id
+                u.username as customer_name,
+                u.id as customer_id,
+                COALESCE(SUM(i.total_amount - i.paid_amount), 0) as outstanding
+            FROM users u
+            JOIN invoices i ON i.customer_id = u.id
             WHERE i.company_id = $1 AND ${branchFilter}
-              AND i.total_amount > i.paid_amount
+              AND (i.total_amount - i.paid_amount) > 0
               AND i.is_deleted = false
-            GROUP BY u.username
-            ORDER BY amount DESC
+            GROUP BY u.id, u.username
+            ORDER BY outstanding DESC
             LIMIT 10
         `;
         const data = await db.pgAll(sql, [companyId]);

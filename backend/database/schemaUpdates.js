@@ -260,6 +260,21 @@ export const runSchemaUpdates = async () => {
                 END IF;
             END $$;
 
+            CREATE TABLE IF NOT EXISTS payroll_runs (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                employee_id INTEGER NOT NULL REFERENCES employees(id),
+                month_year VARCHAR(10) NOT NULL,
+                base_salary NUMERIC(15,2) DEFAULT 0,
+                attendance_days NUMERIC(5,2) DEFAULT 0,
+                gross_earnings NUMERIC(15,2) DEFAULT 0,
+                total_deductions NUMERIC(15,2) DEFAULT 0,
+                advance_deduction NUMERIC(15,2) DEFAULT 0,
+                net_pay NUMERIC(15,2) DEFAULT 0,
+                status VARCHAR(50) DEFAULT 'PAID',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
             ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS current_balance NUMERIC(15,2) DEFAULT 0;
             ALTER TABLE employees ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active';
         `);
