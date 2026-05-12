@@ -8,6 +8,12 @@ import * as brokerService from "../services/brokerService.js";
 import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
 
 const router = express.Router();
+
+const sanitizeInt = (val) => {
+    const p = parseInt(val);
+    return isNaN(p) ? null : p;
+};
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = "uploads/purchase_bills/";
