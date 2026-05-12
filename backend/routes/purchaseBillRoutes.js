@@ -275,7 +275,6 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId, `Purchased via Bill #${bill_number}`]);
             }
         }
-        }
 
         for (const exp of processedExpenses) {
             await client.query(`
