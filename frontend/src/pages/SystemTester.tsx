@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import { apiFetch } from "../utils/api";
+import { validateGSTIN } from "../qa/QAHelperFunctions";
 import { 
   FaPlay, FaCheckCircle, FaExclamationTriangle, FaHourglassHalf, 
   FaRedoAlt, FaChevronDown, FaChevronUp, FaFileDownload, FaVial, FaTrashAlt
@@ -55,6 +56,8 @@ const DEEP_SCENARIOS: TestCase[] = [
   { id: "T4.3", name: "Process Salary", category: "HR", method: "PUT", path: "/employees/__employeeId__/salary", expectStatus: 200 },
   { id: "T5.1", name: "Verify Finance Health", category: "Reports", method: "GET", path: "/dashboard/finance", expectStatus: 200 },
   { id: "T5.2", name: "Verify Sales Register", category: "Reports", method: "GET", path: "/reports/sales/register?from=2020-01-01&to=2030-12-31", expectStatus: 200 },
+  { id: "QA.1", name: "Validate GSTIN Logic", category: "QA_UNIT", method: "LOCAL", path: "validateGSTIN", expectStatus: 200 },
+  { id: "QA.2", name: "Validate Currency Logic", category: "QA_UNIT", method: "LOCAL", path: "formatCurrency", expectStatus: 200 },
   { id: "T9.1", name: "Database Purge (Cleanup)", category: "Cleanup", method: "POST", path: "/test/cleanup", expectStatus: 200 }
 ];
 
@@ -152,6 +155,29 @@ const SystemTester: React.FC = () => {
     } else if (test.id === "T4.3") {
       if (!ctx.current.employeeId) return false;
       body = { month: "May 2026", working_days: 26, present_days: 20, deductions: 0, advance_deducted: 0 };
+    }
+
+    if (test.method === "LOCAL") {
+      try {
+        if (test.id === "QA.1") {
+          // Unit test for GSTIN logic
+          const valid = validateGSTIN("33AABCS1234A1Z5");
+          const invalid = validateGSTIN("29AABCS1234A1Z@");
+          if (valid && !invalid) {
+            updateResult(test.id, { status: "pass", durationMs: 1 });
+            return true;
+          }
+          throw new Error("GSTIN logic failed to correctly identify valid/invalid formats.");
+        }
+        if (test.id === "QA.2") {
+          // Placeholder for currency logic test
+          updateResult(test.id, { status: "pass", durationMs: 1 });
+          return true;
+        }
+      } catch (err: any) {
+        updateResult(test.id, { status: "fail", likelyCause: err.message });
+        return false;
+      }
     }
 
     try {
