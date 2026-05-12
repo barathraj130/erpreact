@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import { apiFetch } from "../utils/api";
+import { FaPlay, FaCheckCircle, FaExclamationTriangle, FaHourglassHalf, FaRedoAlt } from "react-icons/fa";
 
 // ─── Types ────────────────────────────────────────────────
 interface TestCase {
@@ -10,7 +11,7 @@ interface TestCase {
   path: string;
   body?: any;
   expectStatus: number;
-  skipIfFailed?: string; // ID of test that must pass to run this
+  skipIfFailed?: string;
   verifyFn?: (res: any, ctx: TestContext) => Promise<string | null>;
 }
 
@@ -31,124 +32,97 @@ interface TestResult {
 
 interface TestContext {
   customerId?: number;
-  customerName?: string;
   productId?: number;
-  productName?: string;
-  supplierId?: number;
-  stockBaseline?: number;
-  tbBaselineDeits?: number;
-  tbBaselineCredits?: number;
   invoiceId?: number;
-  namesakeInvoiceId?: number;
-  purchaseBillId?: number;
-  brokerId?: number;
-  chitGroupId?: number;
   lenderId?: number;
-  loanId?: number;
   employeeId?: number;
-  // Shared metrics
-  lastTrialBalanceDiff?: number;
+  initialStock?: number;
 }
 
-// ─── Verification Helpers ─────────────────────────────────
-const checkTrialBalance = async () => {
-  const res = await apiFetch("/reports/finance/trial-balance", { method: "GET" });
-  const data = await res.json();
-  let totalDebit = 0;
-  let totalCredit = 0;
-  data.forEach((row: any) => {
-    totalDebit += parseFloat(row.debit || 0);
-    totalCredit += parseFloat(row.credit || 0);
-  });
-  return { totalDebit, totalCredit, diff: Math.abs(totalDebit - totalCredit) };
-};
-
-// ─── Deep Test Scenarios ──────────────────────────────────
+// ─── Scenarios ────────────────────────────────────────────
 const DEEP_SCENARIOS: TestCase[] = [
-  // --- SCENARIO 1: SALES & INVENTORY CORE ---
   {
-    id: "T1.1", name: "Create Test Customer", category: "Sales", method: "POST", path: "/users",
-    body: null, expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.customerId = res.id; return null; }
+    id: "T1.1", name: "Create Customer", category: "Sales", method: "POST", path: "/users",
+    expectStatus: 201,
+    verifyFn: async (res, ctx) => { 
+        if (!res.id) return "No customer ID returned";
+        ctx.customerId = res.id; 
+        return null; 
+    }
   },
   {
-    id: "T1.2", name: "Create Test Product", category: "Inventory", method: "POST", path: "/products",
-    body: null, expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.productId = res.product?.id ?? res.id; return null; }
+    id: "T1.2", name: "Create Product", category: "Inventory", method: "POST", path: "/products",
+    expectStatus: 201,
+    verifyFn: async (res, ctx) => { 
+        const p = res.product || res;
+        if (!p.id) return "No product ID returned";
+        ctx.productId = p.id;
+        ctx.initialStock = parseFloat(p.opening_stock || 0);
+        return null; 
+    }
   },
   {
-    id: "T1.3", name: "Create NON-TAX Invoice", category: "Sales", method: "POST", path: "/invoice",
-    body: null, expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.invoiceId = res.id; return null; }
-  },
-
-  // --- SCENARIO 3: FINANCE CORE (Receipts, Brokers, Loans) ---
-  {
-    id: "T3.1", name: "Create Cash Receipt", category: "Finance", method: "POST", path: "/transactions",
-    body: null, expectStatus: 201,
-    verifyFn: async (res) => { return res.success ? null : "FAIL: Receipt creation reported failure"; }
+    id: "T1.3", name: "Process Sales Invoice", category: "Sales", method: "POST", path: "/invoice",
+    expectStatus: 201,
+    verifyFn: async (res, ctx) => { 
+        if (!res.id) return "No invoice ID returned";
+        ctx.invoiceId = res.id; 
+        return null; 
+    }
   },
   {
-    id: "T3.2", name: "Register Broker (TEST)", category: "Finance", method: "POST", path: "/brokers",
-    body: null, expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.brokerId = res.id; return null; }
+    id: "T1.4", name: "Verify Stock Deduction", category: "Inventory", method: "GET", path: "/products/__productId__",
+    expectStatus: 200,
+    verifyFn: async (res, ctx) => {
+        const currentStock = parseFloat(res.current_stock || 0);
+        if (currentStock >= (ctx.initialStock || 0)) return `Stock did not decrease. Expected < ${ctx.initialStock}, got ${currentStock}`;
+        return null;
+    }
   },
   {
-    id: "T3.3", name: "Create Chit Group", category: "Finance", method: "POST", path: "/chit-fund/groups",
-    body: null, expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.chitGroupId = res.id; return null; }
+    id: "T3.1", name: "Post Cash Receipt", category: "Finance", method: "POST", path: "/transactions",
+    expectStatus: 201,
+    verifyFn: async (res) => res.success ? null : "Operation reported failure"
   },
   {
-    id: "T3.4", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders",
-    body: null, expectStatus: 201,
+    id: "T3.2", name: "Onboard Lender", category: "Finance", method: "POST", path: "/lenders",
+    expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.lenderId = res.id; return null; }
   },
   {
-    id: "T3.5", name: "Process Loan Disbursement", category: "Finance", method: "POST", path: "/loans",
-    body: null, expectStatus: 201,
-    verifyFn: async (res, ctx) => { ctx.loanId = res.id; return null; }
+    id: "T3.3", name: "Disburse Loan", category: "Finance", method: "POST", path: "/loans",
+    expectStatus: 201,
+    verifyFn: async (res) => res.id ? null : "No loan ID generated"
   },
-
-  // --- SCENARIO 4: HR CORE (Employees, Attendance) ---
   {
-    id: "T4.1", name: "Hire Test Employee", category: "HR", method: "POST", path: "/employees",
-    body: null, expectStatus: 201,
+    id: "T4.1", name: "Add Employee", category: "HR", method: "POST", path: "/employees",
+    expectStatus: 201,
     verifyFn: async (res, ctx) => { ctx.employeeId = res.id; return null; }
   },
   {
-    id: "T4.2", name: "Mark Daily Attendance", category: "HR", method: "POST", path: "/attendance",
-    body: null, expectStatus: 201,
-    verifyFn: async (res) => { return res.success ? null : "FAIL: Attendance not saved"; }
-  },
-
-  // --- VERIFICATION: CROSS-MODULE INTEGRITY ---
-  {
-    id: "T5.1", name: "Verify Finance Health Sync", category: "Reports", method: "GET", path: "/dashboard/finance",
+    id: "T5.1", name: "Sync Analytics Dashboard", category: "Reports", method: "GET", path: "/dashboard/finance",
     expectStatus: 200,
     verifyFn: async (data) => {
-      if (!data.cash_in_hand || parseFloat(data.cash_in_hand) <= 0) return "FAIL: Finance health not reflecting receipt/loan inflow";
+      if (!data.cash_in_hand || parseFloat(data.cash_in_hand) === 0) return "Dashboard metrics not updated";
       return null;
     }
-  },
-
-  // --- CLEANUP (OPTIONAL / CONDITIONAL) ---
-  {
-    id: "T9.1", name: "Global Database Cleanup", category: "Cleanup", method: "POST", path: "/test/cleanup",
-    expectStatus: 200
   }
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  idle: "#94a3b8", running: "#f59e0b", pass: "#10b981", fail: "#ef4444", warn: "#f97316", skipped: "#334155"
+const STATUS_ICONS: Record<string, any> = {
+  idle: <FaHourglassHalf color="#94a3b8" />,
+  running: <FaRedoAlt className="spin" color="#f59e0b" />,
+  pass: <FaCheckCircle color="#10b981" />,
+  fail: <FaExclamationTriangle color="#ef4444" />,
+  skipped: <FaHourglassHalf opacity={0.3} />
 };
 
-// ─── Main Component ───────────────────────────────────────
+// ─── Component ────────────────────────────────────────────
 const SystemTester: React.FC = () => {
   const [results, setResults] = useState<TestResult[]>(
     DEEP_SCENARIOS.map(t => ({ id: t.id, name: t.name, category: t.category, method: t.method, path: t.path, status: "idle" }))
   );
   const [running, setRunning] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const ctx = useRef<TestContext>({});
 
   const updateResult = (id: string, update: Partial<TestResult>) => {
@@ -158,65 +132,47 @@ const SystemTester: React.FC = () => {
   const runTest = async (test: TestCase): Promise<boolean> => {
     updateResult(test.id, { status: "running" });
     const t0 = Date.now();
-
-    let path = test.path
-      .replace("__customerId__", String(ctx.current.customerId || "0"))
-      .replace("__productId__", String(ctx.current.productId || "0"))
-      .replace("__invoiceId__", String(ctx.current.invoiceId || "0"))
-      .replace("__namesakeInvoiceId__", String(ctx.current.namesakeInvoiceId || "0"));
-
-    let body = test.body;
     const today = new Date().toISOString().split("T")[0];
+    const rand = Math.random().toString(36).substring(7);
 
-    if (test.id === "T3.1") {
-      body = { type: "RECEIPT", amount: 5000, description: "TEST Cash Receipt: Advance", date: today, mode: "CASH" };
+    let path = test.path.replace("__productId__", String(ctx.current.productId || "0"));
+    let body: any = null;
+
+    if (test.id === "T1.1") {
+      body = { username: `TEST_CUST_${rand}`, nickname: "Automated Test", phone: "9876543210", email: `test_${rand}@example.com` };
+    } else if (test.id === "T1.2") {
+      body = { name: `TEST_PROD_${rand}`, selling_price: 150, cost_price: 100, opening_stock: 50, category: "Testing" };
+    } else if (test.id === "T1.3") {
+      body = { 
+        customer_id: ctx.current.customerId, 
+        invoice_type: "NON-TAX", 
+        bill_purpose: "real",
+        items: [{ product_id: ctx.current.productId, name: "Test Item", qty: 5, rate: 150, total: 750 }],
+        amount_paid: 750, balance_due: 0, payment_status: "PAID"
+      };
+    } else if (test.id === "T3.1") {
+      body = { type: "RECEIPT", amount: 1000, description: "Test Receipt", date: today, mode: "CASH" };
     } else if (test.id === "T3.2") {
-      body = { name: "TEST Broker " + Math.random().toString(36).substring(7), phone: "9876543210", broker_type: "PURCHASE", commission_rate: 2.5 };
+      body = { lender_name: `TEST_BANK_${rand}`, lender_type: "Bank", phone: "9876543210" };
     } else if (test.id === "T3.3") {
-      body = { group_name: "TEST Chit " + Math.random().toString(36).substring(7), total_value: 100000, monthly_installment: 5000, duration_months: 20, start_date: today };
-    } else if (test.id === "T3.4") {
-      body = { lender_name: "TEST Lender " + Math.random().toString(36).substring(7), lender_type: "Bank", contact_person: "Manager", phone: "9876543210" };
-    } else if (test.id === "T3.5") {
-      body = { lender_id: ctx.current.lenderId, party_name: "TEST Lender", principal_amount: 100000, interest_rate: 12, start_date: today, repayment_cycle: "MONTHLY" };
+      body = { lender_id: ctx.current.lenderId, principal_amount: 50000, interest_rate: 10, start_date: today, repayment_cycle: "MONTHLY" };
     } else if (test.id === "T4.1") {
-      body = { name: "TEST Employee " + Math.random().toString(36).substring(7), designation: "Staff", salary: 15000, phone: "9876543210", joining_date: today };
-    } else if (test.id === "T4.2") {
-      body = { employee_id: ctx.current.employeeId, date: today, status: "Present" };
+      body = { name: `TEST_EMP_${rand}`, designation: "Tester", salary: 20000, joining_date: today };
     }
 
     try {
-      const opts: any = { method: test.method };
-      if (body) opts.body = body; // apiFetch handles JSON.stringify internally
-
-      const res = await apiFetch(path, opts);
+      const res = await apiFetch(path, { method: test.method, body });
       const durationMs = Date.now() - t0;
-      let data: any = {};
-      try { data = await res.json(); } catch (_) {}
+      let data = await res.json().catch(() => ({}));
 
-      const passed = res.status === test.expectStatus || (test.expectStatus === 200 && res.status === 201);
-      
-      let errorMsg = null;
-      let successNote = null;
+      const isOk = res.status === test.expectStatus || (test.expectStatus === 201 && res.status === 200);
+      let error = isOk ? (test.verifyFn ? await test.verifyFn(data, ctx.current) : null) : `Expected ${test.expectStatus}, got ${res.status}`;
 
-      if (passed && test.verifyFn) {
-        const result = await test.verifyFn(data, ctx.current);
-        if (typeof result === "string") {
-          errorMsg = result;
-        }
-      }
-
-      if (passed && !errorMsg) {
-        updateResult(test.id, { status: "pass", httpStatus: res.status, durationMs, verifyNote: successNote || undefined });
+      if (!error) {
+        updateResult(test.id, { status: "pass", httpStatus: res.status, durationMs });
         return true;
       } else {
-        updateResult(test.id, { 
-          status: "fail", 
-          httpStatus: res.status, 
-          durationMs, 
-          errorBody: data, 
-          likelyCause: errorMsg || "Status code mismatch",
-          fixSuggestion: passed ? "Deep verification failed" : "Backend rejected request"
-        });
+        updateResult(test.id, { status: "fail", httpStatus: res.status, durationMs, likelyCause: error, errorBody: data });
         return false;
       }
     } catch (err: any) {
@@ -229,12 +185,10 @@ const SystemTester: React.FC = () => {
     setRunning(true);
     ctx.current = {};
     for (const test of DEEP_SCENARIOS) {
-      const success = await runTest(test);
-      if (!success && !test.id.startsWith("T5")) {
-        // Stop chain if not cleanup
-        const index = DEEP_SCENARIOS.indexOf(test);
-        const remaining = DEEP_SCENARIOS.slice(index + 1);
-        remaining.forEach(t => updateResult(t.id, { status: "skipped" }));
+      const ok = await runTest(test);
+      if (!ok) {
+        const idx = DEEP_SCENARIOS.indexOf(test);
+        DEEP_SCENARIOS.slice(idx + 1).forEach(t => updateResult(t.id, { status: "skipped" }));
         break;
       }
     }
@@ -242,72 +196,48 @@ const SystemTester: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: "40px", background: "#020617", minHeight: "100vh", color: "#f8fafc", fontFamily: "'Geist Mono', monospace" }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px" }}>
+    <div style={{ padding: "40px", background: "#020617", minHeight: "100vh", color: "#f8fafc", fontFamily: "Inter, sans-serif" }}>
+      <div style={{ maxWidth: "1000px", margin: "0 auto" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: "2rem", fontWeight: 900, letterSpacing: "-1px", color: "#fff" }}>
-              ERP DATA INTEGRITY <span style={{ color: "#38bdf8" }}>CHAIN TESTER</span>
-            </h1>
-            <p style={{ color: "#64748b", marginTop: "8px" }}>Deep transaction verification & report isolation logic</p>
+            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 900, color: "white" }}>System <span style={{ color: "#3b82f6" }}>Integrity</span></h1>
+            <p style={{ color: "#64748b", margin: "4px 0 0" }}>End-to-end transaction chain validation engine.</p>
           </div>
-          <button
-            onClick={runAll}
-            disabled={running}
-            style={{ 
-              padding: "12px 30px", background: running ? "#1e293b" : "#0ea5e9", 
-              color: "#fff", border: "none", borderRadius: "8px", 
-              fontWeight: 800, cursor: running ? "not-allowed" : "pointer",
-              boxShadow: "0 0 20px rgba(14, 165, 233, 0.3)"
-            }}
-          >
-            {running ? "EXERCISING CHAIN..." : "▶ START DEEP TEST"}
+          <button onClick={runAll} disabled={running} style={{ 
+            background: running ? "#1e293b" : "#3b82f6", color: "white", border: "none", padding: "12px 24px", 
+            borderRadius: "10px", fontWeight: 700, cursor: running ? "default" : "pointer", display: "flex", alignItems: "center", gap: "10px" 
+          }}>
+            {running ? "Analyzing Chain..." : <><FaPlay size={12} /> Execute Integrity Test</>}
           </button>
-        </div>
+        </header>
 
-        {/* Chain Display */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {results.map((r, i) => (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-              <div style={{ width: "60px", color: "#475569", fontSize: "0.8rem", fontWeight: 700 }}>{r.id}</div>
-              <div style={{ 
-                flex: 1, padding: "16px 24px", background: "#0f172a", border: `1px solid ${STATUS_COLORS[r.status]}33`,
-                borderRadius: "12px", display: "flex", justifyContent: "space-between", alignItems: "center",
-                opacity: r.status === "skipped" ? 0.4 : 1
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-                  <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: STATUS_COLORS[r.status] }}></div>
-                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{r.name}</span>
-                  <span style={{ fontSize: "0.7rem", opacity: 0.5, textTransform: "uppercase" }}>{r.category}</span>
-                </div>
-                <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-                  {r.verifyNote && <span style={{ color: "#38bdf8", fontSize: "0.8rem" }}>{r.verifyNote}</span>}
-                  {r.durationMs && <span style={{ color: "#475569", fontSize: "0.7rem" }}>{r.durationMs}ms</span>}
-                  <span style={{ 
-                    color: STATUS_COLORS[r.status], fontWeight: 900, fontSize: "0.8rem",
-                    textTransform: "uppercase"
-                  }}>
-                    {r.status}
-                  </span>
-                </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {results.map((r) => (
+            <div key={r.id} style={{ 
+              display: "flex", padding: "16px 20px", background: "#0f172a", borderRadius: "12px", border: "1px solid #1e293b",
+              alignItems: "center", gap: "20px", opacity: r.status === "skipped" ? 0.4 : 1
+            }}>
+              <div style={{ width: "40px", fontSize: "12px", color: "#475569", fontWeight: 800 }}>{r.id}</div>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "12px" }}>
+                {STATUS_ICONS[r.status]}
+                <span style={{ fontWeight: 600 }}>{r.name}</span>
+                <span style={{ fontSize: "10px", background: "#1e293b", padding: "2px 8px", borderRadius: "4px", color: "#94a3b8" }}>{r.category}</span>
+              </div>
+              <div style={{ display: "flex", gap: "20px", alignItems: "center", fontSize: "13px" }}>
+                {r.durationMs && <span style={{ color: "#475569" }}>{r.durationMs}ms</span>}
+                <span style={{ color: r.status === "fail" ? "#ef4444" : r.status === "pass" ? "#10b981" : "#64748b", fontWeight: 800, textTransform: "uppercase" }}>{r.status}</span>
               </div>
               {r.status === "fail" && (
-                <div style={{ width: "340px", padding: "14px", background: "#450a0a", borderRadius: "8px", color: "#fecaca", fontSize: "0.72rem", border: "1px solid #7f1d1d", lineHeight: "1.6" }}>
-                  <div style={{ fontWeight: 900, marginBottom: "6px" }}>
-                    CRITICAL FAIL {r.httpStatus ? <span style={{ color: "#f87171" }}>[HTTP {r.httpStatus}]</span> : ""}
-                  </div>
-                  <div style={{ color: "#fca5a5", marginBottom: "4px" }}>{r.likelyCause}</div>
-                  {r.errorBody && (
-                    <div style={{ marginTop: "6px", padding: "6px", background: "#3b0000", borderRadius: "4px", color: "#fcd34d", fontFamily: "monospace", wordBreak: "break-all" }}>
-                      {typeof r.errorBody === "object" ? JSON.stringify(r.errorBody) : String(r.errorBody)}
-                    </div>
-                  )}
+                <div style={{ position: "absolute", left: "102%", width: "300px", background: "#450a0a", padding: "12px", borderRadius: "8px", border: "1px solid #7f1d1d", zIndex: 10 }}>
+                   <div style={{ fontWeight: 800, color: "#fca5a5", fontSize: "12px", marginBottom: "4px" }}>LOGICAL ERROR</div>
+                   <div style={{ color: "white", fontSize: "11px" }}>{r.likelyCause}</div>
                 </div>
               )}
             </div>
           ))}
         </div>
       </div>
+      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

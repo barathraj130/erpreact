@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { FaDownload, FaPrint, FaSearch, FaFilter, FaArrowLeft, FaFilePdf, FaFileExcel } from "react-icons/fa";
+import { FaDownload, FaPrint, FaSearch, FaFilter, FaArrowLeft, FaFilePdf, FaFileExcel, FaChartLine, FaChartPie, FaChartBar } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
+import { 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend, BarChart, Bar 
+} from 'recharts';
 import "./Reports.css";
 
 interface BaseReportProps {
@@ -12,6 +16,8 @@ interface BaseReportProps {
     showBranchFilter?: boolean;
     showTaxFilter?: boolean;
 }
+
+const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#0EA5E9'];
 
 const BaseReportPage: React.FC<BaseReportProps> = ({ 
     title, 
@@ -76,204 +82,220 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
         return data.reduce((sum, item) => sum + (parseFloat(item[key]) || 0), 0);
     };
 
+    const getChartData = () => {
+        if (reportId === 'sales-register') {
+            // Group by date
+            const grouped = data.reduce((acc: any, item) => {
+                const d = new Date(item.invoice_date).toLocaleDateString();
+                acc[d] = (acc[d] || 0) + parseFloat(item.total_amount);
+                return acc;
+            }, {});
+            return Object.entries(grouped).map(([name, value]) => ({ name, value })).slice(-10);
+        }
+        if (reportId === 'customer-sales') {
+            return data.slice(0, 10).map(item => ({ name: item.customer_name, value: parseFloat(item.total_sales) }));
+        }
+        if (reportId === 'product-sales') {
+            return data.slice(0, 10).map(item => ({ name: item.product_name, value: parseFloat(item.revenue) }));
+        }
+        return [];
+    };
+
+    const chartData = getChartData();
+
     return (
         <div className="db-page">
-            {/* Topbar */}
             <header className="db-topbar no-print">
                 <div className="db-topbar-left">
-                    <span className="db-topbar-title">Reports</span>
+                    <span className="db-topbar-title">Finance Intel</span>
                     <span className="db-topbar-sep">/</span>
                     <span className="db-topbar-sub">{title}</span>
                 </div>
                 <div className="db-topbar-right">
-                    <Link to="/reports" className="btn-secondary" style={{ padding: '8px 16px', display: 'flex', alignItems: 'center' }}>
-                        <FaArrowLeft style={{ marginRight: '6px' }} /> Back to Dashboard
+                    <Link to="/reports" className="db-btn" style={{ textDecoration: 'none' }}>
+                        <FaArrowLeft /> Back
                     </Link>
                 </div>
             </header>
 
-            <div className="db-content" style={{ maxWidth: '1200px', margin: '0 auto', width: '100%', padding: '32px 0' }}>
-                {/* Hero Header */}
-                <div style={{ 
-                    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', 
-                    borderRadius: '16px', 
-                    padding: '32px 40px', 
-                    marginBottom: '24px',
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    boxShadow: '0 10px 30px rgba(15, 23, 42, 0.15)'
-                }}>
-                    <div>
-                        <div style={{ display: 'inline-block', background: 'rgba(59, 130, 246, 0.2)', padding: '6px 12px', borderRadius: '100px', color: '#60a5fa', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', marginBottom: '12px' }}>
-                            ANALYTICS REPORT
-                        </div>
-                        <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 8px 0', color: 'white', letterSpacing: '-0.5px' }}>{title}</h1>
-                        <p className="no-print" style={{ color: '#94a3b8', fontSize: '15px', margin: 0 }}>System generated data insight for the selected period.</p>
+            <div className="db-content" style={{ padding: '24px' }}>
+                {/* Visual Analytics Header */}
+                <div className="report-hero-card">
+                    <div className="report-hero-content">
+                        <div className="report-tag">ANALYTICAL MODULE</div>
+                        <h1 className="report-title">{title}</h1>
+                        <p className="report-desc">Intelligent data breakdown for business decision making.</p>
                     </div>
-                    <div className="header-actions no-print" style={{ display: 'flex', gap: '12px' }}>
-                        <button onClick={() => alert('PDF Export Coming Soon')} title="Export PDF" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
-                            <FaFilePdf size={16} /> PDF
-                        </button>
-                        <button onClick={() => alert('Excel Export Coming Soon')} title="Export Excel" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', background: 'rgba(34, 197, 94, 0.15)', color: '#86efac', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
-                            <FaFileExcel size={16} /> Excel
-                        </button>
-                        <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px', border: 'none', background: '#3b82f6', color: 'white', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 14px rgba(59, 130, 246, 0.3)', transition: 'all 0.2s' }}>
-                            <FaPrint size={16} /> Print
-                        </button>
+                    <div className="report-hero-stats">
+                        <div className="hero-stat-item">
+                            <span className="hero-stat-label">Total Volume</span>
+                            <span className="hero-stat-value">₹{(calculateTotal('total_amount') || calculateTotal('total_sales') || calculateTotal('revenue')).toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="hero-stat-item">
+                            <span className="hero-stat-label">Record Count</span>
+                            <span className="hero-stat-value">{data.length}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Interactive Charts Section */}
+                <div className="report-analytics-grid no-print">
+                    <div className="db-card" style={{ height: '320px' }}>
+                        <div className="db-card-header">
+                            <span className="db-card-title">Performance Trend</span>
+                            <FaChartLine color="#4F46E5" />
+                        </div>
+                        <div className="db-card-body" style={{ height: '240px' }}>
+                            {chartData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData}>
+                                        <defs>
+                                            <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} tickFormatter={(v) => v >= 100000 ? `${(v/100000).toFixed(1)}L` : v} />
+                                        <Tooltip />
+                                        <Area type="monotone" dataKey="value" stroke="#4F46E5" fillOpacity={1} fill="url(#colorVal)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            ) : <EmptyChart message="Insufficient data for trend analysis" />}
+                        </div>
+                    </div>
+                    <div className="db-card" style={{ height: '320px' }}>
+                        <div className="db-card-header">
+                            <span className="db-card-title">Categorical Analysis</span>
+                            <FaChartPie color="#10B981" />
+                        </div>
+                        <div className="db-card-body" style={{ height: '240px' }}>
+                            {chartData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={chartData.slice(0, 5)} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                            {chartData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                                        </Pie>
+                                        <Tooltip />
+                                        <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            ) : <EmptyChart message="Insufficient data for categorical breakdown" />}
+                        </div>
                     </div>
                 </div>
 
                 {/* Filters */}
-                <div className="enterprise-card no-print" style={{ padding: '20px 24px', marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'nowrap', overflowX: 'auto' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '0 0 auto' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>From Date</label>
-                        <input 
-                            type="date" 
-                            style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', background: '#f8fafc', color: '#1e293b', outline: 'none' }}
-                            value={filters.startDate} 
-                            onChange={(e) => setFilters({...filters, startDate: e.target.value})} 
-                        />
+                <div className="db-card no-print" style={{ padding: '16px', marginBottom: '24px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div className="filter-group">
+                        <label>From Date</label>
+                        <input type="date" value={filters.startDate} onChange={(e) => setFilters({...filters, startDate: e.target.value})} />
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '0 0 auto' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>To Date</label>
-                        <input 
-                            type="date" 
-                            style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', background: '#f8fafc', color: '#1e293b', outline: 'none' }}
-                            value={filters.endDate} 
-                            onChange={(e) => setFilters({...filters, endDate: e.target.value})} 
-                        />
+                    <div className="filter-group">
+                        <label>To Date</label>
+                        <input type="date" value={filters.endDate} onChange={(e) => setFilters({...filters, endDate: e.target.value})} />
                     </div>
                     {showBranchFilter && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 auto', minWidth: '130px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Branch Location</label>
-                            <select 
-                                style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', background: '#f8fafc', color: '#1e293b', outline: 'none', width: '100%' }}
-                                value={filters.branchId} onChange={(e) => setFilters({...filters, branchId: e.target.value})}
-                            >
+                        <div className="filter-group">
+                            <label>Branch</label>
+                            <select value={filters.branchId} onChange={(e) => setFilters({...filters, branchId: e.target.value})}>
                                 <option value="all">All Branches</option>
                                 <option value="1">Main Office</option>
-                                <option value="2">Warehouse A</option>
                             </select>
                         </div>
                     )}
-                    {showTaxFilter && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 auto', minWidth: '130px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tax Type</label>
-                            <select 
-                                style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', background: '#f8fafc', color: '#1e293b', outline: 'none', width: '100%' }}
-                                value={filters.taxType} onChange={(e) => setFilters({...filters, taxType: e.target.value})}
-                            >
-                                <option value="all">Both</option>
-                                <option value="TAX">Tax Invoice</option>
-                                <option value="NON-TAX">Retail Bill</option>
-                            </select>
-                        </div>
-                    )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '2 1 auto', minWidth: '180px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Search</label>
-                        <div style={{ position: 'relative', width: '100%' }}>
-                            <FaSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                            <input 
-                                style={{ padding: '10px 14px 10px 36px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', width: '100%', background: '#f8fafc', color: '#1e293b', outline: 'none' }}
-                                placeholder="Search in records..." 
-                                value={filters.searchTerm}
-                                onChange={(e) => setFilters({...filters, searchTerm: e.target.value})}
-                            />
+                    <div className="filter-group" style={{ flex: 1 }}>
+                        <label>Search</label>
+                        <div style={{ position: 'relative' }}>
+                            <FaSearch style={{ position: 'absolute', left: '10px', top: '10px', color: '#94a3b8' }} />
+                            <input style={{ paddingLeft: '32px', width: '100%' }} placeholder="Filter results..." value={filters.searchTerm} onChange={(e) => setFilters({...filters, searchTerm: e.target.value})} />
                         </div>
                     </div>
-                    <div style={{ flex: '0 0 auto' }}>
-                        <button style={{ padding: '10px 20px', borderRadius: '8px', background: '#1e293b', color: 'white', border: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', height: '40px' }} onClick={() => fetchData()}>
-                            <FaFilter size={14} /> Apply
-                        </button>
-                    </div>
+                    <button className="db-btn db-btn-primary" onClick={() => fetchData()}>Apply</button>
+                    <button className="db-btn" onClick={handlePrint}><FaPrint /> Print</button>
                 </div>
 
-                {/* Messages & Record Count */}
-                <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <div>
-                        {autoExpandedMsg && (
-                            <div style={{ padding: '8px 12px', background: '#fef3c7', color: '#b45309', borderRadius: '8px', fontSize: '13px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                ⚠️ {autoExpandedMsg}
-                            </div>
-                        )}
-                        {!loading && data.length > 0 && (
-                            <div style={{ color: '#64748b', fontSize: '14px', fontWeight: 500 }}>
-                                Showing <strong style={{ color: '#1e293b' }}>{data.length}</strong> records for selected period
-                            </div>
-                        )}
+                {/* Table Data */}
+                <div className="db-card">
+                    <div className="db-card-header">
+                        <span className="db-card-title">Detailed Records</span>
+                        {autoExpandedMsg && <span className="report-alert">⚠️ {autoExpandedMsg}</span>}
                     </div>
-                </div>
-
-                {/* Table */}
-                <div className="enterprise-table-wrapper">
-                    {loading ? (
-                        <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-3)' }}>
-                            <div className="spinner-innovative" style={{ margin: '0 auto 16px auto' }}></div>
-                            Generating Report Data...
-                        </div>
-                    ) : data.length === 0 ? (
-                        <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-3)' }}>
-                            <FaSearch size={32} style={{ opacity: 0.2, marginBottom: '16px' }} />
-                            <p>No records found for the selected filters.</p>
-                        </div>
-                    ) : (
-                        <table className="enterprise-table">
-                            <thead>
-                                <tr>
-                                    {columns.map((col, idx) => (
-                                        <th key={idx} style={{ textAlign: col.align || 'left' }}>{col.header}</th>
+                    <div className="db-table-wrap">
+                        {loading ? <LoadingState /> : (
+                            <table className="db-table">
+                                <thead>
+                                    <tr>
+                                        {columns.map((col, idx) => (
+                                            <th key={idx} style={{ textAlign: col.align || 'left' }}>{col.header}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.filter(row => {
+                                        if (!filters.searchTerm) return true;
+                                        return Object.values(row).some(val => String(val).toLowerCase().includes(filters.searchTerm.toLowerCase()));
+                                    }).map((row, rowIdx) => (
+                                        <tr key={rowIdx}>
+                                            {columns.map((col, colIdx) => (
+                                                <td key={colIdx} style={{ textAlign: col.align || 'left' }}>
+                                                    {col.type === 'amount' 
+                                                        ? `₹${new Intl.NumberFormat('en-IN').format(row[col.key] || 0)}`
+                                                        : row[col.key] || '-'}
+                                                </td>
+                                            ))}
+                                        </tr>
                                     ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.filter(row => {
-                                    if (!filters.searchTerm) return true;
-                                    return Object.values(row).some(val => 
-                                        String(val).toLowerCase().includes(filters.searchTerm.toLowerCase())
-                                    );
-                                }).map((row, rowIdx) => (
-                                    <tr key={rowIdx}>
+                                    <tr className="total-row">
                                         {columns.map((col, colIdx) => (
-                                            <td key={colIdx} style={{ textAlign: col.align || 'left', fontWeight: col.type === 'amount' ? 600 : 400, color: col.type === 'amount' ? 'var(--text-1)' : 'var(--text-2)' }}>
-                                                {col.type === 'amount' 
-                                                    ? `₹${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(row[col.key] || 0)}`
-                                                    : row[col.key] || '-'}
+                                            <td key={colIdx} style={{ textAlign: col.align || 'left', fontWeight: 800 }}>
+                                                {colIdx === 0 ? 'TOTAL' : (col.type === 'amount' ? `₹${new Intl.NumberFormat('en-IN').format(calculateTotal(col.key))}` : '')}
                                             </td>
                                         ))}
                                     </tr>
-                                ))}
-                                {/* Totals Row */}
-                                <tr style={{ background: '#eff6ff' }}>
-                                    {columns.map((col, colIdx) => (
-                                        <td key={colIdx} style={{ textAlign: col.align || 'left', fontWeight: 800, color: '#1d4ed8', fontSize: '14px', borderTop: '2px solid #bfdbfe' }}>
-                                            {colIdx === 0 ? 'TOTALS' : (
-                                                col.type === 'amount' 
-                                                ? `₹${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(calculateTotal(col.key))}`
-                                                : ''
-                                            )}
-                                        </td>
-                                    ))}
-                                </tr>
-                            </tbody>
-                        </table>
-                    )}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* Print Styles */}
             <style dangerouslySetInnerHTML={{ __html: `
-                @media print {
-                    .no-print, .db-sidebar, .db-topbar, .report-breadcrumb { display: none !important; }
-                    .db-page { background: white; padding: 0; margin: 0; }
-                    .db-content { padding: 0 !important; max-width: 100% !important; }
-                    .enterprise-table { font-size: 10pt; width: 100%; border-collapse: collapse; }
-                    .enterprise-table th, .enterprise-table td { padding: 8px; border: 1px solid #ccc; }
-                    .enterprise-table-wrapper { border: none; box-shadow: none; }
-                }
+                .report-hero-card { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 20px; padding: 40px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; color: white; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2); }
+                .report-tag { background: rgba(59,130,246,0.2); padding: 4px 12px; border-radius: 100px; color: #60a5fa; font-size: 11px; fontWeight: 700; margin-bottom: 12px; display: inline-block; }
+                .report-title { font-size: 32px; font-weight: 800; margin: 0; }
+                .report-desc { color: #94a3b8; font-size: 14px; margin: 8px 0 0; }
+                .report-hero-stats { display: flex; gap: 40px; }
+                .hero-stat-item { display: flex; flex-direction: column; align-items: flex-end; }
+                .hero-stat-label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; }
+                .hero-stat-value { font-size: 24px; font-weight: 700; color: white; }
+                .report-analytics-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+                .filter-group { display: flex; flex-direction: column; gap: 4px; }
+                .filter-group label { font-size: 11px; font-weight: 700; color: #64748b; }
+                .filter-group input, .filter-group select { padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; }
+                .report-alert { background: #fffbeb; color: #b45309; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+                .total-row { background: #f8fafc; }
+                .total-row td { color: #4F46E5 !important; }
+                @media print { .no-print { display: none !important; } .db-page { background: white; } }
             `}} />
         </div>
     );
 };
+
+const LoadingState = () => (
+    <div style={{ padding: '60px', textAlign: 'center' }}>
+        <div style={{ width: '40px', height: '40px', border: '4px solid #f1f5f9', borderTopColor: '#4F46E5', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }}></div>
+        <p style={{ marginTop: '16px', color: '#64748b' }}>Synthesizing analytics...</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+);
+
+const EmptyChart = ({ message }: any) => (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '12px', gap: '8px' }}>
+        <FaChartBar size={24} opacity={0.2} />
+        {message}
+    </div>
+);
 
 export default BaseReportPage;

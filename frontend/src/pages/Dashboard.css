@@ -158,52 +158,40 @@
 }
 
 /* KPI Card Color Variants */
-.db-kpi-card--cash {
-  background: linear-gradient(145deg, #ffffff 0%, #ecfdf5 100%);
-  border-color: #a7f3d0;
-  position: relative;
+.db-kpi-card--indigo {
+  background: linear-gradient(145deg, #ffffff 0%, #eef2ff 100%);
+  border-color: #c7d2fe;
 }
-.db-kpi-card--cash::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #10b981, #10b98150, transparent);
-  border-radius: 0 0 20px 20px;
+.db-kpi-card--indigo::after {
+  content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #4f46e5, transparent);
 }
 
-.db-kpi-card--bank {
+.db-kpi-card--blue {
   background: linear-gradient(145deg, #ffffff 0%, #eff6ff 100%);
   border-color: #bfdbfe;
-  position: relative;
 }
-.db-kpi-card--bank::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #3b82f6, #3b82f650, transparent);
-  border-radius: 0 0 20px 20px;
+.db-kpi-card--blue::after {
+  content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #3b82f6, transparent);
 }
 
-.db-kpi-card--sales {
-  background: linear-gradient(145deg, #ffffff 0%, #fff7ed 100%);
-  border-color: #fed7aa;
-  position: relative;
+.db-kpi-card--amber {
+  background: linear-gradient(145deg, #ffffff 0%, #fffbeb 100%);
+  border-color: #fde68a;
 }
-.db-kpi-card--sales::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #f97316, #f9731650, transparent);
-  border-radius: 0 0 20px 20px;
+.db-kpi-card--amber::after {
+  content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #f59e0b, transparent);
+}
+
+.db-kpi-card--green {
+  background: linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%);
+  border-color: #bbf7d0;
+}
+.db-kpi-card--green::after {
+  content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #10b981, transparent);
 }
 
 .db-kpi-top { display: flex; align-items: center; justify-content: space-between; }
@@ -454,11 +442,13 @@
 .db-pg-active { background: #111110 !important; color: #fff !important; border-color: transparent !important; }
 
 /* ── Responsive ── */
+@media (max-width: 1200px) {
+  .db-kpi-grid { grid-template-columns: 1fr 1fr !important; }
+}
 @media (max-width: 1100px) {
-  .db-charts-row { grid-template-columns: 1fr; }
-  .db-kpi-grid { grid-template-columns: 1fr 1fr; }
+  .db-charts-row { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 640px) {
   .db-content { padding: 16px; }
-  .db-kpi-grid { grid-template-columns: 1fr; }
+  .db-kpi-grid { grid-template-columns: 1fr !important; }
 }

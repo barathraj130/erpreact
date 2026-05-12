@@ -114,6 +114,10 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
         password // ✅ New Field
     } = req.body;
 
+    if (!username) {
+        return res.status(400).json({ error: "Customer username/name is required." });
+    }
+
     let client;
     try {
         client = await db.getClient();

@@ -7,18 +7,17 @@ const router = express.Router();
 
 /**
  * 📊 SALES REGISTER
- * Features: Mode-wise split columns, Name-sake exclusion/inclusion, Customer filtering
  */
 router.get('/sales/register', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate, customer_id, tax_type, show_name_sake = 'false' } = req.query;
+    const { startDate, endDate, customer_id, show_name_sake = 'false' } = req.query;
 
     try {
         let where = "WHERE i.company_id = $1";
         let params = [companyId];
 
         if (startDate && endDate) {
-            where += " AND i.invoice_date >= $2::date AND i.invoice_date < $3::date + INTERVAL '1 day'";
+            where += " AND i.invoice_date >= $2::date AND i.invoice_date <= $3::date";
             params.push(startDate, endDate);
         }
 
@@ -34,69 +33,31 @@ router.get('/sales/register', authMiddleware, async (req, res) => {
         const sql = `
             SELECT 
                 i.*,
-                c.name as customer_name,
+                u.username as customer_name,
                 COALESCE(p_cash.amount, 0) as cash_collected,
                 COALESCE(p_upi.amount, 0) as upi_collected,
                 COALESCE(p_bank.amount, 0) as bank_collected
             FROM invoices i
-            LEFT JOIN customers c ON i.customer_id = c.id
-            LEFT JOIN (SELECT invoice_id, SUM(amount) as amount FROM payments WHERE mode = 'CASH' GROUP BY invoice_id) p_cash ON i.id = p_cash.invoice_id
-            LEFT JOIN (SELECT invoice_id, SUM(amount) as amount FROM payments WHERE mode = 'UPI' GROUP BY invoice_id) p_upi ON i.id = p_upi.invoice_id
-            LEFT JOIN (SELECT invoice_id, SUM(amount) as amount FROM payments WHERE mode = 'BANK' GROUP BY invoice_id) p_bank ON i.id = p_bank.invoice_id
+            LEFT JOIN users u ON i.customer_id = u.id
+            LEFT JOIN (SELECT invoice_id, SUM(amount) as amount FROM invoice_payments WHERE payment_method = 'CASH' GROUP BY invoice_id) p_cash ON i.id = p_cash.invoice_id
+            LEFT JOIN (SELECT invoice_id, SUM(amount) as amount FROM invoice_payments WHERE payment_method = 'UPI' GROUP BY invoice_id) p_upi ON i.id = p_upi.invoice_id
+            LEFT JOIN (SELECT invoice_id, SUM(amount) as amount FROM invoice_payments WHERE (payment_method = 'BANK' OR payment_method = 'NEFT') GROUP BY invoice_id) p_bank ON i.id = p_bank.invoice_id
             ${where}
             ORDER BY i.invoice_date DESC, i.id DESC
         `;
 
-        const rows = await db.pgAll(sql, params);
+        let rows = await db.pgAll(sql, params);
+        
+        // AUTO-EXPAND: If no data in period, show ALL TIME
+        if (rows.length === 0 && startDate && endDate) {
+            const allTimeSql = sql.replace(/AND i\.invoice_date >= \$2::date AND i\.invoice_date <= \$3::date/, "");
+            rows = await db.pgAll(allTimeSql, [companyId, ...(customer_id ? [customer_id] : [])]);
+        }
+
         res.json(rows);
     } catch (err) {
         console.error("Sales register error:", err);
         res.status(500).json({ error: "Failed to generate sales register" });
-    }
-});
-
-/**
- * 📦 GST SUMMARY
- * Monthly breakdown of Output vs Input tax
- */
-router.get('/gst/summary', authMiddleware, async (req, res) => {
-    const companyId = req.user.active_company_id;
-    const { month, year } = req.query; // Format: 5, 2026
-
-    try {
-        const periodStart = `${year}-${month.toString().padStart(2, '0')}-01`;
-        
-        // Output Tax (from Sales)
-        const outputSql = `
-            SELECT 
-                bill_purpose,
-                SUM(total_cgst_amount) as cgst,
-                SUM(total_sgst_amount) as sgst,
-                SUM(total_igst_amount) as igst
-            FROM invoices
-            WHERE company_id = $1 AND DATE_TRUNC('month', invoice_date) = $2
-            GROUP BY bill_purpose
-        `;
-        const outputRes = await db.pgAll(outputSql, [companyId, periodStart]);
-
-        // Input Tax (from Purchases)
-        const inputSql = `
-            SELECT 
-                SUM(cgst_total) as cgst,
-                SUM(sgst_total) as sgst,
-                SUM(igst_total) as igst
-            FROM purchase_bills
-            WHERE company_id = $1 AND DATE_TRUNC('month', bill_date) = $2
-        `;
-        const inputRes = await db.pgGet(inputSql, [companyId, periodStart]);
-
-        res.json({
-            output: outputRes,
-            input: inputRes,
-            period: periodStart
-        });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to generate GST summary" });
     }
 });
 
@@ -108,48 +69,116 @@ router.get('/sales/customer-wise', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                c.name as customer_name,
-                COUNT(i.id) as total_invoices,
-                SUM(i.total_amount) as total_amount,
-                SUM(i.paid_amount) as paid,
+                u.username as customer_name,
+                COUNT(i.id) as invoice_count,
+                SUM(i.total_amount) as total_sales,
+                SUM(i.paid_amount) as total_paid,
                 SUM(i.total_amount - i.paid_amount) as balance,
                 MAX(i.invoice_date) as last_date
-            FROM customers c
-            JOIN invoices i ON c.id = i.customer_id
-            WHERE c.company_id = $1 AND i.bill_purpose != 'name_only'
-            GROUP BY c.id, c.name
-            ORDER BY total_amount DESC
+            FROM users u
+            JOIN invoices i ON u.id = i.customer_id
+            WHERE u.company_id = $1 AND i.bill_purpose != 'name_only' AND u.role = 'customer'
+            GROUP BY u.id, u.username
+            ORDER BY total_sales DESC
         `;
         const data = await db.pgAll(sql, [companyId]);
         res.json(data);
     } catch (err) {
+        console.error("Customer sales error:", err);
         res.status(500).json({ error: "Failed to generate report" });
     }
 });
 
 /**
- * 📈 DASHBOARD STATS (Top Cards for Reports Landing Page)
+ * 🍎 PRODUCT-WISE SALES
+ */
+router.get('/sales/product-wise', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT 
+                p.name as product_name,
+                SUM(li.quantity) as total_qty,
+                AVG(li.unit_price) as avg_price,
+                SUM(li.line_total) as revenue
+            FROM invoice_line_items li
+            JOIN invoices i ON li.invoice_id = i.id
+            JOIN products p ON li.product_id = p.id
+            WHERE i.company_id = $1 AND i.bill_purpose != 'name_only'
+            GROUP BY p.id, p.name
+            ORDER BY revenue DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data);
+    } catch (err) {
+        console.error("Product sales error:", err);
+        res.status(500).json({ error: "Failed to generate report" });
+    }
+});
+
+/**
+ * 📦 STOCK SUMMARY
+ */
+router.get('/inventory/summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT 
+                name, sku, current_stock, unit, cost_price as avg_cost,
+                (current_stock * cost_price) as stock_value
+            FROM products
+            WHERE company_id = $1 AND is_deleted = false
+            ORDER BY current_stock DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch stock summary" });
+    }
+});
+
+/**
+ * 💸 EXPENSES (Horizontal Bar Chart Data)
+ */
+router.get('/finance/expenses', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT ca.name as name, SUM(COALESCE(l.debit, 0) - COALESCE(l.credit, 0)) as amount
+            FROM ledger_entries l
+            JOIN chart_of_accounts ca ON l.account_id = ca.id
+            WHERE l.company_id = $1 AND ca.account_type = 'EXPENSE'
+            GROUP BY ca.name
+            ORDER BY amount DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch expense data" });
+    }
+});
+
+/**
+ * 📈 DASHBOARD STATS (Landing Summary)
  */
 router.get('/dashboard-stats', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
         const todaySales = await db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices WHERE company_id = $1 AND DATE(invoice_date) = CURRENT_DATE AND bill_purpose != 'name_only'`, [companyId]);
         const todayPurchases = await db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_bills WHERE company_id = $1 AND DATE(bill_date) = CURRENT_DATE AND bill_purpose != 'name_only'`, [companyId]);
-        const cashPosition = await db.pgGet(`SELECT COALESCE(SUM(balance_amount), 0) as balance FROM invoices WHERE company_id = $1 AND balance_amount > 0 AND bill_purpose != 'name_only'`, [companyId]);
+        
+        const receivables = await db.pgGet(`SELECT COALESCE(SUM(total_amount - paid_amount), 0) as total FROM invoices WHERE company_id = $1 AND bill_purpose != 'name_only' AND total_amount > paid_amount`, [companyId]);
         
         const outputGst = await db.pgGet(`SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) as total FROM invoices WHERE company_id = $1 AND bill_purpose != 'name_only'`, [companyId]);
         const inputGst = await db.pgGet(`SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) as total FROM purchase_bills WHERE company_id = $1 AND bill_purpose != 'name_only'`, [companyId]);
-        const gstLiability = (parseFloat(outputGst?.total || 0) - parseFloat(inputGst?.total || 0));
-
-        const totalReceivables = await db.pgGet(`SELECT COALESCE(SUM(current_balance), 0) as balance FROM customers WHERE company_id = $1`, [companyId]);
-        const activeCustomers = await db.pgGet(`SELECT COUNT(*) as count FROM customers WHERE company_id = $1`, [companyId]);
+        
+        const activeCustomers = await db.pgGet(`SELECT COUNT(*) as count FROM users WHERE company_id = $1 AND role = 'customer'`, [companyId]);
 
         res.json({
             today_sales: parseFloat(todaySales?.total || 0),
             today_purchases: parseFloat(todayPurchases?.total || 0),
-            cash_balance: parseFloat(cashPosition?.balance || 0),
-            gst_liability: gstLiability,
-            total_receivables: parseFloat(totalReceivables?.balance || 0),
+            total_receivables: parseFloat(receivables?.total || 0),
+            gst_liability: (parseFloat(outputGst?.total || 0) - parseFloat(inputGst?.total || 0)),
             active_customers: parseInt(activeCustomers?.count || 0)
         });
     } catch (err) {
