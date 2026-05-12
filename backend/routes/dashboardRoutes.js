@@ -29,20 +29,22 @@ const getBranchFilter = (req) => {
 
 router.get('/summary', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { filter: branchFilter, branchId } = getBranchFilter(req);
+    const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // 1. Available Cash
-        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
-        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        // 1. Unified Available Cash (from ledger_entries or direct ledgers)
+        // We use ledger_entries to get the most accurate current state across all cash/bank accounts
+        const cashSql = `
+            SELECT COALESCE(SUM(debit - credit), 0) as balance 
+            FROM ledger_entries l
+            JOIN ledgers led ON l.account_id = led.id
+            JOIN ledger_groups lg ON led.group_id = lg.id
+            WHERE l.company_id = $1 
+              AND (lg.name = 'Cash-in-Hand' OR lg.name = 'Bank Accounts')
+              AND ${branchFilter.replace('branch_id', 'l.branch_id')}
+        `;
         
-        const [cashRes, bankRes] = await Promise.all([
-            db.pgGet(cashSql, [companyId]),
-            db.pgGet(bankSql, [companyId])
-        ]);
-        const availableCash = Number(cashRes?.balance || 0) + Number(bankRes?.balance || 0);
-
-        // 2. Sales & Breakdown
+        // 2. Total Revenue (Sales) for current month
         const salesSql = `
             SELECT 
                 COALESCE(SUM(total_amount), 0) as total_sales,
@@ -52,29 +54,31 @@ router.get('/summary', authMiddleware, async (req, res) => {
             FROM invoices
             WHERE company_id = $1 AND ${branchFilter}
               AND is_deleted = false
+              AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
         `;
-        const salesRes = await db.pgGet(salesSql, [companyId]);
 
-        // 3. Outstanding Receivables
+        // 3. Outstanding Receivables (Total)
         const outstandingSql = `
             SELECT COALESCE(SUM(total_amount - paid_amount), 0) as outstanding 
             FROM invoices 
             WHERE company_id = $1 AND ${branchFilter} AND is_deleted = false AND total_amount > paid_amount
         `;
-        const outstandingRes = await db.pgGet(outstandingSql, [companyId]);
 
-        const totalSales = parseFloat(salesRes?.total_sales || 0);
+        const [cashRes, salesRes, outstandingRes] = await Promise.all([
+            db.pgGet(cashSql, [companyId]),
+            db.pgGet(salesSql, [companyId]),
+            db.pgGet(outstandingSql, [companyId])
+        ]);
 
         res.json({
-            available_cash: availableCash,
-            total_monthly_sales: totalSales,
+            available_cash: parseFloat(cashRes?.balance || 0),
+            total_monthly_sales: parseFloat(salesRes?.total_sales || 0),
             outstanding_receivables: parseFloat(outstandingRes?.outstanding || 0),
             sales_breakdown: {
                 tax_sales: parseFloat(salesRes?.tax_sales || 0),
                 anon_sales: parseFloat(salesRes?.anon_sales || 0),
                 name_sake_sales: parseFloat(salesRes?.name_sake_sales || 0)
-            },
-            debugInfo: { companyId, branchId, filter: branchFilter }
+            }
         });
 
     } catch (err) {

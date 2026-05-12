@@ -55,14 +55,15 @@ const Dashboard: React.FC = () => {
         ]);
 
         if (kpiRes) {
+          const totalRev = Number(kpiRes.total_monthly_sales || 0);
           setStats({
-            totalRevenue: kpiRes.total_monthly_sales || 0,
-            monthlyRevenue: kpiRes.total_monthly_sales * 0.15, // Mocking current month as 15% of total for demo
-            outstanding: kpiRes.outstanding_receivables || 16350000, // Using provided value
-            cashAvailable: kpiRes.available_cash || 3000000, // Using provided value
-            taxSales: kpiRes.sales_breakdown?.tax_sales || 0,
-            anonSales: kpiRes.sales_breakdown?.anon_sales || 0,
-            namesakeSales: kpiRes.sales_breakdown?.name_sake_sales || 0
+            totalRevenue: totalRev,
+            monthlyRevenue: totalRev * 0.15, // Mocking current month as 15% of total for demo
+            outstanding: Number(kpiRes.outstanding_receivables || 16350000),
+            cashAvailable: Number(kpiRes.available_cash || 3000000),
+            taxSales: Number(kpiRes.sales_breakdown?.tax_sales || 0),
+            anonSales: Number(kpiRes.sales_breakdown?.anon_sales || 0),
+            namesakeSales: Number(kpiRes.sales_breakdown?.name_sake_sales || 0)
           });
         }
 
