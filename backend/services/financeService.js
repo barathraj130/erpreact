@@ -29,7 +29,7 @@ export const createLoan = async (user, loanData) => {
             loanData.party_name || 'Lender', 
             loanData.party_type || 'BANK',
             loanData.loan_direction || 'BORROWED',
-            loanData.principal_amount,
+            loanData.principal_amount || loanData.principal,
             loanData.interest_rate,
             loanData.interest_type || 'SIMPLE',
             loanData.start_date,

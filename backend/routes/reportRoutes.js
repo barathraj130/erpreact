@@ -262,4 +262,25 @@ router.get('/finance/day-book', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 🧾 GST ITC REPORT
+ */
+router.get('/gst/itc', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT 
+                id as bill_id, bill_number, bill_date, supplier_name, gstin,
+                taxable_amount, cgst_total, sgst_total, igst_total, tax_total as eligible_itc
+            FROM purchase_bills
+            WHERE company_id = $1 AND bill_type = 'TAX' AND is_deleted = false
+            ORDER BY bill_date DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch ITC report" });
+    }
+});
+
 export default router;

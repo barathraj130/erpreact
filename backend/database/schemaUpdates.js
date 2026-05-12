@@ -251,6 +251,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS date DATE; -- Some routes use 'date', some use 'transaction_date'
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category VARCHAR(100);
             ALTER TABLE transactions ADD COLUMN IF NOT EXISTS meta JSONB; -- Required by customerLedgerService.js
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'success';
 
             -- Attendance unique constraint for ON CONFLICT
             DO $$ 

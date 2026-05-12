@@ -102,7 +102,12 @@ router.get('/:id', authMiddleware, async (req, res) => {
         const bills = await db.pgAll("SELECT * FROM purchase_bills WHERE supplier_id = $1 ORDER BY bill_date DESC LIMIT 10", [req.params.id]);
         const payments = await db.pgAll("SELECT * FROM payments WHERE supplier_id = $1 ORDER BY date DESC LIMIT 10", [req.params.id]);
 
-        res.json({ ...supplier, recent_bills: bills, recent_payments: payments });
+        const stats = await db.pgGet(`
+            SELECT COALESCE(SUM(total_amount - paid_amount), 0) as pending_balance
+            FROM purchase_bills WHERE supplier_id = $1 AND status != 'PAID'
+        `, [req.params.id]);
+
+        res.json({ ...supplier, pending_balance: parseFloat(stats.pending_balance || 0), recent_bills: bills, recent_payments: payments });
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch profile" });
     }

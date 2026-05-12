@@ -70,16 +70,16 @@ const DEEP_SCENARIOS: TestCase[] = [
   // SCENARIO 3: FINANCE & HR
   { id: "T3.1", name: "Add Lender + Disburse Loan (1L)", category: "Finance", method: "POST", path: "/loans", expectStatus: 201 },
   { id: "T3.2", name: "Verify Loan Ledger (Liability Created)", category: "Finance", method: "GET", path: "/reports/finance/day-book", expectStatus: 200 },
-  { id: "T3.3", name: "Pay Loan EMI (8k Prin + 1k Int)", category: "Finance", method: "POST", path: "/loans/__loanId__/payments", expectStatus: 201 },
+  { id: "T3.3", name: "Pay Loan EMI (8k Prin + 1k Int)", category: "Finance", method: "POST", path: "/loans/repayment", expectStatus: 201 },
   { id: "T3.4", name: "Add Employee + Mark Attendance", category: "HR", method: "POST", path: "/employees", expectStatus: 201 },
-  { id: "T3.5", name: "Process Salary (Pro-rated)", category: "HR", method: "POST", path: "/employees/__employeeId__/salary", expectStatus: 201 },
+  { id: "T3.5", name: "Process Salary (Pro-rated)", category: "HR", method: "PUT", path: "/employees/__employeeId__/salary", expectStatus: 200 },
   { id: "T3.6", name: "Add Broker + Record Commission", category: "Finance", method: "POST", path: "/brokers", expectStatus: 201 },
 
   // SCENARIO 4: REPORT VERIFICATION
   { id: "T4.1", name: "Verify Trial Balance Zero-Sum", category: "Reports", method: "GET", path: "/reports/finance/trial-balance", expectStatus: 200 },
   { id: "T4.2", name: "Verify Profit & Loss (Loss: 5.2k expected)", category: "Reports", method: "GET", path: "/reports/finance/profit-loss", expectStatus: 200 },
   { id: "T4.3", name: "Verify ITC Report (₹1800 eligible)", category: "Reports", method: "GET", path: "/reports/gst/itc", expectStatus: 200 },
-  { id: "T4.4", name: "Validate GSTIN Logic", category: "QA_UNIT", method: "LOCAL", path: "validateGSTIN", expectStatus: 200 },
+  { id: "QA.1", name: "Validate GSTIN Logic", category: "QA_UNIT", method: "LOCAL", path: "validateGSTIN", expectStatus: 200 },
 
   { id: "T9.1", name: "Database Purge (TEST_ Cleanup)", category: "Cleanup", method: "POST", path: "/test/cleanup", expectStatus: 200 }
 ];
@@ -160,7 +160,7 @@ const SystemTester: React.FC = () => {
     } else if (test.id === "T3.1") {
       body = { lender_name: "TEST_LENDER_TXN", type: "Bank", phone: "9000000003", principal: 100000, interest_rate: 12, start_date: today, repayment_cycle: "MONTHLY" };
     } else if (test.id === "T3.3") {
-      body = { principal_amount: 8000, interest_amount: 1000, payment_date: today, mode: "BANK" };
+      body = { loan_id: ctx.current.loanId, principal_component: 8000, interest_component: 1000, total_amount: 9000, payment_date: today, payment_mode: "BANK" };
     } else if (test.id === "T3.4") {
       // Create employee and mark attendance in one step or multi-step
       body = { name: "TEST_EMPLOYEE_TXN", designation: "Sales Staff", phone: "9000000004", salary: 15000, joining_date: today };

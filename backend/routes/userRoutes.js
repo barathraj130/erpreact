@@ -76,6 +76,31 @@ router.post("/staff", authMiddleware, checkPermission("Settings", "access_settin
     }
 });
 
+// GET SINGLE CUSTOMER
+router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
+    try {
+        const user = await db.pgGet(`
+            SELECT 
+                id, username, nickname, email, phone, role, gstin, 
+                address_line1, city_pincode, state, state_code,
+                initial_balance, bank_name, bank_account_no, bank_ifsc_code, created_at
+            FROM users 
+            WHERE id = $1 AND company_id = $2
+        `, [req.params.id, req.user.active_company_id]);
+        
+        if (!user) return res.status(404).json({ error: "Customer not found" });
+        
+        const stats = await db.pgGet(`
+            SELECT COALESCE(SUM(total_amount - paid_amount), 0) as pending_balance
+            FROM invoices WHERE customer_id = $1 AND company_id = $2
+        `, [req.params.id, req.user.active_company_id]);
+
+        res.json({ ...user, pending_balance: parseFloat(stats.pending_balance || 0) });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch customer" });
+    }
+});
+
 /* ============================================================
    CUSTOMER MANAGEMENT (Sales > Customers)
    - Accessed by Sales staff
