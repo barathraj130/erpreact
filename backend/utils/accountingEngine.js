@@ -160,45 +160,89 @@ export async function getProfitAndLoss(companyId, branchId, startDate, endDate, 
 }
 
 /**
- * Helper to fetch account info by code for a company
+ * Known expected account types for each standard account code.
+ * Used to detect and correct type mismatches caused by duplicate chart entries.
+ */
+const EXPECTED_ACCOUNT_TYPES = {
+    '1000': 'ASSET',   // Cash
+    '1100': 'ASSET',   // Accounts Receivable
+    '1200': 'ASSET',   // Bank Account
+    '1400': 'ASSET',   // Inventory
+    '2000': 'LIABILITY', // Accounts Payable
+    '2100': 'LIABILITY', // GST Payable
+    '2200': 'ASSET',   // GST Input (Purchases) — ITC account
+    '3000': 'EQUITY',  // Equity
+    '4000': 'INCOME',  // Sales Revenue
+    '4200': 'INCOME',  // Sales Returns
+    '5000': 'EXPENSE', // Purchases
+    '5100': 'EXPENSE', // Discount Allowed
+    '5200': 'INCOME',  // Discount Received
+};
+
+const DEFAULT_ACCOUNT_NAMES = {
+    '1000': 'Cash',
+    '1100': 'Accounts Receivable',
+    '1200': 'Bank Account',
+    '1400': 'Inventory',
+    '2000': 'Accounts Payable',
+    '2100': 'GST Payable',
+    '2200': 'GST Input (Purchases)',
+    '3000': 'Opening Stock Adj / Equity',
+    '4000': 'Sales Revenue',
+    '4200': 'Sales Returns',
+    '5000': 'Purchases',
+    '5100': 'Discount Allowed',
+    '5200': 'Discount Received',
+};
+
+/**
+ * Helper to fetch account info by code for a company.
+ * Prefers accounts with the correct expected type for the code.
+ * Auto-seeds missing accounts using INSERT ... ON CONFLICT DO UPDATE to fix wrong-type duplicates.
  */
 export async function getAccountByCode(companyId, code) {
-    const sql = `SELECT id, account_type FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = $2 LIMIT 1;`;
-    let account = await db.pgGet(sql, [companyId, code]);
-    
-    // Auto-seed missing essential accounts
-    if (!account && companyId) {
-        const defaults = {
-            '1000': { name: 'Cash', type: 'ASSET' },
-            '1100': { name: 'Accounts Receivable', type: 'ASSET' },
-            '1200': { name: 'Bank Account', type: 'ASSET' },
-            '1400': { name: 'Inventory', type: 'ASSET' },
-            '2000': { name: 'Accounts Payable', type: 'LIABILITY' },
-            '2100': { name: 'GST Payable', type: 'LIABILITY' },
-            '2200': { name: 'GST Input (Purchases)', type: 'ASSET' },
-            '3000': { name: 'Opening Stock Adj / Equity', type: 'EQUITY' },
-            '4000': { name: 'Sales Revenue', type: 'INCOME' },
-            '4200': { name: 'Sales Returns', type: 'INCOME' },
-            '5000': { name: 'Purchases', type: 'EXPENSE' },
-            '5100': { name: 'Discount Allowed', type: 'EXPENSE' },
-            '5200': { name: 'Discount Received', type: 'INCOME' }
-        };
-        
-        if (defaults[code]) {
-            const { name, type } = defaults[code];
-            try {
-                await db.pgRun(
-                    `INSERT INTO chart_of_accounts (company_id, account_code, name, account_type, opening_balance, current_balance)
-                     VALUES ($1, $2, $3, $4, 0, 0) ON CONFLICT (company_id, account_code) DO NOTHING`,
-                    [companyId, code, name, type]
-                );
-                account = await db.pgGet(sql, [companyId, code]);
-            } catch (e) {
-                console.error("Auto-seed account failed:", e);
+    const expectedType = EXPECTED_ACCOUNT_TYPES[code];
+    const expectedName = DEFAULT_ACCOUNT_NAMES[code];
+
+    // Step 1: Try to find a company-specific account with the CORRECT type first
+    if (expectedType) {
+        const typedSql = `
+            SELECT id, account_type, name FROM chart_of_accounts 
+            WHERE company_id = $1 AND account_code = $2 AND UPPER(account_type) = $3
+            ORDER BY id DESC LIMIT 1;
+        `;
+        const typedAccount = await db.pgGet(typedSql, [companyId, code, expectedType]);
+        if (typedAccount) return typedAccount;
+    }
+
+    // Step 2: Find ANY account with this code for this company
+    const anySql = `SELECT id, account_type, name FROM chart_of_accounts WHERE company_id = $1 AND account_code = $2 ORDER BY id DESC LIMIT 1;`;
+    const existingAccount = await db.pgGet(anySql, [companyId, code]);
+
+    // Step 3: If no account found, or found account has wrong type — seed/fix it
+    const hasWrongType = existingAccount && expectedType && 
+        existingAccount.account_type.toUpperCase() !== expectedType;
+    const notFound = !existingAccount;
+
+    if ((notFound || hasWrongType) && expectedName && expectedType) {
+        try {
+            // Insert a new correctly-typed account (don't UPDATE existing to avoid breaking other data)
+            const insertSql = `
+                INSERT INTO chart_of_accounts (company_id, account_code, name, account_type, opening_balance, current_balance)
+                VALUES ($1, $2, $3, $4, 0, 0)
+                RETURNING id, account_type, name;
+            `;
+            const seeded = await db.pgGet(insertSql, [companyId, code, expectedName, expectedType]);
+            if (seeded) {
+                console.log(`✅ Seeded account ${code} (${expectedName}) for company ${companyId}`);
+                return seeded;
             }
+        } catch (e) {
+            console.error(`⚠️ Auto-seed account ${code} failed:`, e.message);
         }
     }
-    return account;
+
+    return existingAccount || null;
 }
 /**
  * Generates a Balance Sheet Report
