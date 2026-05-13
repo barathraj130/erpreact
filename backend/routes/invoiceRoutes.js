@@ -487,8 +487,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         res.status(201).json({ message: "Invoice saved", id: invoiceId, bill_number: finalInvoiceNumber });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
-        console.error("Critical Invoice Error:", err.message);
-        res.status(500).json({ error: err.message });
+        console.error("❌ Critical Invoice Error:", err.message);
+        res.status(500).json({ error: "Failed to create invoice: " + err.message });
     } finally {
         if (client) client.release();
     }
@@ -751,7 +751,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 
         // Ledger Entry logic (simplified for test completion)
         const cashAcc = await getAccountByCode(companyId, "1000");
-        const arAcc = await getAccountByCode(companyId, "1200");
+        const arAcc = await getAccountByCode(companyId, "1100");
         
         if (cashAcc && arAcc) {
             await createTransaction({
@@ -772,7 +772,8 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         res.json({ success: true, message: "Payment recorded", newPaid, status });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
-        res.status(500).json({ error: err.message });
+        console.error("❌ Invoice Payment Accounting Error:", err.message);
+        res.status(500).json({ error: "Payment failed: " + err.message });
     } finally {
         if (client) client.release();
     }

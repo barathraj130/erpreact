@@ -1,0 +1,398 @@
+[
+  {
+    "id": "T1.1",
+    "name": "Create Supplier (TEST_SUPPLIER_TXN)",
+    "category": "Purchase",
+    "method": "POST",
+    "path": "/suppliers",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 194,
+    "requestBody": {
+      "name": "TEST_SUPPLIER_TXN",
+      "phone": "9000000001",
+      "state": "Tamil Nadu",
+      "gstin": "33AABCT1332L1ZF"
+    }
+  },
+  {
+    "id": "T1.2",
+    "name": "Create Product (TEST_PRODUCT_TXN)",
+    "category": "Inventory",
+    "method": "POST",
+    "path": "/products",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 168,
+    "requestBody": {
+      "name": "TEST_PRODUCT_TXN",
+      "sku": "TXN-2155TL",
+      "cost_price": 1000,
+      "selling_price": 1500,
+      "gst_percent": 18,
+      "opening_stock": 0,
+      "min_stock": 5,
+      "unit": "pcs",
+      "hsn_code": "6006",
+      "category": "Trading"
+    }
+  },
+  {
+    "id": "T1.3",
+    "name": "Check Baseline Trial Balance",
+    "category": "Finance",
+    "method": "GET",
+    "path": "/reports/finance/trial-balance",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 131,
+    "requestBody": null
+  },
+  {
+    "id": "T1.4",
+    "name": "Purchase Bill + Partial Payment (8k/11.8k)",
+    "category": "Purchase",
+    "method": "POST",
+    "path": "/purchase-bills",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 288,
+    "requestBody": {
+      "supplier_id": 36,
+      "bill_type": "TAX",
+      "bill_date": "2026-05-13",
+      "items": [
+        {
+          "product_id": 65,
+          "quantity": 10,
+          "unit_price": 1000,
+          "tax_percent": 18
+        }
+      ],
+      "taxable_amount": 10000,
+      "cgst_amount": 900,
+      "sgst_amount": 900,
+      "total_amount": 11800,
+      "payments": [
+        {
+          "mode": "CASH",
+          "amount": 5000,
+          "payment_date": "2026-05-13"
+        },
+        {
+          "mode": "BANK",
+          "amount": 3000,
+          "payment_date": "2026-05-13"
+        }
+      ],
+      "total_paid": 8000,
+      "balance_amount": 3800
+    }
+  },
+  {
+    "id": "T1.5",
+    "name": "Verify Inventory Increased (+10)",
+    "category": "Inventory",
+    "method": "GET",
+    "path": "/reports/inventory/summary",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 128,
+    "requestBody": null
+  },
+  {
+    "id": "T1.6",
+    "name": "Verify Purchase Ledger (Double-Entry)",
+    "category": "Finance",
+    "method": "GET",
+    "path": "/reports/finance/day-book",
+    "status": "fail",
+    "likelyCause": "Double-entry ledger check failed for Purchase.",
+    "requestBody": null
+  },
+  {
+    "id": "T1.7",
+    "name": "Verify Supplier Ledger (Bal: 3800 Cr)",
+    "category": "Purchase",
+    "method": "GET",
+    "path": "/suppliers/__supplierId__",
+    "status": "skipped"
+  },
+  {
+    "id": "T1.8",
+    "name": "Pay Remaining Balance (3.8k)",
+    "category": "Purchase",
+    "method": "POST",
+    "path": "/purchase-bills/__purchaseBillId__/payment",
+    "status": "skipped"
+  },
+  {
+    "id": "T1.9",
+    "name": "Verify Supplier Balance = 0",
+    "category": "Purchase",
+    "method": "GET",
+    "path": "/suppliers/__supplierId__",
+    "status": "skipped"
+  },
+  {
+    "id": "T2.1",
+    "name": "Create Customer (TEST_CUSTOMER_TXN)",
+    "category": "Sales",
+    "method": "POST",
+    "path": "/users",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 333,
+    "requestBody": {
+      "username": "TEST_CUSTOMER_TXN",
+      "role": "customer",
+      "phone": "9000000002",
+      "state": "Tamil Nadu",
+      "state_code": "33"
+    }
+  },
+  {
+    "id": "T2.2",
+    "name": "Sales Invoice (NON-TAX) + Split Payment",
+    "category": "Sales",
+    "method": "POST",
+    "path": "/invoice",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 411,
+    "requestBody": {
+      "customer_id": 61,
+      "invoice_type": "NON-TAX",
+      "invoice_date": "2026-05-13",
+      "items": [
+        {
+          "product_id": 65,
+          "qty": 5,
+          "rate": 1500,
+          "gst_rate": 0
+        }
+      ],
+      "total_amount": 7500,
+      "payments": [
+        {
+          "mode": "CASH",
+          "amount": 2500,
+          "payment_date": "2026-05-13"
+        },
+        {
+          "mode": "UPI",
+          "amount": 2500,
+          "payment_date": "2026-05-13"
+        }
+      ],
+      "total_paid": 5000,
+      "balance_amount": 2500
+    }
+  },
+  {
+    "id": "T2.3",
+    "name": "Verify Stock Decreased (-5)",
+    "category": "Inventory",
+    "method": "GET",
+    "path": "/reports/inventory/summary",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 80,
+    "requestBody": null
+  },
+  {
+    "id": "T2.4",
+    "name": "Verify Sales Ledger (No GST, Split Cash/UPI)",
+    "category": "Finance",
+    "method": "GET",
+    "path": "/reports/finance/day-book",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 69,
+    "requestBody": null
+  },
+  {
+    "id": "T2.5",
+    "name": "Verify Customer Ledger (Bal: 2500 Dr)",
+    "category": "Sales",
+    "method": "GET",
+    "path": "/users/__customerId__",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 141,
+    "requestBody": null
+  },
+  {
+    "id": "T2.6",
+    "name": "Collect Remaining Balance (2.5k)",
+    "category": "Sales",
+    "method": "POST",
+    "path": "/invoice/__invoiceId__/payment",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 206,
+    "requestBody": {
+      "amount": 2500,
+      "mode": "BANK",
+      "payment_date": "2026-05-13"
+    }
+  },
+  {
+    "id": "T2.7",
+    "name": "Verify Invoice = SETTLED",
+    "category": "Sales",
+    "method": "GET",
+    "path": "/invoice",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 75,
+    "requestBody": null
+  },
+  {
+    "id": "T3.1",
+    "name": "Add Lender + Disburse Loan (1L)",
+    "category": "Finance",
+    "method": "POST",
+    "path": "/loans",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 183,
+    "requestBody": {
+      "lender_name": "TEST_LENDER_TXN",
+      "type": "Bank",
+      "phone": "9000000003",
+      "principal": 100000,
+      "interest_rate": 12,
+      "start_date": "2026-05-13",
+      "repayment_cycle": "MONTHLY"
+    }
+  },
+  {
+    "id": "T3.2",
+    "name": "Verify Loan Ledger (Liability Created)",
+    "category": "Finance",
+    "method": "GET",
+    "path": "/reports/finance/day-book",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 71,
+    "requestBody": null
+  },
+  {
+    "id": "T3.3",
+    "name": "Pay Loan EMI (8k Prin + 1k Int)",
+    "category": "Finance",
+    "method": "POST",
+    "path": "/loans/repayment",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 236,
+    "requestBody": {
+      "loan_id": 22,
+      "principal_component": 8000,
+      "interest_component": 1000,
+      "total_amount": 9000,
+      "payment_date": "2026-05-13",
+      "payment_mode": "BANK"
+    }
+  },
+  {
+    "id": "T3.4",
+    "name": "Add Employee + Mark Attendance",
+    "category": "HR",
+    "method": "POST",
+    "path": "/employees",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 148,
+    "requestBody": {
+      "name": "TEST_EMPLOYEE_TXN",
+      "designation": "Sales Staff",
+      "phone": "9000000004",
+      "salary": 15000,
+      "joining_date": "2026-05-13"
+    }
+  },
+  {
+    "id": "T3.5",
+    "name": "Process Salary (Pro-rated)",
+    "category": "HR",
+    "method": "PUT",
+    "path": "/employees/__employeeId__/salary",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 234,
+    "requestBody": {
+      "month": "May 2026",
+      "working_days": 26,
+      "present_days": 20,
+      "deductions": 0,
+      "advance_deducted": 0
+    }
+  },
+  {
+    "id": "T3.6",
+    "name": "Add Broker + Record Commission",
+    "category": "Finance",
+    "method": "POST",
+    "path": "/brokers",
+    "status": "pass",
+    "httpStatus": 201,
+    "durationMs": 173,
+    "requestBody": {
+      "name": "TEST_BROKER_TXN",
+      "commission_rate": 2.5,
+      "phone": "9000000005"
+    }
+  },
+  {
+    "id": "T4.1",
+    "name": "Verify Trial Balance Zero-Sum",
+    "category": "Reports",
+    "method": "GET",
+    "path": "/reports/finance/trial-balance",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 80,
+    "requestBody": null
+  },
+  {
+    "id": "T4.2",
+    "name": "Verify Profit & Loss (Loss: 5.2k expected)",
+    "category": "Reports",
+    "method": "GET",
+    "path": "/reports/finance/profit-loss",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 129,
+    "requestBody": null
+  },
+  {
+    "id": "T4.3",
+    "name": "Verify ITC Report (₹1800 eligible)",
+    "category": "Reports",
+    "method": "GET",
+    "path": "/reports/gst/itc",
+    "status": "pass",
+    "httpStatus": 200,
+    "durationMs": 207,
+    "requestBody": null
+  },
+  {
+    "id": "QA.1",
+    "name": "Validate GSTIN Logic",
+    "category": "QA_UNIT",
+    "method": "LOCAL",
+    "path": "validateGSTIN",
+    "status": "pass",
+    "durationMs": 1
+  },
+  {
+    "id": "T9.1",
+    "name": "Database Purge (TEST_ Cleanup)",
+    "category": "Cleanup",
+    "method": "POST",
+    "path": "/test/cleanup",
+    "status": "skipped"
+  }
+]

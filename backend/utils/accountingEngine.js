@@ -171,11 +171,16 @@ export async function getAccountByCode(companyId, code) {
         const defaults = {
             '1000': { name: 'Cash', type: 'ASSET' },
             '1100': { name: 'Accounts Receivable', type: 'ASSET' },
+            '1200': { name: 'Accounts Receivable (Alt)', type: 'ASSET' },
             '1400': { name: 'Inventory', type: 'ASSET' },
+            '2000': { name: 'Accounts Payable', type: 'LIABILITY' },
             '2100': { name: 'GST Payable', type: 'LIABILITY' },
-            '3000': { name: 'Opening Stock Adj', type: 'EQUITY' },
-            '4000': { name: 'Sales Revenue', type: 'EQUITY' },
-            '5100': { name: 'Discount Allowed', type: 'EQUITY' }
+            '2200': { name: 'GST Input (Purchases)', type: 'ASSET' },
+            '3000': { name: 'Opening Stock Adj / Equity', type: 'EQUITY' },
+            '4000': { name: 'Sales Revenue', type: 'INCOME' },
+            '4200': { name: 'Sales Returns', type: 'INCOME' }, // Treated as negative income
+            '5000': { name: 'Purchases', type: 'EXPENSE' },
+            '5100': { name: 'Discounts', type: 'EXPENSE' }
         };
         
         if (defaults[code]) {
@@ -183,7 +188,7 @@ export async function getAccountByCode(companyId, code) {
             try {
                 await db.pgRun(
                     `INSERT INTO chart_of_accounts (company_id, account_code, name, account_type, opening_balance, current_balance)
-                     VALUES ($1, $2, $3, $4, 0, 0) ON CONFLICT DO NOTHING`,
+                     VALUES ($1, $2, $3, $4, 0, 0) ON CONFLICT (company_id, account_code) DO NOTHING`,
                     [companyId, code, name, type]
                 );
                 account = await db.pgGet(sql, [companyId, code]);

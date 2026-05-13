@@ -356,7 +356,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await createTransaction(txData, txLines);
             }
         } catch (accErr) {
-            console.warn("⚠️ Accounting failed:", accErr.message);
+            console.error("❌ Purchase Accounting Engine Failure:", accErr.message);
         }
 
         if (safeBrokerId) {
