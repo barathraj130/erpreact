@@ -220,6 +220,26 @@ const SystemTester: React.FC = () => {
         }
 
         if (test.id === "T1.6") {
+          console.log('T1.6 DAY-BOOK RESPONSE STATUS:', res.status);
+          console.log('T1.6 DAY-BOOK TOTAL ENTRIES:', data.length || data.data?.length || 'unknown structure');
+          console.log('T1.6 DAY-BOOK FIRST 3 ENTRIES:', JSON.stringify(data.slice ? data.slice(0,3) : data.data?.slice(0,3), null, 2));
+          console.log('T1.6 PURCHASE BILL ID being checked:', ctx.current.purchaseBillId);
+
+          const billEntries = (data.data || data).filter((e: any) =>
+            e.reference_id == ctx.current.purchaseBillId ||
+            e.ref_id == ctx.current.purchaseBillId ||
+            e.bill_id == ctx.current.purchaseBillId ||
+            String(e.reference_id) === String(ctx.current.purchaseBillId)
+          );
+          console.log('T1.6 ENTRIES FOR THIS BILL:', JSON.stringify(billEntries, null, 2));
+          console.log('T1.6 ENTRIES COUNT:', billEntries.length);
+
+          const totalDebit = billEntries.reduce((s: number, e: any) => s + parseFloat(e.debit || 0), 0);
+          const totalCredit = billEntries.reduce((s: number, e: any) => s + parseFloat(e.credit || 0), 0);
+          console.log('T1.6 TOTAL DEBIT:', totalDebit);
+          console.log('T1.6 TOTAL CREDIT:', totalCredit);
+          console.log('T1.6 DIFFERENCE:', Math.abs(totalDebit - totalCredit));
+
           const entries = data.filter((e: any) => e.reference_id === ctx.current.purchaseBillId);
           const hasInventory = entries.some((e: any) => e.account_name.includes("Inventory") && parseFloat(e.debit) === 10000);
           const hasPayable = entries.some((e: any) => e.account_name.includes("Payable") && parseFloat(e.credit) === 11800);
