@@ -140,9 +140,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
         res.json({
             ...supplier,
             balance:         parseFloat(stats.balance || 0),
-            pending_balance: parseFloat(stats.balance || 0),
-            total_billed:    parseFloat(stats.total_billed || 0),
+            total_purchased: parseFloat(stats.total_billed || 0),
             total_paid:      parseFloat(stats.total_paid || 0),
+            pending_balance: parseFloat(stats.balance || 0),
             recent_bills:    bills,
             ledger
         });

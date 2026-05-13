@@ -6,102 +6,102 @@ import * as db from '../database/pg.js';
  * @param {Object} txData - { company_id, branch_id, transaction_date, reference_type, reference_id, description, created_by }
  * @param {Array} lines - Array of { account_id, debit_amount, credit_amount, description }
  */
-export async function createTransaction(txData, lines) {
-    const client = await db.getClient();
-    
-    try {
-        await client.query('BEGIN');
+/**
+ * Internal version of createTransaction that uses an existing database client.
+ * Allows accounting to happen within an existing transaction.
+ */
+export async function createTransactionInternal(client, txData, lines) {
+    // 1. Validate Double Entry Rule: Sum(Debit) = Sum(Credit)
+    const totalDebit = lines.reduce((sum, line) => sum + parseFloat(line.debit_amount || 0), 0);
+    const totalCredit = lines.reduce((sum, line) => sum + parseFloat(line.credit_amount || 0), 0);
 
-        // 1. Validate Double Entry Rule: Sum(Debit) = Sum(Credit)
-        const totalDebit = lines.reduce((sum, line) => sum + parseFloat(line.debit_amount || 0), 0);
-        const totalCredit = lines.reduce((sum, line) => sum + parseFloat(line.credit_amount || 0), 0);
+    if (Math.abs(totalDebit - totalCredit) > 0.001) {
+        throw new Error(`Double-entry validation failed: Total Debit (${totalDebit}) must equal Total Credit (${totalCredit})`);
+    }
 
-        if (Math.abs(totalDebit - totalCredit) > 0.001) {
-            throw new Error(`Double-entry validation failed: Total Debit (${totalDebit}) must equal Total Credit (${totalCredit})`);
-        }
+    // 2. Insert Transaction Header
+    const txSql = `
+        INSERT INTO transactions (company_id, branch_id, transaction_date, date, reference_type, reference_id, description, created_by, bill_purpose, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id;
+    `;
+    const txRes = await client.query(txSql, [
+        txData.company_id,
+        txData.branch_id,
+        txData.transaction_date || new Date(),
+        txData.transaction_date || new Date(),
+        txData.reference_type,
+        txData.reference_id,
+        txData.description,
+        txData.created_by,
+        txData.bill_purpose || 'real',
+        'success'
+    ]);
+    const transactionId = txRes.rows[0].id;
 
-        // 2. Insert Transaction Header
-        const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, date, reference_type, reference_id, description, created_by, bill_purpose, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    // 3. Process each line item
+    for (const line of lines) {
+        const lineSql = `
+            INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id;
         `;
-        const txRes = await client.query(txSql, [
+        const sanitizeInt = (val) => {
+            const p = parseInt(val);
+            return isNaN(p) ? null : p;
+        };
+
+        await client.query(lineSql, [
+            transactionId,
+            sanitizeInt(line.account_id),
+            line.debit_amount || 0,
+            line.credit_amount || 0,
+            line.description
+        ]);
+
+        const balanceChange = parseFloat(line.debit_amount || 0) - parseFloat(line.credit_amount || 0);
+        const updateAccountSql = `
+            UPDATE chart_of_accounts 
+            SET current_balance = current_balance + $1 
+            WHERE id = $2;
+        `;
+        await client.query(updateAccountSql, [balanceChange, line.account_id]);
+
+        const getLatestBalanceSql = `
+            SELECT running_balance FROM ledger_entries 
+            WHERE account_id = $1 
+            ORDER BY entry_date DESC, id DESC LIMIT 1;
+        `;
+        const latestBalRes = await client.query(getLatestBalanceSql, [line.account_id]);
+        const previousBalance = latestBalRes.rows[0] ? parseFloat(latestBalRes.rows[0].running_balance) : 0;
+        const newRunningBalance = previousBalance + balanceChange;
+
+        const ledgerSql = `
+            INSERT INTO ledger_entries (company_id, branch_id, account_id, transaction_id, entry_date, debit, credit, running_balance, bill_purpose)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+        `;
+        await client.query(ledgerSql, [
             txData.company_id,
             txData.branch_id,
-            txData.transaction_date,
-            txData.transaction_date, // Use same date for both columns
-            txData.reference_type,
-            txData.reference_id,
-            txData.description,
-            txData.created_by,
-            txData.bill_purpose || 'real',
-            'success'
+            line.account_id,
+            transactionId,
+            txData.transaction_date || new Date(),
+            line.debit_amount || 0,
+            line.credit_amount || 0,
+            newRunningBalance,
+            txData.bill_purpose || 'real'
         ]);
-        const transactionId = txRes.rows[0].id;
+    }
+    return { success: true, transactionId };
+}
 
-        // 3. Process each line item
-        for (const line of lines) {
-            // A. Insert Transaction Line
-            const lineSql = `
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id;
-            `;
-            const sanitizeInt = (val) => {
-                const p = parseInt(val);
-                return isNaN(p) ? null : p;
-            };
-
-            await client.query(lineSql, [
-                transactionId,
-                sanitizeInt(line.account_id),
-                line.debit_amount || 0,
-                line.credit_amount || 0,
-                line.description
-            ]);
-
-            // B. Update Account Current Balance
-            // Rule: Increase current_balance by (Debit - Credit)
-            // Note: Different account types treat Dr/Cr differently for reporting, but for raw balance tracking:
-            const balanceChange = parseFloat(line.debit_amount || 0) - parseFloat(line.credit_amount || 0);
-            const updateAccountSql = `
-                UPDATE chart_of_accounts 
-                SET current_balance = current_balance + $1 
-                WHERE id = $2;
-            `;
-            await client.query(updateAccountSql, [balanceChange, line.account_id]);
-
-            // C. Insert Ledger Entry (Running Balance tracking)
-            const getLatestBalanceSql = `
-                SELECT running_balance FROM ledger_entries 
-                WHERE account_id = $1 
-                ORDER BY entry_date DESC, id DESC LIMIT 1;
-            `;
-            const latestBalRes = await client.query(getLatestBalanceSql, [line.account_id]);
-            const previousBalance = latestBalRes.rows[0] ? parseFloat(latestBalRes.rows[0].running_balance) : 0;
-            const newRunningBalance = previousBalance + balanceChange;
-
-            const ledgerSql = `
-                INSERT INTO ledger_entries (company_id, branch_id, account_id, transaction_id, entry_date, debit, credit, running_balance, bill_purpose)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
-            `;
-            await client.query(ledgerSql, [
-                txData.company_id,
-                txData.branch_id,
-                line.account_id,
-                transactionId,
-                txData.transaction_date,
-                line.debit_amount || 0,
-                line.credit_amount || 0,
-                newRunningBalance,
-                txData.bill_purpose || 'real'
-            ]);
-        }
-
+export async function createTransaction(txData, lines) {
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const res = await createTransactionInternal(client, txData, lines);
         await client.query('COMMIT');
-        return { success: true, transactionId };
-
+        return res;
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('❌ Accounting Engine Error:', error);
