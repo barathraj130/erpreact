@@ -253,15 +253,24 @@ router.get('/finance/day-book', authMiddleware, async (req, res) => {
         }
 
         if (reference_type) {
-            where += ` AND t.reference_type = $${params.length + 1}`;
+            where += ` AND UPPER(t.reference_type) = UPPER($${params.length + 1})`;
             params.push(reference_type);
         }
 
         const sql = `
-            SELECT l.*, ca.name as account_name, t.description as tx_desc, t.reference_type, t.reference_id
+            SELECT 
+                l.*, 
+                ca.name as account_name, 
+                t.reference_type, 
+                t.reference_id,
+                COALESCE(tl.description, t.description) as description
             FROM ledger_entries l
             JOIN chart_of_accounts ca ON l.account_id = ca.id
             LEFT JOIN transactions t ON l.transaction_id = t.id
+            LEFT JOIN transaction_lines tl ON l.transaction_id = tl.transaction_id 
+                AND l.account_id = tl.account_id 
+                AND l.debit = tl.debit_amount 
+                AND l.credit = tl.credit_amount
             ${where}
             ORDER BY l.entry_date DESC, l.id DESC
         `;
