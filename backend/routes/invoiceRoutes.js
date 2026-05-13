@@ -409,6 +409,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         if (arAccount && salesAccount) {
             let txLines = [];
             
+
             if (invoice_type === 'NOMINAL_TAX_INVOICE') {
                 const netGST = totalGST - totalReturnGST;
                 if (netGST !== 0 && taxAccount) {
@@ -438,6 +439,26 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     const discountAccount = await getAccountByCode(companyId, '5100'); // Discount Allowed
                     if (discountAccount) {
                         txLines.push({ account_id: discountAccount.id, debit_amount: discountAmt, credit_amount: 0, description: `Discount on Inv #${finalInvoiceNumber}` });
+                    }
+                }
+            }
+
+            // Handle Payments in the same transaction
+            if (Array.isArray(payments) && payments.length > 0) {
+                const cashAccount = await getAccountByCode(companyId, '1000');
+                const bankAccount = await getAccountByCode(companyId, '1200');
+
+                for (const p of payments) {
+                    const pAmt = parseFloat(p.amount || 0);
+                    if (pAmt <= 0) continue;
+                    
+                    const pMethod = (p.payment_method || 'CASH').toUpperCase();
+                    const isBank = pMethod === 'BANK' || pMethod === 'UPI';
+                    const pAcc = isBank ? bankAccount : cashAccount;
+                    
+                    if (pAcc && arAccount) {
+                        txLines.push({ account_id: pAcc.id, debit_amount: pAmt, credit_amount: 0, description: `Payment received via ${pMethod}` });
+                        txLines.push({ account_id: arAccount.id, debit_amount: 0, credit_amount: pAmt, description: `Customer payment reduction - Inv #${finalInvoiceNumber}` });
                     }
                 }
             }
@@ -754,16 +775,21 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         const arAcc = await getAccountByCode(companyId, "1100");
         
         if (cashAcc && arAcc) {
+            const pMethod = (mode || "CASH").toUpperCase();
+            const isBank = pMethod === "BANK" || pMethod === "UPI";
+            const bankAcc = await getAccountByCode(companyId, "1200");
+            const effectiveAcc = isBank ? (bankAcc || cashAcc) : cashAcc;
+
             await createTransaction({
                 company_id: companyId,
-                branch_id: inv.branch_id,
+                branch_id: inv.branch_id || 1,
                 transaction_date: payment_date || new Date(),
                 reference_type: "INVOICE_PAYMENT",
                 reference_id: id,
                 description: `Payment for Invoice #${inv.invoice_number}`,
                 created_by: req.user.id
             }, [
-                { account_id: cashAcc.id, debit_amount: amount, credit_amount: 0, description: `Received via ${mode}` },
+                { account_id: effectiveAcc.id, debit_amount: amount, credit_amount: 0, description: `Received via ${mode}` },
                 { account_id: arAcc.id, debit_amount: 0, credit_amount: amount, description: `Customer balance reduction` }
             ]);
         }

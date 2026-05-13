@@ -336,16 +336,28 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     txLines.push({ account_id: discountAccount.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount - Bill #${bill_number}` });
                 }
 
-                if (paid > 0 && cashAccount) {
-                    txLines.push({ account_id: apAccount.id, debit_amount: paid, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
-                    txLines.push({ account_id: cashAccount.id, debit_amount: 0, credit_amount: paid, description: `Payment out via ${payment_mode} - Bill #${bill_number}` });
+                // Handle Multiple Payments
+                const finalPayments = Array.isArray(data.payments) ? data.payments : (paid > 0 ? [{ mode: payment_mode || 'CASH', amount: paid }] : []);
+                
+                for (const p of finalPayments) {
+                    const pAmt = parseFloat(p.amount || 0);
+                    if (pAmt <= 0) continue;
+                    
+                    const isBank = (p.mode || "").toUpperCase() !== "CASH";
+                    const pAcc = isBank ? (await getAccountByCode(companyId, "1200")) : cashAccount; 
+                    
+                    const effectiveAcc = pAcc || cashAccount;
+                    if (effectiveAcc) {
+                        txLines.push({ account_id: apAccount.id, debit_amount: pAmt, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
+                        txLines.push({ account_id: effectiveAcc.id, debit_amount: 0, credit_amount: pAmt, description: `Payment out via ${p.mode} - Bill #${bill_number}` });
+                    }
                 }
             }
 
             if (txLines.length > 0) {
                 const txData = {
                     company_id:       companyId,
-                    branch_id:        safeBranchId,
+                    branch_id:        safeBranchId || 1,
                     transaction_date: bill_date || new Date(),
                     reference_type:   "PURCHASE_BILL",
                     reference_id:     billId,

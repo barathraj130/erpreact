@@ -7,7 +7,7 @@
     "path": "/suppliers",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 194,
+    "durationMs": 138,
     "requestBody": {
       "name": "TEST_SUPPLIER_TXN",
       "phone": "9000000001",
@@ -23,10 +23,10 @@
     "path": "/products",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 168,
+    "durationMs": 136,
     "requestBody": {
       "name": "TEST_PRODUCT_TXN",
-      "sku": "TXN-2155TL",
+      "sku": "TXN-NKVMK",
       "cost_price": 1000,
       "selling_price": 1500,
       "gst_percent": 18,
@@ -45,7 +45,7 @@
     "path": "/reports/finance/trial-balance",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 131,
+    "durationMs": 132,
     "requestBody": null
   },
   {
@@ -56,14 +56,14 @@
     "path": "/purchase-bills",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 288,
+    "durationMs": 240,
     "requestBody": {
-      "supplier_id": 36,
+      "supplier_id": 37,
       "bill_type": "TAX",
       "bill_date": "2026-05-13",
       "items": [
         {
-          "product_id": 65,
+          "product_id": 66,
           "quantity": 10,
           "unit_price": 1000,
           "tax_percent": 18
@@ -142,7 +142,7 @@
     "path": "/users",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 333,
+    "durationMs": 356,
     "requestBody": {
       "username": "TEST_CUSTOMER_TXN",
       "role": "customer",
@@ -159,14 +159,14 @@
     "path": "/invoice",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 411,
+    "durationMs": 325,
     "requestBody": {
       "customer_id": 61,
       "invoice_type": "NON-TAX",
       "invoice_date": "2026-05-13",
       "items": [
         {
-          "product_id": 65,
+          "product_id": 66,
           "qty": 5,
           "rate": 1500,
           "gst_rate": 0
@@ -197,7 +197,7 @@
     "path": "/reports/inventory/summary",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 80,
+    "durationMs": 76,
     "requestBody": null
   },
   {
@@ -208,7 +208,7 @@
     "path": "/reports/finance/day-book",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 69,
+    "durationMs": 63,
     "requestBody": null
   },
   {
@@ -219,7 +219,7 @@
     "path": "/users/__customerId__",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 141,
+    "durationMs": 114,
     "requestBody": null
   },
   {
@@ -228,9 +228,13 @@
     "category": "Sales",
     "method": "POST",
     "path": "/invoice/__invoiceId__/payment",
-    "status": "pass",
-    "httpStatus": 200,
-    "durationMs": 206,
+    "status": "fail",
+    "httpStatus": 500,
+    "durationMs": 137,
+    "likelyCause": "Payment failed: null value in column \"branch_id\" of relation \"transactions\" violates not-null constraint",
+    "errorBody": {
+      "error": "Payment failed: null value in column \"branch_id\" of relation \"transactions\" violates not-null constraint"
+    },
     "requestBody": {
       "amount": 2500,
       "mode": "BANK",
@@ -245,7 +249,7 @@
     "path": "/invoice",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 75,
+    "durationMs": 111,
     "requestBody": null
   },
   {
@@ -256,7 +260,7 @@
     "path": "/loans",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 183,
+    "durationMs": 149,
     "requestBody": {
       "lender_name": "TEST_LENDER_TXN",
       "type": "Bank",
@@ -275,7 +279,7 @@
     "path": "/reports/finance/day-book",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 71,
+    "durationMs": 64,
     "requestBody": null
   },
   {
@@ -286,9 +290,9 @@
     "path": "/loans/repayment",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 236,
+    "durationMs": 134,
     "requestBody": {
-      "loan_id": 22,
+      "loan_id": 23,
       "principal_component": 8000,
       "interest_component": 1000,
       "total_amount": 9000,
@@ -304,7 +308,7 @@
     "path": "/employees",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 148,
+    "durationMs": 175,
     "requestBody": {
       "name": "TEST_EMPLOYEE_TXN",
       "designation": "Sales Staff",
@@ -321,7 +325,7 @@
     "path": "/employees/__employeeId__/salary",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 234,
+    "durationMs": 120,
     "requestBody": {
       "month": "May 2026",
       "working_days": 26,
@@ -338,7 +342,7 @@
     "path": "/brokers",
     "status": "pass",
     "httpStatus": 201,
-    "durationMs": 173,
+    "durationMs": 117,
     "requestBody": {
       "name": "TEST_BROKER_TXN",
       "commission_rate": 2.5,
@@ -353,7 +357,7 @@
     "path": "/reports/finance/trial-balance",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 80,
+    "durationMs": 61,
     "requestBody": null
   },
   {
@@ -364,7 +368,7 @@
     "path": "/reports/finance/profit-loss",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 129,
+    "durationMs": 118,
     "requestBody": null
   },
   {
@@ -375,7 +379,7 @@
     "path": "/reports/gst/itc",
     "status": "pass",
     "httpStatus": 200,
-    "durationMs": 207,
+    "durationMs": 168,
     "requestBody": null
   },
   {

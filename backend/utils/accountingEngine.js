@@ -171,7 +171,7 @@ export async function getAccountByCode(companyId, code) {
         const defaults = {
             '1000': { name: 'Cash', type: 'ASSET' },
             '1100': { name: 'Accounts Receivable', type: 'ASSET' },
-            '1200': { name: 'Accounts Receivable (Alt)', type: 'ASSET' },
+            '1200': { name: 'Bank Account', type: 'ASSET' },
             '1400': { name: 'Inventory', type: 'ASSET' },
             '2000': { name: 'Accounts Payable', type: 'LIABILITY' },
             '2100': { name: 'GST Payable', type: 'LIABILITY' },
