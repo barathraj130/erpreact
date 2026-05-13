@@ -237,14 +237,24 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
  */
 router.get('/finance/day-book', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { startDate, endDate, filterType } = req.query;
+    const { startDate, endDate, filterType, reference_id, reference_type } = req.query;
     try {
         let params = [companyId];
         let where = "WHERE l.company_id = $1";
         
         if (startDate && endDate) {
-            where += " AND l.entry_date BETWEEN $2 AND $3";
+            where += ` AND l.entry_date BETWEEN $${params.length + 1} AND $${params.length + 2}`;
             params.push(startDate, endDate);
+        }
+
+        if (reference_id) {
+            where += ` AND t.reference_id = $${params.length + 1}`;
+            params.push(reference_id);
+        }
+
+        if (reference_type) {
+            where += ` AND t.reference_type = $${params.length + 1}`;
+            params.push(reference_type);
         }
 
         const sql = `

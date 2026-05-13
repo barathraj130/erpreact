@@ -96,19 +96,58 @@ router.post('/', authMiddleware, async (req, res) => {
 router.get('/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
-        const supplier = await db.pgGet("SELECT * FROM suppliers WHERE id = $1 AND company_id = $2", [req.params.id, companyId]);
+        const supplier = await db.pgGet(
+            "SELECT * FROM suppliers WHERE id = $1 AND company_id = $2",
+            [req.params.id, companyId]
+        );
         if (!supplier) return res.status(404).json({ error: "Supplier not found" });
 
-        const bills = await db.pgAll("SELECT * FROM purchase_bills WHERE supplier_id = $1 ORDER BY bill_date DESC LIMIT 10", [req.params.id]);
-        const payments = await db.pgAll("SELECT * FROM payments WHERE supplier_id = $1 ORDER BY date DESC LIMIT 10", [req.params.id]);
+        const bills = await db.pgAll(
+            "SELECT * FROM purchase_bills WHERE supplier_id = $1 AND is_deleted = false ORDER BY bill_date DESC LIMIT 20",
+            [req.params.id]
+        );
 
         const stats = await db.pgGet(`
-            SELECT COALESCE(SUM(total_amount - paid_amount), 0) as pending_balance
-            FROM purchase_bills WHERE supplier_id = $1 AND status != 'PAID'
+            SELECT 
+                COALESCE(SUM(total_amount), 0)  as total_billed,
+                COALESCE(SUM(paid_amount), 0)   as total_paid,
+                COALESCE(SUM(total_amount - paid_amount), 0) as balance
+            FROM purchase_bills 
+            WHERE supplier_id = $1 AND is_deleted = false
         `, [req.params.id]);
 
-        res.json({ ...supplier, pending_balance: parseFloat(stats.pending_balance || 0), recent_bills: bills, recent_payments: payments });
+        // Build a simple ledger from bill + payment history
+        const ledger = [];
+        for (const b of bills) {
+            ledger.push({
+                date: b.bill_date,
+                description: `Purchase Bill #${b.bill_number}`,
+                debit: 0,
+                credit: parseFloat(b.total_amount || 0),
+                balance: parseFloat(b.balance_amount || 0)
+            });
+            if (parseFloat(b.paid_amount || 0) > 0) {
+                ledger.push({
+                    date: b.bill_date,
+                    description: `Payment against Bill #${b.bill_number}`,
+                    debit: parseFloat(b.paid_amount || 0),
+                    credit: 0,
+                    balance: parseFloat(b.balance_amount || 0)
+                });
+            }
+        }
+
+        res.json({
+            ...supplier,
+            balance:         parseFloat(stats.balance || 0),
+            pending_balance: parseFloat(stats.balance || 0),
+            total_billed:    parseFloat(stats.total_billed || 0),
+            total_paid:      parseFloat(stats.total_paid || 0),
+            recent_bills:    bills,
+            ledger
+        });
     } catch (err) {
+        console.error("Supplier profile error:", err);
         res.status(500).json({ error: "Failed to fetch profile" });
     }
 });

@@ -293,94 +293,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             );
         }
 
-        try {
-            const inventoryAccount = await getAccountByCode(companyId, "1400");
-            const apAccount        = await getAccountByCode(companyId, "2000");
-            const gstInputAccount  = await getAccountByCode(companyId, "2200");
-            const cashAccount      = await getAccountByCode(companyId, "1000");
-            const discountAccount  = await getAccountByCode(companyId, "5100");
-
-            const txLines = [];
-
-            if (isExpenseBill) {
-                const expenseTypeMap = {
-                    'Freight / Transport': '5010', 'Labour Charges': '5020', 'Professional Fees': '5030',
-                    'Rent': '5040', 'Electricity': '5050', 'Repair & Maintenance': '5060',
-                    'Printing & Stationery': '5070', 'Advertisement': '5080', 'Bank Charges': '5090',
-                    'Insurance': '5100', 'Other': '5999'
-                };
-
-                for (const exp of processedExpenses) {
-                    const accCode = expenseTypeMap[exp.expense_type] || '5999';
-                    const acc = await getAccountByCode(companyId, accCode);
-                    if (acc) {
-                        txLines.push({ account_id: acc.id, debit_amount: exp.amount, credit_amount: 0, description: `${exp.expense_type} - Bill #${bill_number}` });
-                    }
-                }
-            } else {
-                const purchaseAccount = await getAccountByCode(companyId, "5000");
-                if (purchaseAccount) {
-                    txLines.push({ account_id: purchaseAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Purchase - Bill #${bill_number}` });
-                }
-            }
-
-            if (taxTotal > 0 && gstInputAccount) {
-                txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
-            }
-
-            if (apAccount) {
-                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to Supplier - Bill #${bill_number}` });
-                
-                if (discount > 0) {
-                    const discountReceivedAcc = await getAccountByCode(companyId, "5200");
-                    if (discountReceivedAcc) {
-                        txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: `Discount on Bill #${bill_number}` });
-                        txLines.push({ account_id: discountReceivedAcc.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount Received` });
-                    }
-                }
-
-                // Handle Multiple Payments
-                const finalPayments = Array.isArray(data.payments) ? data.payments : (paid > 0 ? [{ mode: payment_mode || 'CASH', amount: paid }] : []);
-                
-                for (const p of finalPayments) {
-                    const pAmt = parseFloat(p.amount || 0);
-                    if (pAmt <= 0) continue;
-                    
-                    const isBank = (p.mode || "").toUpperCase() !== "CASH";
-                    const pAcc = isBank ? (await getAccountByCode(companyId, "1200")) : cashAccount; 
-                    
-                    const effectiveAcc = pAcc || cashAccount;
-                    if (effectiveAcc) {
-                        txLines.push({ account_id: apAccount.id, debit_amount: pAmt, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
-                        txLines.push({ account_id: effectiveAcc.id, debit_amount: 0, credit_amount: pAmt, description: `Payment out via ${p.mode}` });
-                    }
-                }
-            }
-
-            if (txLines.length > 0) {
-                // Balance the transaction if needed due to precision
-                const totalD = txLines.reduce((s, l) => s + (l.debit_amount || 0), 0);
-                const totalC = txLines.reduce((s, l) => s + (l.credit_amount || 0), 0);
-                if (Math.abs(totalD - totalC) > 0.001) {
-                    const diff = totalD - totalC;
-                    txLines[0].debit_amount = (txLines[0].debit_amount || 0) - diff; // Adjust first entry to balance
-                }
-
-                const txData = {
-                    company_id:       companyId,
-                    branch_id:        safeBranchId || 1,
-                    transaction_date: bill_date || new Date(),
-                    reference_type:   "PURCHASE_BILL",
-                    reference_id:     billId,
-                    description:      `${isExpenseBill ? 'Expense' : 'Purchase'} Bill #${bill_number}`,
-                    created_by:       safeUserId,
-                    bill_purpose:     req.body.bill_purpose || 'real'
-                };
-                await createTransaction(txData, txLines);
-            }
-        } catch (accErr) {
-            console.error("❌ Purchase Accounting Engine Failure:", accErr.message);
-        }
+        // NOTE: accounting is deferred to after COMMIT to avoid nested transaction conflicts
 
         if (safeBrokerId) {
             await brokerService.recordCommission(client, req.user, {
@@ -391,6 +304,82 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         }
 
         await client.query("COMMIT");
+        client.release();
+        client = null;
+
+        // ── Accounting Engine (runs AFTER main COMMIT, in its own transaction) ──
+        try {
+            const apAccount       = await getAccountByCode(companyId, "2000");
+            const gstInputAccount = await getAccountByCode(companyId, "2200");
+            const cashAccount     = await getAccountByCode(companyId, "1000");
+
+            const txLines = [];
+
+            if (isExpenseBill) {
+                const expenseTypeMap = {
+                    'Freight / Transport': '5010', 'Labour Charges': '5020', 'Professional Fees': '5030',
+                    'Rent': '5040', 'Electricity': '5050', 'Repair & Maintenance': '5060',
+                    'Printing & Stationery': '5070', 'Advertisement': '5080', 'Bank Charges': '5090',
+                    'Insurance': '5100', 'Other': '5999'
+                };
+                for (const exp of processedExpenses) {
+                    const acc = await getAccountByCode(companyId, expenseTypeMap[exp.expense_type] || '5999');
+                    if (acc) txLines.push({ account_id: acc.id, debit_amount: exp.amount, credit_amount: 0, description: `${exp.expense_type} - Bill #${bill_number}` });
+                }
+            } else {
+                const purchaseAccount = await getAccountByCode(companyId, "5000");
+                if (purchaseAccount) txLines.push({ account_id: purchaseAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Stock/Inventory Account - Bill #${bill_number}` });
+            }
+
+            if (taxTotal > 0 && gstInputAccount) {
+                const half = Math.round((taxTotal / 2) * 100) / 100;
+                const remainder = Math.round((taxTotal - half) * 100) / 100;
+                txLines.push({ account_id: gstInputAccount.id, debit_amount: half,      credit_amount: 0, description: `Input CGST - Bill #${bill_number}` });
+                txLines.push({ account_id: gstInputAccount.id, debit_amount: remainder,  credit_amount: 0, description: `Input SGST - Bill #${bill_number}` });
+            }
+
+            if (apAccount) {
+                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Accounts Payable - Bill #${bill_number}` });
+
+                const finalPayments = Array.isArray(data.payments) ? data.payments : (paid > 0 ? [{ mode: payment_mode || 'CASH', amount: paid }] : []);
+                for (const p of finalPayments) {
+                    const pAmt = parseFloat(p.amount || 0);
+                    if (pAmt <= 0) continue;
+                    const isBank = (p.mode || "").toUpperCase() !== "CASH";
+                    const pAcc  = isBank ? (await getAccountByCode(companyId, "1200")) : cashAccount;
+                    const effectiveAcc = pAcc || cashAccount;
+                    if (effectiveAcc) {
+                        txLines.push({ account_id: apAccount.id,      debit_amount: pAmt, credit_amount: 0,    description: `Accounts Payable Payment - Bill #${bill_number}` });
+                        txLines.push({ account_id: effectiveAcc.id,   debit_amount: 0,    credit_amount: pAmt, description: `${isBank ? 'Bank Account' : 'Cash Account'} - Bill #${bill_number}` });
+                    }
+                }
+            }
+
+            if (txLines.length > 0) {
+                const totalD = txLines.reduce((s, l) => s + (l.debit_amount  || 0), 0);
+                const totalC = txLines.reduce((s, l) => s + (l.credit_amount || 0), 0);
+                const diff = Math.round((totalD - totalC) * 100) / 100;
+                if (Math.abs(diff) > 0.001) {
+                    // Absorb rounding into the AP credit entry
+                    const apCreditLine = txLines.find(l => l.credit_amount === grossTotal);
+                    if (apCreditLine) apCreditLine.credit_amount = Math.round((apCreditLine.credit_amount - diff) * 100) / 100;
+                }
+                await createTransaction({
+                    company_id:       companyId,
+                    branch_id:        safeBranchId || 1,
+                    transaction_date: bill_date || new Date(),
+                    reference_type:   "PURCHASE_BILL",
+                    reference_id:     billId,
+                    description:      `${isExpenseBill ? 'Expense' : 'Purchase'} Bill #${bill_number}`,
+                    created_by:       safeUserId,
+                    bill_purpose:     req.body.bill_purpose || 'real'
+                }, txLines);
+                console.log(`✅ Purchase ledger written for Bill #${bill_number} (${txLines.length} lines)`);
+            }
+        } catch (accErr) {
+            console.error(`❌ Purchase Accounting Engine Failure [Bill #${bill_number}]:`, accErr.message, accErr.stack);
+        }
+
         res.status(201).json({ success: true, id: billId, total: netAmount, balance, status });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
@@ -456,32 +445,45 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
             ]);
         }
 
+        // Accounting for this additional payment (runs inside BEGIN before COMMIT)
+        // createTransaction opens its own tx, so we commit first then account
+        await client.query("COMMIT");
+        client.release();
+        client = null;
+
         try {
             const apAccount   = await getAccountByCode(companyId, "2000");
-            const cashAccount = await getAccountByCode(companyId, "1000");
-            if (apAccount && cashAccount) {
+            const pMode       = (payment_mode || "CASH").toUpperCase();
+            const isBank      = pMode !== "CASH";
+            const payAccount  = isBank
+                ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
+                : await getAccountByCode(companyId, "1000");
+
+            if (apAccount && payAccount) {
                 await createTransaction({
                     company_id:       companyId,
-                    branch_id:        b.branch_id,
+                    branch_id:        b.branch_id || 1,
                     transaction_date: payment_date || new Date(),
-                    reference_type:   "PURCHASE_PAYMENT",
+                    reference_type:   "PURCHASE_BILL",
                     reference_id:     Number(id),
                     description:      `Payment for Bill #${b.bill_number}`,
                     created_by:       req.user.id,
                     bill_purpose:     b.bill_purpose || 'real'
                 }, [
-                    { account_id: apAccount.id,   debit_amount: payAmount, credit_amount: 0,          description: `Settle Bill #${b.bill_number}` },
-                    { account_id: cashAccount.id, debit_amount: 0,         credit_amount: payAmount,   description: `Cash outflow Bill #${b.bill_number}` }
+                    { account_id: apAccount.id,  debit_amount: payAmount, credit_amount: 0,         description: `Accounts Payable Payment - Bill #${b.bill_number}` },
+                    { account_id: payAccount.id, debit_amount: 0,         credit_amount: payAmount,  description: `${isBank ? 'Bank Account' : 'Cash Account'} - Bill #${b.bill_number}` }
                 ]);
+                console.log(`✅ Payment ledger written for Bill #${b.bill_number}: ₹${payAmount}`);
             }
         } catch (accErr) {
-            console.warn("⚠️ Payment accounting failed:", accErr.message);
+            console.error("❌ Payment Accounting Failure:", accErr.message);
         }
 
-        await client.query("COMMIT");
         res.json({ success: true, message: "Payment recorded", newPaid, newBalance, newStatus });
     } catch (err) {
-        if (client) await client.query("ROLLBACK");
+        if (client) {
+            try { await client.query("ROLLBACK"); } catch (_) {}
+        }
         res.status(500).json({ error: err.message || "Payment failed" });
     } finally {
         if (client) client.release();
