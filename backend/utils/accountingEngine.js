@@ -178,9 +178,10 @@ export async function getAccountByCode(companyId, code) {
             '2200': { name: 'GST Input (Purchases)', type: 'ASSET' },
             '3000': { name: 'Opening Stock Adj / Equity', type: 'EQUITY' },
             '4000': { name: 'Sales Revenue', type: 'INCOME' },
-            '4200': { name: 'Sales Returns', type: 'INCOME' }, // Treated as negative income
+            '4200': { name: 'Sales Returns', type: 'INCOME' },
             '5000': { name: 'Purchases', type: 'EXPENSE' },
-            '5100': { name: 'Discounts', type: 'EXPENSE' }
+            '5100': { name: 'Discount Allowed', type: 'EXPENSE' },
+            '5200': { name: 'Discount Received', type: 'INCOME' }
         };
         
         if (defaults[code]) {

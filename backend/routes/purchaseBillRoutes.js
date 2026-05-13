@@ -318,22 +318,26 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     }
                 }
             } else {
-                const inventoryAccount = await getAccountByCode(companyId, "1400");
-                if (inventoryAccount) {
-                    txLines.push({ account_id: inventoryAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Inventory Purchase - Bill #${bill_number}` });
+                const purchaseAccount = await getAccountByCode(companyId, "5000");
+                if (purchaseAccount) {
+                    txLines.push({ account_id: purchaseAccount.id, debit_amount: subTotal, credit_amount: 0, description: `Purchase - Bill #${bill_number}` });
                 }
             }
 
+            const gstInputAccount = await getAccountByCode(companyId, "2200"); 
             if (taxTotal > 0 && gstInputAccount) {
                 txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
             }
 
             if (apAccount) {
-                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to ${supplierRes.rows[0]?.name || "Supplier"} - Bill #${bill_number}` });
+                txLines.push({ account_id: apAccount.id, debit_amount: 0, credit_amount: grossTotal, description: `Liability to Supplier - Bill #${bill_number}` });
                 
-                if (discount > 0 && discountAccount) {
-                    txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: `Discount on Bill #${bill_number}` });
-                    txLines.push({ account_id: discountAccount.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount - Bill #${bill_number}` });
+                if (discount > 0) {
+                    const discountReceivedAcc = await getAccountByCode(companyId, "5200");
+                    if (discountReceivedAcc) {
+                        txLines.push({ account_id: apAccount.id, debit_amount: discount, credit_amount: 0, description: `Discount on Bill #${bill_number}` });
+                        txLines.push({ account_id: discountReceivedAcc.id, debit_amount: 0, credit_amount: discount, description: `Purchase Discount Received` });
+                    }
                 }
 
                 // Handle Multiple Payments
@@ -349,12 +353,20 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     const effectiveAcc = pAcc || cashAccount;
                     if (effectiveAcc) {
                         txLines.push({ account_id: apAccount.id, debit_amount: pAmt, credit_amount: 0, description: `Payment for Bill #${bill_number}` });
-                        txLines.push({ account_id: effectiveAcc.id, debit_amount: 0, credit_amount: pAmt, description: `Payment out via ${p.mode} - Bill #${bill_number}` });
+                        txLines.push({ account_id: effectiveAcc.id, debit_amount: 0, credit_amount: pAmt, description: `Payment out via ${p.mode}` });
                     }
                 }
             }
 
             if (txLines.length > 0) {
+                // Balance the transaction if needed due to precision
+                const totalD = txLines.reduce((s, l) => s + (l.debit_amount || 0), 0);
+                const totalC = txLines.reduce((s, l) => s + (l.credit_amount || 0), 0);
+                if (Math.abs(totalD - totalC) > 0.001) {
+                    const diff = totalD - totalC;
+                    txLines[0].debit_amount = (txLines[0].debit_amount || 0) - diff; // Adjust first entry to balance
+                }
+
                 const txData = {
                     company_id:       companyId,
                     branch_id:        safeBranchId || 1,
