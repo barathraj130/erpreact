@@ -324,7 +324,6 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 }
             }
 
-            const gstInputAccount = await getAccountByCode(companyId, "2200"); 
             if (taxTotal > 0 && gstInputAccount) {
                 txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `GST Input - Bill #${bill_number}` });
             }
