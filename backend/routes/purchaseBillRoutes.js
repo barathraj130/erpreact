@@ -5,7 +5,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import * as brokerService from "../services/brokerService.js";
-import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
+import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 
 const router = express.Router();
 
@@ -321,7 +321,48 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 const remainder = Math.round((taxTotal - half) * 100) / 100;
                 txLines.push({ account_id: gstInputAccount.id, debit_amount: half,      credit_amount: 0, description: `Input CGST - Bill #${bill_number}` });
                 txLines.push({ account_id: gstInputAccount.id, debit_amount: remainder,  credit_amount: 0, description: `Input SGST - Bill #${bill_number}` });
+            } else {
+                txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `Input IGST - Bill #${bill_number}` });
+            }
+        }
 
+        // 4. ACCOUNTS PAYABLE (Credit full amount)
+        if (apAccount) {
+            txLines.push({ 
+                account_id: apAccount.id, 
+                debit_amount: 0, 
+                credit_amount: netAmount, 
+                description: `Accounts Payable - Bill #${bill_number}` 
+            });
+        }
+
+        // 5. IF PAID, RECORD PAYMENT (Debit AP, Credit Cash/Bank)
+        if (paid > 0) {
+            const payAccount = (payment_mode || "CASH").toUpperCase() !== "CASH" 
+                ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
+                : await getAccountByCode(companyId, "1000");
+
+            if (apAccount && payAccount) {
+                txLines.push({ account_id: apAccount.id,  debit_amount: paid, credit_amount: 0,    description: `Payment for Bill #${bill_number}` });
+                txLines.push({ account_id: payAccount.id, debit_amount: 0,    credit_amount: paid, description: `Paid via ${payment_mode || 'CASH'} - Bill #${bill_number}` });
+            }
+        }
+
+        // EXECUTE ACCOUNTING
+        if (txLines.length > 0) {
+            await createTransactionInternal(client, {
+                company_id: companyId,
+                branch_id: safeBranchId,
+                transaction_date: bill_date || new Date(),
+                reference_type: "PURCHASE_BILL",
+                reference_id: billId,
+                description: `Purchase Bill #${bill_number}`,
+                created_by: userId,
+                bill_purpose: 'real'
+            }, txLines);
+        }
+
+        await client.query("COMMIT");
         res.status(201).json({ success: true, id: billId, total: netAmount, balance, status });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
@@ -388,39 +429,30 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
         }
 
         // Accounting for this additional payment (runs inside BEGIN before COMMIT)
-        // createTransaction opens its own tx, so we commit first then account
-        await client.query("COMMIT");
-        client.release();
-        client = null;
+        const apAccount   = await getAccountByCode(companyId, "2000");
+        const isBank      = pMode !== "CASH";
+        const payAccount  = isBank
+            ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
+            : await getAccountByCode(companyId, "1000");
 
-        try {
-            const apAccount   = await getAccountByCode(companyId, "2000");
-            const pMode       = (payment_mode || "CASH").toUpperCase();
-            const isBank      = pMode !== "CASH";
-            const payAccount  = isBank
-                ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
-                : await getAccountByCode(companyId, "1000");
-
-            if (apAccount && payAccount) {
-                await createTransaction({
-                    company_id:       companyId,
-                    branch_id:        b.branch_id || 1,
-                    transaction_date: payment_date || new Date(),
-                    reference_type:   "PURCHASE_BILL",
-                    reference_id:     Number(id),
-                    description:      `Payment for Bill #${b.bill_number}`,
-                    created_by:       req.user.id,
-                    bill_purpose:     b.bill_purpose || 'real'
-                }, [
-                    { account_id: apAccount.id,  debit_amount: payAmount, credit_amount: 0,         description: `Accounts Payable Payment - Bill #${b.bill_number}` },
-                    { account_id: payAccount.id, debit_amount: 0,         credit_amount: payAmount,  description: `${isBank ? 'Bank Account' : 'Cash Account'} - Bill #${b.bill_number}` }
-                ]);
-                console.log(`✅ Payment ledger written for Bill #${b.bill_number}: ₹${payAmount}`);
-            }
-        } catch (accErr) {
-            console.error("❌ Payment Accounting Failure:", accErr.message);
+        if (apAccount && payAccount) {
+            await createTransactionInternal(client, {
+                company_id:       companyId,
+                branch_id:        b.branch_id || 1,
+                transaction_date: payment_date || new Date(),
+                reference_type:   "PURCHASE_BILL",
+                reference_id:     Number(id),
+                description:      `Payment for Bill #${b.bill_number}`,
+                created_by:       req.user.id,
+                bill_purpose:     b.bill_purpose || 'real'
+            }, [
+                { account_id: apAccount.id,  debit_amount: payAmount, credit_amount: 0,         description: `Accounts Payable Payment - Bill #${b.bill_number}` },
+                { account_id: payAccount.id, debit_amount: 0,         credit_amount: payAmount,  description: `${isBank ? 'Bank Account' : 'Cash Account'} - Bill #${b.bill_number}` }
+            ]);
+            console.log(`✅ Payment ledger written for Bill #${b.bill_number}: ₹${payAmount}`);
         }
 
+        await client.query("COMMIT");
         res.json({ success: true, message: "Payment recorded", newPaid, newBalance, newStatus });
     } catch (err) {
         if (client) {

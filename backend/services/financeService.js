@@ -1,5 +1,6 @@
 
 import * as db from '../database/pg.js';
+import { createTransactionInternal, getAccountByCode } from '../utils/accountingEngine.js';
 
 /**
  * LOAN HANDLING SERVICE
@@ -77,27 +78,24 @@ export const createLoan = async (user, loanData) => {
             bankAccountId = defaultCash.rows[0]?.id || 1;
         }
         
-        const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, date, reference_type, reference_id, description)
-            VALUES ($1, $2, $3, $3, 'LOAN_DISBURSEMENT', $4, $5)
-            RETURNING id
-        `;
-        const txRes = await client.query(txSql, [
-            companyId, branchId, loanData.start_date, loan.id, `Loan disbursement from lender ID: ${loanData.lender_id}`
-        ]);
-        const transactionId = txRes.rows[0].id;
+        // Accounting
+        const cashAcc = await getAccountByCode(companyId, '1000');
+        const loanAcc = await getAccountByCode(companyId, '2000'); // Accounts Payable / Loan
 
-        // Debit Cash/Bank
-        await client.query(`
-            INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-            VALUES ($1, $2, $3, 0, 'Loan amount received')
-        `, [transactionId, bankAccountId, loanData.principal_amount]);
-
-        // Credit Loan Payable
-        await client.query(`
-            INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-            VALUES ($1, $2, 0, $3, 'Loan liability recorded')
-        `, [transactionId, lenderLedgerId, loanData.principal_amount]);
+        if (cashAcc && loanAcc) {
+            await createTransactionInternal(client, {
+                company_id: companyId,
+                branch_id: branchId,
+                transaction_date: loanData.start_date || new Date(),
+                reference_type: 'LOAN_DISBURSEMENT',
+                reference_id: loan.id,
+                description: `Loan disbursement from ${loanData.lender_name || 'Lender'}`,
+                created_by: user.id
+            }, [
+                { account_id: cashAcc.id, debit_amount: loanData.principal_amount || loanData.principal, credit_amount: 0, description: 'Loan amount received' },
+                { account_id: loanAcc.id, debit_amount: 0, credit_amount: loanData.principal_amount || loanData.principal, description: 'Loan liability recorded' }
+            ]);
+        }
 
         await client.query('COMMIT');
         return loan;
@@ -148,37 +146,31 @@ export const recordLoanRepayment = async (user, paymentData) => {
         `, [paymentData.loan_id, companyId]);
         const lenderLedgerId = lenderLedgerRes.rows[0]?.id || 10;
         
-        const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description)
-            VALUES ($1, $2, $3, 'LOAN_REPAYMENT', $4, $5)
-            RETURNING id
-        `;
-        const txRes = await client.query(txSql, [
-            companyId, branchId, paymentData.payment_date, payment.id, `Loan repayment for loan ID: ${paymentData.loan_id}`
-        ]);
-        const transactionId = txRes.rows[0].id;
+        // Accounting
+        const cashAcc = await getAccountByCode(companyId, '1000');
+        const loanAcc = await getAccountByCode(companyId, '2000');
+        const interestAcc = await getAccountByCode(companyId, '5000'); // Expense
 
-        // Debit Interest Expense
-        if (paymentData.interest_component > 0) {
-            await client.query(`
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, $3, 0, 'Interest expense')
-            `, [transactionId, paymentData.interest_expense_account_id || 20, paymentData.interest_component]);
+        if (cashAcc && loanAcc) {
+            const txLines = [];
+            if (paymentData.interest_component > 0 && interestAcc) {
+                txLines.push({ account_id: interestAcc.id, debit_amount: paymentData.interest_component, credit_amount: 0, description: 'Interest expense' });
+            }
+            if (paymentData.principal_component > 0) {
+                txLines.push({ account_id: loanAcc.id, debit_amount: paymentData.principal_component, credit_amount: 0, description: 'Principal repayment' });
+            }
+            txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: paymentData.total_amount, description: 'Payment from bank/cash' });
+
+            await createTransactionInternal(client, {
+                company_id: companyId,
+                branch_id: branchId,
+                transaction_date: paymentData.payment_date || new Date(),
+                reference_type: 'LOAN_REPAYMENT',
+                reference_id: payment.id,
+                description: `Loan repayment for loan ID: ${paymentData.loan_id}`,
+                created_by: user.id
+            }, txLines);
         }
-
-        // Debit Loan Payable (Principal)
-        if (paymentData.principal_component > 0) {
-            await client.query(`
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, $3, 0, 'Principal repayment')
-            `, [transactionId, lenderLedgerId, paymentData.principal_component]);
-        }
-
-        // Credit Cash/Bank
-        await client.query(`
-            INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-            VALUES ($1, $2, 0, $3, 'Payment from bank/cash')
-        `, [transactionId, paymentData.bank_account_id || 1, paymentData.total_amount]);
 
         await client.query('COMMIT');
         return payment;
@@ -244,45 +236,29 @@ export const recordChitInstallment = async (user, installmentData) => {
         const installment = res.rows[0];
 
         // 2. Double-Entry
-        const txSql = `
-            INSERT INTO transactions (company_id, branch_id, transaction_date, reference_type, reference_id, description)
-            VALUES ($1, $2, $3, 'CHIT_INSTALLMENT', $4, $5)
-            RETURNING id
-        `;
-        const txRes = await client.query(txSql, [
-            companyId, branchId, installmentData.payment_date, installment.id, `Chit installment for group ID: ${installmentData.chit_group_id}`
-        ]);
-        const transactionId = txRes.rows[0].id;
+        // Accounting
+        const cashAcc = await getAccountByCode(companyId, '1000');
+        const chitAcc = await getAccountByCode(companyId, '1400'); // Use Inventory/Asset code for Chit
 
-        if (installmentData.is_auction_won) {
-            // Receipt: Won auction
-            // Debit: Cash (Asset)
-            // Credit: Chit Fund Asset (Asset)
-            
-            await client.query(`
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, $3, 0, 'Chit auction payout received')
-            `, [transactionId, installmentData.bank_account_id || 1, installmentData.auction_amount_received]);
+        if (cashAcc && chitAcc) {
+            const txLines = [];
+            if (installmentData.is_auction_won) {
+                txLines.push({ account_id: cashAcc.id, debit_amount: installmentData.auction_amount_received, credit_amount: 0, description: 'Chit auction payout received' });
+                txLines.push({ account_id: chitAcc.id, debit_amount: 0, credit_amount: installmentData.auction_amount_received, description: 'Chit asset reduced by payout' });
+            } else {
+                txLines.push({ account_id: chitAcc.id, debit_amount: installmentData.amount, credit_amount: 0, description: 'Chit installment paid' });
+                txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: installmentData.amount, description: 'Payment from bank/cash' });
+            }
 
-            await client.query(`
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, 0, $3, 'Chit asset reduced by payout')
-            `, [transactionId, installmentData.chit_asset_account_id || 30, installmentData.auction_amount_received]);
-
-        } else {
-            // Payment: Monthly installment
-            // Debit: Chit Fund Asset (Asset)
-            // Credit: Cash (Asset)
-            
-            await client.query(`
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, $3, 0, 'Chit installment paid')
-            `, [transactionId, installmentData.chit_asset_account_id || 30, installmentData.amount]);
-
-            await client.query(`
-                INSERT INTO transaction_lines (transaction_id, account_id, debit_amount, credit_amount, description)
-                VALUES ($1, $2, 0, $3, 'Payment from bank/cash')
-            `, [transactionId, installmentData.bank_account_id || 1, installmentData.amount]);
+            await createTransactionInternal(client, {
+                company_id: companyId,
+                branch_id: branchId,
+                transaction_date: installmentData.payment_date || new Date(),
+                reference_type: 'CHIT_INSTALLMENT',
+                reference_id: installment.id,
+                description: `Chit installment for group ID: ${installmentData.chit_group_id}`,
+                created_by: user.id
+            }, txLines);
         }
 
         await client.query('COMMIT');

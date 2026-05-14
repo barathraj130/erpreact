@@ -9,7 +9,7 @@ import {
     ensureCustomerLedgerMetadata,
     recomputeCustomerBalance,
 } from "../services/customerLedgerService.js";
-import { createTransaction, getAccountByCode } from "../utils/accountingEngine.js";
+import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import * as brokerService from "../services/brokerService.js";
 
 const router = express.Router();
@@ -473,7 +473,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     txLines[1].credit_amount += diff; 
                 }
 
-                await createTransaction({
+                await createTransactionInternal(client, {
                     company_id: companyId,
                     branch_id: req.user.branch_id || 1,
                     transaction_date: new Date(),
@@ -780,7 +780,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
             const bankAcc = await getAccountByCode(companyId, "1200");
             const effectiveAcc = isBank ? (bankAcc || cashAcc) : cashAcc;
 
-            await createTransaction({
+            await createTransactionInternal(client, {
                 company_id: companyId,
                 branch_id: inv.branch_id || 1,
                 transaction_date: payment_date || new Date(),

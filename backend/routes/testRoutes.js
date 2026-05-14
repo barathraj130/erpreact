@@ -100,10 +100,16 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
             results.transactions = r3.rowCount;
         }
 
+        // inventory_movements → products
+        if (testProductIds.length > 0) {
+            await client.query(`DELETE FROM inventory_movements WHERE product_id = ANY($1)`, [testProductIds]);
+        }
+
         // invoice_line_items + invoice_payments → invoices
         if (testInvoiceIds.length > 0) {
             await client.query(`DELETE FROM invoice_line_items WHERE invoice_id = ANY($1)`, [testInvoiceIds]);
             await client.query(`DELETE FROM invoice_payments   WHERE invoice_id = ANY($1)`, [testInvoiceIds]);
+            await client.query(`DELETE FROM customer_ledger_events WHERE related_invoice_id = ANY($1) OR customer_id = ANY($2)`, [testInvoiceIds, testUserIds.length > 0 ? testUserIds : [-1]]);
             const r = await client.query(`DELETE FROM invoices WHERE id = ANY($1)`, [testInvoiceIds]);
             results.invoices = r.rowCount;
         }
@@ -111,6 +117,7 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
         // purchase_bill_items → purchase_bills
         if (testPurchaseBillIds.length > 0) {
             await client.query(`DELETE FROM purchase_bill_items WHERE bill_id = ANY($1)`, [testPurchaseBillIds]);
+            await client.query(`DELETE FROM purchase_payments   WHERE bill_id = ANY($1)`, [testPurchaseBillIds]);
             const r = await client.query(`DELETE FROM purchase_bills WHERE id = ANY($1)`, [testPurchaseBillIds]);
             results.purchase_bills = r.rowCount;
         }
@@ -135,6 +142,7 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
             await client.query(`DELETE FROM attendance_logs WHERE employee_id = ANY($1)`, [testEmployeeIds]);
             await client.query(`DELETE FROM payroll_runs   WHERE employee_id = ANY($1)`, [testEmployeeIds]);
             await client.query(`DELETE FROM salaries       WHERE employee_id = ANY($1)`, [testEmployeeIds]);
+            await client.query(`DELETE FROM inventory_movements WHERE created_by = ANY($1)`, [testUserIds.length > 0 ? testUserIds : [-1]]);
             const r = await client.query(`DELETE FROM employees WHERE id = ANY($1)`, [testEmployeeIds]);
             results.employees = r.rowCount;
         }

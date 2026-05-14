@@ -12,10 +12,10 @@ import * as db from '../database/pg.js';
  */
 export async function createTransactionInternal(client, txData, lines) {
     // 1. Validate Double Entry Rule: Sum(Debit) = Sum(Credit)
-    const totalDebit = lines.reduce((sum, line) => sum + parseFloat(line.debit_amount || 0), 0);
-    const totalCredit = lines.reduce((sum, line) => sum + parseFloat(line.credit_amount || 0), 0);
+    const totalDebit = Math.round(lines.reduce((sum, line) => sum + parseFloat(line.debit_amount || 0), 0) * 100) / 100;
+    const totalCredit = Math.round(lines.reduce((sum, line) => sum + parseFloat(line.credit_amount || 0), 0) * 100) / 100;
 
-    if (Math.abs(totalDebit - totalCredit) > 0.001) {
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
         throw new Error(`Double-entry validation failed: Total Debit (${totalDebit}) must equal Total Credit (${totalCredit})`);
     }
 
@@ -51,15 +51,18 @@ export async function createTransactionInternal(client, txData, lines) {
             return isNaN(p) ? null : p;
         };
 
+        const dAmount = Math.round(parseFloat(line.debit_amount || 0) * 100) / 100;
+        const cAmount = Math.round(parseFloat(line.credit_amount || 0) * 100) / 100;
+
         await client.query(lineSql, [
             transactionId,
             sanitizeInt(line.account_id),
-            line.debit_amount || 0,
-            line.credit_amount || 0,
+            dAmount,
+            cAmount,
             line.description
         ]);
 
-        const balanceChange = parseFloat(line.debit_amount || 0) - parseFloat(line.credit_amount || 0);
+        const balanceChange = Math.round((dAmount - cAmount) * 100) / 100;
         const updateAccountSql = `
             UPDATE chart_of_accounts 
             SET current_balance = current_balance + $1 
@@ -74,7 +77,7 @@ export async function createTransactionInternal(client, txData, lines) {
         `;
         const latestBalRes = await client.query(getLatestBalanceSql, [line.account_id]);
         const previousBalance = latestBalRes.rows[0] ? parseFloat(latestBalRes.rows[0].running_balance) : 0;
-        const newRunningBalance = previousBalance + balanceChange;
+        const newRunningBalance = Math.round((previousBalance + balanceChange) * 100) / 100;
 
         const ledgerSql = `
             INSERT INTO ledger_entries (company_id, branch_id, account_id, transaction_id, entry_date, debit, credit, running_balance, bill_purpose)
@@ -86,8 +89,8 @@ export async function createTransactionInternal(client, txData, lines) {
             line.account_id,
             transactionId,
             txData.transaction_date || new Date(),
-            line.debit_amount || 0,
-            line.credit_amount || 0,
+            dAmount,
+            cAmount,
             newRunningBalance,
             txData.bill_purpose || 'real'
         ]);
