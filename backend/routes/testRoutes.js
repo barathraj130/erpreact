@@ -5,175 +5,261 @@ import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 
 const router = express.Router();
 
+const TEST_PATTERN = "(^TEST_|TEST_|deep_cust|selenium|_TXN$)";
+
+const ids = (rows) => rows.map((r) => r.id);
+
+const tableExists = async (client, table) => {
+    const result = await client.query("SELECT to_regclass($1) AS table_name", [`public.${table}`]);
+    return Boolean(result.rows[0]?.table_name);
+};
+
+const columnExists = async (client, table, column) => {
+    const result = await client.query(
+        `SELECT 1
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = $1
+            AND column_name = $2`,
+        [table, column]
+    );
+    return result.rowCount > 0;
+};
+
+const deleteIfTable = async (client, results, table, where, params = []) => {
+    if (!(await tableExists(client, table))) return 0;
+    const result = await client.query(`DELETE FROM ${table} WHERE ${where}`, params);
+    results[table] = (results[table] || 0) + result.rowCount;
+    return result.rowCount;
+};
+
+const selectIdsIfTable = async (client, table, where, params = []) => {
+    if (!(await tableExists(client, table))) return [];
+    const result = await client.query(`SELECT id FROM ${table} WHERE ${where}`, params);
+    return ids(result.rows);
+};
+
 /**
- * 🧹 TEST DATA CLEANUP — T9.1
- * Deletes all TEST_ prefixed records in dependency-safe order.
- * Uses try/catch per table so partial failures don't block cleanup.
- * Callable by any authenticated user (test suite is authed).
+ * Production-safe test data cleanup.
+ * Removes rows created by automated/manual test flows for the active company.
  */
 router.post('/cleanup', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const results = {};
-    const errors  = [];
 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
 
-        // ── Step 1: Identify TEST entities ──────────────────────────────────
-        const testUserIds = (await client.query(
-            `SELECT id FROM users WHERE company_id = $1 AND username LIKE 'TEST_%'`,
-            [companyId]
-        )).rows.map(r => r.id);
+        const testUserIds = await selectIdsIfTable(
+            client,
+            'users',
+            `(company_id = $1 OR active_company_id = $1)
+             AND (
+                username ~* $2
+                OR COALESCE(email, '') ~* $2
+                OR COALESCE(nickname, '') ~* $2
+             )`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testSupplierIds = (await client.query(
-            `SELECT id FROM suppliers WHERE company_id = $1 AND name LIKE 'TEST_%'`,
-            [companyId]
-        )).rows.map(r => r.id);
+        const testSupplierIds = await selectIdsIfTable(
+            client,
+            'suppliers',
+            `company_id = $1 AND name ~* $2`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testProductIds = (await client.query(
-            `SELECT id FROM products WHERE company_id = $1 AND name LIKE 'TEST_%'`,
-            [companyId]
-        )).rows.map(r => r.id);
+        const testProductIds = await selectIdsIfTable(
+            client,
+            'products',
+            `company_id = $1
+             AND (
+                COALESCE(name, '') ~* $2
+                OR COALESCE(sku, '') ~* $2
+                OR COALESCE(supplier_name, '') ~* $2
+             )`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testEmployeeIds = (await client.query(
-            `SELECT id FROM employees WHERE company_id = $1 AND name LIKE 'TEST_%'`,
-            [companyId]
-        )).rows.map(r => r.id);
+        const testEmployeeIds = await selectIdsIfTable(
+            client,
+            'employees',
+            `company_id = $1 AND name ~* $2`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testLenderIds = (await client.query(
-            `SELECT id FROM lenders WHERE company_id = $1 AND lender_name LIKE 'TEST_%'`,
-            [companyId]
-        )).rows.map(r => r.id);
+        const testLenderIds = await selectIdsIfTable(
+            client,
+            'lenders',
+            `company_id = $1 AND lender_name ~* $2`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testBrokerIds = (await client.query(
-            `SELECT id FROM brokers WHERE company_id = $1 AND name LIKE 'TEST_%'`,
-            [companyId]
-        )).rows.map(r => r.id);
+        const testBrokerIds = await selectIdsIfTable(
+            client,
+            'brokers',
+            `company_id = $1 AND name ~* $2`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testInvoiceIds = testUserIds.length > 0
-            ? (await client.query(
-                `SELECT id FROM invoices WHERE company_id = $1 AND customer_id = ANY($2)`,
-                [companyId, testUserIds]
-              )).rows.map(r => r.id)
-            : [];
+        const testChitGroupIds = await selectIdsIfTable(
+            client,
+            'chit_groups',
+            `company_id = $1 AND group_name ~* $2`,
+            [companyId, TEST_PATTERN]
+        );
 
-        const testPurchaseBillIds = testSupplierIds.length > 0
-            ? (await client.query(
-                `SELECT id FROM purchase_bills WHERE company_id = $1 AND supplier_id = ANY($2)`,
-                [companyId, testSupplierIds]
-              )).rows.map(r => r.id)
-            : [];
+        const testInvoiceIds = await selectIdsIfTable(
+            client,
+            'invoices',
+            `company_id = $1
+             AND (
+                customer_id = ANY($2)
+                OR EXISTS (
+                    SELECT 1 FROM users u
+                    WHERE u.id = invoices.customer_id
+                      AND (u.username ~* $3 OR COALESCE(u.nickname, '') ~* $3)
+                )
+                OR EXISTS (
+                    SELECT 1 FROM invoice_line_items ili
+                    WHERE ili.invoice_id = invoices.id
+                      AND COALESCE(ili.description, '') ~* $3
+                )
+             )`,
+            [companyId, testUserIds.length ? testUserIds : [-1], TEST_PATTERN]
+        );
 
-        const testLoanIds = testLenderIds.length > 0
-            ? (await client.query(
-                `SELECT id FROM loans WHERE company_id = $1 AND lender_id = ANY($2)`,
-                [companyId, testLenderIds]
-              )).rows.map(r => r.id)
-            : [];
+        const testPurchaseBillIds = await selectIdsIfTable(
+            client,
+            'purchase_bills',
+            `company_id = $1
+             AND (
+                supplier_id = ANY($2)
+                OR COALESCE(supplier_name, '') ~* $3
+                OR COALESCE(bill_number, '') ~* $3
+                OR COALESCE(notes, '') ~* $3
+             )`,
+            [companyId, testSupplierIds.length ? testSupplierIds : [-1], TEST_PATTERN]
+        );
 
-        const testTxIds = (await client.query(
-            `SELECT id FROM transactions WHERE company_id = $1 AND (created_by = ANY($2) OR description LIKE '%TEST_%')`,
-            [companyId, testUserIds.length > 0 ? testUserIds : [-1]]
-        )).rows.map(r => r.id);
+        const testLoanIds = await selectIdsIfTable(
+            client,
+            'loans',
+            `company_id = $1
+             AND (
+                lender_id = ANY($2)
+                OR COALESCE(party_name, '') ~* $3
+                OR COALESCE(notes, '') ~* $3
+             )`,
+            [companyId, testLenderIds.length ? testLenderIds : [-1], TEST_PATTERN]
+        );
 
-        // ── Step 2: Delete dependents first (FK order) ────────────────────
+        const hasCreatedBy = await columnExists(client, 'transactions', 'created_by');
+        const testTxWhere = hasCreatedBy
+            ? `company_id = $1 AND (user_id = ANY($2) OR created_by = ANY($2) OR COALESCE(description, '') ~* $3 OR COALESCE(reference_type, '') ~* $3)`
+            : `company_id = $1 AND (user_id = ANY($2) OR COALESCE(description, '') ~* $3 OR COALESCE(reference_type, '') ~* $3)`;
+        const testTransactionIds = await selectIdsIfTable(
+            client,
+            'transactions',
+            testTxWhere,
+            [companyId, testUserIds.length ? testUserIds : [-1], TEST_PATTERN]
+        );
 
-        // ledger_entries → transactions
-        if (testTxIds.length > 0) {
-            const r = await client.query(
-                `DELETE FROM ledger_entries WHERE transaction_id = ANY($1)`,
-                [testTxIds]
-            );
-            results.ledger_entries = r.rowCount;
+        results.targets = {
+            users: testUserIds.length,
+            suppliers: testSupplierIds.length,
+            products: testProductIds.length,
+            employees: testEmployeeIds.length,
+            lenders: testLenderIds.length,
+            brokers: testBrokerIds.length,
+            chit_groups: testChitGroupIds.length,
+            invoices: testInvoiceIds.length,
+            purchase_bills: testPurchaseBillIds.length,
+            loans: testLoanIds.length,
+            transactions: testTransactionIds.length
+        };
 
-            const r2 = await client.query(
-                `DELETE FROM transaction_lines WHERE transaction_id = ANY($1)`,
-                [testTxIds]
-            );
-            results.transaction_lines = r2.rowCount;
+        const userIds = testUserIds.length ? testUserIds : [-1];
+        const supplierIds = testSupplierIds.length ? testSupplierIds : [-1];
+        const productIds = testProductIds.length ? testProductIds : [-1];
+        const employeeIds = testEmployeeIds.length ? testEmployeeIds : [-1];
+        const lenderIds = testLenderIds.length ? testLenderIds : [-1];
+        const brokerIds = testBrokerIds.length ? testBrokerIds : [-1];
+        const chitGroupIds = testChitGroupIds.length ? testChitGroupIds : [-1];
+        const invoiceIds = testInvoiceIds.length ? testInvoiceIds : [-1];
+        const purchaseBillIds = testPurchaseBillIds.length ? testPurchaseBillIds : [-1];
+        const loanIds = testLoanIds.length ? testLoanIds : [-1];
+        const transactionIds = testTransactionIds.length ? testTransactionIds : [-1];
 
-            const r3 = await client.query(
-                `DELETE FROM transactions WHERE id = ANY($1)`,
-                [testTxIds]
-            );
-            results.transactions = r3.rowCount;
-        }
+        await deleteIfTable(client, results, 'bank_transactions', 'matched_transaction_id = ANY($1)', [transactionIds]);
+        await deleteIfTable(client, results, 'transaction_lines', 'transaction_id = ANY($1)', [transactionIds]);
+        await deleteIfTable(client, results, 'expenses', 'transaction_id = ANY($1) OR (company_id = $2 AND COALESCE(description, \'\') ~* $3)', [transactionIds, companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'ledger_entries', 'transaction_id = ANY($1) OR (company_id = $2 AND COALESCE(description, \'\') ~* $3)', [transactionIds, companyId, TEST_PATTERN]);
 
-        // inventory_movements → products
-        if (testProductIds.length > 0) {
-            await client.query(`DELETE FROM inventory_movements WHERE product_id = ANY($1)`, [testProductIds]);
-        }
+        await deleteIfTable(client, results, 'invoice_line_items', 'invoice_id = ANY($1) OR product_id = ANY($2) OR COALESCE(description, \'\') ~* $3', [invoiceIds, productIds, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'invoice_lines', 'invoice_id = ANY($1)', [invoiceIds]);
+        await deleteIfTable(client, results, 'invoice_payments', 'invoice_id = ANY($1)', [invoiceIds]);
+        await deleteIfTable(client, results, 'customer_ledger_events', 'related_invoice_id = ANY($1) OR customer_id = ANY($2)', [invoiceIds, userIds]);
+        await deleteIfTable(client, results, 'customer_accounts', 'user_id = ANY($1)', [userIds]);
+        await deleteIfTable(client, results, 'customer_notifications', 'company_id = $1 AND (customer_id = ANY($2) OR handled_by = ANY($2) OR COALESCE(message, \'\') ~* $3)', [companyId, userIds, TEST_PATTERN]);
 
-        // invoice_line_items + invoice_payments → invoices
-        if (testInvoiceIds.length > 0) {
-            await client.query(`DELETE FROM invoice_line_items WHERE invoice_id = ANY($1)`, [testInvoiceIds]);
-            await client.query(`DELETE FROM invoice_payments   WHERE invoice_id = ANY($1)`, [testInvoiceIds]);
-            await client.query(`DELETE FROM customer_ledger_events WHERE related_invoice_id = ANY($1) OR customer_id = ANY($2)`, [testInvoiceIds, testUserIds.length > 0 ? testUserIds : [-1]]);
-            const r = await client.query(`DELETE FROM invoices WHERE id = ANY($1)`, [testInvoiceIds]);
-            results.invoices = r.rowCount;
-        }
+        await deleteIfTable(client, results, 'purchase_bill_expenses', 'bill_id = ANY($1) OR COALESCE(description, \'\') ~* $2', [purchaseBillIds, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'purchase_bill_items', 'bill_id = ANY($1) OR product_id = ANY($2) OR COALESCE(description, \'\') ~* $3', [purchaseBillIds, productIds, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'supplier_bill_items', 'bill_id = ANY($1) OR product_id = ANY($2)', [purchaseBillIds, productIds]);
+        await deleteIfTable(client, results, 'product_suppliers', 'supplier_id = ANY($1) OR product_id = ANY($2)', [supplierIds, productIds]);
 
-        // purchase_bill_items → purchase_bills
-        if (testPurchaseBillIds.length > 0) {
-            await client.query(`DELETE FROM purchase_bill_items WHERE bill_id = ANY($1)`, [testPurchaseBillIds]);
-            await client.query(`DELETE FROM purchase_payments   WHERE bill_id = ANY($1)`, [testPurchaseBillIds]);
-            const r = await client.query(`DELETE FROM purchase_bills WHERE id = ANY($1)`, [testPurchaseBillIds]);
-            results.purchase_bills = r.rowCount;
-        }
+        await deleteIfTable(client, results, 'cash_receipts', 'company_id = $1 AND (loan_id = ANY($2) OR COALESCE(party_name, \'\') ~* $3)', [companyId, loanIds, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'loan_payments', 'loan_id = ANY($1) OR (company_id = $2 AND COALESCE(notes, \'\') ~* $3)', [loanIds, companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'loan_schedule', 'loan_id = ANY($1)', [loanIds]);
 
-        // loan_payments → loans
-        if (testLoanIds.length > 0) {
-            await client.query(`DELETE FROM loan_payments WHERE loan_id = ANY($1)`, [testLoanIds]);
-            const r = await client.query(`DELETE FROM loans WHERE id = ANY($1)`, [testLoanIds]);
-            results.loans = r.rowCount;
-        }
+        await deleteIfTable(client, results, 'broker_commissions', 'broker_id = ANY($1)', [brokerIds]);
+        await deleteIfTable(client, results, 'broker_product_rates', 'broker_id = ANY($1)', [brokerIds]);
+        await deleteIfTable(client, results, 'chit_installments', 'chit_group_id = ANY($1) OR (company_id = $2 AND COALESCE(notes, \'\') ~* $3)', [chitGroupIds, companyId, TEST_PATTERN]);
 
-        // broker_commissions → brokers
-        if (testBrokerIds.length > 0) {
-            await client.query(`DELETE FROM broker_commissions WHERE broker_id = ANY($1)`, [testBrokerIds]);
-            const r = await client.query(`DELETE FROM brokers WHERE id = ANY($1)`, [testBrokerIds]);
-            results.brokers = r.rowCount;
-        }
+        await deleteIfTable(client, results, 'attendance', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'attendance_logs', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'payroll_runs', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'salaries', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'salary_advances', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'salary_payments', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'employee_ledger', 'employee_id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'employee_qr_codes', 'employee_id = ANY($1)', [employeeIds]);
 
-        // attendance, payroll for test employees
-        if (testEmployeeIds.length > 0) {
-            await client.query(`DELETE FROM attendance     WHERE employee_id = ANY($1)`, [testEmployeeIds]);
-            await client.query(`DELETE FROM attendance_logs WHERE employee_id = ANY($1)`, [testEmployeeIds]);
-            await client.query(`DELETE FROM payroll_runs   WHERE employee_id = ANY($1)`, [testEmployeeIds]);
-            await client.query(`DELETE FROM salaries       WHERE employee_id = ANY($1)`, [testEmployeeIds]);
-            await client.query(`DELETE FROM inventory_movements WHERE created_by = ANY($1)`, [testUserIds.length > 0 ? testUserIds : [-1]]);
-            const r = await client.query(`DELETE FROM employees WHERE id = ANY($1)`, [testEmployeeIds]);
-            results.employees = r.rowCount;
-        }
+        await deleteIfTable(client, results, 'branch_inventory', 'product_id = ANY($1)', [productIds]);
+        await deleteIfTable(client, results, 'inventory_movements', 'product_id = ANY($1)', [productIds]);
+        await deleteIfTable(client, results, 'inventory', 'product_id = ANY($1) OR (company_id = $2 AND COALESCE(product_name, \'\') ~* $3)', [productIds, companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'stock_requests', 'product_id = ANY($1) OR requested_by = ANY($2) OR responded_by = ANY($2)', [productIds, userIds]);
+        await deleteIfTable(client, results, 'stock_transfers', 'product_id = ANY($1) OR transferred_by = ANY($2)', [productIds, userIds]);
 
-        // suppliers → products → users → lenders
-        if (testSupplierIds.length > 0) {
-            const r = await client.query(`DELETE FROM suppliers WHERE id = ANY($1)`, [testSupplierIds]);
-            results.suppliers = r.rowCount;
-        }
-        if (testProductIds.length > 0) {
-            const r = await client.query(`DELETE FROM products WHERE id = ANY($1)`, [testProductIds]);
-            results.products = r.rowCount;
-        }
-        if (testLenderIds.length > 0) {
-            const r = await client.query(`DELETE FROM lenders WHERE id = ANY($1)`, [testLenderIds]);
-            results.lenders = r.rowCount;
-        }
-        if (testUserIds.length > 0) {
-            await client.query(`DELETE FROM refresh_tokens WHERE user_id = ANY($1)`, [testUserIds]);
-            const r = await client.query(`DELETE FROM users WHERE id = ANY($1)`, [testUserIds]);
-            results.users = r.rowCount;
-        }
+        await deleteIfTable(client, results, 'refresh_tokens', 'user_id = ANY($1)', [userIds]);
+        await deleteIfTable(client, results, 'notifications', 'user_id = ANY($1) OR COALESCE(message, \'\') ~* $2', [userIds, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'user_permissions', 'user_id = ANY($1)', [userIds]);
+        await deleteIfTable(client, results, 'audit_log', 'user_id_acting = ANY($1)', [userIds]);
+        await deleteIfTable(client, results, 'audit_logs', 'company_id = $1 AND COALESCE(table_name, \'\') ~* $2', [companyId, TEST_PATTERN]);
+
+        await deleteIfTable(client, results, 'invoices', 'id = ANY($1)', [invoiceIds]);
+        await deleteIfTable(client, results, 'purchase_bills', 'id = ANY($1)', [purchaseBillIds]);
+        await deleteIfTable(client, results, 'loans', 'id = ANY($1)', [loanIds]);
+        await deleteIfTable(client, results, 'transactions', 'id = ANY($1)', [transactionIds]);
+
+        await deleteIfTable(client, results, 'brokers', 'id = ANY($1)', [brokerIds]);
+        await deleteIfTable(client, results, 'chit_groups', 'id = ANY($1)', [chitGroupIds]);
+        await deleteIfTable(client, results, 'lenders', 'id = ANY($1)', [lenderIds]);
+        await deleteIfTable(client, results, 'employees', 'id = ANY($1)', [employeeIds]);
+        await deleteIfTable(client, results, 'suppliers', 'id = ANY($1)', [supplierIds]);
+
+        await deleteIfTable(client, results, 'ledgers', 'company_id = $1 AND name ~* $2', [companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'chart_of_accounts', 'company_id = $1 AND name ~* $2', [companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'products', 'id = ANY($1)', [productIds]);
+        await deleteIfTable(client, results, 'users', 'id = ANY($1)', [userIds]);
 
         await client.query('COMMIT');
-        console.log('🧹 Test cleanup complete:', results);
-        res.json({ success: true, message: "Cleanup successful", results, errors });
-
+        res.json({ success: true, message: "Cleanup successful", results });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error("❌ Cleanup failed:", err);
-        res.status(500).json({ error: "Cleanup failed: " + err.message, results, errors });
+        res.status(500).json({ error: "Cleanup failed: " + err.message, results });
     } finally {
         client.release();
     }
