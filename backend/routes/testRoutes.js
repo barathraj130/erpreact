@@ -138,7 +138,6 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
                 supplier_id = ANY($2)
                 OR COALESCE(supplier_name, '') ~* $3
                 OR COALESCE(bill_number, '') ~* $3
-                OR COALESCE(notes, '') ~* $3
              )`,
             [companyId, testSupplierIds.length ? testSupplierIds : [-1], TEST_PATTERN]
         );
@@ -150,7 +149,6 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
              AND (
                 lender_id = ANY($2)
                 OR COALESCE(party_name, '') ~* $3
-                OR COALESCE(notes, '') ~* $3
              )`,
             [companyId, testLenderIds.length ? testLenderIds : [-1], TEST_PATTERN]
         );
