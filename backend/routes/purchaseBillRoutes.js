@@ -95,8 +95,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) => {
     const companyId = sanitizeInt(req.user.active_company_id);
-    const branchId  = sanitizeInt(req.user.branch_id);
-    const userId    = sanitizeInt(req.user.id);
+    const branchId  = sanitizeInt(req.user.branch_id) || 1;
+    const userId    = sanitizeInt(req.user.id) || 1;
 
     let data = req.body;
     if (typeof req.body.data === 'string') {
