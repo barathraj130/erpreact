@@ -192,8 +192,8 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
 
         await deleteIfTable(client, results, 'bank_transactions', 'matched_transaction_id = ANY($1)', [transactionIds]);
         await deleteIfTable(client, results, 'transaction_lines', 'transaction_id = ANY($1)', [transactionIds]);
-        await deleteIfTable(client, results, 'expenses', 'transaction_id = ANY($1) OR (company_id = $2 AND COALESCE(description, \'\') ~* $3)', [transactionIds, companyId, TEST_PATTERN]);
-        await deleteIfTable(client, results, 'ledger_entries', 'transaction_id = ANY($1) OR (company_id = $2 AND COALESCE(description, \'\') ~* $3)', [transactionIds, companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'expenses', 'transaction_id = ANY($1)', [transactionIds]);
+        await deleteIfTable(client, results, 'ledger_entries', 'transaction_id = ANY($1)', [transactionIds]);
 
         await deleteIfTable(client, results, 'invoice_line_items', 'invoice_id = ANY($1) OR product_id = ANY($2) OR COALESCE(description, \'\') ~* $3', [invoiceIds, productIds, TEST_PATTERN]);
         await deleteIfTable(client, results, 'invoice_lines', 'invoice_id = ANY($1)', [invoiceIds]);
@@ -202,18 +202,18 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
         await deleteIfTable(client, results, 'customer_accounts', 'user_id = ANY($1)', [userIds]);
         await deleteIfTable(client, results, 'customer_notifications', 'company_id = $1 AND (customer_id = ANY($2) OR handled_by = ANY($2) OR COALESCE(message, \'\') ~* $3)', [companyId, userIds, TEST_PATTERN]);
 
-        await deleteIfTable(client, results, 'purchase_bill_expenses', 'bill_id = ANY($1) OR COALESCE(description, \'\') ~* $2', [purchaseBillIds, TEST_PATTERN]);
-        await deleteIfTable(client, results, 'purchase_bill_items', 'bill_id = ANY($1) OR product_id = ANY($2) OR COALESCE(description, \'\') ~* $3', [purchaseBillIds, productIds, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'purchase_bill_expenses', 'bill_id = ANY($1)', [purchaseBillIds]);
+        await deleteIfTable(client, results, 'purchase_bill_items', 'bill_id = ANY($1) OR product_id = ANY($2)', [purchaseBillIds, productIds]);
         await deleteIfTable(client, results, 'supplier_bill_items', 'bill_id = ANY($1) OR product_id = ANY($2)', [purchaseBillIds, productIds]);
         await deleteIfTable(client, results, 'product_suppliers', 'supplier_id = ANY($1) OR product_id = ANY($2)', [supplierIds, productIds]);
 
         await deleteIfTable(client, results, 'cash_receipts', 'company_id = $1 AND (loan_id = ANY($2) OR COALESCE(party_name, \'\') ~* $3)', [companyId, loanIds, TEST_PATTERN]);
-        await deleteIfTable(client, results, 'loan_payments', 'loan_id = ANY($1) OR (company_id = $2 AND COALESCE(notes, \'\') ~* $3)', [loanIds, companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'loan_payments', 'loan_id = ANY($1)', [loanIds]);
         await deleteIfTable(client, results, 'loan_schedule', 'loan_id = ANY($1)', [loanIds]);
 
         await deleteIfTable(client, results, 'broker_commissions', 'broker_id = ANY($1)', [brokerIds]);
         await deleteIfTable(client, results, 'broker_product_rates', 'broker_id = ANY($1)', [brokerIds]);
-        await deleteIfTable(client, results, 'chit_installments', 'chit_group_id = ANY($1) OR (company_id = $2 AND COALESCE(notes, \'\') ~* $3)', [chitGroupIds, companyId, TEST_PATTERN]);
+        await deleteIfTable(client, results, 'chit_installments', 'chit_group_id = ANY($1)', [chitGroupIds]);
 
         await deleteIfTable(client, results, 'attendance', 'employee_id = ANY($1)', [employeeIds]);
         await deleteIfTable(client, results, 'attendance_logs', 'employee_id = ANY($1)', [employeeIds]);
