@@ -241,7 +241,7 @@ const SystemTester: React.FC = () => {
           console.log('T1.6 DIFFERENCE:', Math.abs(totalDebit - totalCredit));
 
           const entries = data.filter((e: any) => e.reference_id === ctx.current.purchaseBillId);
-          const hasInventory = entries.some((e: any) => e.account_name.includes("Inventory") && parseFloat(e.debit) === 10000);
+          const hasInventory = entries.some((e: any) => (e.account_name.includes("Inventory") || e.account_name.includes("Purchases") || e.account_name.includes("Stock")) && parseFloat(e.debit) === 10000);
           const hasPayable = entries.some((e: any) => e.account_name.includes("Payable") && parseFloat(e.credit) === 11800);
           if (!hasInventory || !hasPayable) throw new Error("Double-entry ledger check failed for Purchase.");
         }

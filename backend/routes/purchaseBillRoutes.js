@@ -301,7 +301,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         const apAccount       = await getAccountByCode(companyId, "2000"); // Accounts Payable
         const gstInputAccount = await getAccountByCode(companyId, "2200"); // GST Input
         const cashAccount     = await getAccountByCode(companyId, "1000"); // Cash Account
-        const stockAccount    = await getAccountByCode(companyId, "5000") || await getAccountByCode(companyId, "1400"); // Stock/Purchases
+        const stockAccount    = await getAccountByCode(companyId, "1400") || await getAccountByCode(companyId, "5000"); // Inventory/Purchases
 
         const txLines = [];
 
