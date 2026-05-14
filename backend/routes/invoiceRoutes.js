@@ -582,7 +582,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         SELECT i.*, 
                u.username as customer_name, u.address_line1, u.city_pincode, u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
                c.company_name, c.address_line1 as c_address, c.city_pincode as c_city, c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
-               c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.signature_url
+               c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.signature_url, c.phone as c_phone
         FROM invoices i
         LEFT JOIN users u ON i.customer_id = u.id
         LEFT JOIN companies c ON i.company_id = c.id
