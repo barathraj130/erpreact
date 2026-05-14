@@ -119,7 +119,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                      THEN (meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 bank_name, bank_account_no, bank_ifsc_code, created_at
             FROM users 
-            WHERE role IN ('user', 'customer') AND company_id = COALESCE($1, $2)
+            WHERE role IN ('user', 'customer') AND company_id = COALESCE($1::int, $2::int)
             ORDER BY id ASC
         `, [req.user.active_company_id, req.user.company_id]);
         res.json(users);
