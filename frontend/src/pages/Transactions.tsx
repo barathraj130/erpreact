@@ -202,10 +202,10 @@ const Transactions: React.FC = () => {
           <table className="erp-table">
              <thead>
                 <tr>
-                   <th>Date & Reference</th>
+                   <th>Date</th>
                    <th>Category</th>
+                   <th>Party / Description</th>
                    <th className="text-center">Mode</th>
-                   <th>Description</th>
                    <th className="text-right">Amount (₹)</th>
                    <th className="text-center">Actions</th>
                 </tr>
@@ -214,13 +214,17 @@ const Transactions: React.FC = () => {
                 {transactions.filter(t => t.description?.toLowerCase().includes(search.toLowerCase()) || t.type?.toLowerCase().includes(search.toLowerCase())).map(tx => (
                    <tr key={tx.id}>
                       <td className="timestamp-cell">
-                         <span className="primary">{new Date(tx.date).toLocaleDateString()}</span>
+                         <span className="primary">{new Date(tx.date).toLocaleDateString('en-IN')}</span>
                          <span className="secondary">TXN-{tx.id}</span>
                       </td>
                       <td>
-                        <span className={`status-badge status-${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? 'success' : 'error'}`}>
+                        <span className={`status-badge status-${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION'].includes(tx.type) ? 'success' : 'error'}`}>
                           {tx.type?.replace(/_/g, ' ') || 'GENERAL'}
                         </span>
+                      </td>
+                      <td className="text-body">
+                        <div style={{ fontWeight: 500 }}>{(tx as any).lender_name || (tx as any).user_name || '—'}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--erp-text-secondary)' }}>{tx.description}</div>
                       </td>
                       <td className="text-center">
                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "var(--erp-text-secondary)" }}>
@@ -228,9 +232,8 @@ const Transactions: React.FC = () => {
                             <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{tx.mode}</span>
                          </div>
                       </td>
-                      <td className="text-body">{tx.description}</td>
-                      <td className={`currency-cell ${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? 'positive' : 'negative'}`}>
-                         {['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(tx.type) ? '+ ' : '- '} {Number(tx.amount || 0).toLocaleString()}
+                      <td className={`currency-cell ${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION'].includes(tx.type) ? 'positive' : 'negative'}`}>
+                         {['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION'].includes(tx.type) ? '↑ ' : '↓ '} ₹{Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="text-center">
                          <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>

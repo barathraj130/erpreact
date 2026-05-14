@@ -25,7 +25,10 @@ export async function getSupplierById(client, supplierId, companyId) {
 async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
   const params = [companyId, supplierId];
   const billConditions = ["pb.company_id = $1", "pb.supplier_id = $2"];
-  const txConditions = ["t.company_id = $1", "t.lender_id = $2"];
+  const txConditions = [
+    "t.company_id = $1",
+    "(t.lender_id = $2 OR (t.reference_type ILIKE 'supplier' AND t.reference_id = $2))"
+  ];
   let idx = 3;
 
   if (filters.start_date) {

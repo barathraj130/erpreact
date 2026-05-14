@@ -35,14 +35,13 @@ router.get('/', authMiddleware, async (req, res) => {
 
     try {
         let sql = `
-            SELECT t.*, 
-                   l.lender_name, 
-                   u.username as user_name,
-                   ledg.name as ledger_name
+            SELECT DISTINCT ON (t.id)
+                   t.*,
+                   l.lender_name,
+                   u.username as user_name
             FROM transactions t
             LEFT JOIN lenders l ON t.lender_id = l.id
             LEFT JOIN users u ON t.user_id = u.id
-            LEFT JOIN ledgers ledg ON t.ledger_id = ledg.id
             WHERE t.company_id = $1 AND ${branchFilter}
         `;
 
@@ -66,7 +65,7 @@ router.get('/', authMiddleware, async (req, res) => {
             params.push(category);
         }
 
-        sql += ` ORDER BY t.date DESC, t.created_at DESC`;
+        sql += ` ORDER BY t.id DESC, t.created_at DESC`;
 
         console.log('📊 SQL Query:', sql);
         console.log('📊 Params:', params);
