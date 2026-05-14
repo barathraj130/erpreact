@@ -257,12 +257,8 @@ const AddCustomerModal: React.FC<Props> = ({
     try {
       if (customerToEdit) {
         await updateCustomer(customerToEdit.id, formData);
-        alert("Success! Customer profile updated.");
       } else {
         await createCustomer(formData);
-        alert(
-          `Success! Customer created.\n\nPortal Login:\nUser: ${formData.username}\nPass: ${formData.password || "(Not set)"}`,
-        );
       }
       onSuccess();
       onClose();

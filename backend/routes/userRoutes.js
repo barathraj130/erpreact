@@ -119,9 +119,9 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                      THEN (meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 bank_name, bank_account_no, bank_ifsc_code, created_at
             FROM users 
-            WHERE role IN ('user', 'customer') AND company_id = $1
+            WHERE role IN ('user', 'customer') AND company_id = COALESCE($1, $2)
             ORDER BY id ASC
-        `, [req.user.active_company_id]);
+        `, [req.user.active_company_id, req.user.company_id]);
         res.json(users);
     } catch (err) {
         console.error("Fetch customers error:", err);
@@ -170,18 +170,19 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
              ON CONFLICT (username) DO UPDATE SET last_login = NOW()
              RETURNING id`,
             [
-                req.user.active_company_id,
+                req.user.active_company_id || req.user.company_id,
                 username, nickname || null, email || null, phone || null, gstin || null,
                 address_line1 || null, city_pincode || null, state || null, state_code || null,
                 bank_name || null, bank_account_no || null, bank_ifsc_code || null,
                 opening_balance || 0,
-                req.user.active_company_id,
-                password_hash // ✅ Value
+                req.user.active_company_id || req.user.company_id,
+                password_hash
             ]
         );
 
-        await ensureCustomerLedgerMetadata(client, result.rows[0].id, req.user.active_company_id);
-        await recomputeCustomerBalance(client, result.rows[0].id, req.user.active_company_id);
+        const companyIdResolved = req.user.active_company_id || req.user.company_id;
+        await ensureCustomerLedgerMetadata(client, result.rows[0].id, companyIdResolved);
+        await recomputeCustomerBalance(client, result.rows[0].id, companyIdResolved);
 
         await client.query("COMMIT");
         res.status(201).json({ success: true, id: result.rows[0].id });
