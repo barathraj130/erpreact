@@ -227,8 +227,8 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
         await deleteIfTable(client, results, 'branch_inventory', 'product_id = ANY($1)', [productIds]);
         await deleteIfTable(client, results, 'inventory_movements', 'product_id = ANY($1)', [productIds]);
         await deleteIfTable(client, results, 'inventory', 'product_id = ANY($1) OR (company_id = $2 AND COALESCE(product_name, \'\') ~* $3)', [productIds, companyId, TEST_PATTERN]);
-        await deleteIfTable(client, results, 'stock_requests', 'product_id = ANY($1) OR requested_by = ANY($2) OR responded_by = ANY($2)', [productIds, userIds]);
-        await deleteIfTable(client, results, 'stock_transfers', 'product_id = ANY($1) OR transferred_by = ANY($2)', [productIds, userIds]);
+        await deleteIfTable(client, results, 'stock_requests', 'product_id = ANY($1)', [productIds]);
+        await deleteIfTable(client, results, 'stock_transfers', 'product_id = ANY($1)', [productIds]);
 
         await deleteIfTable(client, results, 'refresh_tokens', 'user_id = ANY($1)', [userIds]);
         await deleteIfTable(client, results, 'notifications', 'user_id = ANY($1) OR COALESCE(message, \'\') ~* $2', [userIds, TEST_PATTERN]);
