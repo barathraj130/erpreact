@@ -59,5 +59,6 @@ uploads/
 dumps/
 .git_old/
 .git_very_old/
+.claude/
 .git_old/
 .git_very_old/
