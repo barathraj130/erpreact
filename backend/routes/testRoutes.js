@@ -359,6 +359,12 @@ router.post('/reset-all', authMiddleware, async (req, res) => {
             [companyId]
         );
 
+        // Restore subscription to ACTIVE so login keeps working after reset
+        await client.query(
+            `UPDATE subscriptions SET status = 'ACTIVE', expiry_date = NOW() + INTERVAL '10 years' WHERE id IN (SELECT subscription_id FROM companies WHERE id = $1)`,
+            [companyId]
+        );
+
         await client.query('COMMIT');
         res.json({ success: true, message: 'All business data cleared. Ready for fresh start.', results });
     } catch (err) {
