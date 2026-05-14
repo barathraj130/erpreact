@@ -1,6 +1,18 @@
 // backend/database/schemaDef.js
 
 export const schemaDefinition = {
+    // --- LOYALTY POINTS (Retail Customer Only) ---
+    customer_points: {
+        id: "SERIAL PRIMARY KEY",
+        customer_id: "INTEGER NOT NULL",
+        transaction_type: "VARCHAR(20) NOT NULL", // 'earned' / 'redeemed' / 'expired' / 'bonus'
+        points: "INTEGER NOT NULL", // positive for earned/bonus, negative for redeemed/expired
+        reference_id: "INTEGER", // invoice id
+        description: "TEXT",
+        balance_after: "INTEGER NOT NULL",
+        expires_at: "TIMESTAMP",
+        created_at: "TIMESTAMP DEFAULT NOW()"
+    },
     // --- 0. SUBSCRIPTIONS (ERP OWNER CONTROL) ---
     subscriptions: {
         id: "SERIAL PRIMARY KEY",
@@ -473,6 +485,9 @@ export const schemaDefinition = {
         file_url: "TEXT",
         broker_id: "INTEGER",
         broker_commission_rate: "NUMERIC(5,2)",
+        points_earned: "INTEGER DEFAULT 0",
+        points_redeemed: "INTEGER DEFAULT 0",
+        points_discount: "NUMERIC(10,2) DEFAULT 0",
         created_at: "TIMESTAMP DEFAULT NOW()",
         updated_at: "TIMESTAMP DEFAULT NOW()"
     },
