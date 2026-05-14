@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { financeApi } from "./financeApi";
 import { apiFetch } from "../../utils/api";
-import { FaPlus, FaHandHoldingUsd, FaPercentage, FaExclamationCircle, FaFileInvoice, FaSearch, FaSync, FaChartLine, FaHistory } from "react-icons/fa";
+import { FaPlus, FaHandHoldingUsd, FaPercentage, FaExclamationCircle, FaSearch, FaSync, FaHistory, FaTimes, FaListAlt } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import "../PageShared.css";
 
@@ -12,6 +12,8 @@ const LoanManagement: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [showRepayModal, setShowRepayModal] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState<any>(null);
+  const [ledgerLoan, setLedgerLoan] = useState<any>(null);
+  const [repaymentHistory, setRepaymentHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -108,7 +110,15 @@ const LoanManagement: React.FC = () => {
     }
   };
 
-  const filteredLoans = loans.filter(l => 
+  const loadRepaymentHistory = async (loanId: number) => {
+    try {
+      const res = await apiFetch(`/loans/${loanId}/repayments`);
+      const data = await res.json();
+      setRepaymentHistory(Array.isArray(data) ? data : []);
+    } catch { setRepaymentHistory([]); }
+  };
+
+  const filteredLoans = loans.filter(l =>
     l.lender_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -194,13 +204,21 @@ const LoanManagement: React.FC = () => {
                     {loan.status}
                   </span>
                 </td>
-                <td className="text-center">
-                  <button 
-                    className="page-btn-round-sm" 
+                <td className="text-center" style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                  <button
+                    className="page-btn-round-sm"
                     onClick={() => { setSelectedLoan(loan); setShowRepayModal(true); }}
                     title="Record Repayment"
                   >
-                    <FaHistory size={12} />
+                    <FaPlus size={10} />
+                  </button>
+                  <button
+                    className="page-btn-round-sm"
+                    onClick={() => { setLedgerLoan(loan); loadRepaymentHistory(loan.id); }}
+                    title="View Repayment History"
+                    style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}
+                  >
+                    <FaListAlt size={10} />
                   </button>
                 </td>
               </tr>
@@ -208,6 +226,50 @@ const LoanManagement: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Repayment History Panel */}
+      <AnimatePresence>
+        {ledgerLoan && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{ margin: "24px 0", background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "16px", color: "#0f172a" }}>Repayment History</div>
+                <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>{ledgerLoan.lender_name} · Principal ₹{Number(ledgerLoan.principal_amount).toLocaleString()}</div>
+              </div>
+              <button onClick={() => setLedgerLoan(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}><FaTimes size={16} /></button>
+            </div>
+            {repaymentHistory.length === 0 ? (
+              <div style={{ padding: "32px", textAlign: "center", color: "#94a3b8" }}>No repayments recorded yet.</div>
+            ) : (
+              <table className="page-table" style={{ margin: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th className="text-right">Total Paid</th>
+                    <th className="text-right">Principal</th>
+                    <th className="text-right">Interest</th>
+                    <th>Mode</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {repaymentHistory.map((r: any) => (
+                    <tr key={r.id}>
+                      <td>{r.payment_date}</td>
+                      <td className="text-right font-mono">₹{Number(r.total_amount).toLocaleString()}</td>
+                      <td className="text-right font-mono" style={{ color: "#2563eb" }}>₹{Number(r.principal_component).toLocaleString()}</td>
+                      <td className="text-right font-mono" style={{ color: "#f59e0b" }}>₹{Number(r.interest_component).toLocaleString()}</td>
+                      <td><span className="type-badge type-badge-blue">{r.payment_mode}</span></td>
+                      <td style={{ color: "#64748b", fontSize: "13px" }}>{r.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* New Loan Modal */}
       <AnimatePresence>

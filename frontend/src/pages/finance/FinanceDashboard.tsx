@@ -63,7 +63,7 @@ const FinanceDashboard: React.FC = () => {
 
   const { totalSales, totalExpenses, totalPayments, totalReturns, totalCash, totalBank } = metrics;
   
-  const cashFlow = totalPayments - (totalExpenses + totalReturns);
+  const cashFlow = totalCash + totalBank; // Net liquid position from ledgers
   const profit = totalSales - totalExpenses;
   const outstanding = totalSales - totalPayments;
   
@@ -384,8 +384,8 @@ const LiquidityCard = ({ label, value, subtext, icon: Icon, cardBg }: any) => (
                  formatter={(value: any) => [`₹ ${Number(value || 0).toLocaleString()}`, ""]}
                />
                <Legend iconType="circle" wrapperStyle={{ fontFamily: "Satoshi", fontSize: "12px", paddingTop: "20px" }} />
-               <Line type="monotone" dataKey="payments" name="Inflow" stroke="#3b82f6" strokeWidth={3} dot={{ r: 5, fill: "#3b82f6", strokeWidth: 0 }} activeDot={{ r: 7 }} />
-               <Line type="monotone" dataKey="expenses" name="Outflow" stroke="#1e40af" strokeWidth={3} dot={{ r: 5, fill: "#1e40af", strokeWidth: 0 }} activeDot={{ r: 7 }} />
+               <Line type="monotone" dataKey="inflow" name="Inflow" stroke="#10b981" strokeWidth={3} dot={{ r: 5, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 7 }} />
+               <Line type="monotone" dataKey="outflow" name="Outflow" stroke="#ef4444" strokeWidth={3} dot={{ r: 5, fill: "#ef4444", strokeWidth: 0 }} activeDot={{ r: 7 }} />
              </LineChart>
            </ResponsiveContainer>
          </div>

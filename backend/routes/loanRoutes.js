@@ -40,6 +40,18 @@ router.post('/repayment', authMiddleware, async (req, res) => {
     }
 });
 
+router.get('/:loanId/repayments', authMiddleware, async (req, res) => {
+    try {
+        const repayments = await db.pgAll(
+            `SELECT * FROM loan_payments WHERE loan_id = $1 AND company_id = $2 ORDER BY payment_date DESC`,
+            [req.params.loanId, req.user.active_company_id]
+        );
+        res.json(repayments);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch repayments' });
+    }
+});
+
 router.get('/summary', authMiddleware, async (req, res) => {
     try {
         const summary = await financeService.getFinanceSummary(req.user.active_company_id);

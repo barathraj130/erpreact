@@ -222,9 +222,11 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             baseMetrics: { totalCash, totalBank, totalSales, totalPayments, totalExpenses },
             chartData: chartRows.map(r => ({
                 month: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-                sales: Number(r.income), // For the sales vs expenses chart
+                sales: Number(r.income),
                 expenses: Number(r.expense),
-                payments: Number(r.income), // For the cash flow trend chart
+                inflow: Number(r.income),
+                outflow: Number(r.expense),
+                payments: Number(r.income),
             })),
             debugInfo: {
                 companyId,

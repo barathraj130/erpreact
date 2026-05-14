@@ -320,6 +320,40 @@ export const runSchemaUpdates = async () => {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_lenders_name_company ON lenders(lender_name, company_id);
         `);
 
+        // Proprietor transactions
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS proprietor_transactions (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                branch_id INTEGER DEFAULT 1,
+                transaction_type VARCHAR(20) NOT NULL,
+                amount NUMERIC(15,2) NOT NULL,
+                payment_mode VARCHAR(20) DEFAULT 'CASH',
+                transaction_date DATE NOT NULL,
+                notes TEXT,
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
+        // Cash transfers (branch ↔ main branch handovers)
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS cash_transfers (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                from_branch_id INTEGER,
+                to_branch_id INTEGER,
+                transfer_type VARCHAR(30) DEFAULT 'BRANCH_TO_MAIN',
+                amount NUMERIC(15,2) NOT NULL,
+                payment_mode VARCHAR(20) DEFAULT 'CASH',
+                transfer_date DATE NOT NULL,
+                reference_no VARCHAR(100),
+                notes TEXT,
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

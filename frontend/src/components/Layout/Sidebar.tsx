@@ -115,6 +115,8 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
               { name: "Brokers", path: "/finance/brokers" },
               { name: "Receipts", path: "/finance/receipts" },
               { name: "Reconciliation", path: "/finance/reconciliation" },
+              { name: "Proprietor Account", path: "/finance/proprietor" },
+              { name: "Cash Transfers", path: "/finance/cash-transfers" },
               { name: "Ledgers", path: "/ledgers" },
               { name: "Transactions", path: "/transactions" }
           ] 
