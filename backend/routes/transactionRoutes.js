@@ -74,8 +74,15 @@ router.get('/', authMiddleware, async (req, res) => {
         const rows = await db.pgAll(sql, params);
         
         console.log('📊 Rows returned:', rows?.length || 0);
-        
-        res.json(rows);
+
+        // Normalise date + amount for accounting-engine transactions
+        const normalised = rows.map(r => ({
+            ...r,
+            date: r.transaction_date || r.date || r.created_at,
+            amount: Number(r.amount) || 0,
+        }));
+
+        res.json(normalised);
     } catch (err) {
         console.error("Fetch Transactions Error:", err);
         res.status(500).json({ error: "Failed to fetch transactions" });

@@ -263,4 +263,111 @@ router.post('/cleanup', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * Full business data reset for fresh market launch.
+ * Preserves: company, users, branches, settings, chart_of_accounts structure.
+ * Wipes: all transactions, invoices, purchases, customers (non-admin), suppliers, products, etc.
+ */
+router.post('/reset-all', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const role = req.user.role;
+
+    if (role !== 'admin' && role !== 'superadmin') {
+        return res.status(403).json({ error: 'Only admin can perform a full reset.' });
+    }
+
+    const client = await db.getClient();
+    const results = {};
+    try {
+        await client.query('BEGIN');
+
+        const del = async (table, where, params) => {
+            if (!(await tableExists(client, table))) return;
+            const r = await client.query(`DELETE FROM ${table} WHERE ${where}`, params);
+            results[table] = r.rowCount;
+        };
+
+        // Ledger entries first (FK deps)
+        await del('ledger_entries', 'company_id = $1', [companyId]);
+        await del('transaction_lines', 'transaction_id IN (SELECT id FROM transactions WHERE company_id = $1)', [companyId]);
+        await del('bank_transactions', 'company_id = $1', [companyId]);
+
+        // Invoice children
+        await del('invoice_line_items', 'invoice_id IN (SELECT id FROM invoices WHERE company_id = $1)', [companyId]);
+        await del('invoice_lines', 'invoice_id IN (SELECT id FROM invoices WHERE company_id = $1)', [companyId]);
+        await del('invoice_payments', 'invoice_id IN (SELECT id FROM invoices WHERE company_id = $1)', [companyId]);
+
+        // Purchase bill children
+        await del('purchase_bill_items', 'bill_id IN (SELECT id FROM purchase_bills WHERE company_id = $1)', [companyId]);
+        await del('purchase_bill_expenses', 'bill_id IN (SELECT id FROM purchase_bills WHERE company_id = $1)', [companyId]);
+        await del('supplier_bill_items', 'bill_id IN (SELECT id FROM purchase_bills WHERE company_id = $1)', [companyId]);
+
+        // Customer data
+        await del('customer_ledger_events', 'company_id = $1', [companyId]);
+        await del('customer_accounts', 'company_id = $1', [companyId]);
+        await del('customer_notifications', 'company_id = $1', [companyId]);
+
+        // Loan data
+        await del('loan_payments', 'loan_id IN (SELECT id FROM loans WHERE company_id = $1)', [companyId]);
+        await del('loan_schedule', 'loan_id IN (SELECT id FROM loans WHERE company_id = $1)', [companyId]);
+        await del('cash_receipts', 'company_id = $1', [companyId]);
+
+        // Chit / broker
+        await del('chit_installments', 'chit_group_id IN (SELECT id FROM chit_groups WHERE company_id = $1)', [companyId]);
+        await del('broker_commissions', 'broker_id IN (SELECT id FROM brokers WHERE company_id = $1)', [companyId]);
+        await del('broker_product_rates', 'broker_id IN (SELECT id FROM brokers WHERE company_id = $1)', [companyId]);
+
+        // HR / payroll
+        await del('attendance', 'company_id = $1', [companyId]);
+        await del('attendance_logs', 'employee_id IN (SELECT id FROM employees WHERE company_id = $1)', [companyId]);
+        await del('payroll_runs', 'employee_id IN (SELECT id FROM employees WHERE company_id = $1)', [companyId]);
+        await del('salaries', 'employee_id IN (SELECT id FROM employees WHERE company_id = $1)', [companyId]);
+        await del('salary_advances', 'employee_id IN (SELECT id FROM employees WHERE company_id = $1)', [companyId]);
+        await del('salary_payments', 'employee_id IN (SELECT id FROM employees WHERE company_id = $1)', [companyId]);
+        await del('employee_ledger', 'employee_id IN (SELECT id FROM employees WHERE company_id = $1)', [companyId]);
+
+        // Inventory
+        await del('branch_inventory', 'company_id = $1', [companyId]);
+        await del('inventory_movements', 'company_id = $1', [companyId]);
+        await del('inventory', 'company_id = $1', [companyId]);
+        await del('stock_requests', 'company_id = $1', [companyId]);
+        await del('stock_transfers', 'company_id = $1', [companyId]);
+
+        // Main tables
+        await del('invoices', 'company_id = $1', [companyId]);
+        await del('purchase_bills', 'company_id = $1', [companyId]);
+        await del('loans', 'company_id = $1', [companyId]);
+        await del('transactions', 'company_id = $1', [companyId]);
+        await del('chit_groups', 'company_id = $1', [companyId]);
+        await del('brokers', 'company_id = $1', [companyId]);
+        await del('lenders', 'company_id = $1', [companyId]);
+        await del('product_suppliers', 'company_id = $1', [companyId]);
+        await del('products', 'company_id = $1', [companyId]);
+        await del('suppliers', 'company_id = $1', [companyId]);
+        await del('employees', 'company_id = $1', [companyId]);
+
+        // Remove non-admin customers
+        await del('users', 'company_id = $1 AND role NOT IN (\'admin\', \'superadmin\', \'manager\', \'accountant\', \'staff\')', [companyId]);
+
+        // Reset ledger balances
+        await del('ledgers', 'company_id = $1 AND type NOT IN (\'SYSTEM\', \'COA\')', [companyId]);
+        await del('daily_ledger_closings', 'company_id = $1', [companyId]);
+
+        // Reset COA opening balances to 0 (keep structure)
+        await client.query(
+            `UPDATE chart_of_accounts SET opening_balance = 0, current_balance = 0 WHERE company_id = $1`,
+            [companyId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'All business data cleared. Ready for fresh start.', results });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('❌ Reset failed:', err);
+        res.status(500).json({ error: 'Reset failed: ' + err.message, results });
+    } finally {
+        client.release();
+    }
+});
+
 export default router;

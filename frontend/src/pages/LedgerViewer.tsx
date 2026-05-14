@@ -29,10 +29,31 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
   const fetchLedger = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch(`/ledgers/party/${type}/${id}`);
+      const endpoint = type === 'supplier' ? `/ledgers/supplier/${id}` : `/ledgers/party/${type}/${id}`;
+      const res = await apiFetch(endpoint);
       if (res.ok) {
         const json = await res.json();
-        setData(json);
+        // Normalise supplier endpoint shape { supplier, summary, transactions }
+        // to the generic shape { party_name, summary, transactions }
+        if (type === 'supplier' && json.supplier) {
+          setData({
+            party_name: json.supplier.name,
+            account_name: `Supplier #${json.supplier.id}`,
+            summary: {
+              opening_balance: json.summary.opening_balance,
+              total_debit: json.summary.total_paid,
+              total_credit: json.summary.total_billed,
+              balance: json.summary.pending_amount,
+            },
+            transactions: json.transactions.map((t: any) => ({
+              ...t,
+              entry_date: t.date || t.created_at,
+              tx_desc: t.description || t.reference || t.type,
+            })),
+          });
+        } else {
+          setData(json);
+        }
       } else {
         setError('Failed to load ledger data');
       }

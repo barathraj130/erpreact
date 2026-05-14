@@ -783,7 +783,8 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
 
         const { customer_id } = inv.rows[0];
 
-        // 2. Delete everything related
+        // 2. Delete everything related (ledger_entries FK → transactions, so delete first)
+        await client.query(`DELETE FROM ledger_entries WHERE transaction_id IN (SELECT id FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1)`, [id]);
         await client.query(`DELETE FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1`, [id]);
         await client.query(`DELETE FROM invoice_payments WHERE invoice_id = $1`, [id]);
         await client.query(`DELETE FROM invoice_line_items WHERE invoice_id = $1`, [id]);

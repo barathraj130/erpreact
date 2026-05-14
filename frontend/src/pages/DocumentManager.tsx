@@ -56,6 +56,7 @@ const DocumentManager: React.FC = () => {
   const [customFolders, setCustomFolders] = useState<{name: string, parent: string}[]>([]);
   const [customFiles, setCustomFiles] = useState<DocItem[]>([]);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [viewerBlobUrl, setViewerBlobUrl] = useState<string | null>(null);
 
   // Responsive listener
   React.useEffect(() => {
@@ -196,9 +197,25 @@ const DocumentManager: React.FC = () => {
     setSelectedItem(file);
   };
 
-  const handleFileDoubleClick = (file: DocItem) => {
+  const openViewer = async (file: DocItem) => {
     setSelectedItem(file);
     setIsViewerOpen(true);
+    setViewerBlobUrl(null);
+    if (!file.id.startsWith('custom-')) {
+      try {
+        const res = await apiFetch(`/documents/view/${file.id}`);
+        if (res.ok) {
+          const blob = await res.blob();
+          setViewerBlobUrl(URL.createObjectURL(blob));
+        }
+      } catch (e) {
+        console.error('Failed to load document preview', e);
+      }
+    }
+  };
+
+  const handleFileDoubleClick = (file: DocItem) => {
+    openViewer(file);
   };
 
   const getStatusStyle = (status: string) => {
@@ -528,7 +545,7 @@ const DocumentManager: React.FC = () => {
                 <button 
                   className="btn-primary" 
                   style={{ width: '100%', justifyContent: 'center' }}
-                  onClick={() => setIsViewerOpen(true)}
+                  onClick={() => selectedItem && openViewer(selectedItem)}
                 >
                   Open Integrated Viewer
                 </button>
@@ -573,7 +590,7 @@ const DocumentManager: React.FC = () => {
               </div>
             </div>
             <button 
-              onClick={() => setIsViewerOpen(false)}
+              onClick={() => { setIsViewerOpen(false); if (viewerBlobUrl) { URL.revokeObjectURL(viewerBlobUrl); setViewerBlobUrl(null); } }}
               style={{
                 background: 'rgba(255,255,255,0.1)',
                 border: 'none',
@@ -602,16 +619,20 @@ const DocumentManager: React.FC = () => {
             justifyContent: 'center'
           }}>
             {selectedItem.type === 'pdf' ? (
-              <iframe 
-                src={`${selectedItem.id.startsWith('custom-') ? 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' : `/api/documents/view/${selectedItem.id}`}?token=${localStorage.getItem('erp-token')}`}
-                style={{ width: '100%', height: '100%', border: 'none' }}
-                title="PDF Content"
-              />
+              viewerBlobUrl || selectedItem.id.startsWith('custom-') ? (
+                <iframe
+                  src={selectedItem.id.startsWith('custom-') ? 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf' : viewerBlobUrl!}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  title="PDF Content"
+                />
+              ) : (
+                <div style={{ color: '#64748b', fontSize: '14px' }}>Loading document...</div>
+              )
             ) : (
                 <div style={{ textAlign: 'center' }}>
-                   <img 
-                      src={`${selectedItem.id.startsWith('custom-') ? 'https://images.unsplash.com/photo-1586282391129-59a998fd4441?q=80&w=2070&auto=format&fit=crop' : `/api/documents/view/${selectedItem.id}`}?token=${localStorage.getItem('erp-token')}`}
-                      alt="Content" 
+                   <img
+                      src={selectedItem.id.startsWith('custom-') ? 'https://images.unsplash.com/photo-1586282391129-59a998fd4441?q=80&w=2070&auto=format&fit=crop' : (viewerBlobUrl || '')}
+                      alt="Content"
                       style={{ maxWidth: '90%', maxHeight: '80vh', borderRadius: '8px', boxShadow: '0 10px 20px rgba(0,0,0,0.2)' }}
                    />
                    <div style={{ marginTop: '20px', color: '#64748b' }}>

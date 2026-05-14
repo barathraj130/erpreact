@@ -22,6 +22,7 @@ const Suppliers: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(
@@ -276,7 +277,7 @@ const Suppliers: React.FC = () => {
                       >
                         <FaFileInvoice /> Ledger
                       </Link>
-                      <button className="action-btn edit" style={{ flex: 1 }}>
+                      <button className="action-btn edit" style={{ flex: 1 }} onClick={() => { setEditingSupplier(s); setShowModal(true); }}>
                         <FaEdit /> Edit
                       </button>
                       <button 
@@ -424,6 +425,7 @@ const Suppliers: React.FC = () => {
                             color: "var(--primary)",
                           }}
                           title="Edit"
+                          onClick={() => { setEditingSupplier(s); setShowModal(true); }}
                         >
                           <FaEdit size={14} />
                         </button>
@@ -488,8 +490,9 @@ const Suppliers: React.FC = () => {
 
       {showModal && (
         <AddSupplierModal
-          onClose={() => setShowModal(false)}
+          onClose={() => { setShowModal(false); setEditingSupplier(null); }}
           onSuccess={loadData}
+          supplier={editingSupplier || undefined}
         />
       )}
 

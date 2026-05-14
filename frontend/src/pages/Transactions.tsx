@@ -119,8 +119,19 @@ const Transactions: React.FC = () => {
     }
   };
 
-  const downloadReceipt = (id: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/transactions/${id}/pdf`, '_blank');
+  const downloadReceipt = async (id: number) => {
+    try {
+      const res = await apiFetch(`/transactions/${id}/pdf`);
+      if (!res.ok) throw new Error('PDF not available');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `Voucher_${id}.pdf`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Failed to download receipt. The voucher PDF may not be available for auto-generated accounting entries.');
+    }
   };
 
   return (
