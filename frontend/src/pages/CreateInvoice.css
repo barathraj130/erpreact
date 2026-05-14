@@ -608,20 +608,30 @@
 /* ═══════════ PRINT STYLING ═══════════ */
 @media print {
   @page {
-    margin: 0.5cm;
     size: A4;
+    margin: 10mm 15mm 10mm 15mm; /* Top Bottom Left Right */
   }
 
-  /* Hide layout and navigation completely */
+  /* Hide all navigation and UI elements */
   .db-topbar,
   .ci-form-pane,
   .enterprise-sidebar,
-  button,
-  .mobile-overlay {
+  .mobile-overlay,
+  button:not(.no-print),
+  .no-print,
+  [class*="btn-"],
+  .sidebar,
+  nav {
     display: none !important;
   }
 
-  /* Unconstrain wrappers so they don't force a scrolling container */
+  /* Unconstrain all container wrappers */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
   html, body, #root, .enterprise-shell, .shell-main, .db-page, .db-content, .ci-split, .ci-preview-pane, .ci-preview-scroll {
     height: auto !important;
     width: 100% !important;
@@ -630,28 +640,60 @@
     position: static !important;
     margin: 0 !important;
     padding: 0 !important;
-    background: transparent !important;
+    background: white !important;
     display: block !important;
   }
 
-  /* Expand the paper itself for print */
-  .ci-paper {
-    transform: none !important; /* Drop the 0.8 scale */
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
+  /* Invoice wrapper - remove scaling, use actual A4 size */
+  .invoice-wrapper {
+    transform: none !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 10mm 15mm !important;
     box-shadow: none !important;
-    border: 1px solid #000 !important; /* Keep a firm, clean border, but thinner */
+    border: none !important;
+    background: white !important;
+    page-break-after: auto;
+    position: relative;
+  }
+
+  /* Table styling for print */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 8px;
+  }
+
+  table th, table td {
+    border: 1px solid #000 !important;
+    padding: 4px 6px !important;
+    font-size: 11px !important;
     page-break-inside: avoid;
   }
 
-  /* Ensure rows don't awkwardly split */
-  .cip-table tr {
-    page-break-inside: avoid;
+  table tr {
+    page-break-inside: avoid !important;
   }
 
-  /* Fix absolute positioning that might exist in the app root */
-  .shell-main {
-    margin-left: 0 !important;
+  /* Ensure text is visible and properly formatted */
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    font-family: 'Satoshi', Arial, sans-serif !important;
+    background: white !important;
+    color: #000 !important;
+  }
+
+  /* Prevent watermark from showing in print */
+  .watermark {
+    display: none !important;
+  }
+
+  /* Hide elements specifically marked as no-print */
+  .no-print-hide {
+    display: none !important;
   }
 }

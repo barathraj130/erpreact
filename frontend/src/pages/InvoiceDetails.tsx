@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  FaArrowLeft,
-  FaEdit,
-  FaFilePdf,
-  FaPrint,
-  FaTrash,
+    FaArrowLeft,
+    FaEdit,
+    FaFilePdf,
+    FaPrint,
+    FaTrash,
 } from "react-icons/fa";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
@@ -57,7 +57,19 @@ const InvoiceDetails: React.FC = () => {
     if (!content) return;
     const w = window.open("", "", "width=900,height=650");
     w?.document.write(
-      `<html><head><title>Invoice</title><style>body{margin:0;padding:0;font-family:Arial}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:4px;font-size:10px}@media print{body{margin:0;padding:0}}</style></head><body>${content}</body></html>`,
+      `<html><head><title>Invoice</title><style>
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { margin: 0; padding: 0; font-family: 'Satoshi', Arial, sans-serif; background: white; }
+        @page { size: A4; margin: 10mm 15mm 10mm 15mm; }
+        .no-print { display: none !important; }
+        table { width: 100%; border-collapse: collapse; page-break-inside: avoid; }
+        th, td { border: 1px solid #000; padding: 5px 6px; font-size: 11px; page-break-inside: avoid; }
+        th { background: #f5f5f5; font-weight: 600; }
+        @media print { 
+          body { margin: 0; padding: 10mm 15mm; }
+          html, body, #root { height: auto !important; width: 100% !important; }
+        }
+      </style></head><body>${content}</body></html>`,
     );
     w?.document.close();
     w?.focus();

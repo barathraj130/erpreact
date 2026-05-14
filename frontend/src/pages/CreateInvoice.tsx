@@ -2,26 +2,25 @@
 import { AnimatePresence, motion } from "framer-motion";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  FaArrowLeft,
-  FaChevronDown,
-  FaPlus,
-  FaPrint,
-  FaSave,
-  FaTrash,
-  FaTimes,
+    FaArrowLeft,
+    FaPlus,
+    FaPrint,
+    FaSave,
+    FaTimes,
+    FaTrash
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { fetchProfile } from "../api/companyApi";
 import { fetchProducts, Product } from "../api/productApi";
 import { Customer } from "../api/userApi";
+import CustomSelect from "../components/CustomSelect";
+import PaymentPopup from "../components/PaymentPopup";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useUsers } from "../hooks/useUsers";
-import PaymentPopup from "../components/PaymentPopup";
 import { apiFetch } from "../utils/api";
 import "./CreateInvoice.css";
 import "./Dashboard.css";
 import "./PageShared.css";
-import CustomSelect from "../components/CustomSelect";
 
 const numberToWords = (n: number) => {
   const a = [
@@ -389,16 +388,20 @@ const CreateInvoice: React.FC = () => {
   };
 
   const thStyle: React.CSSProperties = {
-    border: "0.5px solid #000",
-    padding: "4px 6px",
-    fontSize: "8px",
+    border: "1px solid #000",
+    padding: "5px 6px",
+    fontSize: "11px",
+    fontWeight: 600,
     textTransform: "uppercase",
+    backgroundColor: "#f5f5f5",
   };
   const tdStyle: React.CSSProperties = {
-    border: "0.5px solid #000",
-    padding: "4px 6px",
-    fontSize: "9.5px",
+    border: "1px solid #000",
+    padding: "5px 6px",
+    fontSize: "11px",
   };
+
+  const isSameState = company.stateCode === customerInfo.code;
 
   try {
     return (
@@ -1198,13 +1201,15 @@ const CreateInvoice: React.FC = () => {
             className="invoice-wrapper"
             style={{
               width: "210mm",
+              height: "297mm",
               backgroundColor: "#fff",
               boxShadow: "0 0 20px rgba(0,0,0,0.1)",
-              padding: "10mm",
+              padding: "10mm 15mm",
               position: "relative",
               transform: "scale(0.8)",
               transformOrigin: "top center",
               marginBottom: "-20%",
+              overflow: "hidden",
             }}
           >
             <div style={{ border: "1px solid #000", position: "relative" }}>
@@ -1235,8 +1240,8 @@ const CreateInvoice: React.FC = () => {
                 }}
               >
                 <div
-                  style={{ fontFamily: "'Satoshi', sans-serif", fontSize: "20px",
-                    fontWeight: 600,
+                  style={{ fontFamily: "'Satoshi', sans-serif", fontSize: "18px",
+                    fontWeight: 700,
                     textAlign: "center",
                     marginBottom: "5px",
                   }}
@@ -1280,13 +1285,13 @@ const CreateInvoice: React.FC = () => {
                 <h2
                   style={{
                     fontSize: "14px",
-                    fontWeight: 600,
+                    fontWeight: 700,
                     textTransform: "uppercase",
                     margin: 0,
                     letterSpacing: "1px",
                   }}
                 >
-                  Tax Invoice
+                  {invoiceType === "NON_TAX_INVOICE" ? "Tax Exempted Bill" : "Tax Invoice"}
                 </h2>
               </div>
 
@@ -1503,42 +1508,45 @@ const CreateInvoice: React.FC = () => {
               >
                 <thead>
                   <tr style={{ background: "#f8f8f8" }}>
-                    <th style={{ ...thStyle, width: "30px" }}>Sr.</th>
-                    <th style={{ ...thStyle, textAlign: "left" }}>
-                      Description of Goods
+                    <th style={{ ...thStyle, width: "5%" }}>S.No</th>
+                    <th style={{ ...thStyle, width: "35%", textAlign: "left" }}>
+                      Description
                     </th>
-                    <th style={{ ...thStyle, width: "60px" }}>HSN</th>
-                    <th style={{ ...thStyle, width: "40px" }}>UOM</th>
-                    <th
-                      style={{ ...thStyle, width: "50px", textAlign: "right" }}
-                    >
+                    <th style={{ ...thStyle, width: "10%", textAlign: "center" }}>HSN</th>
+                    <th style={{ ...thStyle, width: "8%", textAlign: "right" }}>
                       Qty
                     </th>
                     <th
-                      style={{ ...thStyle, width: "60px", textAlign: "right" }}
+                      style={{ ...thStyle, width: "10%", textAlign: "right" }}
                     >
                       Rate
                     </th>
                     <th
-                      style={{ ...thStyle, width: "70px", textAlign: "right" }}
-                    >
-                      Amount
-                    </th>
-                    <th
-                      style={{ ...thStyle, width: "70px", textAlign: "right" }}
+                      style={{ ...thStyle, width: "12%", textAlign: "right" }}
                     >
                       Taxable
                     </th>
-                    <th
-                      style={{ ...thStyle, width: "60px", textAlign: "right" }}
-                    >
-                      GST
-                    </th>
-                    <th
-                      style={{ ...thStyle, width: "80px", textAlign: "right" }}
-                    >
-                      Total
-                    </th>
+                    {invoiceType === "TAX_INVOICE" && (
+                      <>
+                        <th
+                          style={{ ...thStyle, width: "5%", textAlign: "right" }}
+                        >
+                          GST%
+                        </th>
+                        <th
+                          style={{ ...thStyle, width: "15%", textAlign: "right" }}
+                        >
+                          Amount
+                        </th>
+                      </>
+                    )}
+                    {invoiceType !== "TAX_INVOICE" && (
+                      <th
+                        style={{ ...thStyle, width: "15%", textAlign: "right" }}
+                      >
+                        Amount
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -1547,17 +1555,15 @@ const CreateInvoice: React.FC = () => {
                     const gstPct =
                       gstState.cgst + gstState.sgst + gstState.igst;
                     const gstVal = taxable * (gstPct * 0.01);
+                    const total = invoiceType === "TAX_INVOICE" ? taxable + gstVal : taxable;
                     return (
                       <tr key={it.id}>
                         <td style={{ ...tdStyle, textAlign: "center" }}>
                           {idx + 1}
                         </td>
-                        <td style={{ ...tdStyle }}>{it.desc || "---"}</td>
+                        <td style={{ ...tdStyle, textAlign: "left" }}>{it.desc || "---"}</td>
                         <td style={{ ...tdStyle, textAlign: "center" }}>
-                          {it.hsn}
-                        </td>
-                        <td style={{ ...tdStyle, textAlign: "center" }}>
-                          {it.uom}
+                          {it.hsn || "-"}
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right" }}>
                           {it.qty || "-"}
@@ -1568,21 +1574,33 @@ const CreateInvoice: React.FC = () => {
                         <td style={{ ...tdStyle, textAlign: "right" }}>
                           {fmt(taxable)}
                         </td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>
-                          {fmt(taxable)}
-                        </td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>
-                          {fmt(gstVal)}
-                        </td>
-                        <td
-                          style={{
-                            ...tdStyle,
-                            textAlign: "right",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {fmt(taxable + gstVal)}
-                        </td>
+                        {invoiceType === "TAX_INVOICE" && (
+                          <>
+                            <td style={{ ...tdStyle, textAlign: "right" }}>
+                              {gstPct}%
+                            </td>
+                            <td
+                              style={{
+                                ...tdStyle,
+                                textAlign: "right",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {fmt(total)}
+                            </td>
+                          </>
+                        )}
+                        {invoiceType !== "TAX_INVOICE" && (
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: "right",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {fmt(total)}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -1594,30 +1612,42 @@ const CreateInvoice: React.FC = () => {
                       <td style={tdStyle}></td>
                       <td style={tdStyle}></td>
                       <td style={tdStyle}></td>
-                      <td style={tdStyle}></td>
-                      <td style={tdStyle}></td>
-                      <td style={tdStyle}></td>
-                      <td style={tdStyle}></td>
+                      {invoiceType === "TAX_INVOICE" && (
+                        <>
+                          <td style={tdStyle}></td>
+                          <td style={tdStyle}></td>
+                        </>
+                      )}
+                      {invoiceType !== "TAX_INVOICE" && (
+                        <td style={tdStyle}></td>
+                      )}
                     </tr>
                   ))}
                   <tr style={{ fontWeight: 700, background: "#f8f8f8" }}>
-                    <td colSpan={4} style={{ ...tdStyle, textAlign: "right" }}>
-                      Total
-                    </td>
+                    <td colSpan={2} style={{ ...tdStyle, textAlign: "right" }}>Total</td>
+                    <td style={tdStyle}></td>
                     <td style={{ ...tdStyle, textAlign: "right" }}>
                       {totals.totalQty.toFixed(2)}
                     </td>
                     <td style={tdStyle}></td>
-                    <td style={tdStyle}></td>
                     <td style={{ ...tdStyle, textAlign: "right" }}>
-                      {totals.taxable.toFixed(2)}
+                      {fmt(totals.taxable)}
                     </td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
-                      {totals.totalGst.toFixed(2)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>
-                      {totals.grandTotal.toFixed(2)}
-                    </td>
+                    {invoiceType === "TAX_INVOICE" && (
+                      <>
+                        <td style={{ ...tdStyle, textAlign: "right" }}>
+                          {fmt(totals.totalGst)}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: "right" }}>
+                          {fmt(totals.grandTotal)}
+                        </td>
+                      </>
+                    )}
+                    {invoiceType !== "TAX_INVOICE" && (
+                      <td style={{ ...tdStyle, textAlign: "right" }}>
+                        {fmt(totals.taxable)}
+                      </td>
+                    )}
                   </tr>
                 </tbody>
               </table>
@@ -1636,18 +1666,20 @@ const CreateInvoice: React.FC = () => {
                       fontWeight: 700,
                       marginBottom: "2px",
                       marginTop: 0,
+                      fontSize: "11px",
                     }}
                   >
                     Total Amount in words:
                   </p>
                   <p
                     style={{
-                      fontSize: "10px",
+                      fontSize: "11px",
+                      fontStyle: "italic",
                       fontWeight: 500,
                       marginBottom: "10px",
                     }}
                   >
-                    {numberToWords(Math.round(totals.grandTotal))}
+                    {numberToWords(Math.round(invoiceType === "TAX_INVOICE" ? totals.grandTotal : totals.taxable))}
                   </p>
 
                   <div
@@ -1702,112 +1734,168 @@ const CreateInvoice: React.FC = () => {
                   </p>
                 </div>
                 <div style={{ padding: "10px" }}>
-                  <div
-                    style={{
-                      borderBottom: "1px solid #ddd",
-                      paddingBottom: "8px",
-                      marginBottom: "8px",
-                    }}
-                  >
+                  {invoiceType === "TAX_INVOICE" && (
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "4px",
+                        borderBottom: "1px solid #ddd",
+                        paddingBottom: "8px",
+                        marginBottom: "8px",
                       }}
                     >
-                      <span>Total Amount Before Tax</span>
-                      <span>{totals.taxable.toFixed(2)}</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: "4px",
+                          fontSize: "11px",
+                        }}
+                      >
+                        <span>Total Before Tax</span>
+                        <span style={{ fontWeight: 600 }}>{fmt(totals.taxable)}</span>
+                      </div>
+                      {isSameState && gstState.cgst > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: "4px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          <span>Add: CGST {gstState.cgst}%</span>
+                          <span>{fmt(totals.cgstAmt)}</span>
+                        </div>
+                      )}
+                      {isSameState && gstState.sgst > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: "4px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          <span>Add: SGST {gstState.sgst}%</span>
+                          <span>{fmt(totals.sgstAmt)}</span>
+                        </div>
+                      )}
+                      {!isSameState && gstState.igst > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginBottom: "4px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          <span>Add: IGST {gstState.igst}%</span>
+                          <span>{fmt(totals.igstAmt)}</span>
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontWeight: 700,
+                          borderTop: "1px solid #000",
+                          paddingTop: "4px",
+                          marginTop: "4px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <span>Total After Tax</span>
+                        <span>{fmt(totals.grandTotal)}</span>
+                      </div>
                     </div>
+                  )}
+                  {invoiceType !== "TAX_INVOICE" && (
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "4px",
+                        borderBottom: "1px solid #ddd",
+                        paddingBottom: "8px",
+                        marginBottom: "8px",
                       }}
                     >
-                      <span>Add: CGST {'%'} ({gstState.cgst}{'%'})</span>
-                      <span>{totals.cgstAmt.toFixed(2)}</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                        }}
+                      >
+                        <span>Total Amount</span>
+                        <span>{fmt(totals.taxable)}</span>
+                      </div>
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      <span>Add: SGST {'%'} ({gstState.sgst}{'%'})</span>
-                      <span>{totals.sgstAmt.toFixed(2)}</span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "4px",
-                      }}
-                    >
-                      <span>Add: IGST {'%'} ({gstState.igst}{'%'})</span>
-                      <span>{totals.igstAmt.toFixed(2)}</span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontWeight: 600,
-                        borderTop: "1px solid #000",
-                        paddingTop: "4px",
-                        marginTop: "4px",
-                      }}
-                    >
-                      <span>Total Amount After Tax</span>
-                      <span>{totals.grandTotal.toFixed(2)}</span>
-                    </div>
-                  </div>
+                  )}
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "5px",
-                      fontWeight: 700,
-                      marginBottom: "20px",
-                    }}
-                  >
-                    <span>GST Payable on Reverse Charge:</span>
-                    <span>No</span>
-                  </div>
+                  {invoiceType === "TAX_INVOICE" && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "5px",
+                        fontWeight: 700,
+                        marginBottom: "20px",
+                        fontSize: "10px",
+                      }}
+                    >
+                      <span>GST Payable on Reverse Charge:</span>
+                      <span>{meta.reverseCharge || "No"}</span>
+                    </div>
+                  )}
+
+                  {invoiceType !== "TAX_INVOICE" && (
+                    <div style={{ marginBottom: "20px", fontSize: "10px" }}>
+                      <p style={{ margin: "0 0 8px 0", fontWeight: 700 }}>Points Earned:</p>
+                      <p style={{ margin: 0 }}>{paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) > 0 ? Math.floor(paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) / 10) : 0} Points</p>
+                    </div>
+                  )}
 
                   <p
                     style={{
                       textAlign: "right",
-                      fontSize: "9px",
+                      fontSize: "10px",
                       fontStyle: "italic",
                       marginTop: "40px",
                     }}
                   >
-                    Certified that the particulars given above are true &
-                    correct.
+                    Certified that the particulars given above are true & correct.
                   </p>
 
-                  <div style={{ textAlign: "right", marginTop: "20px" }}>
-                    <p
-                      style={{
-                        fontWeight: 600,
-                        fontSize: "11px",
-                        marginBottom: "30px",
-                      }}
-                    >
-                      For, {company.name}
-                    </p>
-                    <p
-                      style={{
-                        fontWeight: 700,
-                        borderTop: "1px solid #000",
-                        paddingTop: "4px",
-                        display: "inline-block",
-                      }}
-                    >
-                      Authorised Signatory
-                    </p>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "20px", position: "relative", minHeight: "80px" }}>
+                    <div>
+                      {/* QR Code Placeholder */}
+                      <div style={{ position: "absolute", bottom: 0, right: 0, width: "60px", height: "60px", border: "1px solid #000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", color: "#999" }}>
+                        QR Code
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <p
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "11px",
+                          marginBottom: "40px",
+                          margin: 0,
+                        }}
+                      >
+                        For, {company.name}
+                      </p>
+                      <div style={{ textAlign: "right", paddingTop: "40px" }}>
+                        <p
+                          style={{
+                            fontWeight: 700,
+                            borderTop: "1px solid #000",
+                            paddingTop: "4px",
+                            display: "inline-block",
+                            fontSize: "11px",
+                            margin: 0,
+                          }}
+                        >
+                          Authorized Signatory
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
