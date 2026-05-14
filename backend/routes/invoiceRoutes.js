@@ -11,6 +11,7 @@ import {
 } from "../services/customerLedgerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import * as brokerService from "../services/brokerService.js";
+import * as pointsService from "../services/pointsService.js";
 
 const router = express.Router();
 
@@ -92,7 +93,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         amount_paid, discount_amount, balance_due, payment_status, payments,
         transport_details, bundles_count, return_items,
         broker_id, broker_commission_rate,
-        bill_purpose // 'real' or 'name_only'
+        bill_purpose, // 'real' or 'name_only'
+        points_to_redeem // Points to redeem on this invoice
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
@@ -230,9 +232,33 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
         // Final Invoice Amount after Returns and Discount
-        const netInvoiceAmount = totalSaleAmount - totalReturnAmount;
+        let netInvoiceAmount = totalSaleAmount - totalReturnAmount;
         const effectiveTotal = Math.max(0, netInvoiceAmount - discountAmt);
-        const finalAmountPaid = Number(amount_paid) || 0;
+        let finalAmountPaid = Number(amount_paid) || 0;
+        
+        // === POINTS REDEMPTION FOR NON-TAX INVOICES ===
+        let pointsRedeemed = 0;
+        let pointsDiscount = 0;
+        
+        if (isNonTax && safeCustomerId && Number(points_to_redeem) > 0) {
+            try {
+                const redeemResult = await pointsService.redeemPoints(
+                    client,
+                    safeCustomerId,
+                    Number(points_to_redeem),
+                    effectiveTotal,
+                    null // Will be updated after invoice insert
+                );
+                pointsRedeemed = redeemResult.points_used;
+                pointsDiscount = redeemResult.discount;
+                
+                // Apply discount to invoice total
+                netInvoiceAmount = effectiveTotal - pointsDiscount;
+            } catch (err) {
+                // Don't fail invoice creation for points error, just log
+                console.warn('Points redemption failed:', err.message);
+            }
+        }
 
         const headerSQL = `
             INSERT INTO invoices (
@@ -244,20 +270,24 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 broker_id, broker_commission_rate,
                 branch_id,
                 bill_purpose,
+                points_earned, points_redeemed, points_discount,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, NOW())
             RETURNING id
         `;
 
         const result = await client.query(headerSQL, [
             companyId, safeCustomerId, finalInvoiceNumber, invoice_type || 'TAX_INVOICE',
             financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(), payment_status || 'UNPAID',
-            totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, effectiveTotal,
+            totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, netInvoiceAmount,
             gstType, finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
             transport_details?.vehicle_number || '', transport_details?.mode || '', transport_details?.supply_date || null, transport_details?.reverse_charge || 'No',
             safeBrokerId, safeBrokerCommission,
             branchId,
-            bill_purpose || 'real'
+            bill_purpose || 'real',
+            0, // points_earned - will be updated after
+            pointsRedeemed,
+            pointsDiscount
         ]);
 
         const invoiceId = result.rows[0].id;
@@ -504,8 +534,34 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             });
         }
 
+        // === EARN POINTS FOR NON-TAX INVOICES AFTER PAYMENT ===
+        let ptsEarned = 0;
+        if (invoice_type === 'NON_TAX_INVOICE' && safeCustomerId && finalAmountPaid > 0 && bill_purpose !== 'name_only') {
+            ptsEarned = await pointsService.earnPoints(
+                client,
+                safeCustomerId,
+                invoiceId,
+                finalAmountPaid,
+                invoice_type,
+                bill_purpose || 'real'
+            );
+            if (ptsEarned > 0) {
+                // Update invoice with earned points
+                await client.query(
+                    'UPDATE invoices SET points_earned = $1 WHERE id = $2',
+                    [ptsEarned, invoiceId]
+                );
+            }
+        }
+
         await client.query("COMMIT");
-        res.status(201).json({ message: "Invoice saved", id: invoiceId, bill_number: finalInvoiceNumber });
+        res.status(201).json({ 
+            message: "Invoice saved", 
+            id: invoiceId, 
+            bill_number: finalInvoiceNumber,
+            points_earned: ptsEarned,
+            points_redeemed: pointsRedeemed
+        });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("❌ Critical Invoice Error:", err.message);
