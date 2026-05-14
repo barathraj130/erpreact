@@ -166,8 +166,7 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
                 initial_balance, role, active_company_id,
                 password_hash  -- ✅ Storing hash
             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'user', $15, $16)
-             ON CONFLICT (username) DO UPDATE SET last_login = NOW()
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'customer', $15, $16)
              RETURNING id`,
             [
                 req.user.active_company_id || req.user.company_id,
