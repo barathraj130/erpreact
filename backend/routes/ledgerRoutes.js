@@ -245,7 +245,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
 
 router.get('/party/:type/:id', authMiddleware, async (req, res) => {
     const { type, id } = req.params;
-    const companyId = req.user.active_company_id;
+    const companyId = parseInt(req.user?.active_company_id || req.user?.company_id);
     
     try {
         // 1. Find the Account ID for this party
@@ -322,8 +322,8 @@ router.get('/party/:type/:id', authMiddleware, async (req, res) => {
 
 router.get('/supplier/:id', authMiddleware, async (req, res) => {
     try {
-        const companyId = req.user?.active_company_id;
-        const supplierId = req.params.id;
+        const companyId = parseInt(req.user?.active_company_id || req.user?.company_id);
+        const supplierId = parseInt(req.params.id);
         const statement = await supplierLedgerService.buildSupplierLedgerStatement(companyId, supplierId, req.query);
         if (!statement) return res.status(404).json({ error: "Supplier not found" });
         res.json(statement);

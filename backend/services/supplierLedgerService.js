@@ -23,7 +23,7 @@ export async function getSupplierById(client, supplierId, companyId) {
 }
 
 async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
-  const params = [companyId, supplierId];
+  const params = [parseInt(companyId), parseInt(supplierId)];
   const billConditions = ["pb.company_id = $1", "pb.supplier_id = $2"];
   const txConditions = [
     "t.company_id = $1",
@@ -112,17 +112,19 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
 }
 
 export async function buildSupplierLedgerStatement(companyId, supplierId, filters = {}) {
+  const cId = parseInt(companyId);
+  const sId = parseInt(supplierId);
   const supplier = await db.pgGet(
     `SELECT id, name, email, phone, opening_balance as initial_payable_balance, current_balance
      FROM suppliers
      WHERE id = $1 AND company_id = $2`,
-    [supplierId, companyId],
+    [sId, cId],
   );
 
   if (!supplier) return null;
 
   const openingBalance = toNumber(supplier.initial_payable_balance);
-  const rows = await getSupplierDerivedRows(companyId, supplierId, filters);
+  const rows = await getSupplierDerivedRows(cId, sId, filters);
 
   let runningBalance = openingBalance;
   const statement = rows.map((row) => {
