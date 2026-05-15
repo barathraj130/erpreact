@@ -32,7 +32,7 @@ export const fetchBrokerSummary = () => apiFetch("/brokers/summary").then(r => r
 
 export const fetchBrokerLedger = (brokerId: number) => apiFetch(`/brokers/ledger/${brokerId}`).then(r => r.json());
 
-export const recordBrokerPayment = (data: { broker_id: number; amount: number; payment_date: string; bank_account_id?: number }) =>
+export const recordBrokerPayment = (data: { broker_id: number; amount: number; payment_date: string; payment_mode?: string; bank_account_id?: number }) =>
   apiFetch("/brokers/payment", {
     method: "POST",
     body: JSON.stringify(data)

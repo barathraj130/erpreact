@@ -16,6 +16,7 @@ const LoanManagement: React.FC = () => {
   const [repaymentHistory, setRepaymentHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [scheduleTab, setScheduleTab] = useState<'history' | 'schedule'>('history');
 
   const fetchLoans = async () => {
     setLoading(true);
@@ -53,6 +54,8 @@ const LoanManagement: React.FC = () => {
     payment_mode: "BANK",
     is_existing_loan: false,
     notes: "",
+    duration_months: 12,
+    loan_type: "BANK",
   });
 
   const [repayData, setRepayData] = useState({
@@ -80,6 +83,8 @@ const LoanManagement: React.FC = () => {
         payment_mode: "BANK",
         is_existing_loan: false,
         notes: "",
+        duration_months: 12,
+        loan_type: "BANK",
       });
     } catch (err) {
       alert("Failed to create loan record.");
@@ -129,10 +134,54 @@ const LoanManagement: React.FC = () => {
   const stats = {
     totalLiability: filteredLoans
       .reduce((acc, curr) => acc + (Number(curr.principal_amount) || 0), 0),
-    avgRate: filteredLoans.length > 0 
-      ? filteredLoans.reduce((acc, curr) => acc + (Number(curr.interest_rate) || 0), 0) / filteredLoans.length 
+    avgRate: filteredLoans.length > 0
+      ? filteredLoans.reduce((acc, curr) => acc + (Number(curr.interest_rate) || 0), 0) / filteredLoans.length
       : 0,
     activeCount: filteredLoans.filter(l => l.status === 'ACTIVE').length
+  };
+
+  // Calculate EMI for bank loans (reducing balance)
+  const calcEMI = (P: number, annualRate: number, n: number) => {
+    const r = annualRate / 12 / 100;
+    if (r === 0 || n === 0) return P / (n || 1);
+    return (P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+  };
+
+  // Generate amortization schedule
+  const generateSchedule = (loan: any) => {
+    const n = Number(loan.duration_months || 12);
+    const P = Number(loan.principal_amount || 0);
+    const annualRate = Number(loan.interest_rate || 0);
+    const r = annualRate / 12 / 100;
+    const start = new Date(loan.start_date || new Date());
+    const isBank = (loan.loan_type || loan.party_type || 'BANK').toUpperCase() === 'BANK';
+    const emi = isBank ? calcEMI(P, annualRate, n) : (P / n) + (P * r);
+    const schedule = [];
+    let balance = P;
+    const today = new Date();
+
+    for (let i = 1; i <= n; i++) {
+      const due = new Date(start);
+      due.setMonth(due.getMonth() + i);
+      const interest = isBank ? balance * r : P * r;
+      const principal = isBank ? Math.min(emi - interest, balance) : P / n;
+      balance = Math.max(0, balance - principal);
+      const isPast = due < today;
+      const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
+      schedule.push({ month: i, due, emi: principal + interest, principal, interest, balance, isPast, isCurrent });
+    }
+    return schedule;
+  };
+
+  const getScheduleStatus = (row: any) => {
+    const paid = repaymentHistory.some(r => {
+      const d = new Date(r.payment_date);
+      return d.getMonth() === row.due.getMonth() && d.getFullYear() === row.due.getFullYear();
+    });
+    if (paid) return { label: 'PAID', color: '#16a34a', bg: '#dcfce7' };
+    if (row.isCurrent) return { label: 'DUE', color: '#d97706', bg: '#fef3c7' };
+    if (row.isPast) return { label: 'OVERDUE', color: '#dc2626', bg: '#fee2e2' };
+    return { label: 'UPCOMING', color: '#64748b', bg: '#f1f5f9' };
   };
 
   return (
@@ -175,7 +224,7 @@ const LoanManagement: React.FC = () => {
 
       <div className="page-search-bar" style={{ width: "360px", marginBottom: "12px" }}>
         <FaSearch className="page-search-icon" size={13} />
-        <input 
+        <input
           placeholder="Search by lender name..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -196,7 +245,7 @@ const LoanManagement: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredLoans.map((loan, idx) => (
+            {filteredLoans.map((loan) => (
               <tr key={loan.id}>
                 <td><div className="font-bold">{loan.lender_name}</div></td>
                 <td className="text-right font-mono">₹{loan.principal_amount?.toLocaleString()}</td>
@@ -218,7 +267,7 @@ const LoanManagement: React.FC = () => {
                   </button>
                   <button
                     className="page-btn-round-sm"
-                    onClick={() => { setLedgerLoan(loan); loadRepaymentHistory(loan.id); }}
+                    onClick={() => { setLedgerLoan(loan); setScheduleTab('history'); loadRepaymentHistory(loan.id); }}
                     title="View Repayment History"
                     style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}
                   >
@@ -231,7 +280,7 @@ const LoanManagement: React.FC = () => {
         </table>
       </div>
 
-      {/* Repayment History Panel */}
+      {/* Repayment History / Schedule Panel */}
       <AnimatePresence>
         {ledgerLoan && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -243,34 +292,123 @@ const LoanManagement: React.FC = () => {
               </div>
               <button onClick={() => setLedgerLoan(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}><FaTimes size={16} /></button>
             </div>
-            {repaymentHistory.length === 0 ? (
-              <div style={{ padding: "32px", textAlign: "center", color: "#94a3b8" }}>No repayments recorded yet.</div>
-            ) : (
-              <table className="page-table" style={{ margin: 0 }}>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th className="text-right">Total Paid</th>
-                    <th className="text-right">Principal</th>
-                    <th className="text-right">Interest</th>
-                    <th>Mode</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {repaymentHistory.map((r: any) => (
-                    <tr key={r.id}>
-                      <td>{r.payment_date}</td>
-                      <td className="text-right font-mono">₹{Number(r.total_amount).toLocaleString()}</td>
-                      <td className="text-right font-mono" style={{ color: "#2563eb" }}>₹{Number(r.principal_component).toLocaleString()}</td>
-                      <td className="text-right font-mono" style={{ color: "#f59e0b" }}>₹{Number(r.interest_component).toLocaleString()}</td>
-                      <td><span className="type-badge type-badge-blue">{r.payment_mode}</span></td>
-                      <td style={{ color: "#64748b", fontSize: "13px" }}>{r.notes || "—"}</td>
+
+            {/* Tab Toggle */}
+            <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              {(['history', 'schedule'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setScheduleTab(tab)}
+                  style={{
+                    padding: '10px 24px',
+                    border: 'none',
+                    borderBottom: scheduleTab === tab ? '2px solid #2563eb' : '2px solid transparent',
+                    background: 'none',
+                    fontWeight: scheduleTab === tab ? 700 : 500,
+                    color: scheduleTab === tab ? '#2563eb' : '#64748b',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {tab === 'history' ? 'History' : 'Schedule'}
+                </button>
+              ))}
+            </div>
+
+            {scheduleTab === 'history' && (
+              repaymentHistory.length === 0 ? (
+                <div style={{ padding: "32px", textAlign: "center", color: "#94a3b8" }}>No repayments recorded yet.</div>
+              ) : (
+                <table className="page-table" style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th className="text-right">Total Paid</th>
+                      <th className="text-right">Principal</th>
+                      <th className="text-right">Interest</th>
+                      <th>Mode</th>
+                      <th>Notes</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {repaymentHistory.map((r: any) => (
+                      <tr key={r.id}>
+                        <td>{r.payment_date}</td>
+                        <td className="text-right font-mono">₹{Number(r.total_amount).toLocaleString()}</td>
+                        <td className="text-right font-mono" style={{ color: "#2563eb" }}>₹{Number(r.principal_component).toLocaleString()}</td>
+                        <td className="text-right font-mono" style={{ color: "#f59e0b" }}>₹{Number(r.interest_component).toLocaleString()}</td>
+                        <td><span className="type-badge type-badge-blue">{r.payment_mode}</span></td>
+                        <td style={{ color: "#64748b", fontSize: "13px" }}>{r.notes || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
             )}
+
+            {scheduleTab === 'schedule' && (() => {
+              const schedule = generateSchedule(ledgerLoan);
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="page-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Due Date</th>
+                        <th className="text-right">EMI</th>
+                        <th className="text-right">Principal</th>
+                        <th className="text-right">Interest</th>
+                        <th className="text-right">Balance</th>
+                        <th className="text-center">Status</th>
+                        <th className="text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedule.map(row => {
+                        const status = getScheduleStatus(row);
+                        return (
+                          <tr key={row.month}>
+                            <td style={{ color: '#94a3b8', fontSize: '12px' }}>{row.month}</td>
+                            <td>{new Date(row.due).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                            <td className="text-right font-mono">₹{Math.round(row.emi).toLocaleString()}</td>
+                            <td className="text-right font-mono" style={{ color: '#2563eb' }}>₹{Math.round(row.principal).toLocaleString()}</td>
+                            <td className="text-right font-mono" style={{ color: '#f59e0b' }}>₹{Math.round(row.interest).toLocaleString()}</td>
+                            <td className="text-right font-mono" style={{ color: '#64748b' }}>₹{Math.round(row.balance).toLocaleString()}</td>
+                            <td className="text-center">
+                              <span style={{ padding: '2px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, background: status.bg, color: status.color }}>
+                                {status.label}
+                              </span>
+                            </td>
+                            <td className="text-center">
+                              {status.label !== 'PAID' && (
+                                <button
+                                  className="page-btn-round-sm"
+                                  style={{ fontSize: '11px', padding: '3px 10px' }}
+                                  onClick={() => {
+                                    setSelectedLoan(ledgerLoan);
+                                    setRepayData(prev => ({
+                                      ...prev,
+                                      principal_component: Math.round(row.principal),
+                                      interest_component: Math.round(row.interest),
+                                      total_amount: Math.round(row.emi),
+                                      payment_date: row.due.toISOString().split('T')[0],
+                                    }));
+                                    setShowRepayModal(true);
+                                  }}
+                                >
+                                  Pay
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </motion.div>
         )}
       </AnimatePresence>
@@ -285,25 +423,53 @@ const LoanManagement: React.FC = () => {
                 {/* Existing vs New toggle */}
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
                   <button type="button"
-                    onClick={() => setFormData({...formData, is_existing_loan: false})}
-                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                    onClick={() => setFormData({ ...formData, is_existing_loan: false })}
+                    style={{
+                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
                       background: !formData.is_existing_loan ? '#2563eb' : 'transparent',
-                      color: !formData.is_existing_loan ? '#fff' : '#64748b' }}>
+                      color: !formData.is_existing_loan ? '#fff' : '#64748b'
+                    }}>
                     New Loan (Cash Received)
                   </button>
                   <button type="button"
-                    onClick={() => setFormData({...formData, is_existing_loan: true})}
-                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                    onClick={() => setFormData({ ...formData, is_existing_loan: true })}
+                    style={{
+                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
                       background: formData.is_existing_loan ? '#64748b' : 'transparent',
-                      color: formData.is_existing_loan ? '#fff' : '#64748b' }}>
+                      color: formData.is_existing_loan ? '#fff' : '#64748b'
+                    }}>
                     Existing Loan (No Cash Entry)
                   </button>
                 </div>
+
+                {/* Loan Type toggle */}
+                <label>Loan Type</label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
+                  <button type="button"
+                    onClick={() => setFormData({ ...formData, loan_type: 'BANK' })}
+                    style={{
+                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                      background: formData.loan_type === 'BANK' ? '#2563eb' : 'transparent',
+                      color: formData.loan_type === 'BANK' ? '#fff' : '#64748b'
+                    }}>
+                    BANK (Reducing Balance EMI)
+                  </button>
+                  <button type="button"
+                    onClick={() => setFormData({ ...formData, loan_type: 'PRIVATE' })}
+                    style={{
+                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                      background: formData.loan_type === 'PRIVATE' ? '#7c3aed' : 'transparent',
+                      color: formData.loan_type === 'PRIVATE' ? '#fff' : '#64748b'
+                    }}>
+                    PRIVATE (Flat Interest/Month)
+                  </button>
+                </div>
+
                 <label>Lender</label>
-                <select 
-                  required 
-                  value={formData.lender_id} 
-                  onChange={e => setFormData({...formData, lender_id: e.target.value})}
+                <select
+                  required
+                  value={formData.lender_id}
+                  onChange={e => setFormData({ ...formData, lender_id: e.target.value })}
                 >
                   <option value="">Select Lender</option>
                   {lenders.map(l => <option key={l.id} value={l.id}>{l.lender_name}</option>)}
@@ -312,40 +478,46 @@ const LoanManagement: React.FC = () => {
                 <div className="form-grid-2">
                   <div>
                     <label>Principal Amount (₹)</label>
-                    <input type="number" required value={formData.principal_amount} onChange={e => setFormData({...formData, principal_amount: Number(e.target.value)})} />
+                    <input type="number" required value={formData.principal_amount} onChange={e => setFormData({ ...formData, principal_amount: Number(e.target.value) })} />
                   </div>
                   <div>
                     <label>Interest Rate (% p.a.)</label>
-                    <input type="number" step="0.1" required value={formData.interest_rate} onChange={e => setFormData({...formData, interest_rate: Number(e.target.value)})} />
+                    <input type="number" step="0.1" required value={formData.interest_rate} onChange={e => setFormData({ ...formData, interest_rate: Number(e.target.value) })} />
                   </div>
                 </div>
 
                 <div className="form-grid-2">
                   <div>
                     <label>Start Date</label>
-                    <input type="date" required value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} />
+                    <input type="date" required value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })} />
                   </div>
                   <div>
+                    <label>Duration (Months)</label>
+                    <input type="number" required min={1} value={formData.duration_months} onChange={e => setFormData({ ...formData, duration_months: Number(e.target.value) })} />
+                  </div>
+                </div>
+
+                <div className="form-grid-2">
+                  <div>
                     <label>Repayment Cycle</label>
-                    <select value={formData.repayment_cycle} onChange={e => setFormData({...formData, repayment_cycle: e.target.value})}>
+                    <select value={formData.repayment_cycle} onChange={e => setFormData({ ...formData, repayment_cycle: e.target.value })}>
                       <option value="MONTHLY">Monthly</option>
                       <option value="WEEKLY">Weekly</option>
                     </select>
                   </div>
+                  {!formData.is_existing_loan && (
+                    <div>
+                      <label>Received Via</label>
+                      <select value={formData.payment_mode} onChange={e => setFormData({ ...formData, payment_mode: e.target.value })}>
+                        <option value="BANK">Bank Transfer</option>
+                        <option value="CASH">Cash</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
-                {!formData.is_existing_loan && (
-                  <>
-                    <label>Received Via</label>
-                    <select value={formData.payment_mode} onChange={e => setFormData({...formData, payment_mode: e.target.value})}>
-                      <option value="BANK">Bank Transfer</option>
-                      <option value="CASH">Cash</option>
-                    </select>
-                  </>
-                )}
-
                 <label>Notes</label>
-                <input value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                <input value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} />
 
                 <div className="page-modal-actions">
                   <button type="button" className="page-btn-round" onClick={() => setShowModal(false)}>Cancel</button>
@@ -368,11 +540,11 @@ const LoanManagement: React.FC = () => {
                 <div className="form-grid-2">
                   <div>
                     <label>Payment Date</label>
-                    <input type="date" required value={repayData.payment_date} onChange={e => setRepayData({...repayData, payment_date: e.target.value})} />
+                    <input type="date" required value={repayData.payment_date} onChange={e => setRepayData({ ...repayData, payment_date: e.target.value })} />
                   </div>
                   <div>
                     <label>Total Amount Paid (₹)</label>
-                    <input type="number" required value={repayData.total_amount} onChange={e => setRepayData({...repayData, total_amount: Number(e.target.value)})} />
+                    <input type="number" required value={repayData.total_amount} onChange={e => setRepayData({ ...repayData, total_amount: Number(e.target.value) })} />
                   </div>
                 </div>
 
@@ -381,20 +553,20 @@ const LoanManagement: React.FC = () => {
                     <label>Principal Component (₹)</label>
                     <input type="number" value={repayData.principal_component} onChange={e => {
                       const p = Number(e.target.value);
-                      setRepayData({...repayData, principal_component: p, total_amount: p + repayData.interest_component});
+                      setRepayData({ ...repayData, principal_component: p, total_amount: p + repayData.interest_component });
                     }} />
                   </div>
                   <div>
                     <label>Interest Component (₹)</label>
                     <input type="number" value={repayData.interest_component} onChange={e => {
                       const i = Number(e.target.value);
-                      setRepayData({...repayData, interest_component: i, total_amount: repayData.principal_component + i});
+                      setRepayData({ ...repayData, interest_component: i, total_amount: repayData.principal_component + i });
                     }} />
                   </div>
                 </div>
 
                 <label>Payment Mode</label>
-                <select value={repayData.payment_mode} onChange={e => setRepayData({...repayData, payment_mode: e.target.value})}>
+                <select value={repayData.payment_mode} onChange={e => setRepayData({ ...repayData, payment_mode: e.target.value })}>
                   <option value="BANK">Bank Transfer</option>
                   <option value="CASH">Cash</option>
                 </select>

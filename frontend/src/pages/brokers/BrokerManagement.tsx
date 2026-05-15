@@ -12,7 +12,7 @@ const BrokerManagement: React.FC = () => {
   const [payBroker, setPayBroker] = useState<brokerApi.BrokerSummary | null>(null);
   const [payForm, setPayForm] = useState({ amount: 0, payment_date: new Date().toISOString().split("T")[0], payment_mode: "CASH" });
   const [payLoading, setPayLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{ name: string; phone: string; address: string; broker_type: 'PURCHASE' | 'SALES' | 'BOTH'; commission_rate: number }>({
     name: "", phone: "", address: "", broker_type: "BOTH", commission_rate: 0
   });
   const navigate = useNavigate();
