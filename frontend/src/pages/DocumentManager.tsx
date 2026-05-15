@@ -203,10 +203,19 @@ const DocumentManager: React.FC = () => {
     setViewerBlobUrl(null);
     if (!file.id.startsWith('custom-')) {
       try {
-        const res = await apiFetch(`/documents/view/${file.id}`);
+        // file.id format: "Sales-Tax Invoices-{id}" or "Purchase-...-{id}"
+        const parts = file.id.split('-');
+        const rawId = parts[parts.length - 1];
+        const branch = parts[0]; // "Sales" or "Purchase"
+        const endpoint = branch === 'Sales'
+          ? `/invoice/${rawId}/pdf`
+          : `/purchase-pdf/${rawId}`;
+        const res = await apiFetch(endpoint);
         if (res.ok) {
           const blob = await res.blob();
           setViewerBlobUrl(URL.createObjectURL(blob));
+        } else {
+          console.error('Document fetch failed:', res.status);
         }
       } catch (e) {
         console.error('Failed to load document preview', e);
