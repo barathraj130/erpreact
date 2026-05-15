@@ -354,6 +354,14 @@ export const runSchemaUpdates = async () => {
             );
         `);
 
+        -- Bill format settings: add bank details + state fields
+        ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS state VARCHAR(100);
+        ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS state_code VARCHAR(10);
+        ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
+        ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(50);
+        ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS bank_ifsc_code VARCHAR(20);
+        ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS bill_type VARCHAR(20) DEFAULT 'INVOICE';
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
