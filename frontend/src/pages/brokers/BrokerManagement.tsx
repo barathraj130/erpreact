@@ -10,7 +10,7 @@ const BrokerManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [payBroker, setPayBroker] = useState<brokerApi.BrokerSummary | null>(null);
-  const [payForm, setPayForm] = useState({ amount: 0, payment_date: new Date().toISOString().split("T")[0] });
+  const [payForm, setPayForm] = useState({ amount: 0, payment_date: new Date().toISOString().split("T")[0], payment_mode: "CASH" });
   const [payLoading, setPayLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "", phone: "", address: "", broker_type: "BOTH", commission_rate: 0
@@ -49,9 +49,10 @@ const BrokerManagement: React.FC = () => {
         broker_id: payBroker.id,
         amount: payForm.amount,
         payment_date: payForm.payment_date,
+        payment_mode: payForm.payment_mode,
       });
       setPayBroker(null);
-      setPayForm({ amount: 0, payment_date: new Date().toISOString().split("T")[0] });
+      setPayForm({ amount: 0, payment_date: new Date().toISOString().split("T")[0], payment_mode: "CASH" });
       loadBrokers();
     } catch { alert("Payment failed"); }
     finally { setPayLoading(false); }
@@ -122,7 +123,7 @@ const BrokerManagement: React.FC = () => {
                     <FaHistory size={12} /> Statement
                   </button>
                   <button
-                    onClick={() => { setPayBroker(broker); setPayForm({ amount: Math.max(0, outstanding), payment_date: new Date().toISOString().split("T")[0] }); }}
+                    onClick={() => { setPayBroker(broker); setPayForm({ amount: Math.max(0, outstanding), payment_date: new Date().toISOString().split("T")[0], payment_mode: "CASH" }); }}
                     disabled={outstanding <= 0}
                     style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "none", background: outstanding > 0 ? "#0f172a" : "#e2e8f0", color: outstanding > 0 ? "#fff" : "#94a3b8", fontWeight: 600, cursor: outstanding > 0 ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
                   >
@@ -172,6 +173,17 @@ const BrokerManagement: React.FC = () => {
                     onChange={e => setPayForm({ ...payForm, payment_date: e.target.value })}
                     style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #e2e8f0", outline: "none", fontSize: "14px", boxSizing: "border-box" }}
                   />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "6px" }}>Payment Mode</label>
+                  <select
+                    value={payForm.payment_mode}
+                    onChange={e => setPayForm({ ...payForm, payment_mode: e.target.value })}
+                    style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #e2e8f0", outline: "none", fontSize: "14px", boxSizing: "border-box", background: "#fff" }}
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="BANK">Bank</option>
+                  </select>
                 </div>
                 <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
                   <button type="button" onClick={() => setPayBroker(null)}

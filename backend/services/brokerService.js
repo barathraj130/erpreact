@@ -214,6 +214,22 @@ export const recordBrokerPayment = async (user, paymentData) => {
             VALUES ($1, $2, 0, $3, 'Payment from bank/cash')
         `, [transactionId, paymentData.bank_account_id || 1, paymentData.amount]);
 
+        // 3. Update Cash Ledger / Bank Ledger so Financial Ledgers page reflects the outflow
+        const payMode = (paymentData.payment_mode || 'CASH').toUpperCase();
+        if (payMode === 'BANK') {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
+                 VALUES ($1, $2, 'BROKER_PAYMENT', $3, 'out', 'Main Account', $4, $5)`,
+                [companyId, branchId, paymentData.amount, transactionId, paymentData.payment_date]
+            );
+        } else {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1, $2, 'BROKER_PAYMENT', $3, 'out', $4)`,
+                [companyId, branchId, paymentData.amount, paymentData.payment_date]
+            );
+        }
+
         await client.query('COMMIT');
         return { success: true, transactionId };
     } catch (err) {
