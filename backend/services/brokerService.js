@@ -119,30 +119,38 @@ export const recordCommission = async (client, user, data) => {
     ]);
     const transactionId = txRes.rows[0].id;
 
-    // 3. Double Entry Ledgers
-    // Get Expense Ledger
-    let expGroupRes = await client.query("SELECT id FROM ledger_groups WHERE (company_id = $1 OR company_id = 1) AND name = 'Direct Expenses'", [companyId]);
-    if (!expGroupRes.rows[0]) {
-        const insertExpGroup = await client.query("INSERT INTO ledger_groups (company_id, name, nature, is_default) VALUES ($1, 'Direct Expenses', 'Expense', TRUE) RETURNING id", [companyId]);
-        expGroupRes = insertExpGroup;
-    }
-    const expGroupId = expGroupRes.rows[0].id;
+    // 3. Double Entry Ledgers — use INSERT ... ON CONFLICT to avoid duplicate PK errors
+    // Get or create Expense Group
+    await client.query(
+        "INSERT INTO ledger_groups (company_id, name, nature, is_default) VALUES ($1, 'Direct Expenses', 'Expense', TRUE) ON CONFLICT DO NOTHING",
+        [companyId]
+    );
+    const expGroupRes = await client.query("SELECT id FROM ledger_groups WHERE company_id = $1 AND name = 'Direct Expenses'", [companyId]);
+    const expGroupId = expGroupRes.rows[0]?.id;
 
-    let expLedgerRes = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = 'Broker Commission Expense'", [companyId]);
-    if (!expLedgerRes.rows[0]) {
-        const insertExpLedger = await client.query("INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, 'Broker Commission Expense', $2, 0, 1) RETURNING id", [companyId, expGroupId]);
-        expLedgerRes = insertExpLedger;
-    }
-    const expenseLedgerId = expLedgerRes.rows[0].id;
+    // Get or create Expense Ledger
+    await client.query(
+        "INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, 'Broker Commission Expense', $2, 0, 1) ON CONFLICT DO NOTHING",
+        [companyId, expGroupId]
+    );
+    const expLedgerRes = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = 'Broker Commission Expense'", [companyId]);
+    const expenseLedgerId = expLedgerRes.rows[0]?.id;
 
-    // Get Broker Payable Ledger
+    // Get or create Sundry Creditors group
+    await client.query(
+        "INSERT INTO ledger_groups (company_id, name, nature, is_default) VALUES ($1, 'Sundry Creditors', 'Liability', TRUE) ON CONFLICT DO NOTHING",
+        [companyId]
+    );
+    const credGroupRes = await client.query("SELECT id FROM ledger_groups WHERE company_id = $1 AND name = 'Sundry Creditors'", [companyId]);
+    const credGroupId = credGroupRes.rows[0]?.id;
+
+    // Get or create Broker Payable Ledger
+    await client.query(
+        "INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, $2, $3, 0, 0) ON CONFLICT DO NOTHING",
+        [companyId, broker.name + ' - Commission Payable', credGroupId]
+    );
     const payableLedgerRes = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = $2", [companyId, broker.name + ' - Commission Payable']);
-    let payableLedgerId = payableLedgerRes.rows[0] ? payableLedgerRes.rows[0].id : null;
-
-    if (!payableLedgerId) {
-        let credGroupRes = await client.query("SELECT id FROM ledger_groups WHERE (company_id = $1 OR company_id = 1) AND name = 'Sundry Creditors'", [companyId]);
-        payableLedgerId = (await client.query("INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, $2, $3, 0, 0) RETURNING id", [companyId, broker.name + ' - Commission Payable', credGroupRes.rows[0].id])).rows[0].id;
-    }
+    const payableLedgerId = payableLedgerRes.rows[0]?.id;
 
     // Debit: Commission Expense
     await client.query(`
