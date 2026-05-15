@@ -168,33 +168,39 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
 /**
  * 🗑️ DELETE SUPPLIER
- * Block if unpaid balance > 0.
- * If all bills are paid (balance = 0), nullify supplier_id in bills then delete.
+ * Block if current_balance > 0 (uses the supplier's live balance, same as UI shows).
+ * If balance = 0, nullify supplier_id in bills then delete.
  */
 router.delete('/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     let client;
     try {
-        const stats = await db.pgGet(`
-            SELECT
-                COALESCE(SUM(GREATEST(total_amount - paid_amount, 0)), 0) as unpaid_balance,
-                COUNT(*) as bill_count
-            FROM purchase_bills
-            WHERE supplier_id = $1 AND company_id = $2
-        `, [req.params.id, companyId]);
+        // Use current_balance from suppliers table — this is the same value the UI shows.
+        // It is updated by Pay Supplier, bill payments, etc.
+        const supplier = await db.pgGet(
+            `SELECT current_balance, COUNT(pb.id) as bill_count
+             FROM suppliers s
+             LEFT JOIN purchase_bills pb ON pb.supplier_id = s.id AND pb.company_id = $2
+             WHERE s.id = $1 AND s.company_id = $2
+             GROUP BY s.current_balance`,
+            [req.params.id, companyId]
+        );
 
-        const unpaid = parseFloat(stats.unpaid_balance || 0);
+        if (!supplier) return res.status(404).json({ error: "Supplier not found" });
+
+        const unpaid = parseFloat(supplier.current_balance || 0);
         if (unpaid > 0) {
             return res.status(400).json({
                 error: `Cannot delete supplier with outstanding balance of ₹${unpaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Please clear all dues first.`
             });
         }
+        const billCount = parseInt(supplier.bill_count || 0);
 
         // If bills exist but all paid — nullify supplier_id, then delete supplier
         client = await db.getClient();
         await client.query('BEGIN');
 
-        if (parseInt(stats.bill_count) > 0) {
+        if (billCount > 0) {
             await client.query(
                 `UPDATE purchase_bills SET supplier_id = NULL WHERE supplier_id = $1 AND company_id = $2`,
                 [req.params.id, companyId]
