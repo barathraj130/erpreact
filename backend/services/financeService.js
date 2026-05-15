@@ -99,9 +99,10 @@ export const createLoan = async (user, loanData) => {
             ]);
         }
 
-        // Write to cash/bank ledger so Financial Ledgers page shows the inflow
+        // Write to cash/bank ledger only for NEW loans (not when recording pre-existing loans)
         const loanPayMode = (loanData.payment_mode || 'BANK').toUpperCase();
-        if (loanPrincipal > 0) {
+        const isExisting = loanData.is_existing_loan === true || loanData.is_existing_loan === 'true';
+        if (loanPrincipal > 0 && !isExisting) {
             if (loanPayMode === 'BANK') {
                 await client.query(
                     `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)

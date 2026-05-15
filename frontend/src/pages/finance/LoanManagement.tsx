@@ -51,6 +51,7 @@ const LoanManagement: React.FC = () => {
     start_date: new Date().toISOString().split("T")[0],
     repayment_cycle: "MONTHLY",
     payment_mode: "BANK",
+    is_existing_loan: false,
     notes: "",
   });
 
@@ -77,6 +78,7 @@ const LoanManagement: React.FC = () => {
         start_date: new Date().toISOString().split("T")[0],
         repayment_cycle: "MONTHLY",
         payment_mode: "BANK",
+        is_existing_loan: false,
         notes: "",
       });
     } catch (err) {
@@ -280,6 +282,23 @@ const LoanManagement: React.FC = () => {
             <motion.div className="page-modal" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
               <h2>Record New Loan</h2>
               <form onSubmit={handleSubmit}>
+                {/* Existing vs New toggle */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
+                  <button type="button"
+                    onClick={() => setFormData({...formData, is_existing_loan: false})}
+                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                      background: !formData.is_existing_loan ? '#2563eb' : 'transparent',
+                      color: !formData.is_existing_loan ? '#fff' : '#64748b' }}>
+                    New Loan (Cash Received)
+                  </button>
+                  <button type="button"
+                    onClick={() => setFormData({...formData, is_existing_loan: true})}
+                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                      background: formData.is_existing_loan ? '#64748b' : 'transparent',
+                      color: formData.is_existing_loan ? '#fff' : '#64748b' }}>
+                    Existing Loan (No Cash Entry)
+                  </button>
+                </div>
                 <label>Lender</label>
                 <select 
                   required 
@@ -315,11 +334,15 @@ const LoanManagement: React.FC = () => {
                   </div>
                 </div>
 
-                <label>Received Via</label>
-                <select value={formData.payment_mode} onChange={e => setFormData({...formData, payment_mode: e.target.value})}>
-                  <option value="BANK">Bank Transfer</option>
-                  <option value="CASH">Cash</option>
-                </select>
+                {!formData.is_existing_loan && (
+                  <>
+                    <label>Received Via</label>
+                    <select value={formData.payment_mode} onChange={e => setFormData({...formData, payment_mode: e.target.value})}>
+                      <option value="BANK">Bank Transfer</option>
+                      <option value="CASH">Cash</option>
+                    </select>
+                  </>
+                )}
 
                 <label>Notes</label>
                 <input value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
