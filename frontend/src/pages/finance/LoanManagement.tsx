@@ -154,21 +154,45 @@ const LoanManagement: React.FC = () => {
     const annualRate = Number(loan.interest_rate || 0);
     const r = annualRate / 12 / 100;
     const start = new Date(loan.start_date || new Date());
-    const isBank = (loan.loan_type || loan.party_type || 'BANK').toUpperCase() === 'BANK';
-    const emi = isBank ? calcEMI(P, annualRate, n) : (P / n) + (P * r);
+    const loanType = (loan.loan_type || loan.party_type || 'BANK').toUpperCase();
+    const isBank = loanType === 'BANK';
     const schedule = [];
     let balance = P;
     const today = new Date();
 
-    for (let i = 1; i <= n; i++) {
-      const due = new Date(start);
-      due.setMonth(due.getMonth() + i);
-      const interest = isBank ? balance * r : P * r;
-      const principal = isBank ? Math.min(emi - interest, balance) : P / n;
-      balance = Math.max(0, balance - principal);
-      const isPast = due < today;
-      const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
-      schedule.push({ month: i, due, emi: principal + interest, principal, interest, balance, isPast, isCurrent });
+    if (isBank) {
+      // ── BANK: Reducing balance EMI ──
+      // Fixed EMI every month. Interest = remaining balance × monthly rate.
+      // Principal portion = EMI − interest. Balance reduces each month.
+      const emi = calcEMI(P, annualRate, n);
+      for (let i = 1; i <= n; i++) {
+        const due = new Date(start);
+        due.setMonth(due.getMonth() + i);
+        const interest = Math.round(balance * r * 100) / 100;
+        const principal = Math.min(Math.round((emi - interest) * 100) / 100, balance);
+        balance = Math.max(0, Math.round((balance - principal) * 100) / 100);
+        const isPast = due < today;
+        const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
+        schedule.push({ month: i, due, emi: principal + interest, principal, interest, balance, isPast, isCurrent });
+      }
+    } else {
+      // ── PRIVATE LENDER: Interest-only every month ──
+      // Pay ONLY interest each month — principal never reduces.
+      // Monthly interest = Principal × monthly rate (fixed every month).
+      // Last month: pay interest + full principal lump sum.
+      const monthlyInterest = Math.round(P * r * 100) / 100;
+      for (let i = 1; i <= n; i++) {
+        const due = new Date(start);
+        due.setMonth(due.getMonth() + i);
+        const isLast = i === n;
+        const interest = monthlyInterest;
+        const principal = isLast ? P : 0;        // Principal returned only at end
+        const emi = interest + principal;
+        const rowBalance = isLast ? 0 : P;       // Balance stays P until final month
+        const isPast = due < today;
+        const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
+        schedule.push({ month: i, due, emi, principal, interest, balance: rowBalance, isPast, isCurrent });
+      }
     }
     return schedule;
   };
@@ -349,14 +373,20 @@ const LoanManagement: React.FC = () => {
 
             {scheduleTab === 'schedule' && (() => {
               const schedule = generateSchedule(ledgerLoan);
+              const isPrivate = (ledgerLoan.loan_type || ledgerLoan.party_type || 'BANK').toUpperCase() !== 'BANK';
               return (
                 <div style={{ overflowX: 'auto' }}>
+                  {isPrivate && (
+                    <div style={{ padding: '10px 16px', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', margin: '0 0 12px', fontSize: '13px', color: '#7c3aed', fontWeight: 600 }}>
+                      💡 Private Loan — Pay interest only every month (₹{Math.round(Number(ledgerLoan.principal_amount || 0) * Number(ledgerLoan.interest_rate || 0) / 12 / 100).toLocaleString()}/mo). Full principal of ₹{Number(ledgerLoan.principal_amount || 0).toLocaleString()} is returned in the last month.
+                    </div>
+                  )}
                   <table className="page-table" style={{ margin: 0 }}>
                     <thead>
                       <tr>
                         <th>#</th>
                         <th>Due Date</th>
-                        <th className="text-right">EMI</th>
+                        <th className="text-right">{isPrivate ? 'Payment' : 'EMI'}</th>
                         <th className="text-right">Principal</th>
                         <th className="text-right">Interest</th>
                         <th className="text-right">Balance</th>
@@ -367,12 +397,18 @@ const LoanManagement: React.FC = () => {
                     <tbody>
                       {schedule.map(row => {
                         const status = getScheduleStatus(row);
+                        const isLastPrivate = isPrivate && row.month === schedule.length;
                         return (
-                          <tr key={row.month}>
+                          <tr key={row.month} style={isLastPrivate ? { background: '#faf5ff' } : {}}>
                             <td style={{ color: '#94a3b8', fontSize: '12px' }}>{row.month}</td>
                             <td>{new Date(row.due).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                            <td className="text-right font-mono">₹{Math.round(row.emi).toLocaleString()}</td>
-                            <td className="text-right font-mono" style={{ color: '#2563eb' }}>₹{Math.round(row.principal).toLocaleString()}</td>
+                            <td className="text-right font-mono">
+                              ₹{Math.round(row.emi).toLocaleString()}
+                              {isLastPrivate && <span style={{ fontSize: '10px', color: '#7c3aed', marginLeft: 4 }}>(+Principal)</span>}
+                            </td>
+                            <td className="text-right font-mono" style={{ color: row.principal > 0 ? '#7c3aed' : '#cbd5e1' }}>
+                              {row.principal > 0 ? `₹${Math.round(row.principal).toLocaleString()}` : '—'}
+                            </td>
                             <td className="text-right font-mono" style={{ color: '#f59e0b' }}>₹{Math.round(row.interest).toLocaleString()}</td>
                             <td className="text-right font-mono" style={{ color: '#64748b' }}>₹{Math.round(row.balance).toLocaleString()}</td>
                             <td className="text-center">
