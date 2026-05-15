@@ -50,6 +50,7 @@ const LoanManagement: React.FC = () => {
     interest_rate: 12,
     start_date: new Date().toISOString().split("T")[0],
     repayment_cycle: "MONTHLY",
+    payment_mode: "BANK",
     notes: "",
   });
 
@@ -75,6 +76,7 @@ const LoanManagement: React.FC = () => {
         interest_rate: 12,
         start_date: new Date().toISOString().split("T")[0],
         repayment_cycle: "MONTHLY",
+        payment_mode: "BANK",
         notes: "",
       });
     } catch (err) {
@@ -197,7 +199,7 @@ const LoanManagement: React.FC = () => {
                 <td><div className="font-bold">{loan.lender_name}</div></td>
                 <td className="text-right font-mono">₹{loan.principal_amount?.toLocaleString()}</td>
                 <td className="text-right">{loan.interest_rate}%</td>
-                <td>{loan.start_date}</td>
+                <td>{loan.start_date ? new Date(loan.start_date).toLocaleDateString('en-IN') : '-'}</td>
                 <td>{loan.repayment_cycle}</td>
                 <td className="text-center">
                   <span className={`type-badge ${loan.status === 'ACTIVE' ? 'type-badge-green' : 'type-badge-blue'}`}>
@@ -312,6 +314,12 @@ const LoanManagement: React.FC = () => {
                     </select>
                   </div>
                 </div>
+
+                <label>Received Via</label>
+                <select value={formData.payment_mode} onChange={e => setFormData({...formData, payment_mode: e.target.value})}>
+                  <option value="BANK">Bank Transfer</option>
+                  <option value="CASH">Cash</option>
+                </select>
 
                 <label>Notes</label>
                 <input value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />

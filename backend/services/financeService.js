@@ -82,7 +82,9 @@ export const createLoan = async (user, loanData) => {
         const cashAcc = await getAccountByCode(companyId, '1000');
         const loanAcc = await getAccountByCode(companyId, '2000'); // Accounts Payable / Loan
 
-        if (cashAcc && loanAcc) {
+        const loanPrincipal = parseFloat(loanData.principal_amount || loanData.principal || 0);
+
+        if (cashAcc && loanAcc && loanPrincipal > 0) {
             await createTransactionInternal(client, {
                 company_id: companyId,
                 branch_id: branchId,
@@ -92,9 +94,27 @@ export const createLoan = async (user, loanData) => {
                 description: `Loan disbursement from ${loanData.lender_name || 'Lender'}`,
                 created_by: user.id
             }, [
-                { account_id: cashAcc.id, debit_amount: loanData.principal_amount || loanData.principal, credit_amount: 0, description: 'Loan amount received' },
-                { account_id: loanAcc.id, debit_amount: 0, credit_amount: loanData.principal_amount || loanData.principal, description: 'Loan liability recorded' }
+                { account_id: cashAcc.id, debit_amount: loanPrincipal, credit_amount: 0, description: 'Loan amount received' },
+                { account_id: loanAcc.id, debit_amount: 0, credit_amount: loanPrincipal, description: 'Loan liability recorded' }
             ]);
+        }
+
+        // Write to cash/bank ledger so Financial Ledgers page shows the inflow
+        const loanPayMode = (loanData.payment_mode || 'BANK').toUpperCase();
+        if (loanPrincipal > 0) {
+            if (loanPayMode === 'BANK') {
+                await client.query(
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                     VALUES ($1, $2, 'LOAN_RECEIVED', $3, 'in', 'Main Account', $4)`,
+                    [companyId, branchId, loanPrincipal, loanData.start_date || new Date()]
+                );
+            } else {
+                await client.query(
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                     VALUES ($1, $2, 'LOAN_RECEIVED', $3, 'in', $4)`,
+                    [companyId, branchId, loanPrincipal, loanData.start_date || new Date()]
+                );
+            }
         }
 
         await client.query('COMMIT');
