@@ -10,9 +10,11 @@ import {
   FaTrash,
   FaUserTie,
   FaFileInvoice,
+  FaMoneyBillWave,
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { Supplier, deleteSupplier, fetchSuppliers } from "../api/supplierApi";
+import { apiFetch } from "../api/api";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import AddSupplierModal from "./AddSupplierModal";
 import "./Suppliers.css";
@@ -25,9 +27,12 @@ const Suppliers: React.FC = () => {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showTransactionModal, setShowTransactionModal] = useState(false);
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(
-    null,
-  );
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+
+  // Pay Supplier state
+  const [paySupplier, setPaySupplier] = useState<Supplier | null>(null);
+  const [payForm, setPayForm] = useState({ amount: 0, payment_date: new Date().toISOString().split('T')[0], payment_mode: 'CASH', notes: '' });
+  const [payLoading, setPayLoading] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -64,6 +69,38 @@ const Suppliers: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handlePaySupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paySupplier) return;
+    setPayLoading(true);
+    try {
+      const res = await apiFetch('/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'SUPPLIER_PAYMENT',
+          category: 'Supplier Payment (Debit)',
+          amount: payForm.amount,
+          date: payForm.payment_date,
+          payment_mode: payForm.payment_mode,
+          mode: payForm.payment_mode,
+          reference_type: 'SUPPLIER_PAYMENT',
+          reference_id: paySupplier.id,
+          description: `Payment to supplier: ${paySupplier.name}`,
+        }),
+      });
+      if (!res.ok) throw new Error('Payment failed');
+      setPaySupplier(null);
+      setPayForm({ amount: 0, payment_date: new Date().toISOString().split('T')[0], payment_mode: 'CASH', notes: '' });
+      loadData();
+      alert(`✅ Payment of ₹${payForm.amount} recorded for ${paySupplier.name}`);
+    } catch {
+      alert('Failed to record payment.');
+    } finally {
+      setPayLoading(false);
+    }
+  };
 
   const handleDelete = async (id: number) => {
     if (window.confirm("Delete this supplier? This cannot be undone.")) {
@@ -420,6 +457,14 @@ const Suppliers: React.FC = () => {
                         </Link>
                         <button
                           className="control-btn"
+                          style={{ background: "rgba(16,185,129,0.08)", color: "#10b981" }}
+                          title="Pay Supplier"
+                          onClick={() => { setPaySupplier(s); setPayForm({ amount: 0, payment_date: new Date().toISOString().split('T')[0], payment_mode: 'CASH', notes: '' }); }}
+                        >
+                          <FaMoneyBillWave size={14} />
+                        </button>
+                        <button
+                          className="control-btn"
                           style={{
                             background: "var(--primary-glow)",
                             color: "var(--primary)",
@@ -494,6 +539,56 @@ const Suppliers: React.FC = () => {
           onSuccess={loadData}
           supplier={editingSupplier || undefined}
         />
+      )}
+
+      {/* Pay Supplier Modal */}
+      {paySupplier && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', width: '420px', borderRadius: '20px', padding: '32px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>Pay Supplier</h2>
+              <button onClick={() => setPaySupplier(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '20px', color: '#64748b' }}>×</button>
+            </div>
+            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+              <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '16px' }}>{paySupplier.name}</div>
+              <div style={{ color: '#64748b', fontSize: '13px', marginTop: '4px' }}>
+                Outstanding: <span style={{ color: '#e11d48', fontWeight: 700 }}>₹{Number(paySupplier.current_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+            <form onSubmit={handlePaySupplier} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '6px' }}>Amount (₹)</label>
+                <input required type="number" step="0.01" min="0.01" value={payForm.amount}
+                  onChange={e => setPayForm({ ...payForm, amount: Number(e.target.value) })}
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '6px' }}>Payment Date</label>
+                <input required type="date" value={payForm.payment_date}
+                  onChange={e => setPayForm({ ...payForm, payment_date: e.target.value })}
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '6px' }}>Payment Mode</label>
+                <select value={payForm.payment_mode} onChange={e => setPayForm({ ...payForm, payment_mode: e.target.value })}
+                  style={{ width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', fontSize: '14px', boxSizing: 'border-box' }}>
+                  <option value="CASH">Cash</option>
+                  <option value="BANK">Bank Transfer</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                <button type="button" onClick={() => setPaySupplier(null)}
+                  style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', fontWeight: 600, color: '#64748b', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={payLoading}
+                  style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: '#10b981', fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+                  {payLoading ? 'Recording...' : 'Record Payment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {showTransactionModal && selectedSupplier && (

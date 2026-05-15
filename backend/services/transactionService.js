@@ -119,6 +119,16 @@ export const processTransaction = async (txData, user) => {
                     `, [txData.reference_id, companyId, txData.date, txData.description, txData.amount, branchId]);
                 }
                 break;
+
+            case 'SUPPLIER_PAYMENT':
+                // Reduce supplier's outstanding balance
+                if (txData.reference_id) {
+                    await client.query(
+                        `UPDATE suppliers SET current_balance = GREATEST(0, current_balance - $1) WHERE id = $2 AND company_id = $3`,
+                        [txData.amount, txData.reference_id, companyId]
+                    );
+                }
+                break;
         }
 
         await client.query('COMMIT');

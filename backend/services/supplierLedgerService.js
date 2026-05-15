@@ -45,10 +45,17 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
     idx += 1;
   }
 
-  // Fetch Bills from purchase_bills and Payments from transactions (where lender_id matches)
+  // Build date filters for payment queries
+  const payBillConditions = ["pb.company_id = $1", "pb.supplier_id = $2", "pb.paid_amount > 0"];
+  if (filters.start_date) payBillConditions.push(`pb.bill_date >= $3`);
+  if (filters.end_date) payBillConditions.push(`pb.bill_date <= $${filters.start_date ? 4 : 3}`);
+
+  // Fetch Bills from purchase_bills and Payments from two sources:
+  // (a) purchase_bills.paid_amount (covers creation + PATCH /pay payments)
+  // (b) transactions with reference_type = 'SUPPLIER_PAYMENT' (manual payments)
   return db.pgAll(
     `SELECT * FROM (
-       -- 1. Purchase Bills
+       -- 1. Purchase Bills (credit — increases what we owe)
        SELECT
          pb.id,
          pb.bill_date AS date,
@@ -65,20 +72,39 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
 
        UNION ALL
 
-       -- 2. Payments (from transactions table)
+       -- 2. Payments via purchase bills (paid_amount on each bill — debit, reduces balance)
+       SELECT
+         2000000000 + pb.id AS id,
+         pb.bill_date AS date,
+         'PAYMENT' AS type,
+         'BILL_PAYMENT' AS category,
+         pb.paid_amount AS amount,
+         'Payment for Bill #' || pb.bill_number AS description,
+         pb.id AS related_id,
+         pb.bill_number AS reference_number,
+         pb.payment_mode AS payment_method,
+         pb.updated_at AS sort_created_at
+       FROM purchase_bills pb
+       WHERE pb.company_id = $1 AND pb.supplier_id = $2 AND pb.paid_amount > 0
+
+       UNION ALL
+
+       -- 3. Manual supplier payments via Transactions module
        SELECT
          1000000000 + t.id AS id,
-         t.date AS date,
-         t.type AS type,
+         COALESCE(t.date, t.transaction_date, t.created_at) AS date,
+         'PAYMENT' AS type,
          t.category AS category,
          t.amount AS amount,
          t.description AS description,
          t.id AS related_id,
          NULL::TEXT AS reference_number,
-         (t.meta->>'payment_method') AS payment_method,
+         t.payment_mode AS payment_method,
          t.created_at AS sort_created_at
        FROM transactions t
-       WHERE ${txConditions.join(" AND ")}
+       WHERE t.company_id = $1
+         AND t.reference_type = 'SUPPLIER_PAYMENT'
+         AND t.reference_id::text = $2::text
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
