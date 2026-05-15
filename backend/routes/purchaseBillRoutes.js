@@ -377,6 +377,45 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             }, txLines);
         }
 
+        // Write initial payment to cash/bank ledger (so Financial Ledgers reflects it)
+        if (paid > 0) {
+            if (paymentsArray.length > 0) {
+                for (const p of paymentsArray) {
+                    const pAmount = parseFloat(p.amount || 0);
+                    if (pAmount <= 0) continue;
+                    const pMode = (p.mode || 'CASH').toUpperCase();
+                    if (pMode === 'BANK') {
+                        await client.query(
+                            `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                             VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', 'Main Account', $4)`,
+                            [companyId, safeBranchId, pAmount, bill_date || new Date()]
+                        );
+                    } else {
+                        await client.query(
+                            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                             VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', $4)`,
+                            [companyId, safeBranchId, pAmount, bill_date || new Date()]
+                        );
+                    }
+                }
+            } else {
+                const pMode = (payment_mode || 'CASH').toUpperCase();
+                if (pMode === 'BANK') {
+                    await client.query(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                         VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', 'Main Account', $4)`,
+                        [companyId, safeBranchId, paid, bill_date || new Date()]
+                    );
+                } else {
+                    await client.query(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                         VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', $4)`,
+                        [companyId, safeBranchId, paid, bill_date || new Date()]
+                    );
+                }
+            }
+        }
+
         await client.query("COMMIT");
         res.status(201).json({ success: true, id: billId, total: netAmount, balance, status });
     } catch (err) {

@@ -53,10 +53,10 @@ const PurchaseBills: React.FC = () => {
     setViewBill(bill);
     setLoadingItems(true);
     try {
-      const res = await apiFetch(`/purchase-bills/${bill.id}/items`);
+      const res = await apiFetch(`/purchase-bills/${bill.id}`);
       if (res.ok) {
         const data = await res.json();
-        setBillItems(Array.isArray(data) ? data : []);
+        setBillItems(Array.isArray(data.items) ? data.items : []);
       } else {
         setBillItems([]);
       }
