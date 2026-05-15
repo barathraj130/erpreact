@@ -83,8 +83,8 @@ export const recordCommission = async (client, user, data) => {
 
     // Calculate commission per product line
     for (const item of data.line_items) {
-        const itemQty = parseFloat(item.quantity || 0);
-        const itemPrice = parseFloat(item.unit_price || item.price || 0);
+        const itemQty = parseFloat(item.quantity || item.qty || 0);
+        const itemPrice = parseFloat(item.unit_price || item.price || item.rate || 0);
         const lineTotal = itemQty * itemPrice;
 
         // Rate precedence: line item specific -> product specific -> broker default
