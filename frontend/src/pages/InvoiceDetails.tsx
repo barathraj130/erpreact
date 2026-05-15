@@ -336,27 +336,34 @@ const InvoiceDetails: React.FC = () => {
   const isSameState = (data.company_state_code || "33") === (data.customer_state_code || data.state_code || "33");
   const items = Array.isArray(data.items) ? data.items : [];
 
+  // Sale totals (for Before/After Tax box — returns excluded)
   let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0, totalQty = 0;
   const rows = items.map((item: any) => {
+    const isReturn = item.is_return === true || item.is_return === 1 || Number(item.quantity || item.qty) < 0;
     const qty = val(item.quantity || item.qty);
     const rate = val(item.unit_price || item.rate);
-    const taxable = qty * rate;
+    const taxable = Math.abs(qty) * rate;
     const gstRate = isNonTax ? 0 : val(item.tax_percent || item.gst_rate || 0);
     const gstAmt = (taxable * gstRate) / 100;
     const cgst = val(item.cgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
     const sgst = val(item.sgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
     const igst = val(item.igst_amount) || (!isSameState && !isNonTax ? gstAmt : 0);
-    totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalQty += qty;
+    // Only add SALE items to the tax totals (not returns)
+    if (!isReturn) {
+      totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalQty += Math.abs(qty);
+    }
     return {
       name: item.description || item.name || "",
       hsn: item.hsn_acs_code || item.hsn || "",
       uom: item.uom || "Pcs",
-      qty, rate, taxable, gstRate, cgst, sgst, igst,
+      qty: Math.abs(qty), rate, taxable, gstRate, cgst, sgst, igst,
+      isReturn,
       lineTotal: taxable + cgst + sgst + igst,
     };
   });
 
   const totalGST = totalCGST + totalSGST + totalIGST;
+  // grandTotal = pure sale total (taxable + GST), NO returns/discounts
   const grandTotal = totalTaxable + totalGST;
   const cgstRate = totalTaxable > 0 ? ((totalCGST / totalTaxable) * 100).toFixed(2) : "0.00";
   const sgstRate = totalTaxable > 0 ? ((totalSGST / totalTaxable) * 100).toFixed(2) : "0.00";
