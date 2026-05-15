@@ -82,8 +82,8 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
          'Payment for Bill #' || pb.bill_number AS description,
          pb.id AS related_id,
          pb.bill_number AS reference_number,
-         pb.payment_mode AS payment_method,
-         pb.updated_at AS sort_created_at
+         NULL::TEXT AS payment_method,
+         pb.created_at AS sort_created_at
        FROM purchase_bills pb
        WHERE pb.company_id = $1 AND pb.supplier_id = $2 AND pb.paid_amount > 0
 
@@ -92,14 +92,14 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
        -- 3. Manual supplier payments via Transactions module
        SELECT
          1000000000 + t.id AS id,
-         COALESCE(t.date, t.transaction_date, t.created_at) AS date,
+         COALESCE(t.date, t.transaction_date, t.created_at::DATE) AS date,
          'PAYMENT' AS type,
          t.category AS category,
          t.amount AS amount,
          t.description AS description,
          t.id AS related_id,
          NULL::TEXT AS reference_number,
-         t.payment_mode AS payment_method,
+         NULL::TEXT AS payment_method,
          t.created_at AS sort_created_at
        FROM transactions t
        WHERE t.company_id = $1

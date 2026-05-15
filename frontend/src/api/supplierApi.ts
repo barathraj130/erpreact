@@ -30,5 +30,9 @@ export const deleteSupplier = async (id: number): Promise<any> => {
   const res = await apiFetch(`/suppliers/${id}`, {
     method: "DELETE",
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || "Delete failed");
+  }
+  return data;
 };

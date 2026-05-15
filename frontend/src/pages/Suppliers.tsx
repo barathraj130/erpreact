@@ -107,8 +107,9 @@ const Suppliers: React.FC = () => {
       try {
         await deleteSupplier(id);
         loadData();
-      } catch (err) {
-        alert("Failed to delete supplier.");
+        alert("✅ Supplier deleted successfully.");
+      } catch (err: any) {
+        alert("❌ " + (err?.message || "Failed to delete supplier."));
       }
     }
   };

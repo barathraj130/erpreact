@@ -168,30 +168,52 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
 /**
  * 🗑️ DELETE SUPPLIER
- * Block if balance > 0
+ * Block if unpaid balance > 0.
+ * If all bills are paid (balance = 0), nullify supplier_id in bills then delete.
  */
 router.delete('/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    let client;
     try {
         const stats = await db.pgGet(`
-            SELECT 
-                COALESCE(SUM(total_amount - paid_amount), 0) as balance,
+            SELECT
+                COALESCE(SUM(GREATEST(total_amount - paid_amount, 0)), 0) as unpaid_balance,
                 COUNT(*) as bill_count
-            FROM purchase_bills 
+            FROM purchase_bills
             WHERE supplier_id = $1 AND company_id = $2
         `, [req.params.id, companyId]);
 
-        if (stats.balance > 0) {
-            return res.status(400).json({ error: "Cannot delete supplier with outstanding balance: ₹" + stats.balance });
-        }
-        if (stats.bill_count > 0) {
-            return res.status(400).json({ error: "Cannot delete supplier with existing purchase history." });
+        const unpaid = parseFloat(stats.unpaid_balance || 0);
+        if (unpaid > 0) {
+            return res.status(400).json({
+                error: `Cannot delete supplier with outstanding balance of ₹${unpaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Please clear all dues first.`
+            });
         }
 
-        await db.pgRun("DELETE FROM suppliers WHERE id = $1 AND company_id = $2", [req.params.id, companyId]);
-        res.json({ message: "Supplier deleted" });
+        // If bills exist but all paid — nullify supplier_id, then delete supplier
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        if (parseInt(stats.bill_count) > 0) {
+            await client.query(
+                `UPDATE purchase_bills SET supplier_id = NULL WHERE supplier_id = $1 AND company_id = $2`,
+                [req.params.id, companyId]
+            );
+        }
+
+        await client.query(
+            `DELETE FROM suppliers WHERE id = $1 AND company_id = $2`,
+            [req.params.id, companyId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ message: "Supplier deleted successfully" });
     } catch (err) {
-        res.status(500).json({ error: "Delete failed" });
+        if (client) await client.query('ROLLBACK');
+        console.error("Delete supplier error:", err);
+        res.status(500).json({ error: "Delete failed: " + err.message });
+    } finally {
+        if (client) client.release();
     }
 });
 
