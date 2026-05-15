@@ -348,11 +348,17 @@ const LoanManagement: React.FC = () => {
                 <div className="form-grid-2">
                   <div>
                     <label>Principal Component (₹)</label>
-                    <input type="number" value={repayData.principal_component} onChange={e => setRepayData({...repayData, principal_component: Number(e.target.value)})} />
+                    <input type="number" value={repayData.principal_component} onChange={e => {
+                      const p = Number(e.target.value);
+                      setRepayData({...repayData, principal_component: p, total_amount: p + repayData.interest_component});
+                    }} />
                   </div>
                   <div>
                     <label>Interest Component (₹)</label>
-                    <input type="number" value={repayData.interest_component} onChange={e => setRepayData({...repayData, interest_component: Number(e.target.value)})} />
+                    <input type="number" value={repayData.interest_component} onChange={e => {
+                      const i = Number(e.target.value);
+                      setRepayData({...repayData, interest_component: i, total_amount: repayData.principal_component + i});
+                    }} />
                   </div>
                 </div>
 

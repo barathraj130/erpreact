@@ -68,6 +68,7 @@ const ChitManagement: React.FC = () => {
     amount: 0,
     is_auction_won: false,
     auction_amount_received: 0,
+    payment_mode: "CASH",
     notes: "",
   });
 
@@ -162,7 +163,7 @@ const ChitManagement: React.FC = () => {
                 <td className="text-right font-mono">{fmt(chit.total_value)}</td>
                 <td className="text-right font-mono">{fmt(chit.monthly_installment)}</td>
                 <td>{chit.duration_months} months</td>
-                <td>{chit.start_date}</td>
+                <td>{chit.start_date ? new Date(chit.start_date).toLocaleDateString('en-IN') : '-'}</td>
                 <td className="text-center">
                   <span className="type-badge type-badge-green">{chit.status}</span>
                 </td>
@@ -198,7 +199,7 @@ const ChitManagement: React.FC = () => {
               <tbody>
                 {installments.map(ins => (
                   <tr key={ins.id}>
-                    <td>{ins.payment_date}</td>
+                    <td>{ins.payment_date ? new Date(ins.payment_date).toLocaleDateString('en-IN') : '-'}</td>
                     <td className="text-right">{fmt(ins.amount)}</td>
                     <td className="text-center">{ins.is_auction_won ? "✅ YES" : "NO"}</td>
                     <td className="text-right">{ins.is_auction_won ? fmt(ins.auction_amount_received) : "-"}</td>
@@ -274,6 +275,13 @@ const ChitManagement: React.FC = () => {
                     <input type="number" required value={colForm.auction_amount_received} onChange={e => setColForm({...colForm, auction_amount_received: Number(e.target.value)})} />
                   </div>
                 )}
+
+                <label>Payment Mode</label>
+                <select value={colForm.payment_mode} onChange={e => setColForm({...colForm, payment_mode: e.target.value})}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#fff", marginBottom: "8px" }}>
+                  <option value="CASH">Cash</option>
+                  <option value="BANK">Bank</option>
+                </select>
 
                 <label>Notes</label>
                 <input value={colForm.notes} onChange={e => setColForm({...colForm, notes: e.target.value})} />

@@ -132,34 +132,29 @@ export const recordLoanRepayment = async (user, paymentData) => {
         const payment = paymentRes.rows[0];
 
         // 2. Double-Entry
-        // Debit: Interest Expense
-        // Debit: Lender's Loan Payable (for principal)
-        // Credit: Cash/Bank
-        
-        // Find the specific ledger account for this lender via loan
-        const lenderLedgerRes = await client.query(`
-            SELECT led.id 
-            FROM ledgers led
-            JOIN lenders ln ON led.name = ln.lender_name
-            JOIN loans lo ON lo.lender_id = ln.id
-            WHERE lo.id = $1 AND led.company_id = $2
-        `, [paymentData.loan_id, companyId]);
-        const lenderLedgerId = lenderLedgerRes.rows[0]?.id || 10;
-        
-        // Accounting
         const cashAcc = await getAccountByCode(companyId, '1000');
         const loanAcc = await getAccountByCode(companyId, '2000');
-        const interestAcc = await getAccountByCode(companyId, '5000'); // Expense
+        const interestAcc = await getAccountByCode(companyId, '5000');
 
         if (cashAcc && loanAcc) {
+            const interest = parseFloat(paymentData.interest_component || 0);
+            const principal = parseFloat(paymentData.principal_component || 0);
+            const total = parseFloat(paymentData.total_amount || 0);
+            // Any amount not split into components goes to loan payable
+            const remainder = Math.max(0, total - interest - principal);
+
             const txLines = [];
-            if (paymentData.interest_component > 0 && interestAcc) {
-                txLines.push({ account_id: interestAcc.id, debit_amount: paymentData.interest_component, credit_amount: 0, description: 'Interest expense' });
+            if (interest > 0 && interestAcc) {
+                txLines.push({ account_id: interestAcc.id, debit_amount: interest, credit_amount: 0, description: 'Interest expense' });
             }
-            if (paymentData.principal_component > 0) {
-                txLines.push({ account_id: loanAcc.id, debit_amount: paymentData.principal_component, credit_amount: 0, description: 'Principal repayment' });
+            if (principal > 0) {
+                txLines.push({ account_id: loanAcc.id, debit_amount: principal, credit_amount: 0, description: 'Principal repayment' });
             }
-            txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: paymentData.total_amount, description: 'Payment from bank/cash' });
+            if (remainder > 0) {
+                txLines.push({ account_id: loanAcc.id, debit_amount: remainder, credit_amount: 0, description: 'Loan payment (other)' });
+            }
+            // Credit cash = total (guaranteed to equal sum of debits above)
+            txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: total, description: 'Payment from bank/cash' });
 
             await createTransactionInternal(client, {
                 company_id: companyId,
@@ -170,6 +165,22 @@ export const recordLoanRepayment = async (user, paymentData) => {
                 description: `Loan repayment for loan ID: ${paymentData.loan_id}`,
                 created_by: user.id
             }, txLines);
+        }
+
+        // 3. Update cash/bank ledger so Financial Ledgers page shows the outflow
+        const payMode = (paymentData.payment_mode || 'CASH').toUpperCase();
+        if (payMode === 'BANK') {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                 VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
+                [companyId, branchId, paymentData.total_amount, paymentData.payment_date]
+            );
+        } else {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
+                [companyId, branchId, paymentData.total_amount, paymentData.payment_date]
+            );
         }
 
         await client.query('COMMIT');
@@ -259,6 +270,40 @@ export const recordChitInstallment = async (user, installmentData) => {
                 description: `Chit installment for group ID: ${installmentData.chit_group_id}`,
                 created_by: user.id
             }, txLines);
+        }
+
+        // 3. Write to cash/bank ledger for Financial Ledgers visibility
+        const chitPayMode = (installmentData.payment_mode || 'CASH').toUpperCase();
+        if (!installmentData.is_auction_won) {
+            // Paying installment = cash OUT
+            if (chitPayMode === 'BANK') {
+                await client.query(
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                     VALUES ($1, $2, 'CHIT_INSTALLMENT', $3, 'out', 'Main Account', $4)`,
+                    [companyId, branchId, installmentData.amount, installmentData.payment_date]
+                );
+            } else {
+                await client.query(
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                     VALUES ($1, $2, 'CHIT_INSTALLMENT', $3, 'out', $4)`,
+                    [companyId, branchId, installmentData.amount, installmentData.payment_date]
+                );
+            }
+        } else if (installmentData.auction_amount_received > 0) {
+            // Auction won = cash IN
+            if (chitPayMode === 'BANK') {
+                await client.query(
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                     VALUES ($1, $2, 'CHIT_AUCTION', $3, 'in', 'Main Account', $4)`,
+                    [companyId, branchId, installmentData.auction_amount_received, installmentData.payment_date]
+                );
+            } else {
+                await client.query(
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                     VALUES ($1, $2, 'CHIT_AUCTION', $3, 'in', $4)`,
+                    [companyId, branchId, installmentData.auction_amount_received, installmentData.payment_date]
+                );
+            }
         }
 
         await client.query('COMMIT');
