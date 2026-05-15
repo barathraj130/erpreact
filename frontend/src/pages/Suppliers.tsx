@@ -14,7 +14,7 @@ import {
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { Supplier, deleteSupplier, fetchSuppliers } from "../api/supplierApi";
-import { apiFetch } from "../api/api";
+import { apiFetch } from "../utils/api";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import AddSupplierModal from "./AddSupplierModal";
 import "./Suppliers.css";
@@ -77,7 +77,6 @@ const Suppliers: React.FC = () => {
     try {
       const res = await apiFetch('/transactions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'SUPPLIER_PAYMENT',
           category: 'Supplier Payment (Debit)',
@@ -90,13 +89,14 @@ const Suppliers: React.FC = () => {
           description: `Payment to supplier: ${paySupplier.name}`,
         }),
       });
-      if (!res.ok) throw new Error('Payment failed');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Payment failed');
       setPaySupplier(null);
       setPayForm({ amount: 0, payment_date: new Date().toISOString().split('T')[0], payment_mode: 'CASH', notes: '' });
       loadData();
       alert(`✅ Payment of ₹${payForm.amount} recorded for ${paySupplier.name}`);
-    } catch {
-      alert('Failed to record payment.');
+    } catch (err: any) {
+      alert('❌ Failed to record payment: ' + (err?.message || 'Unknown error'));
     } finally {
       setPayLoading(false);
     }
