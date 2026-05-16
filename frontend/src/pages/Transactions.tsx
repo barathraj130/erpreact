@@ -100,11 +100,10 @@ const Transactions: React.FC = () => {
     if (proofFile) data.append("proof", proofFile);
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/transactions`, {
+      const res = await apiFetch("/transactions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${localStorage.getItem("erp-token")}` },
         body: data
-      });
+      }, false); // false = not JSON, it's FormData
       if (res.ok) {
         setShowNewTxModal(false);
         setProofFile(null);
@@ -114,8 +113,8 @@ const Transactions: React.FC = () => {
         const err = await res.json();
         alert(err.error || "Failed to record transaction.");
       }
-    } catch (err) {
-      alert("Network error occurred.");
+    } catch (err: any) {
+      alert("Failed to record transaction: " + (err?.message || "Unknown error"));
     }
   };
 
@@ -238,7 +237,7 @@ const Transactions: React.FC = () => {
                       <td className="text-center">
                          <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} title="Receipt" onClick={() => downloadReceipt(tx.id)}><FaFileDownload /></button>
-                            {tx.proof_url && <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence" onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}${tx.proof_url}`, '_blank')}><FaEye /></button>}
+                            {tx.proof_url && <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence" onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}${tx.proof_url}`, '_blank')}><FaEye /></button>}
                          </div>
                       </td>
                    </tr>

@@ -172,6 +172,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
+  const [companyName, setCompanyName] = useState<string>("");
+
+  useEffect(() => {
+    // Load company name from billing config (reflects Bill Format Settings)
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/billing-config/format`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("erp-token")}` }
+    }).then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.business_name) setCompanyName(d.business_name); })
+      .catch(() => {});
+  }, []);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [companyName, setCompanyName] = useState<string>("");
