@@ -12,6 +12,7 @@ import {
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import * as brokerService from "../services/brokerService.js";
 import * as pointsService from "../services/pointsService.js";
+import { triggerN8N } from "../utils/triggerN8N.js";
 
 const router = express.Router();
 
@@ -128,7 +129,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         // 1. Get Company/Branch and Customer State for GST Detection
         const company = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);
-        const customer = await client.query(`SELECT state, state_code FROM users WHERE id = $1`, [safeCustomerId]);
+        const customer = await client.query(`SELECT state, state_code, username, phone FROM users WHERE id = $1`, [safeCustomerId]);
         
         const companyStateCode = company.rows[0]?.state_code;
         const customerStateCode = customer.rows[0]?.state_code;
@@ -544,12 +545,23 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
         await client.query("COMMIT");
-        res.status(201).json({ 
-            message: "Invoice saved", 
-            id: invoiceId, 
+        res.status(201).json({
+            message: "Invoice saved",
+            id: invoiceId,
             bill_number: finalInvoiceNumber,
             points_earned: ptsEarned,
             points_redeemed: pointsRedeemed
+        });
+
+        // Fire n8n webhook (non-blocking, after response sent)
+        triggerN8N('invoice-created', {
+            customer_name:  customer.rows[0]?.username || 'Unknown',
+            customer_phone: customer.rows[0]?.phone || '',
+            invoice_number: finalInvoiceNumber,
+            total_amount:   netInvoiceAmount,
+            paid_amount:    finalAmountPaid,
+            balance_amount: Math.max(0, netInvoiceAmount - finalAmountPaid),
+            points_earned:  ptsEarned,
         });
     } catch (err) {
         if (client) await client.query("ROLLBACK");

@@ -6,6 +6,7 @@ import path from "path";
 import fs from "fs";
 import * as brokerService from "../services/brokerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
+import { triggerN8N } from "../utils/triggerN8N.js";
 
 const router = express.Router();
 
@@ -418,6 +419,15 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         await client.query("COMMIT");
         res.status(201).json({ success: true, id: billId, total: netAmount, balance, status });
+
+        // Fire n8n webhook (non-blocking, after response sent)
+        triggerN8N('erp-alert', {
+            event_type:    'purchase_received',
+            supplier_name: supplierRes.rows[0]?.name || supplier_name || 'Unknown',
+            amount:        netAmount,
+            bill_number:   bill_number,
+            items_count:   Array.isArray(items) ? items.length : 0,
+        });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Purchase creation error:", err);
