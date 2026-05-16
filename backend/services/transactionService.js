@@ -26,6 +26,7 @@ export const processTransaction = async (txData, user) => {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), $7)
             RETURNING id
         `;
+        const refId = txData.reference_id && txData.reference_id !== '' ? Number(txData.reference_id) : null;
         const txParams = [
             companyId,
             branchId,
@@ -36,7 +37,7 @@ export const processTransaction = async (txData, user) => {
             txData.date,
             txData.category || txData.type,
             txData.reference_type,
-            txData.reference_id,
+            refId,
             txData.proof_url || null,
             txData.bank_name || null,
             txData.bank_ref_no || null,
@@ -76,16 +77,15 @@ export const processTransaction = async (txData, user) => {
         // 3. Handle Module Specific Ledger Impacts
         switch (txData.type) {
             case 'CUSTOMER_PAYMENT':
-                if (txData.reference_id) {
+                if (refId) {
                     await client.query(`
                         INSERT INTO customer_ledger (customer_id, company_id, date, type, description, credit, branch_id)
                         VALUES ($1, $2, $3, 'PAYMENT', $4, $5, $6)
-                    `, [txData.reference_id, companyId, txData.date, txData.description, txData.amount, branchId]);
+                    `, [refId, companyId, txData.date, txData.description, txData.amount, branchId]);
                 }
                 break;
 
             case 'EXPENSE_PAYMENT':
-                // Create mandatory entry in expenses table
                 await client.query(`
                     INSERT INTO expenses (transaction_id, company_id, branch_id, category, description, amount, expense_date)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -93,39 +93,38 @@ export const processTransaction = async (txData, user) => {
                 break;
 
             case 'SALARY_PAYMENT':
-                if (txData.reference_id) {
+                if (refId) {
                     await client.query(`
-                        UPDATE salary_payments 
+                        UPDATE salary_payments
                         SET status = 'PAID', paid_date = $1, transaction_id = $2
                         WHERE id = $3 AND company_id = $4
-                    `, [txData.date, transactionId, txData.reference_id, companyId]);
+                    `, [txData.date, transactionId, refId, companyId]);
                 }
                 break;
 
             case 'ADVANCE_PAYMENT':
-                if (txData.reference_id) {
+                if (refId) {
                     await client.query(`
                         INSERT INTO employee_advances (employee_id, company_id, branch_id, amount, advance_date, description, status)
                         VALUES ($1, $2, $3, $4, $5, $6, 'Pending')
-                    `, [txData.reference_id, companyId, branchId, txData.amount, txData.date, txData.description]);
+                    `, [refId, companyId, branchId, txData.amount, txData.date, txData.description]);
                 }
                 break;
 
             case 'REFUND_PAYMENT':
-                if (txData.reference_id) {
+                if (refId) {
                     await client.query(`
                         INSERT INTO customer_ledger (customer_id, company_id, date, type, description, debit, branch_id)
                         VALUES ($1, $2, $3, 'REFUND', $4, $5, $6)
-                    `, [txData.reference_id, companyId, txData.date, txData.description, txData.amount, branchId]);
+                    `, [refId, companyId, txData.date, txData.description, txData.amount, branchId]);
                 }
                 break;
 
             case 'SUPPLIER_PAYMENT':
-                // Reduce supplier's outstanding balance
-                if (txData.reference_id) {
+                if (refId) {
                     await client.query(
                         `UPDATE suppliers SET current_balance = GREATEST(0, current_balance - $1) WHERE id = $2 AND company_id = $3`,
-                        [txData.amount, txData.reference_id, companyId]
+                        [txData.amount, refId, companyId]
                     );
                 }
                 break;

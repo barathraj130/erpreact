@@ -89,8 +89,12 @@ const Transactions: React.FC = () => {
   const handleCreateTx = async (e: React.FormEvent) => {
     e.preventDefault();
     const data = new FormData();
-    Object.keys(formData).forEach(key => data.append(key, formData[key]));
-    
+    Object.keys(formData).forEach(key => {
+      // skip empty reference_id — DB column is integer, can't accept ""
+      if (key === "reference_id" && !formData[key]) return;
+      data.append(key, formData[key]);
+    });
+
     let refType = "general";
     if (formData.type.includes("CUSTOMER")) refType = "customer";
     if (formData.type.includes("SUPPLIER")) refType = "supplier";
@@ -268,7 +272,7 @@ const Transactions: React.FC = () => {
                 <div className="form-grid">
                   <div className="form-group form-item-full">
                     <label>Transaction Category</label>
-                    <select className="form-input" style={{ borderRadius: "10px" }} value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                    <select className="form-input" style={{ borderRadius: "10px" }} value={formData.type} onChange={e => setFormData({...formData, type: e.target.value, reference_id: ""})}>
                       <option value="CUSTOMER_PAYMENT">Customer Payment (Credit)</option>
                       <option value="GIFT_CONTRIBUTION">Gift Contribution (Credit)</option>
                       <option value="RECEIPT">General Receipt (Credit)</option>
@@ -285,12 +289,32 @@ const Transactions: React.FC = () => {
                     </select>
                   </div>
 
+                  {formData.type === 'CUSTOMER_PAYMENT' && (
+                    <div className="form-group form-item-full">
+                      <label>Select Customer</label>
+                      <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
+                        <option value="">-- Select Customer --</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.name || c.customer_name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
                   {formData.type === 'SUPPLIER_PAYMENT' && (
                     <div className="form-group form-item-full">
                       <label>Select Supplier</label>
                       <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
-                        <option value="">-- Select --</option>
-                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.lender_name}</option>)}
+                        <option value="">-- Select Supplier --</option>
+                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.lender_name || s.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {(formData.type === 'SALARY_PAYMENT' || formData.type === 'ADVANCE_PAYMENT') && (
+                    <div className="form-group form-item-full">
+                      <label>Select Employee</label>
+                      <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
+                        <option value="">-- Select Employee --</option>
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name || e.employee_name || e.username}</option>)}
                       </select>
                     </div>
                   )}
