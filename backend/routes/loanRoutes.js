@@ -3,6 +3,7 @@ import express from 'express';
 import * as financeService from '../services/financeService.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as db from '../database/pg.js';
+import { triggerN8N } from '../utils/triggerN8N.js';
 
 const router = express.Router();
 
@@ -53,6 +54,31 @@ router.post('/repayment', authMiddleware, async (req, res) => {
     try {
         const repayment = await financeService.recordLoanRepayment(req.user, req.body);
         res.status(201).json(repayment);
+
+        // Fire n8n webhook (non-blocking, after response sent)
+        try {
+            const companyId = req.user.active_company_id;
+            const loanInfo = await db.pgGet(
+                `SELECT l.principal_amount, l.duration_months, ln.lender_name,
+                        GREATEST(0, l.principal_amount - COALESCE((
+                            SELECT SUM(principal_component) FROM loan_payments
+                            WHERE loan_id = l.id AND company_id = $1
+                        ), 0)) AS outstanding
+                 FROM loans l
+                 LEFT JOIN lenders ln ON l.lender_id = ln.id
+                 WHERE l.id = $2 AND l.company_id = $1`,
+                [companyId, req.body.loan_id]
+            );
+            await triggerN8N('erp-alert', {
+                event_type:   'loan_due',
+                lender_name:  loanInfo?.lender_name || 'Lender',
+                emi_amount:   req.body.total_amount,
+                due_date:     req.body.payment_date,
+                outstanding:  loanInfo?.outstanding ?? 0,
+            });
+        } catch (e) {
+            console.log('N8N loan trigger failed silently:', e.message);
+        }
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

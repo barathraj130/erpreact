@@ -2,6 +2,7 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { triggerN8N } from "../utils/triggerN8N.js";
 
 const router = express.Router();
 
@@ -301,6 +302,17 @@ router.post("/payroll/finalize", authMiddleware, async (req, res) => {
 
         await client.query('COMMIT');
         res.json({ success: true, message: `Payroll finalized` });
+
+        // Fire n8n webhook per employee (non-blocking, after response sent)
+        for (const item of payroll_data) {
+            triggerN8N('erp-alert', {
+                event_type:    'salary_processed',
+                employee_name: item.employee?.name || 'Employee',
+                salary_amount: item.net_pay,
+                month:         month_year,
+                payment_mode:  item.payment_mode || 'CASH',
+            });
+        }
     } catch (err) {
         if (client) await client.query('ROLLBACK');
         console.error(err);
