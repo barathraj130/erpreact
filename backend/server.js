@@ -167,19 +167,10 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");
 
 
-// --- DATABASE INITIALIZATION ---
-runSchemaUpdates()
-    .then(async () => {
-        const db = await import("./database/pg.js");
-        const cols = await db.pgAll("SELECT column_name FROM information_schema.columns WHERE table_name = 'products'");
-        console.log("🛠️ PRODUCTS COLUMNS:", cols.map(c => c.column_name).join(", "));
-    })
-    .catch(err => { console.error("❌ Database Init Failed:", err); });
-
 // --- ERROR HANDLING ---
 app.use((err, req, res, next) => {
     console.error("❌ Unhandled Error:", err);
-    res.status(err.status || 500).json({ 
+    res.status(err.status || 500).json({
         error: err.message || "Internal server error",
         code: err.code || "INTERNAL_ERROR"
     });
@@ -187,8 +178,8 @@ app.use((err, req, res, next) => {
 
 // --- HEALTH CHECK ---
 app.get("/health", (req, res) => {
-    res.json({ 
-        status: "ok", 
+    res.json({
+        status: "ok",
         timestamp: new Date(),
         environment: process.env.NODE_ENV || "development"
     });
@@ -196,17 +187,25 @@ app.get("/health", (req, res) => {
 
 app.get("/", (req, res) => res.send("✅ ERP Backend Running"));
 
+// --- DATABASE INITIALIZATION THEN START SERVER ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`\n🔥 ERP Server running on port ${PORT}`);
-    console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log(`🗄️ Database: ${process.env.DATABASE_URL || "postgresql://localhost/erp"}`);
-    console.log(`\n✨ Modules Loaded:`);
-    console.log(`  ✓ Authentication & Security`);
-    console.log(`  ✓ Finance (Bank, Loans, Accounting)`);
-    console.log(`  ✓ Sales & Invoicing`);
-    console.log(`  ✓ Inventory`);
-    console.log(`  ✓ HR & Payroll`);
-    console.log(`  ✓ Reports & Analytics`);
-    console.log(`  ✓ Backup & Recovery\n`);
-});
+runSchemaUpdates()
+    .then(() => {
+        app.listen(PORT, () => {
+            console.log(`\n🔥 ERP Server running on port ${PORT}`);
+            console.log(`📡 Environment: ${process.env.NODE_ENV || "development"}`);
+            console.log(`🗄️ Database: ${process.env.DATABASE_URL || "postgresql://localhost/erp"}`);
+            console.log(`\n✨ Modules Loaded:`);
+            console.log(`  ✓ Authentication & Security`);
+            console.log(`  ✓ Finance (Bank, Loans, Accounting)`);
+            console.log(`  ✓ Sales & Invoicing`);
+            console.log(`  ✓ Inventory`);
+            console.log(`  ✓ HR & Payroll`);
+            console.log(`  ✓ Reports & Analytics`);
+            console.log(`  ✓ Backup & Recovery\n`);
+        });
+    })
+    .catch(err => {
+        console.error("❌ Database Init Failed — server NOT started:", err);
+        process.exit(1);
+    });
