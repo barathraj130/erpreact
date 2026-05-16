@@ -137,9 +137,10 @@ const CreatePurchaseBill: React.FC = () => {
 
   const handleProductSelect = (index: number, val: string) => {
     const t = [...items];
-    const prod = products.find(p => p.id === parseInt(val));
+    // Match by name (datalist shows names) or by id (fallback)
+    const prod = products.find((p: any) => p.name === val) || products.find((p: any) => p.id === parseInt(val));
     if (prod) {
-      t[index].id = val;
+      t[index].id = String(prod.id);
       t[index].name = prod.name;
       t[index].rate = prod.cost_price || prod.purchase_price || 0;
       t[index].gstRate = prod.gst_percent || 18;
