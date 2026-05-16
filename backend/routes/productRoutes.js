@@ -167,9 +167,27 @@ router.get("/breakdown", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {
-        const sql = `SELECT * FROM products WHERE company_id = $1 AND is_deleted = false ORDER BY id DESC`;
+        // current_stock = sum across all branches (branch_inventory) + main hub (products.current_stock)
+        // branch_inventory tracks per-branch transfers; products.current_stock tracks main hub purchases
+        const sql = `
+            SELECT p.*,
+                   COALESCE(p.current_stock, 0)
+                   + COALESCE(bi.branch_total, 0) - COALESCE(bi.main_branch, 0) AS total_stock
+            FROM products p
+            LEFT JOIN (
+                SELECT product_id,
+                       SUM(current_stock) AS branch_total,
+                       SUM(CASE WHEN branch_id = 1 THEN current_stock ELSE 0 END) AS main_branch
+                FROM branch_inventory
+                WHERE company_id = $1
+                GROUP BY product_id
+            ) bi ON bi.product_id = p.id
+            WHERE p.company_id = $1 AND p.is_deleted = false
+            ORDER BY p.id DESC
+        `;
         const list = await pgModule.pgAll(sql, [companyId]);
-        return res.json(list || []);
+        // expose total_stock as current_stock so frontend doesn't need changes
+        return res.json((list || []).map(p => ({ ...p, current_stock: p.total_stock ?? p.current_stock })));
     } catch (err) {
         console.error("List Products Error:", err);
         return res.status(500).json({ error: "Failed to fetch products: " + err.message });

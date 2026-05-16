@@ -118,9 +118,9 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 CASE WHEN u.meta IS NOT NULL AND (u.meta->>'customer_ledger_id') IS NOT NULL AND (u.meta->>'customer_ledger_id') != ''
                      THEN (u.meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 u.bank_name, u.bank_account_no, u.bank_ifsc_code, u.created_at,
-                -- Real outstanding = opening + invoiced - invoice_payments - direct_transactions
+                -- Use meta.customer_opening_balance if set, else initial_balance (matches ledger service logic)
                 GREATEST(0,
-                  COALESCE(u.initial_balance, 0)
+                  COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
                   + COALESCE(inv_totals.total_billed, 0)
                   - COALESCE(inv_totals.total_paid_invoice, 0)
                   - COALESCE(direct.total_direct, 0)
