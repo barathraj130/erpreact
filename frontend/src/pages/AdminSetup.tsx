@@ -958,6 +958,22 @@ const AdminSetup: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Danger Zone */}
+      <div style={{ margin: '32px 0 0', padding: '20px 24px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 12 }}>
+        <div style={{ fontWeight: 700, color: '#dc2626', fontSize: 14, marginBottom: 8 }}>⚠ Danger Zone</div>
+        <p style={{ fontSize: 13, color: '#7f1d1d', margin: '0 0 14px' }}>
+          Clear all test data and reset the ERP to a clean state for real use.
+          Permanently deletes customers, products, invoices, transactions, and all transactional records.
+        </p>
+        <a href="/admin/reset" style={{
+          display: 'inline-block', padding: '9px 20px',
+          background: '#dc2626', color: '#fff', borderRadius: 7,
+          fontWeight: 700, fontSize: 13, textDecoration: 'none'
+        }}>
+          Reset ERP Data →
+        </a>
+      </div>
     </div>
   );
 };

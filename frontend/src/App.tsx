@@ -17,6 +17,7 @@ import { Toaster } from "react-hot-toast";
 // Pages
 import AIInsights from "./pages/AIInsights";
 import AdminSetup from "./pages/AdminSetup";
+import ERPReset from "./pages/ERPReset";
 import Branches from "./pages/Branches";
 import CreateInvoice from "./pages/CreateInvoice";
 import Customers from "./pages/Customers";
@@ -256,6 +257,7 @@ const App: React.FC = () => {
             <Route path="/admin/bill-format" element={<BillFormatSettings />} />
             <Route path="/admin/payment-methods" element={<PaymentMethodsAdmin />} />
             <Route path="/admin/system-test" element={<SystemTester />} />
+            <Route path="/admin/reset" element={<ERPReset />} />
             <Route path="/admin/reports" element={<Reports />} />
             <Route path="/admin/employees" element={<Employees />} />
           </Route>
