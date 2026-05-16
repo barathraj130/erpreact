@@ -119,8 +119,9 @@ const LoanManagement: React.FC = () => {
         loan_type: "BANK",
       });
       setReceiptRows([{ mode: "CASH", amount: 0 }]);
-    } catch (err) {
-      alert("Failed to create loan record.");
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      alert("Failed to create loan record.\n\n" + msg);
     } finally {
       setLoading(false);
     }

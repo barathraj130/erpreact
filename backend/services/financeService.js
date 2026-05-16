@@ -60,11 +60,19 @@ export const createLoan = async (user, loanData) => {
             loanData.notes
         ]);
 
-        // Best-effort: update new columns added by migration (ignored if columns don't exist yet)
-        await client.query(
-            `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
-            [loanType, principal, loanRes.rows[0].id]
-        ).catch(() => {});
+        // Best-effort: update new columns added by migration.
+        // Must use SAVEPOINT — a bare .catch() inside a BEGIN tx still poisons the transaction.
+        await client.query(`SAVEPOINT sp_loan_new_cols`);
+        try {
+            await client.query(
+                `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
+                [loanType, principal, loanRes.rows[0].id]
+            );
+            await client.query(`RELEASE SAVEPOINT sp_loan_new_cols`);
+        } catch (_) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_loan_new_cols`);
+            await client.query(`RELEASE SAVEPOINT sp_loan_new_cols`);
+        }
         const loan = loanRes.rows[0];
 
         // 2. Double-Entry: Loan Disbursement
@@ -80,7 +88,13 @@ export const createLoan = async (user, loanData) => {
         if (!lenderLedgerId) {
             const creditorsGroup = await client.query("SELECT id FROM ledger_groups WHERE (company_id = $1 OR company_id = 1) AND name = 'Sundry Creditors'", [companyId]);
             const gId = creditorsGroup.rows[0]?.id || 1;
-            const newLedger = await client.query("INSERT INTO ledgers (company_id, name, group_id) VALUES ($1, $2, $3) RETURNING id", [companyId, lenderName + ' (Auto)', gId]);
+            // Use ON CONFLICT so a second attempt (or race) doesn't violate unique constraint
+            const newLedger = await client.query(
+                `INSERT INTO ledgers (company_id, name, group_id) VALUES ($1, $2, $3)
+                 ON CONFLICT (company_id, name) DO UPDATE SET group_id = EXCLUDED.group_id
+                 RETURNING id`,
+                [companyId, lenderName + ' (Auto)', gId]
+            );
             lenderLedgerId = newLedger.rows[0].id;
         }
 
@@ -136,10 +150,18 @@ export const createLoan = async (user, loanData) => {
                         [companyId, branchId, amt, loanData.start_date || new Date()]
                     );
                 }
-                await client.query(
-                    `INSERT INTO loan_receipts (loan_id, method, amount) VALUES ($1,$2,$3)`,
-                    [loan.id, m, amt]
-                ).catch(() => {}); // table may not exist on older DBs
+                // Save receipt — SAVEPOINT so a missing table doesn't abort the main tx
+                await client.query(`SAVEPOINT sp_loan_receipt`);
+                try {
+                    await client.query(
+                        `INSERT INTO loan_receipts (loan_id, method, amount) VALUES ($1,$2,$3)`,
+                        [loan.id, m, amt]
+                    );
+                    await client.query(`RELEASE SAVEPOINT sp_loan_receipt`);
+                } catch (_) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_loan_receipt`);
+                    await client.query(`RELEASE SAVEPOINT sp_loan_receipt`);
+                }
             }
         }
 
@@ -192,12 +214,19 @@ export const recordLoanRepayment = async (user, paymentData) => {
 
         // 2. Reduce principal_outstanding for principal payments (best-effort — column may not exist yet)
         if (principalComp > 0) {
-            await client.query(`
-                UPDATE loans SET
-                    principal_outstanding = GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1),
-                    status = CASE WHEN GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1) <= 0 THEN 'CLOSED' ELSE 'ACTIVE' END
-                WHERE id = $2
-            `, [principalComp, paymentData.loan_id]).catch(() => {});
+            await client.query(`SAVEPOINT sp_principal_update`);
+            try {
+                await client.query(`
+                    UPDATE loans SET
+                        principal_outstanding = GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1),
+                        status = CASE WHEN GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1) <= 0 THEN 'CLOSED' ELSE 'ACTIVE' END
+                    WHERE id = $2
+                `, [principalComp, paymentData.loan_id]);
+                await client.query(`RELEASE SAVEPOINT sp_principal_update`);
+            } catch (_) {
+                await client.query(`ROLLBACK TO SAVEPOINT sp_principal_update`);
+                await client.query(`RELEASE SAVEPOINT sp_principal_update`);
+            }
         }
 
         // 3. Double-Entry
