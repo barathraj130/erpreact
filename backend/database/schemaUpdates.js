@@ -215,6 +215,8 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS branch_id INTEGER;
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bill_purpose VARCHAR(50) DEFAULT 'real';
             ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
             -- Invoice Line Items: all columns used by invoiceRoutes.js
             ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id);

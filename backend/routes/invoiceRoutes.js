@@ -72,7 +72,7 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
         FROM invoices i
         LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
         LEFT JOIN users u ON i.customer_id = u.id
-        WHERE i.company_id = $1
+        WHERE i.company_id = $1 AND COALESCE(i.is_deleted, false) = false
         GROUP BY i.id, u.username
         ORDER BY i.created_at DESC
     `;
@@ -293,20 +293,23 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const invoiceId = result.rows[0].id;
 
         // Process All Items (Sale + Return)
+        const isNameOnly = (bill_purpose === 'name_only');
         const allItems = [...processedItems, ...processedReturnItems];
         for (const item of allItems) {
             if (item.product_id) {
                 if (item.is_return) {
-                    // Increment stock for returns
-                    await client.query('UPDATE products SET current_stock = current_stock + $1 WHERE id = $2', [item.qty, item.product_id]);
-                } else {
-                    // Check stock for sales
+                    // Increment stock for returns (skip for name_only bills)
+                    if (!isNameOnly) {
+                        await client.query('UPDATE products SET current_stock = current_stock + $1 WHERE id = $2', [item.qty, item.product_id]);
+                    }
+                } else if (!isNameOnly) {
+                    // Check stock for sales — skipped entirely for name_only bills
                     if (branchId) {
                         // Check Branch Inventory
                         const branchStockRes = await client.query('SELECT current_stock FROM branch_inventory WHERE branch_id = $1 AND product_id = $2', [branchId, item.product_id]);
                         const stock = Number(branchStockRes.rows[0]?.current_stock || 0);
                         if (stock < item.qty) throw new Error(`Insufficient stock in branch. Avail: ${stock}`);
-                        
+
                         await client.query('UPDATE branch_inventory SET current_stock = current_stock - $1 WHERE branch_id = $2 AND product_id = $3', [item.qty, branchId, item.product_id]);
                         // Also decrement global product stock
                         await client.query('UPDATE products SET current_stock = current_stock - $1 WHERE id = $2', [item.qty, item.product_id]);
@@ -774,28 +777,94 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
         client = await db.getClient();
         await client.query("BEGIN");
 
-        // 1. Fetch info before deletion
-        const inv = await client.query(`SELECT total_amount, paid_amount, customer_id FROM invoices WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        // 1. Fetch invoice + line items before marking deleted
+        const inv = await client.query(
+            `SELECT i.customer_id, i.branch_id, i.bill_purpose,
+                    COALESCE(i.is_deleted, false) AS is_deleted
+             FROM invoices i
+             WHERE i.id = $1 AND i.company_id = $2`,
+            [id, companyId]
+        );
         if (inv.rows.length === 0) {
             await client.query("ROLLBACK");
             return res.status(404).json({ error: "Invoice not found" });
         }
+        const { customer_id, branch_id, bill_purpose: invBillPurpose, is_deleted } = inv.rows[0];
+        if (is_deleted) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ error: "Invoice already cancelled" });
+        }
 
-        const { customer_id } = inv.rows[0];
+        // 2. Soft-delete the invoice (preserves audit trail)
+        await client.query(
+            `UPDATE invoices SET is_deleted = true, deleted_at = NOW() WHERE id = $1`,
+            [id]
+        );
 
-        // 2. Delete everything related (ledger_entries FK → transactions, so delete first)
-        await client.query(`DELETE FROM ledger_entries WHERE transaction_id IN (SELECT id FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1)`, [id]);
-        await client.query(`DELETE FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1`, [id]);
+        // 3. Restore inventory (only for real bills — name_only bills never touched stock)
+        if (invBillPurpose !== 'name_only') {
+            const lineItems = await client.query(
+                `SELECT product_id, quantity, is_return FROM invoice_line_items WHERE invoice_id = $1`,
+                [id]
+            );
+            for (const li of lineItems.rows) {
+                if (!li.product_id) continue;
+                const qty = Number(li.quantity);
+                if (li.is_return) {
+                    // Returns had added stock — reverse that
+                    await client.query(
+                        'UPDATE products SET current_stock = current_stock - $1 WHERE id = $2',
+                        [qty, li.product_id]
+                    );
+                } else {
+                    // Sales had subtracted stock — restore it
+                    await client.query(
+                        'UPDATE products SET current_stock = current_stock + $1 WHERE id = $2',
+                        [qty, li.product_id]
+                    );
+                    await client.query(
+                        'UPDATE inventory SET current_stock = current_stock + $1 WHERE product_id = $2',
+                        [qty, li.product_id]
+                    );
+                    if (branch_id) {
+                        await client.query(
+                            'UPDATE branch_inventory SET current_stock = current_stock + $1 WHERE branch_id = $2 AND product_id = $3',
+                            [qty, branch_id, li.product_id]
+                        );
+                    }
+                }
+            }
+        }
+
+        // 4. Remove financial entries so balances recompute correctly
+        await client.query(
+            `DELETE FROM ledger_entries WHERE transaction_id IN (
+                SELECT id FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1
+             )`,
+            [id]
+        );
+        await client.query(
+            `DELETE FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1`,
+            [id]
+        );
         await client.query(`DELETE FROM invoice_payments WHERE invoice_id = $1`, [id]);
-        await client.query(`DELETE FROM invoice_line_items WHERE invoice_id = $1`, [id]);
-        await client.query(`DELETE FROM invoices WHERE id = $1`, [id]);
 
+        // 5. Remove customer ledger events for this invoice
+        if (customer_id) {
+            await deleteCustomerLedgerEvents(client, {
+                companyId,
+                customerId: customer_id,
+                relatedInvoiceId: id,
+            });
+        }
+
+        // 6. Recompute customer balance
         if (customer_id) {
             await recomputeCustomerBalance(client, customer_id, companyId);
         }
 
         await client.query("COMMIT");
-        res.json({ message: "Invoice and related data deleted successfully" });
+        res.json({ message: "Invoice cancelled successfully" });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Delete Invoice Error:", err.message);
