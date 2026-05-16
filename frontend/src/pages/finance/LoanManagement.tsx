@@ -64,9 +64,12 @@ const LoanManagement: React.FC = () => {
     total_amount: 0,
     interest_component: 0,
     principal_component: 0,
-    payment_mode: "BANK",
+    payment_mode: "CASH",
     notes: "",
+    cash_amount: 0,
+    bank_amount: 0,
   });
+  const [splitPayment, setSplitPayment] = useState(false);
 
   const calcMonthlyInterest = (loan: any): number => {
     if (!loan) return 0;
@@ -106,20 +109,29 @@ const LoanManagement: React.FC = () => {
     if (!selectedLoan) return;
     setLoading(true);
     try {
-      await financeApi.recordLoanRepayment({
+      const payload: any = {
         ...repayData,
         loan_id: selectedLoan.id,
         payment_type: paymentType,
-      });
+      };
+      if (splitPayment) {
+        payload.cash_amount = repayData.cash_amount;
+        payload.bank_amount = repayData.bank_amount;
+        payload.total_amount = (repayData.cash_amount || 0) + (repayData.bank_amount || 0);
+      }
+      await financeApi.recordLoanRepayment(payload);
       setShowRepayModal(false);
+      setSplitPayment(false);
       fetchLoans();
       setRepayData({
         payment_date: new Date().toISOString().split("T")[0],
         total_amount: 0,
         interest_component: 0,
         principal_component: 0,
-        payment_mode: "BANK",
+        payment_mode: "CASH",
         notes: "",
+        cash_amount: 0,
+        bank_amount: 0,
       });
     } catch (err) {
       alert("Failed to record repayment.");
@@ -737,15 +749,69 @@ const LoanManagement: React.FC = () => {
                   </div>
                 )}
 
-                <label>Payment Mode</label>
-                <select value={repayData.payment_mode} onChange={e => setRepayData({ ...repayData, payment_mode: e.target.value })}>
-                  <option value="CASH">Cash</option>
-                  <option value="BANK">Bank Transfer</option>
-                  <option value="UPI">UPI</option>
-                </select>
+                {/* Split Payment Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '12px 0 8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSplitPayment(!splitPayment)}
+                    style={{
+                      padding: '5px 14px', borderRadius: '20px', border: '1px solid #e2e8f0',
+                      background: splitPayment ? '#0f172a' : '#f8fafc',
+                      color: splitPayment ? '#fff' : '#64748b',
+                      fontSize: '12px', fontWeight: 600, cursor: 'pointer'
+                    }}
+                  >
+                    {splitPayment ? '✓ Split: Cash + Bank' : 'Split Payment (Cash + Bank)?'}
+                  </button>
+                </div>
+
+                {splitPayment ? (
+                  <div className="form-grid-2">
+                    <div>
+                      <label>Cash Amount (₹)</label>
+                      <input
+                        type="number"
+                        value={repayData.cash_amount}
+                        min={0}
+                        onChange={e => {
+                          const c = Number(e.target.value);
+                          setRepayData({ ...repayData, cash_amount: c, total_amount: c + (repayData.bank_amount || 0) });
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label>Bank / UPI Amount (₹)</label>
+                      <input
+                        type="number"
+                        value={repayData.bank_amount}
+                        min={0}
+                        onChange={e => {
+                          const b = Number(e.target.value);
+                          setRepayData({ ...repayData, bank_amount: b, total_amount: (repayData.cash_amount || 0) + b });
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label>Payment Mode</label>
+                    <select value={repayData.payment_mode} onChange={e => setRepayData({ ...repayData, payment_mode: e.target.value })}>
+                      <option value="CASH">Cash</option>
+                      <option value="BANK">Bank Transfer</option>
+                      <option value="UPI">UPI</option>
+                    </select>
+                  </>
+                )}
+
+                {splitPayment && (
+                  <div style={{ padding: '8px 12px', background: '#f1f5f9', borderRadius: '8px', fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+                    Total: ₹{((repayData.cash_amount || 0) + (repayData.bank_amount || 0)).toLocaleString('en-IN')}
+                    &nbsp;(Cash ₹{(repayData.cash_amount || 0).toLocaleString('en-IN')} + Bank ₹{(repayData.bank_amount || 0).toLocaleString('en-IN')})
+                  </div>
+                )}
 
                 <div className="page-modal-actions">
-                  <button type="button" className="page-btn-round" onClick={() => setShowRepayModal(false)}>Cancel</button>
+                  <button type="button" className="page-btn-round" onClick={() => { setShowRepayModal(false); setSplitPayment(false); }}>Cancel</button>
                   <button type="submit" className="page-btn-round page-btn-round-primary" disabled={loading}>
                     {paymentType === 'interest' ? 'Confirm Interest Payment' : paymentType === 'principal' ? 'Confirm Principal Repayment' : 'Record Payment'}
                   </button>

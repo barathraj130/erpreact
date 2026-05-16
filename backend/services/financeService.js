@@ -34,13 +34,14 @@ export const createLoan = async (user, loanData) => {
         const isPrivate = loanType === 'PRIVATE';
         const principal = parseFloat(loanData.principal_amount || loanData.principal || 0);
 
+        // Use only original columns for the INSERT so it works even before schema migration runs.
+        // New columns (loan_type, principal_outstanding) are updated below via a best-effort UPDATE.
         const loanSql = `
             INSERT INTO loans (
                 company_id, branch_id, lender_id, party_name, party_type,
-                loan_type, loan_direction, principal_amount, principal_outstanding,
-                interest_rate, interest_type,
+                loan_direction, principal_amount, interest_rate, interest_type,
                 start_date, duration_months, repayment_cycle, notes, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ACTIVE')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ACTIVE')
             RETURNING *
         `;
         const loanRes = await client.query(loanSql, [
@@ -49,17 +50,21 @@ export const createLoan = async (user, loanData) => {
             lenderId,
             loanData.party_name || loanData.lender_name || 'Lender',
             loanType,
-            loanType,
             loanData.loan_direction || 'BORROWED',
-            principal,
             principal,
             loanData.interest_rate,
             loanData.interest_type || (isPrivate ? 'FLAT' : 'REDUCING'),
             loanData.start_date,
-            isPrivate ? null : (loanData.duration_months || 12),
-            isPrivate ? null : (loanData.repayment_cycle || 'MONTHLY'),
+            isPrivate ? 0 : (loanData.duration_months || 12),
+            isPrivate ? 'INDEFINITE' : (loanData.repayment_cycle || 'MONTHLY'),
             loanData.notes
         ]);
+
+        // Best-effort: update new columns added by migration (ignored if columns don't exist yet)
+        await client.query(
+            `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
+            [loanType, principal, loanRes.rows[0].id]
+        ).catch(() => {});
         const loan = loanRes.rows[0];
 
         // 2. Double-Entry: Loan Disbursement
@@ -172,14 +177,14 @@ export const recordLoanRepayment = async (user, paymentData) => {
         ]);
         const payment = paymentRes.rows[0];
 
-        // 2. Reduce principal_outstanding for principal payments
+        // 2. Reduce principal_outstanding for principal payments (best-effort — column may not exist yet)
         if (principalComp > 0) {
             await client.query(`
                 UPDATE loans SET
                     principal_outstanding = GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1),
                     status = CASE WHEN GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1) <= 0 THEN 'CLOSED' ELSE 'ACTIVE' END
                 WHERE id = $2
-            `, [principalComp, paymentData.loan_id]);
+            `, [principalComp, paymentData.loan_id]).catch(() => {});
         }
 
         // 3. Double-Entry
@@ -212,19 +217,38 @@ export const recordLoanRepayment = async (user, paymentData) => {
             }, txLines);
         }
 
-        // 3. Update cash/bank ledger so Financial Ledgers page shows the outflow
+        // 3. Update cash/bank ledger — supports split (cash_amount + bank_amount) or single mode
         const payMode = (paymentData.payment_mode || 'CASH').toUpperCase();
-        if (payMode === 'BANK') {
+        const cashAmt = parseFloat(paymentData.cash_amount || 0);
+        const bankAmt = parseFloat(paymentData.bank_amount || 0);
+
+        if (cashAmt > 0 || bankAmt > 0) {
+            // Split payment
+            if (cashAmt > 0) {
+                await client.query(
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
+                    [companyId, branchId, cashAmt, paymentData.payment_date]
+                );
+            }
+            if (bankAmt > 0) {
+                await client.query(
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
+                    [companyId, branchId, bankAmt, paymentData.payment_date]
+                );
+            }
+        } else if (payMode === 'BANK' || payMode === 'UPI') {
             await client.query(
                 `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
                  VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
-                [companyId, branchId, paymentData.total_amount, paymentData.payment_date]
+                [companyId, branchId, total, paymentData.payment_date]
             );
         } else {
             await client.query(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
                  VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
-                [companyId, branchId, paymentData.total_amount, paymentData.payment_date]
+                [companyId, branchId, total, paymentData.payment_date]
             );
         }
 
