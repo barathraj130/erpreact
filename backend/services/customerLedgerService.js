@@ -171,14 +171,14 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
 
        SELECT
          2000000000 + t.id AS id,
-         COALESCE(t.transaction_date, t.date::DATE) AS date,
+         COALESCE(t.transaction_date, t.date) AS date,
          'RECEIPT' AS type,
          'PAYMENT' AS category,
          t.amount AS amount,
          COALESCE(t.description, 'Direct Payment') AS description,
          NULL::INTEGER AS related_invoice_id,
          NULL::TEXT AS invoice_number,
-         UPPER(COALESCE(t.mode, '')) AS payment_method,
+         NULL::TEXT AS payment_method,
          NULL::TEXT AS bank_name,
          NULL::TEXT AS bank_transaction_id,
          NULL::TIMESTAMP AS bank_timestamp,
