@@ -99,8 +99,14 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
         </div>
         <div className="summary-card closing">
           <span className="label">Closing Balance</span>
-          <span className={`value ${data.summary.balance >= 0 ? 'credit' : 'debit'}`}>
-            ₹{Math.abs(data.summary.balance).toLocaleString()} {data.summary.balance >= 0 ? 'Cr' : 'Dr'}
+          <span className={`value ${data.summary.balance <= 0 ? 'credit' : 'debit'}`}>
+            ₹{Math.abs(data.summary.balance).toLocaleString()}
+            {data.summary.balance < 0
+              ? <span style={{ marginLeft: '6px', fontSize: '11px', background: '#dcfce7', color: '#16a34a', padding: '2px 7px', borderRadius: '4px', fontWeight: 700 }}>ADVANCE</span>
+              : data.summary.balance > 0
+              ? <span style={{ marginLeft: '6px', fontSize: '11px', background: '#fee2e2', color: '#dc2626', padding: '2px 7px', borderRadius: '4px', fontWeight: 700 }}>OUTSTANDING</span>
+              : <span style={{ marginLeft: '6px', fontSize: '11px', background: '#f1f5f9', color: '#64748b', padding: '2px 7px', borderRadius: '4px', fontWeight: 700 }}>SETTLED</span>
+            }
           </span>
         </div>
       </div>

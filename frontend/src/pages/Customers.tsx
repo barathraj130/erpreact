@@ -61,8 +61,15 @@ const Customers: React.FC = () => {
       .sort((a, b) => (a.username || "").localeCompare(b.username || ""));
   }, [customers, searchTerm]);
 
-  // Stats calculation
-  const totalBalance = displayedCustomers.reduce((acc, curr) => acc + (Number(curr.remaining_balance) || 0), 0);
+  // Stats calculation — positive = outstanding (customer owes), negative = advance (we owe customer)
+  const totalOutstanding = displayedCustomers.reduce((acc, curr) => {
+    const b = Number(curr.remaining_balance) || 0;
+    return acc + (b > 0 ? b : 0);
+  }, 0);
+  const totalAdvance = displayedCustomers.reduce((acc, curr) => {
+    const b = Number(curr.remaining_balance) || 0;
+    return acc + (b < 0 ? Math.abs(b) : 0);
+  }, 0);
   const totalCustomers = displayedCustomers.length;
 
   const handleEdit = (customer: any) => {
@@ -121,8 +128,14 @@ const Customers: React.FC = () => {
         <div className="stat-card card-emerald">
           <FaWallet className="stat-icon" />
           <div className="label">Outstanding Balance</div>
-          <div className="value">₹{totalBalance.toLocaleString("en-IN")}</div>
+          <div className="value">₹{totalOutstanding.toLocaleString("en-IN")}</div>
           <div className="stat-sub">Pending collection</div>
+        </div>
+        <div className="stat-card card-indigo" style={{ borderLeft: '4px solid #10b981' }}>
+          <FaWallet className="stat-icon" style={{ color: '#10b981' }} />
+          <div className="label">Advance Credits</div>
+          <div className="value" style={{ color: '#10b981' }}>₹{totalAdvance.toLocaleString("en-IN")}</div>
+          <div className="stat-sub">Overpaid by customers</div>
         </div>
         <div className="stat-card card-dark">
           <FaTag className="stat-icon" />
@@ -177,9 +190,15 @@ const Customers: React.FC = () => {
                   <span style={{ fontSize: "12px", color: "var(--text-3)", display: "flex", alignItems: "center", gap: "4px" }}>
                     <FaMapMarkerAlt size={10} /> {user.city_pincode || user.state || "Not specified"}
                   </span>
-                  <span style={{ fontWeight: 600, color: "var(--text-1)", fontSize: "14px" }}>
-                    ₹{Number(user.remaining_balance || 0).toLocaleString("en-IN")}
-                  </span>
+                  {(() => {
+                    const bal = Number(user.remaining_balance || 0);
+                    const isAdvance = bal < 0;
+                    return (
+                      <span style={{ fontWeight: 600, fontSize: "13px", color: isAdvance ? "#16a34a" : bal > 0 ? "#dc2626" : "var(--text-3)" }}>
+                        {isAdvance ? `ADV ₹${Math.abs(bal).toLocaleString("en-IN")}` : `₹${bal.toLocaleString("en-IN")}`}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); }}>
@@ -252,9 +271,19 @@ const Customers: React.FC = () => {
                       </div>
                     </td>
                     <td className="text-right">
-                      <span className="font-bold" style={{ color: "var(--text-2)" }}>
-                        ₹{Number(user.remaining_balance || 0).toLocaleString("en-IN")}
-                      </span>
+                      {(() => {
+                        const bal = Number(user.remaining_balance || 0);
+                        const isAdvance = bal < 0;
+                        return (
+                          <div>
+                            <span className="font-bold" style={{ color: isAdvance ? "#16a34a" : bal > 0 ? "#dc2626" : "var(--text-3)" }}>
+                              ₹{Math.abs(bal).toLocaleString("en-IN")}
+                            </span>
+                            {isAdvance && <div style={{ fontSize: "10px", color: "#16a34a", fontWeight: 600 }}>ADVANCE</div>}
+                            {bal > 0 && <div style={{ fontSize: "10px", color: "#dc2626", fontWeight: 600 }}>OUTSTANDING</div>}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="text-center">
                       <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>

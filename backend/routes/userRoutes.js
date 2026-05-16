@@ -80,11 +80,27 @@ router.post("/staff", authMiddleware, checkPermission("Settings", "access_settin
 router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     try {
         const user = await db.pgGet(`
-            SELECT 
-                id, username, nickname, email, phone, role, gstin, 
+            SELECT
+                id, username, nickname, email, phone, role, gstin,
                 address_line1, city_pincode, state, state_code,
-                initial_balance, bank_name, bank_account_no, bank_ifsc_code, created_at
-            FROM users 
+                initial_balance, bank_name, bank_account_no, bank_ifsc_code, created_at,
+                COALESCE((meta->>'customer_opening_balance')::NUMERIC, COALESCE(initial_balance, 0))
+                + COALESCE((
+                    SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
+                    FROM invoices WHERE customer_id = $1 AND company_id = $2
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(ip.amount)
+                    FROM invoice_payments ip
+                    JOIN invoices i ON i.id = ip.invoice_id
+                    WHERE i.customer_id = $1 AND i.company_id = $2
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'
+                ), 0) as remaining_balance
+            FROM users
             WHERE id = $1 AND company_id = $2
         `, [req.params.id, req.user.active_company_id]);
         
@@ -119,24 +135,23 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 CASE WHEN u.meta IS NOT NULL AND (u.meta->>'customer_ledger_id') IS NOT NULL AND (u.meta->>'customer_ledger_id') != ''
                      THEN (u.meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 u.bank_name, u.bank_account_no, u.bank_ifsc_code, u.created_at,
-                GREATEST(0,
-                  COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
-                  + COALESCE((
-                      SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
-                      FROM invoices WHERE customer_id = u.id AND company_id = $1
-                  ), 0)
-                  - COALESCE((
-                      SELECT SUM(ip.amount)
-                      FROM invoice_payments ip
-                      JOIN invoices i ON i.id = ip.invoice_id
-                      WHERE i.customer_id = u.id AND i.company_id = $1
-                  ), 0)
-                  - COALESCE((
-                      SELECT SUM(amount)
-                      FROM transactions
-                      WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
-                  ), 0)
-                ) as remaining_balance
+                -- Positive = customer owes us (outstanding); Negative = we owe customer (advance/credit)
+                COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
+                + COALESCE((
+                    SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
+                    FROM invoices WHERE customer_id = u.id AND company_id = $1
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(ip.amount)
+                    FROM invoice_payments ip
+                    JOIN invoices i ON i.id = ip.invoice_id
+                    WHERE i.customer_id = u.id AND i.company_id = $1
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0) as remaining_balance
             FROM users u
             WHERE u.role IN ('user', 'customer') AND u.company_id = $1
             ORDER BY u.id ASC

@@ -150,6 +150,7 @@ const CreateInvoice: React.FC = () => {
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [activePaymentIndex, setActivePaymentIndex] = useState<number | null>(null);
   const [discount, setDiscount] = useState<number>(0);
+  const [customerAdvance, setCustomerAdvance] = useState<number>(0);
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
   const [customerInfo, setCustomerInfo] = useState({
     name: "---",
@@ -263,6 +264,13 @@ const CreateInvoice: React.FC = () => {
         placeOfSupply: c.state?.toUpperCase() || "---",
         placeOfSupplyCode: c.state_code || "---",
       }));
+
+      // Check for advance balance (remaining_balance < 0 means customer overpaid)
+      const rawBalance = Number(c.remaining_balance ?? 0);
+      const advance = rawBalance < 0 ? Math.abs(rawBalance) : 0;
+      setCustomerAdvance(advance);
+    } else {
+      setCustomerAdvance(0);
     }
   };
 
@@ -1092,6 +1100,26 @@ const CreateInvoice: React.FC = () => {
               </div>
             ))}
 
+            {/* Advance Balance Banner */}
+            {customerAdvance > 0 && (
+              <div style={{ marginTop: '12px', padding: '12px 14px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d' }}>Advance Balance Available</div>
+                  <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: '2px' }}>Customer has overpaid — apply to reduce this bill</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1rem', fontWeight: 900, color: '#15803d' }}>₹{fmt(customerAdvance)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDiscount(Math.min(customerAdvance, totals.grandTotal))}
+                    style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '7px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Discount Row */}
             <div style={{ marginTop: '12px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
               <div className="ci-field" style={{ flex: 1 }}>
@@ -1291,7 +1319,11 @@ const CreateInvoice: React.FC = () => {
                     letterSpacing: "1px",
                   }}
                 >
-                  {invoiceType === "NON_TAX_INVOICE" ? "Tax Exempted Bill" : "Tax Invoice"}
+                  {invoiceType === "NON_TAX_INVOICE" ? "Tax Exempted Bill" :
+                   invoiceType === "NOMINAL_TAX_INVOICE" ? "Nominal Tax Invoice" :
+                   invoiceType === "RETAIL_SALE" ? "Retail Sale Bill" :
+                   invoiceType === "GIFTED_ITEM" ? "Delivery Challan" :
+                   "Tax Invoice"}
                 </h2>
               </div>
 
