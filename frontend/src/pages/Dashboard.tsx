@@ -43,7 +43,9 @@ const Dashboard: React.FC = () => {
     cashAvailable: 0,
     taxSales: 0,
     anonSales: 0,
-    namesakeSales: 0
+    namesakeSales: 0,
+    loanPayable: 0,
+    activeLoans: 0
   });
 
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
@@ -56,19 +58,22 @@ const Dashboard: React.FC = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [kpiRes, trendRes, expenseRes, outstandingRes, txRes] = await Promise.all([
+        const [kpiRes, trendRes, expenseRes, outstandingRes, txRes, loansRes] = await Promise.all([
           apiFetch("/dashboard/summary").then(r => r.json()),
           apiFetch("/dashboard/monthly-sales-trend").then(r => r.json()),
           apiFetch("/dashboard/expense-breakdown").then(r => r.json()),
           apiFetch("/dashboard/outstanding-by-customer").then(r => r.json()),
-          apiFetch("/transactions?limit=5").then(r => r.json())
+          apiFetch("/transactions?limit=5").then(r => r.json()),
+          apiFetch("/loans").then(r => r.json()).catch(() => [])
         ]);
 
         if (kpiRes) {
           console.log('DASHBOARD DEBUG - KPI Response:', kpiRes);
-          const totalRev = Number(kpiRes.total_revenue || 0); // ALL TIME
-          const monthRev = Number(kpiRes.total_monthly_sales || 0); // THIS MONTH
-          
+          const totalRev = Number(kpiRes.total_revenue || 0);
+          const monthRev = Number(kpiRes.total_monthly_sales || 0);
+          const activeLoans = Array.isArray(loansRes) ? loansRes.filter((l: any) => l.status === 'ACTIVE') : [];
+          const loanPayable = activeLoans.reduce((sum: number, l: any) => sum + Number(l.principal_amount || 0), 0);
+
           setStats({
             totalRevenue: totalRev,
             monthlyRevenue: monthRev,
@@ -76,7 +81,9 @@ const Dashboard: React.FC = () => {
             cashAvailable: Number(kpiRes.available_cash || 0),
             taxSales: Number(kpiRes.sales_breakdown?.tax_sales || 0),
             anonSales: Number(kpiRes.sales_breakdown?.anon_sales || 0),
-            namesakeSales: Number(kpiRes.sales_breakdown?.name_sake_sales || 0)
+            namesakeSales: Number(kpiRes.sales_breakdown?.name_sake_sales || 0),
+            loanPayable,
+            activeLoans: activeLoans.length
           });
         }
         
@@ -129,35 +136,42 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* ── KPI Row ── */}
-        <div className="db-kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-          <KPICard 
-            title="TOTAL REVENUE" 
-            value={stats.totalRevenue} 
-            sub="All time" 
-            icon="💰" 
-            color="indigo" 
+        <div className="db-kpi-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+          <KPICard
+            title="TOTAL REVENUE"
+            value={stats.totalRevenue}
+            sub="All time"
+            icon="💰"
+            color="indigo"
           />
-          <KPICard 
-            title="THIS MONTH" 
-            value={stats.monthlyRevenue} 
+          <KPICard
+            title="THIS MONTH"
+            value={stats.monthlyRevenue}
             trend={calcTrend(stats.monthlyRevenue, monthlyTrend[monthlyTrend.length - 2]?.revenue)}
-            sub={new Date().toLocaleDateString(undefined, { month: 'short', year: 'numeric' })} 
-            icon="📅" 
-            color="blue" 
+            sub={new Date().toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+            icon="📅"
+            color="blue"
           />
-          <KPICard 
-            title="OUTSTANDING" 
-            value={stats.outstanding} 
-            sub={`${outstandingCustomers.length} customers`} 
-            icon="⚠️" 
-            color="amber" 
+          <KPICard
+            title="OUTSTANDING"
+            value={stats.outstanding}
+            sub={`${outstandingCustomers.length} customers`}
+            icon="⚠️"
+            color="amber"
           />
-          <KPICard 
-            title="CASH AVAILABLE" 
-            value={stats.cashAvailable} 
-            sub="Live balance" 
-            icon="🏦" 
-            color="green" 
+          <KPICard
+            title="CASH AVAILABLE"
+            value={stats.cashAvailable}
+            sub="Live balance"
+            icon="🏦"
+            color="green"
+          />
+          <KPICard
+            title="LOAN PAYABLE"
+            value={stats.loanPayable}
+            sub={`${stats.activeLoans} active loan${stats.activeLoans !== 1 ? 's' : ''}`}
+            icon="🏛️"
+            color="rose"
           />
         </div>
 

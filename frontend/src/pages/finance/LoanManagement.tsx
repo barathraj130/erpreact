@@ -67,6 +67,13 @@ const LoanManagement: React.FC = () => {
     notes: "",
   });
 
+  const calcMonthlyInterest = (loan: any): number => {
+    if (!loan) return 0;
+    const principal = Number(loan.principal_amount || 0);
+    const annualRate = Number(loan.interest_rate || 0);
+    return Math.round(principal * annualRate / 12 / 100 * 100) / 100;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -284,7 +291,19 @@ const LoanManagement: React.FC = () => {
                 <td className="text-center" style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
                   <button
                     className="page-btn-round-sm"
-                    onClick={() => { setSelectedLoan(loan); setShowRepayModal(true); }}
+                    onClick={() => {
+                      const interest = calcMonthlyInterest(loan);
+                      setSelectedLoan(loan);
+                      setRepayData({
+                        payment_date: new Date().toISOString().split("T")[0],
+                        total_amount: interest,
+                        interest_component: interest,
+                        principal_component: 0,
+                        payment_mode: "BANK",
+                        notes: "",
+                      });
+                      setShowRepayModal(true);
+                    }}
                     title="Record Repayment"
                   >
                     <FaPlus size={10} />
@@ -572,6 +591,15 @@ const LoanManagement: React.FC = () => {
             <motion.div className="page-modal" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
               <h2>Record Repayment</h2>
               <p style={{ fontSize: '13px', color: 'var(--text-3)' }}>Loan: {selectedLoan?.lender_name} (₹{selectedLoan?.principal_amount})</p>
+              {selectedLoan && (() => {
+                const monthlyInterest = calcMonthlyInterest(selectedLoan);
+                return (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#166534' }}>
+                    Expected monthly interest: <strong>₹{monthlyInterest.toLocaleString('en-IN')}</strong>
+                    &nbsp;({selectedLoan.interest_rate}% p.a. on ₹{Number(selectedLoan.principal_amount).toLocaleString('en-IN')})
+                  </div>
+                );
+              })()}
               <form onSubmit={handleRepaySubmit}>
                 <div className="form-grid-2">
                   <div>
@@ -580,7 +608,14 @@ const LoanManagement: React.FC = () => {
                   </div>
                   <div>
                     <label>Total Amount Paid (₹)</label>
-                    <input type="number" required value={repayData.total_amount} onChange={e => setRepayData({ ...repayData, total_amount: Number(e.target.value) })} />
+                    <input
+                      type="number" required value={repayData.total_amount}
+                      onChange={e => {
+                        const total = Number(e.target.value);
+                        const interest = repayData.interest_component;
+                        setRepayData({ ...repayData, total_amount: total, principal_component: Math.max(0, total - interest) });
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -596,7 +631,7 @@ const LoanManagement: React.FC = () => {
                     <label>Interest Component (₹)</label>
                     <input type="number" value={repayData.interest_component} onChange={e => {
                       const i = Number(e.target.value);
-                      setRepayData({ ...repayData, interest_component: i, total_amount: repayData.principal_component + i });
+                      setRepayData({ ...repayData, interest_component: i, principal_component: Math.max(0, repayData.total_amount - i), total_amount: repayData.principal_component + i });
                     }} />
                   </div>
                 </div>

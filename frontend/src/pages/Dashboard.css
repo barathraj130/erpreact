@@ -194,6 +194,15 @@
   background: linear-gradient(90deg, #10b981, transparent);
 }
 
+.db-kpi-card--rose {
+  background: linear-gradient(145deg, #ffffff 0%, #fff1f2 100%);
+  border-color: #fecdd3;
+}
+.db-kpi-card--rose::after {
+  content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #f43f5e, transparent);
+}
+
 .db-kpi-top { display: flex; align-items: center; justify-content: space-between; }
 .db-kpi-label {
   font-size: 12px; font-weight: 600;
