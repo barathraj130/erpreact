@@ -19,42 +19,47 @@ const router = express.Router();
 /* ============================================================
    HELPER: Generate Smart Invoice Number
 ============================================================ */
+// Prefix map — one unique prefix per invoice type
+const TYPE_PREFIX = {
+    TAX_INVOICE:         'TAX',
+    NON_TAX_INVOICE:     'NTAX',
+    RETAIL_SALE:         'RET',
+    GIFTED_ITEM:         'GFT',
+    NOMINAL_TAX_INVOICE: 'NM-TAX',
+};
+
 async function generateInvoiceNumber(client, type, companyId, branchId) {
+    const date = new Date();
+    const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
+    const year = date.getFullYear();
+    const financial_month = `${year}-${monthStr}`;
+
     if (branchId) {
-        // Branch Specific Sequence
+        // Branch-specific sequence (stored on the branches row)
         const branchResult = await client.query(
-            `UPDATE branches SET bill_sequence = bill_sequence + 1 
+            `UPDATE branches SET bill_sequence = bill_sequence + 1
              WHERE id = $1 RETURNING bill_sequence, bill_prefix`,
             [branchId]
         );
         const { bill_sequence, bill_prefix } = branchResult.rows[0];
         const padding = bill_sequence.toString().padStart(4, "0");
         const prefix = bill_prefix || `B${branchId}`;
-        return {
-            number: `${prefix}-${padding}`,
-            financial_month: `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`
-        };
+        return { number: `${prefix}-${padding}`, financial_month };
     }
 
-    const date = new Date();
-    const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
-    const year = date.getFullYear();
-    const financial_month = `${year}-${monthStr}`;
-    let prefix = "INV";
-    if (type === "TAX_INVOICE") prefix = "TAX";
-    else if (type === "NON_TAX_INVOICE") prefix = "NTAX";
-    else if (type === "RETAIL_SALE") prefix = "RET";
-    else if (type === "GIFTED_ITEM") prefix = "GFT";
-    else if (type === "NOMINAL_TAX_INVOICE") prefix = "NM-TAX";
-
-    const result = await client.query(
-        `SELECT COUNT(*) AS count FROM invoices 
-         WHERE company_id=$1 AND invoice_type=$2 AND financial_month=$3 AND branch_id IS NULL`,
+    // Main branch — atomic per-type per-month sequence via UPSERT
+    const prefix = TYPE_PREFIX[type] || 'INV';
+    const seqResult = await client.query(
+        `INSERT INTO invoice_sequences (company_id, invoice_type, financial_month, last_sequence)
+         VALUES ($1, $2, $3, 1)
+         ON CONFLICT (company_id, invoice_type, financial_month)
+         DO UPDATE SET last_sequence = invoice_sequences.last_sequence + 1
+         RETURNING last_sequence`,
         [companyId, type, financial_month]
     );
 
-    const count = Number(result.rows[0].count) + 1;
-    const padding = count.toString().padStart(3, "0");
+    const seq = seqResult.rows[0].last_sequence;
+    const padding = seq.toString().padStart(3, "0");
 
     return {
         number: `${prefix}/${year}/${monthStr}/${padding}`,

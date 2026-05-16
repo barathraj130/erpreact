@@ -380,6 +380,18 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS bank_ifsc_code VARCHAR(20)`);
         await db.query(`ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS bill_type VARCHAR(20) DEFAULT 'INVOICE'`);
 
+        // Invoice sequences — one atomic counter per (company, type, month)
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS invoice_sequences (
+                id              SERIAL PRIMARY KEY,
+                company_id      INTEGER NOT NULL,
+                invoice_type    VARCHAR(50) NOT NULL,
+                financial_month VARCHAR(20) NOT NULL,
+                last_sequence   INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (company_id, invoice_type, financial_month)
+            )
+        `);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

@@ -141,9 +141,11 @@ router.post("/full", authMiddleware, async (req, res) => {
         await safeDel(client, 'customer_notifications',
             `DELETE FROM customer_notifications WHERE company_id = $1`, [cid]);
 
-        // ── 11. RESET BRANCH BILL SEQUENCES ────────────────────────────────────
+        // ── 11. RESET BILL SEQUENCES ────────────────────────────────────────────
         await safeDel(client, 'branch_sequences',
             `UPDATE branches SET bill_sequence = 0 WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'invoice_sequences',
+            `DELETE FROM invoice_sequences WHERE company_id = $1`, [cid]);
 
         // ── 12. CLEAR USER META (customer ledger pointers on staff) ────────────
         await safeDel(client, 'user_meta',
