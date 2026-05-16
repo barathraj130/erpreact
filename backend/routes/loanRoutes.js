@@ -10,10 +10,28 @@ router.get('/', authMiddleware, async (req, res) => {
     try {
         const companyId = req.user.active_company_id;
         const loans = await db.pgAll(`
-            SELECT l.*, ln.lender_name 
-            FROM loans l 
+            SELECT l.*, ln.lender_name,
+                GREATEST(0,
+                    l.principal_amount
+                    - COALESCE((
+                        SELECT SUM(principal_component)
+                        FROM loan_payments
+                        WHERE loan_id = l.id AND company_id = $1
+                    ), 0)
+                ) AS remaining_principal,
+                COALESCE((
+                    SELECT SUM(principal_component)
+                    FROM loan_payments
+                    WHERE loan_id = l.id AND company_id = $1
+                ), 0) AS paid_principal,
+                COALESCE((
+                    SELECT SUM(total_amount)
+                    FROM loan_payments
+                    WHERE loan_id = l.id AND company_id = $1
+                ), 0) AS total_paid
+            FROM loans l
             JOIN lenders ln ON l.lender_id = ln.id
-            WHERE l.company_id = $1 
+            WHERE l.company_id = $1
             ORDER BY l.start_date DESC
         `, [companyId]);
         res.json(loans);

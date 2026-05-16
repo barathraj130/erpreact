@@ -69,9 +69,9 @@ const LoanManagement: React.FC = () => {
 
   const calcMonthlyInterest = (loan: any): number => {
     if (!loan) return 0;
-    const principal = Number(loan.principal_amount || 0);
+    const remaining = Number(loan.remaining_principal ?? loan.principal_amount ?? 0);
     const annualRate = Number(loan.interest_rate || 0);
-    return Math.round(principal * annualRate / 12 / 100 * 100) / 100;
+    return Math.round(remaining * annualRate / 12 / 100 * 100) / 100;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -140,7 +140,7 @@ const LoanManagement: React.FC = () => {
 
   const stats = {
     totalLiability: filteredLoans
-      .reduce((acc, curr) => acc + (Number(curr.principal_amount) || 0), 0),
+      .reduce((acc, curr) => acc + (Number(curr.remaining_principal ?? curr.principal_amount) || 0), 0),
     avgRate: filteredLoans.length > 0
       ? filteredLoans.reduce((acc, curr) => acc + (Number(curr.interest_rate) || 0), 0) / filteredLoans.length
       : 0,
@@ -279,7 +279,14 @@ const LoanManagement: React.FC = () => {
             {filteredLoans.map((loan) => (
               <tr key={loan.id}>
                 <td><div className="font-bold">{loan.lender_name}</div></td>
-                <td className="text-right font-mono">₹{loan.principal_amount?.toLocaleString()}</td>
+                <td className="text-right font-mono">
+                  <div>₹{Number(loan.remaining_principal ?? loan.principal_amount).toLocaleString()}</div>
+                  {Number(loan.paid_principal || 0) > 0 && (
+                    <div style={{ fontSize: '11px', color: '#16a34a' }}>
+                      ₹{Number(loan.paid_principal).toLocaleString()} paid
+                    </div>
+                  )}
+                </td>
                 <td className="text-right">{loan.interest_rate}%</td>
                 <td>{loan.start_date ? new Date(loan.start_date).toLocaleDateString('en-IN') : '-'}</td>
                 <td>{loan.repayment_cycle}</td>
@@ -331,7 +338,12 @@ const LoanManagement: React.FC = () => {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
               <div>
                 <div style={{ fontWeight: 800, fontSize: "16px", color: "#0f172a" }}>Repayment History</div>
-                <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>{ledgerLoan.lender_name} · Principal ₹{Number(ledgerLoan.principal_amount).toLocaleString()}</div>
+                <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>
+                  {ledgerLoan.lender_name} · Original ₹{Number(ledgerLoan.principal_amount).toLocaleString()}
+                  {Number(ledgerLoan.paid_principal || 0) > 0 && (
+                    <> · <span style={{ color: '#dc2626', fontWeight: 600 }}>Remaining ₹{Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount).toLocaleString()}</span></>
+                  )}
+                </div>
               </div>
               <button onClick={() => setLedgerLoan(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}><FaTimes size={16} /></button>
             </div>
@@ -596,7 +608,7 @@ const LoanManagement: React.FC = () => {
                 return (
                   <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#166534' }}>
                     Expected monthly interest: <strong>₹{monthlyInterest.toLocaleString('en-IN')}</strong>
-                    &nbsp;({selectedLoan.interest_rate}% p.a. on ₹{Number(selectedLoan.principal_amount).toLocaleString('en-IN')})
+                    &nbsp;({selectedLoan.interest_rate}% p.a. on ₹{Number(selectedLoan.remaining_principal ?? selectedLoan.principal_amount).toLocaleString('en-IN')} remaining)
                   </div>
                 );
               })()}

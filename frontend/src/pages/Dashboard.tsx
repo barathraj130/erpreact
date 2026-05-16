@@ -72,7 +72,7 @@ const Dashboard: React.FC = () => {
           const totalRev = Number(kpiRes.total_revenue || 0);
           const monthRev = Number(kpiRes.total_monthly_sales || 0);
           const activeLoans = Array.isArray(loansRes) ? loansRes.filter((l: any) => l.status === 'ACTIVE') : [];
-          const loanPayable = activeLoans.reduce((sum: number, l: any) => sum + Number(l.principal_amount || 0), 0);
+          const loanPayable = activeLoans.reduce((sum: number, l: any) => sum + Number(l.remaining_principal ?? l.principal_amount ?? 0), 0);
 
           setStats({
             totalRevenue: totalRev,
