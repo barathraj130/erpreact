@@ -173,11 +173,20 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   const initials = entityName ? entityName.charAt(0).toUpperCase() : "?";
   const hasFilters = filters.start_date || filters.end_date || filters.payment_method;
 
+  const pendingAmount = customerSummary?.pending_amount || 0;
+  const isAdvance = pendingAmount < 0;
+
   const summaryCards = entityType === "customer" ? [
     { label: "Total Billed", value: customerSummary?.total_billed || 0, color: "#0f766e", bg: "#f0fdfa", icon: <FaFileInvoiceDollar size={14} /> },
     { label: "Total Paid", value: customerSummary?.total_paid || 0, color: "#2563eb", bg: "#eff6ff", icon: <FaCheckCircle size={14} /> },
     { label: "Total Returns", value: customerSummary?.total_returns || 0, color: "#d97706", bg: "#fffbeb", icon: <FaUndo size={14} /> },
-    { label: "Pending Amount", value: customerSummary?.pending_amount || 0, color: "#dc2626", bg: "#fef2f2", icon: <FaWallet size={14} /> },
+    {
+      label: isAdvance ? "Advance Balance" : "Pending Amount",
+      value: Math.abs(pendingAmount),
+      color: isAdvance ? "#059669" : "#dc2626",
+      bg: isAdvance ? "#f0fdf4" : "#fef2f2",
+      icon: <FaWallet size={14} />,
+    },
   ] : [
     { label: "Total Bills", value: supplierLedger?.summary?.total_billed || 0, color: "#dc2626", bg: "#fef2f2", icon: <FaFileInvoiceDollar size={14} /> },
     { label: "Total Paid", value: supplierLedger?.summary?.total_paid || 0, color: "#0f766e", bg: "#f0fdfa", icon: <FaCheckCircle size={14} /> },
@@ -376,7 +385,14 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                             <td className="right" style={{ color: row.credit > 0 ? (entityType === 'customer' ? '#059669' : '#dc2626') : '#cbd5e1' }}>
                               {row.credit > 0 ? fmt(row.credit) : "—"}
                             </td>
-                            <td className="right" style={{ fontWeight: 800 }}>{fmt(row.running_balance)}</td>
+                            <td className="right" style={{ fontWeight: 800 }}>
+                              {row.running_balance < 0 ? (
+                                <span style={{ color: "#059669" }}>
+                                  <span style={{ fontSize: 9, fontWeight: 700, background: "#dcfce7", color: "#059669", borderRadius: 4, padding: "1px 5px", marginRight: 4 }}>ADV</span>
+                                  {fmt(Math.abs(row.running_balance))}
+                                </span>
+                              ) : fmt(row.running_balance)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -400,6 +416,12 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                       <div className="thm-info-item-title"><FaCheckCircle color="#16a34a" /> Payments</div>
                       <div className="thm-info-item-text">Cash or bank transfers that reduce the balance.</div>
                     </div>
+                    {entityType === 'customer' && (
+                      <div className="thm-info-item" style={{ background: "#f0fdf4", borderColor: "#bbf7d0" }}>
+                        <div className="thm-info-item-title"><FaWallet color="#059669" /> Advance</div>
+                        <div className="thm-info-item-text">When balance goes negative, the customer has overpaid — shown as Advance credit.</div>
+                      </div>
+                    )}
                   </div>
                   <div className="thm-opening-bal">
                     <div className="thm-stat-label">Opening Balance</div>
