@@ -70,9 +70,9 @@ const Transactions: React.FC = () => {
   const loadReferences = async () => {
     try {
       const [custRes, empRes, supRes] = await Promise.all([
-        apiFetch("/customers"),
+        apiFetch("/users"),
         apiFetch("/employees"),
-        apiFetch("/lenders")
+        apiFetch("/suppliers")
       ]);
       setCustomers(await custRes.json());
       setEmployees(await empRes.json());
@@ -294,7 +294,7 @@ const Transactions: React.FC = () => {
                       <label>Select Customer</label>
                       <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
                         <option value="">-- Select Customer --</option>
-                        {customers.map(c => <option key={c.id} value={c.id}>{c.name || c.customer_name}</option>)}
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.username}{c.nickname ? ` (${c.nickname})` : ''}{c.phone ? ` — ${c.phone}` : ''}</option>)}
                       </select>
                     </div>
                   )}
@@ -304,7 +304,7 @@ const Transactions: React.FC = () => {
                       <label>Select Supplier</label>
                       <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
                         <option value="">-- Select Supplier --</option>
-                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.lender_name || s.name}</option>)}
+                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name || s.supplier_name}</option>)}
                       </select>
                     </div>
                   )}
@@ -314,7 +314,7 @@ const Transactions: React.FC = () => {
                       <label>Select Employee</label>
                       <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
                         <option value="">-- Select Employee --</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.name || e.employee_name || e.username}</option>)}
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}{e.designation ? ` — ${e.designation}` : ''}</option>)}
                       </select>
                     </div>
                   )}
