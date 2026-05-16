@@ -120,6 +120,11 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
     idx += 1;
   }
 
+  // Direct customer payments recorded via Transactions page
+  const txConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'CUSTOMER_PAYMENT'"];
+  if (filters.start_date) txConditions.push(`t.transaction_date >= $3`);
+  if (filters.end_date)   txConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
+
   return db.pgAll(
     `SELECT * FROM (
        SELECT
@@ -161,6 +166,25 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
        FROM invoice_payments p
        JOIN invoices i ON i.id = p.invoice_id
        WHERE ${paymentConditions.join(" AND ")}
+
+       UNION ALL
+
+       SELECT
+         2000000000 + t.id AS id,
+         COALESCE(t.transaction_date, t.date::DATE) AS date,
+         'RECEIPT' AS type,
+         'PAYMENT' AS category,
+         t.amount AS amount,
+         COALESCE(t.description, 'Direct Payment') AS description,
+         NULL::INTEGER AS related_invoice_id,
+         NULL::TEXT AS invoice_number,
+         UPPER(COALESCE(t.mode, '')) AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         t.created_at AS sort_created_at
+       FROM transactions t
+       WHERE t.company_id = $1 AND t.reference_id = $2 AND t.type = 'CUSTOMER_PAYMENT'
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
@@ -185,10 +209,17 @@ async function getCustomerTotals(companyId, customerId) {
     [companyId, customerId],
   );
 
+  const directPaymentTotals = await db.pgGet(
+    `SELECT COALESCE(SUM(amount), 0) AS total_direct
+     FROM transactions
+     WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
+    [companyId, customerId],
+  );
+
   return {
     total_billed: toNumber(invoiceTotals?.total_billed),
     total_returns: toNumber(invoiceTotals?.total_returns),
-    total_paid: toNumber(paymentTotals?.total_paid),
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct),
   };
 }
 
