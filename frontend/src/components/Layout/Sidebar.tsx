@@ -184,16 +184,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
   }, []);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
-  const [companyName, setCompanyName] = useState<string>("");
-
-  // Load company name from bill format settings
-  useEffect(() => {
-    if (mode !== "HOST") {
-      apiFetch("/billing-config/format").then(r => r.ok ? r.json() : null).then(d => {
-        if (d?.business_name) setCompanyName(d.business_name);
-      }).catch(() => {});
-    }
-  }, [mode]);
 
   useEffect(() => {
     if (mode === "USER" || mode === "ADMIN") {
