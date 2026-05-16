@@ -1213,8 +1213,13 @@ const CreateInvoice: React.FC = () => {
           {/* Summary Footer */}
           <div className="ci-form-footer">
             <div>
-              <div className="ci-footer-label">Grand Total</div>
-              <div className="ci-footer-total">₹{fmt(totals.grandTotal)}</div>
+              <div className="ci-footer-label">{discount > 0 ? "Net Payable" : "Grand Total"}</div>
+              <div className="ci-footer-total">₹{fmt(totals.effectiveTotal)}</div>
+              {discount > 0 && (
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                  Bill: ₹{fmt(totals.grandTotal)} − Discount: ₹{fmt(discount)}
+                </div>
+              )}
             </div>
             <button className="page-btn-round" onClick={() => window.print()}>
               <FaPrint size={12} /> Print
@@ -1695,7 +1700,7 @@ const CreateInvoice: React.FC = () => {
                       marginBottom: "10px",
                     }}
                   >
-                    {numberToWords(Math.round(invoiceType === "TAX_INVOICE" ? totals.grandTotal : totals.taxable))}
+                    {numberToWords(Math.round(totals.effectiveTotal))}
                   </p>
 
                   <div
@@ -1819,8 +1824,8 @@ const CreateInvoice: React.FC = () => {
                           fontSize: "12px",
                         }}
                       >
-                        <span>Total After Tax</span>
-                        <span>{fmt(totals.grandTotal)}</span>
+                        <span>Total{discount > 0 ? " (After Discount)" : " After Tax"}</span>
+                        <span>{fmt(totals.effectiveTotal)}</span>
                       </div>
                     </div>
                   )}
@@ -1840,8 +1845,8 @@ const CreateInvoice: React.FC = () => {
                           fontSize: "12px",
                         }}
                       >
-                        <span>Total Amount</span>
-                        <span>{fmt(totals.taxable)}</span>
+                        <span>Total{discount > 0 ? " (After Discount)" : " Amount"}</span>
+                        <span>{fmt(totals.effectiveTotal)}</span>
                       </div>
                     </div>
                   )}
