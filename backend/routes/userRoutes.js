@@ -129,9 +129,13 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
             LEFT JOIN (
                 SELECT i.customer_id,
                        SUM(CASE WHEN UPPER(COALESCE(i.invoice_type,'')) != 'SALES_RETURN' THEN i.total_amount ELSE 0 END) as total_billed,
-                       COALESCE(SUM(p.amount), 0) as total_paid_invoice
+                       COALESCE(SUM(ip.paid), 0) as total_paid_invoice
                 FROM invoices i
-                LEFT JOIN invoice_payments p ON p.invoice_id = i.id
+                LEFT JOIN (
+                    SELECT invoice_id, SUM(amount) as paid
+                    FROM invoice_payments
+                    GROUP BY invoice_id
+                ) ip ON ip.invoice_id = i.id
                 WHERE i.company_id = COALESCE($1::int, $2::int)
                 GROUP BY i.customer_id
             ) inv_totals ON inv_totals.customer_id = u.id
