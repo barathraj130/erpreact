@@ -78,10 +78,14 @@ export const processTransaction = async (txData, user) => {
         switch (txData.type) {
             case 'CUSTOMER_PAYMENT':
                 if (refId) {
-                    await client.query(`
-                        INSERT INTO customer_ledger (customer_id, company_id, date, type, description, credit, branch_id)
-                        VALUES ($1, $2, $3, 'PAYMENT', $4, $5, $6)
-                    `, [refId, companyId, txData.date, txData.description, txData.amount, branchId]);
+                    try {
+                        await client.query(`
+                            INSERT INTO customer_ledger (customer_id, company_id, date, type, description, credit, branch_id)
+                            VALUES ($1, $2, $3, 'PAYMENT', $4, $5, $6)
+                        `, [refId, companyId, txData.date, txData.description, txData.amount, branchId]);
+                    } catch (ledgerErr) {
+                        console.warn('customer_ledger insert skipped:', ledgerErr.message);
+                    }
                 }
                 break;
 

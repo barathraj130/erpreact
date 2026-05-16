@@ -354,6 +354,22 @@ export const runSchemaUpdates = async () => {
             );
         `);
 
+        // Customer ledger — tracks payments received from customers
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS customer_ledger (
+                id            SERIAL PRIMARY KEY,
+                customer_id   INTEGER NOT NULL,
+                company_id    INTEGER NOT NULL,
+                branch_id     INTEGER,
+                date          DATE NOT NULL,
+                type          VARCHAR(50) NOT NULL,
+                description   TEXT,
+                debit         NUMERIC(14,2) DEFAULT 0,
+                credit        NUMERIC(14,2) DEFAULT 0,
+                created_at    TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
         // Bill format settings: add bank details + state fields
         await db.query(`ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS state VARCHAR(100)`);
         await db.query(`ALTER TABLE bill_format_settings ADD COLUMN IF NOT EXISTS state_code VARCHAR(10)`);
