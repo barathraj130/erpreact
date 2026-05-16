@@ -226,11 +226,6 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let totalSaleAmount = Math.round(totalTaxable + totalGST);
         let totalReturnAmount = Math.round(totalReturnTaxable + totalReturnGST);
 
-        // Handle Nominal Tax (Only pay tax, goods are namesake/discounted)
-        if (invoice_type === 'NOMINAL_TAX_INVOICE') {
-            totalSaleAmount = Math.round(totalGST);
-        }
-
         // Final Invoice Amount after Returns and Discount
         let netInvoiceAmount = totalSaleAmount - totalReturnAmount;
         const effectiveTotal = Math.max(0, netInvoiceAmount - discountAmt);
@@ -441,38 +436,29 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         if (arAccount && salesAccount) {
             let txLines = [];
-            
 
-            if (invoice_type === 'NOMINAL_TAX_INVOICE') {
-                const netGST = totalGST - totalReturnGST;
-                if (netGST !== 0 && taxAccount) {
-                    txLines.push({ account_id: arAccount.id, debit_amount: netGST > 0 ? netGST : 0, credit_amount: netGST < 0 ? Math.abs(netGST) : 0, description: `Nominal GST on Inv #${finalInvoiceNumber}` });
-                    txLines.push({ account_id: taxAccount.id, debit_amount: netGST < 0 ? Math.abs(netGST) : 0, credit_amount: netGST > 0 ? netGST : 0, description: `GST Adjustment on Inv #${finalInvoiceNumber}` });
-                }
-            } else {
-                // Debit AR for Net Amount
-                txLines.push({ account_id: arAccount.id, debit_amount: effectiveTotal > 0 ? effectiveTotal : 0, credit_amount: effectiveTotal < 0 ? Math.abs(effectiveTotal) : 0, description: `Sales to Customer #${customer_id}` });
-                
-                // Credit Sales for Total Sales
-                txLines.push({ account_id: salesAccount.id, debit_amount: 0, credit_amount: totalTaxable, description: `Sales Revenue from Inv #${finalInvoiceNumber}` });
-                
-                // Debit Sales Returns if any
-                if (totalReturnTaxable > 0) {
-                    txLines.push({ account_id: salesReturnAccount.id, debit_amount: totalReturnTaxable, credit_amount: 0, description: `Sales Returns on Inv #${finalInvoiceNumber}` });
-                }
+            // Debit AR for Net Amount (same for all invoice types including NOMINAL_TAX_INVOICE)
+            txLines.push({ account_id: arAccount.id, debit_amount: effectiveTotal > 0 ? effectiveTotal : 0, credit_amount: effectiveTotal < 0 ? Math.abs(effectiveTotal) : 0, description: `Sales to Customer #${customer_id}` });
 
-                // Credit GST Payable for Net GST
-                const netGST = totalGST - totalReturnGST;
-                if (netGST !== 0 && taxAccount) {
-                    txLines.push({ account_id: taxAccount.id, debit_amount: netGST < 0 ? Math.abs(netGST) : 0, credit_amount: netGST > 0 ? netGST : 0, description: `GST on Inv #${finalInvoiceNumber}` });
-                }
+            // Credit Sales Revenue
+            txLines.push({ account_id: salesAccount.id, debit_amount: 0, credit_amount: totalTaxable, description: `Sales Revenue from Inv #${finalInvoiceNumber}` });
 
-                // Handle Discount as an Expense
-                if (discountAmt > 0) {
-                    const discountAccount = await getAccountByCode(companyId, '5100'); // Discount Allowed
-                    if (discountAccount) {
-                        txLines.push({ account_id: discountAccount.id, debit_amount: discountAmt, credit_amount: 0, description: `Discount on Inv #${finalInvoiceNumber}` });
-                    }
+            // Debit Sales Returns if any
+            if (totalReturnTaxable > 0) {
+                txLines.push({ account_id: salesReturnAccount.id, debit_amount: totalReturnTaxable, credit_amount: 0, description: `Sales Returns on Inv #${finalInvoiceNumber}` });
+            }
+
+            // Credit GST Payable for Net GST
+            const netGST = totalGST - totalReturnGST;
+            if (netGST !== 0 && taxAccount) {
+                txLines.push({ account_id: taxAccount.id, debit_amount: netGST < 0 ? Math.abs(netGST) : 0, credit_amount: netGST > 0 ? netGST : 0, description: `GST on Inv #${finalInvoiceNumber}` });
+            }
+
+            // Handle Discount as an Expense
+            if (discountAmt > 0) {
+                const discountAccount = await getAccountByCode(companyId, '5100'); // Discount Allowed
+                if (discountAccount) {
+                    txLines.push({ account_id: discountAccount.id, debit_amount: discountAmt, credit_amount: 0, description: `Discount on Inv #${finalInvoiceNumber}` });
                 }
             }
 

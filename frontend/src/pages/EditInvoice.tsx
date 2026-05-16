@@ -1477,15 +1477,15 @@ const EditInvoice: React.FC = () => {
                   Details of Consignee :
                 </b>
                 <div style={{ marginTop: "4px" }}>
-                  Name : <b>{customer.name}</b>
+                  Name : <b>{company.name || "COMPANY NAME"}</b>
                 </div>
-                <div>Address : {customer.address}</div>
+                <div>Address : {company.address}</div>
                 <div>
-                  GSTIN : <b>{customer.gstin}</b>
+                  GSTIN : <b>{company.gstin}</b>
                 </div>
                 <div>
-                  State : {customer.state || "TAMILNADU"} Code :{" "}
-                  {customer.stateCode || "33"}
+                  State : {company.state?.toUpperCase() || "TAMILNADU"} Code :{" "}
+                  {company.stateCode || "33"}
                 </div>
               </div>
             </div>
