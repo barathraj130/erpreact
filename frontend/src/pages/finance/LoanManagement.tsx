@@ -408,7 +408,7 @@ const LoanManagement: React.FC = () => {
                 <div style={{ overflowX: 'auto' }}>
                   {isPrivate && (
                     <div style={{ padding: '10px 16px', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', margin: '0 0 12px', fontSize: '13px', color: '#7c3aed', fontWeight: 600 }}>
-                      💡 Private Loan — Pay interest only every month (₹{Math.round(Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount || 0) * Number(ledgerLoan.interest_rate || 0) / 12 / 100).toLocaleString()}/mo). Remaining principal ₹{Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount || 0).toLocaleString()} is returned in the last month.
+                      💡 Private Loan — Pay interest only every month (₹{Math.round(Number(ledgerLoan.remaining_principal ?? (ledgerLoan.principal_amount || 0)) * Number(ledgerLoan.interest_rate || 0) / 12 / 100).toLocaleString()}/mo). Remaining principal ₹{Number(ledgerLoan.remaining_principal ?? (ledgerLoan.principal_amount || 0)).toLocaleString()} is returned in the last month.
                     </div>
                   )}
                   <table className="page-table" style={{ margin: 0 }}>
