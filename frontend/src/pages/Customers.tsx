@@ -78,17 +78,24 @@ const Customers: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm("Delete this customer? This cannot be undone.")) {
-      try {
-        const result = await deleteCustomer(id);
-        if (result.error) {
-          alert(result.error);
+    if (!window.confirm("Delete this customer? This cannot be undone.")) return;
+    try {
+      const result = await deleteCustomer(id);
+      if (result.error) {
+        // Offer force-delete if there are linked records
+        const forceIt = window.confirm(
+          result.error + "\n\nClick OK to FORCE DELETE and clear ALL linked invoices and transactions for this customer."
+        );
+        if (!forceIt) return;
+        const forced = await deleteCustomer(id, true);
+        if (forced.error) {
+          alert(forced.error);
           return;
         }
-        refresh();
-      } catch (err) {
-        alert("Failed to delete customer. Please try again.");
       }
+      refresh();
+    } catch (err) {
+      alert("Failed to delete customer. Please try again.");
     }
   };
 

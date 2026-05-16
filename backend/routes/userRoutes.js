@@ -295,37 +295,71 @@ router.get("/:id/ledger", authMiddleware, checkPermission("Sales", "view_invoice
 });
 
 // DELETE USER (Customer or Staff)
+// Pass ?force=true to cascade-clear all related data before deleting
 router.delete("/:id", authMiddleware, checkPermission("Sales", "delete_invoices"), async (req, res) => {
     const id = req.params.id;
     const companyId = req.user.active_company_id;
+    const force = req.query.force === 'true';
+    let client;
     try {
-        // Block delete if customer has any invoices
-        const invoiceCount = await db.pgGet(
-            `SELECT COUNT(*) AS cnt FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
-            [id, companyId]
-        );
-        if (Number(invoiceCount?.cnt) > 0) {
-            return res.status(409).json({
-                error: `Cannot delete: this customer has ${invoiceCount.cnt} invoice(s) on record. Cancel all invoices first.`
-            });
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        if (force) {
+            // 1. Soft-delete any remaining active invoices and clear their financials
+            const activeInvoices = await client.query(
+                `SELECT id FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+                [id, companyId]
+            );
+            for (const inv of activeInvoices.rows) {
+                await client.query(`UPDATE invoices SET is_deleted = true, deleted_at = NOW() WHERE id = $1`, [inv.id]);
+                await client.query(`DELETE FROM ledger_entries WHERE transaction_id IN (SELECT id FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1)`, [inv.id]);
+                await client.query(`DELETE FROM transactions WHERE reference_type = 'INVOICE' AND reference_id = $1`, [inv.id]);
+                await client.query(`DELETE FROM invoice_payments WHERE invoice_id = $1`, [inv.id]);
+            }
+            // 2. Delete all customer payment transactions
+            await client.query(
+                `DELETE FROM transactions WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
+                [id, companyId]
+            );
+            // 3. Clear customer ledger entries
+            await client.query(
+                `DELETE FROM transactions WHERE user_id = $1 AND company_id = $2`,
+                [id, companyId]
+            );
+        } else {
+            // Soft-check: block if active invoices exist
+            const invoiceCount = await client.query(
+                `SELECT COUNT(*) AS cnt FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+                [id, companyId]
+            );
+            if (Number(invoiceCount.rows[0]?.cnt) > 0) {
+                await client.query("ROLLBACK");
+                return res.status(409).json({
+                    error: `Cannot delete: this customer has ${invoiceCount.rows[0].cnt} invoice(s). Cancel all invoices first, or use force delete.`
+                });
+            }
+            const txCount = await client.query(
+                `SELECT COUNT(*) AS cnt FROM transactions WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
+                [id, companyId]
+            );
+            if (Number(txCount.rows[0]?.cnt) > 0) {
+                await client.query("ROLLBACK");
+                return res.status(409).json({
+                    error: `Cannot delete: this customer has ${txCount.rows[0].cnt} payment record(s). Remove all transactions first.`
+                });
+            }
         }
 
-        // Also block if there are outstanding transactions
-        const txCount = await db.pgGet(
-            `SELECT COUNT(*) AS cnt FROM transactions WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
-            [id, companyId]
-        );
-        if (Number(txCount?.cnt) > 0) {
-            return res.status(409).json({
-                error: `Cannot delete: this customer has ${txCount.cnt} payment record(s). Remove all transactions first.`
-            });
-        }
-
-        await db.pgRun(`DELETE FROM users WHERE id=$1 AND company_id = $2`, [id, companyId]);
+        await client.query(`DELETE FROM users WHERE id=$1 AND company_id = $2`, [id, companyId]);
+        await client.query("COMMIT");
         res.json({ success: true });
     } catch (err) {
+        if (client) await client.query("ROLLBACK");
         console.error("Delete user error:", err);
         res.status(500).json({ error: "Failed to delete customer: " + err.message });
+    } finally {
+        if (client) client.release();
     }
 });
 

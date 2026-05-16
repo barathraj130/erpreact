@@ -101,8 +101,8 @@ export const updateCustomer = async (
 /**
  * Deletes a user/party and its associated accounting ledger and links.
  */
-export const deleteCustomer = async (id: number): Promise<ApiResponse> => {
-  const res = await apiFetch(`/users/${id}`, {
+export const deleteCustomer = async (id: number, force = false): Promise<ApiResponse> => {
+  const res = await apiFetch(`/users/${id}${force ? '?force=true' : ''}`, {
     method: "DELETE",
   });
   return res.json();
