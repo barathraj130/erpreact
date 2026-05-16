@@ -154,51 +154,50 @@ const LoanManagement: React.FC = () => {
     return (P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
   };
 
-  // Generate amortization schedule
-  const generateSchedule = (loan: any) => {
-    const n = Number(loan.duration_months || 12);
-    const P = Number(loan.principal_amount || 0);
+  // Generate amortization schedule starting from actual remaining principal
+  const generateSchedule = (loan: any, paidCount: number = 0) => {
+    const totalN = Number(loan.duration_months || 12);
+    const origP = Number(loan.principal_amount || 0);
+    // Use remaining_principal so schedule reflects actual state after payments
+    const startingP = Number(loan.remaining_principal ?? origP);
     const annualRate = Number(loan.interest_rate || 0);
     const r = annualRate / 12 / 100;
     const start = new Date(loan.start_date || new Date());
     const loanType = (loan.loan_type || loan.party_type || 'BANK').toUpperCase();
     const isBank = loanType === 'BANK';
     const schedule = [];
-    let balance = P;
     const today = new Date();
+    // Remaining installments = total - already paid
+    const remainingN = Math.max(1, totalN - paidCount);
 
     if (isBank) {
-      // ── BANK: Reducing balance EMI ──
-      // Fixed EMI every month. Interest = remaining balance × monthly rate.
-      // Principal portion = EMI − interest. Balance reduces each month.
-      const emi = calcEMI(P, annualRate, n);
-      for (let i = 1; i <= n; i++) {
+      // Recalculate EMI on remaining balance and remaining months (reducing balance)
+      const emi = calcEMI(startingP, annualRate, remainingN);
+      let balance = startingP;
+      for (let i = 1; i <= remainingN; i++) {
         const due = new Date(start);
-        due.setMonth(due.getMonth() + i);
+        due.setMonth(due.getMonth() + paidCount + i);
         const interest = Math.round(balance * r * 100) / 100;
         const principal = Math.min(Math.round((emi - interest) * 100) / 100, balance);
         balance = Math.max(0, Math.round((balance - principal) * 100) / 100);
         const isPast = due < today;
         const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
-        schedule.push({ month: i, due, emi: principal + interest, principal, interest, balance, isPast, isCurrent });
+        schedule.push({ month: paidCount + i, due, emi: principal + interest, principal, interest, balance, isPast, isCurrent });
       }
     } else {
-      // ── PRIVATE LENDER: Interest-only every month ──
-      // Pay ONLY interest each month — principal never reduces.
-      // Monthly interest = Principal × monthly rate (fixed every month).
-      // Last month: pay interest + full principal lump sum.
-      const monthlyInterest = Math.round(P * r * 100) / 100;
-      for (let i = 1; i <= n; i++) {
+      // PRIVATE: interest-only on remaining principal, lump sum at end
+      const monthlyInterest = Math.round(startingP * r * 100) / 100;
+      for (let i = 1; i <= remainingN; i++) {
         const due = new Date(start);
-        due.setMonth(due.getMonth() + i);
-        const isLast = i === n;
+        due.setMonth(due.getMonth() + paidCount + i);
+        const isLast = i === remainingN;
         const interest = monthlyInterest;
-        const principal = isLast ? P : 0;        // Principal returned only at end
+        const principal = isLast ? startingP : 0;
         const emi = interest + principal;
-        const rowBalance = isLast ? 0 : P;       // Balance stays P until final month
+        const rowBalance = isLast ? 0 : startingP;
         const isPast = due < today;
         const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
-        schedule.push({ month: i, due, emi, principal, interest, balance: rowBalance, isPast, isCurrent });
+        schedule.push({ month: paidCount + i, due, emi, principal, interest, balance: rowBalance, isPast, isCurrent });
       }
     }
     return schedule;
@@ -317,7 +316,7 @@ const LoanManagement: React.FC = () => {
                   </button>
                   <button
                     className="page-btn-round-sm"
-                    onClick={() => { setLedgerLoan(loan); setScheduleTab('history'); loadRepaymentHistory(loan.id); }}
+                    onClick={async () => { setLedgerLoan(loan); setScheduleTab('history'); await loadRepaymentHistory(loan.id); }}
                     title="View Repayment History"
                     style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}
                   >
@@ -403,13 +402,13 @@ const LoanManagement: React.FC = () => {
             )}
 
             {scheduleTab === 'schedule' && (() => {
-              const schedule = generateSchedule(ledgerLoan);
+              const schedule = generateSchedule(ledgerLoan, repaymentHistory.length);
               const isPrivate = (ledgerLoan.loan_type || ledgerLoan.party_type || 'BANK').toUpperCase() !== 'BANK';
               return (
                 <div style={{ overflowX: 'auto' }}>
                   {isPrivate && (
                     <div style={{ padding: '10px 16px', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', margin: '0 0 12px', fontSize: '13px', color: '#7c3aed', fontWeight: 600 }}>
-                      💡 Private Loan — Pay interest only every month (₹{Math.round(Number(ledgerLoan.principal_amount || 0) * Number(ledgerLoan.interest_rate || 0) / 12 / 100).toLocaleString()}/mo). Full principal of ₹{Number(ledgerLoan.principal_amount || 0).toLocaleString()} is returned in the last month.
+                      💡 Private Loan — Pay interest only every month (₹{Math.round(Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount || 0) * Number(ledgerLoan.interest_rate || 0) / 12 / 100).toLocaleString()}/mo). Remaining principal ₹{Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount || 0).toLocaleString()} is returned in the last month.
                     </div>
                   )}
                   <table className="page-table" style={{ margin: 0 }}>
