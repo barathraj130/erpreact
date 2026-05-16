@@ -90,43 +90,56 @@ export const createLoan = async (user, loanData) => {
             bankAccountId = defaultCash.rows[0]?.id || 1;
         }
         
-        // Accounting
+        // Payments array — how the loan was received (one or more modes)
+        const paymentsReceived = Array.isArray(loanData.payments) && loanData.payments.length > 0
+            ? loanData.payments.filter(p => parseFloat(p.amount) > 0)
+            : [{ method: loanData.payment_mode || 'BANK', amount: principal }];
+
         const cashAcc = await getAccountByCode(companyId, '1000');
-        const loanAcc = await getAccountByCode(companyId, '2000'); // Accounts Payable / Loan
+        const loanAcc = await getAccountByCode(companyId, '2000');
+        const isExisting = loanData.is_existing_loan === true || loanData.is_existing_loan === 'true';
 
-        const loanPrincipal = parseFloat(loanData.principal_amount || loanData.principal || 0);
+        if (cashAcc && loanAcc && principal > 0 && !isExisting) {
+            // Build debit lines — one per payment mode
+            const txLines = paymentsReceived.map(p => {
+                const m = (p.method || 'CASH').toUpperCase();
+                const acctId = (m === 'BANK' || m === 'UPI') ? (cashAcc.id) : cashAcc.id;
+                return { account_id: acctId, debit_amount: parseFloat(p.amount), credit_amount: 0, description: `Loan received via ${m}` };
+            });
+            // Single credit — full liability
+            txLines.push({ account_id: loanAcc.id, debit_amount: 0, credit_amount: principal, description: 'Loan liability recorded' });
 
-        if (cashAcc && loanAcc && loanPrincipal > 0) {
             await createTransactionInternal(client, {
                 company_id: companyId,
                 branch_id: branchId,
                 transaction_date: loanData.start_date || new Date(),
                 reference_type: 'LOAN_DISBURSEMENT',
                 reference_id: loan.id,
-                description: `Loan disbursement from ${loanData.lender_name || 'Lender'}`,
+                description: `Loan received from ${loanData.lender_name || 'Lender'}`,
                 created_by: user.id
-            }, [
-                { account_id: cashAcc.id, debit_amount: loanPrincipal, credit_amount: 0, description: 'Loan amount received' },
-                { account_id: loanAcc.id, debit_amount: 0, credit_amount: loanPrincipal, description: 'Loan liability recorded' }
-            ]);
-        }
+            }, txLines);
 
-        // Write to cash/bank ledger only for NEW loans (not when recording pre-existing loans)
-        const loanPayMode = (loanData.payment_mode || 'BANK').toUpperCase();
-        const isExisting = loanData.is_existing_loan === true || loanData.is_existing_loan === 'true';
-        if (loanPrincipal > 0 && !isExisting) {
-            if (loanPayMode === 'BANK') {
+            // Write each mode to its ledger and save loan_receipts
+            for (const p of paymentsReceived) {
+                const m = (p.method || 'CASH').toUpperCase();
+                const amt = parseFloat(p.amount);
+                if (m === 'BANK' || m === 'UPI') {
+                    await client.query(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                         VALUES ($1,$2,'LOAN_RECEIVED',$3,'in','Main Account',$4)`,
+                        [companyId, branchId, amt, loanData.start_date || new Date()]
+                    );
+                } else {
+                    await client.query(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                         VALUES ($1,$2,'LOAN_RECEIVED',$3,'in',$4)`,
+                        [companyId, branchId, amt, loanData.start_date || new Date()]
+                    );
+                }
                 await client.query(
-                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                     VALUES ($1, $2, 'LOAN_RECEIVED', $3, 'in', 'Main Account', $4)`,
-                    [companyId, branchId, loanPrincipal, loanData.start_date || new Date()]
-                );
-            } else {
-                await client.query(
-                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                     VALUES ($1, $2, 'LOAN_RECEIVED', $3, 'in', $4)`,
-                    [companyId, branchId, loanPrincipal, loanData.start_date || new Date()]
-                );
+                    `INSERT INTO loan_receipts (loan_id, method, amount) VALUES ($1,$2,$3)`,
+                    [loan.id, m, amt]
+                ).catch(() => {}); // table may not exist on older DBs
             }
         }
 

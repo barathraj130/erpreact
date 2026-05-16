@@ -414,6 +414,17 @@ export const runSchemaUpdates = async () => {
         // Make duration_months nullable so PRIVATE loans can omit it
         await db.query(`ALTER TABLE loans ALTER COLUMN duration_months DROP NOT NULL`).catch(() => {});
 
+        // Loan receipts — tracks how loan was received (cash/bank/upi breakdown)
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS loan_receipts (
+                id         SERIAL PRIMARY KEY,
+                loan_id    INTEGER REFERENCES loans(id) ON DELETE CASCADE,
+                method     VARCHAR(20) NOT NULL,
+                amount     NUMERIC(12,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
         // Purchase bill internal tracking number
         await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS purchase_number VARCHAR(30)`);
 

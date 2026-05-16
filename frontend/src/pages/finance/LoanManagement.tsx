@@ -52,12 +52,14 @@ const LoanManagement: React.FC = () => {
     interest_rate: 12,
     start_date: new Date().toISOString().split("T")[0],
     repayment_cycle: "MONTHLY",
-    payment_mode: "BANK",
     is_existing_loan: false,
     notes: "",
     duration_months: 12,
     loan_type: "BANK",
   });
+  const [receiptRows, setReceiptRows] = useState<{ mode: string; amount: number }[]>([
+    { mode: "CASH", amount: 0 },
+  ]);
 
   const [repayData, setRepayData] = useState({
     payment_date: new Date().toISOString().split("T")[0],
@@ -78,11 +80,31 @@ const LoanManagement: React.FC = () => {
     return Math.round(remaining * annualRate / 12 / 100 * 100) / 100;
   };
 
+  const calcEMIDisplay = () => {
+    if (formData.loan_type !== 'BANK' || !formData.principal_amount || !formData.duration_months) return null;
+    return calcEMI(formData.principal_amount, formData.interest_rate, formData.duration_months);
+  };
+
+  const monthlyInterestDisplay = () => {
+    if (!formData.principal_amount || !formData.interest_rate) return 0;
+    return Math.round(formData.principal_amount * formData.interest_rate / 12 / 100 * 100) / 100;
+  };
+
+  const totalAllocated = receiptRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const allocationMatched = Math.round(totalAllocated) === Math.round(formData.principal_amount) && formData.principal_amount > 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.is_existing_loan && !allocationMatched) {
+      alert(`Total allocated ₹${totalAllocated.toLocaleString('en-IN')} must equal Principal ₹${formData.principal_amount.toLocaleString('en-IN')}`);
+      return;
+    }
     setLoading(true);
     try {
-      await financeApi.createLoan(formData);
+      await financeApi.createLoan({
+        ...formData,
+        payments: receiptRows.filter(r => Number(r.amount) > 0).map(r => ({ method: r.mode, amount: r.amount })),
+      });
       setShowModal(false);
       fetchLoans();
       setFormData({
@@ -91,12 +113,12 @@ const LoanManagement: React.FC = () => {
         interest_rate: 12,
         start_date: new Date().toISOString().split("T")[0],
         repayment_cycle: "MONTHLY",
-        payment_mode: "BANK",
         is_existing_loan: false,
         notes: "",
         duration_months: 12,
         loan_type: "BANK",
       });
+      setReceiptRows([{ mode: "CASH", amount: 0 }]);
     } catch (err) {
       alert("Failed to create loan record.");
     } finally {
@@ -332,7 +354,7 @@ const LoanManagement: React.FC = () => {
                               onClick={() => {
                                 setPaymentType('interest');
                                 setSelectedLoan(loan);
-                                setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: interest, interest_component: interest, principal_component: 0, payment_mode: "CASH", notes: "" });
+                                setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: interest, interest_component: interest, principal_component: 0, payment_mode: "CASH", notes: "", cash_amount: 0, bank_amount: 0 });
                                 setShowRepayModal(true);
                               }}
                             >
@@ -345,7 +367,7 @@ const LoanManagement: React.FC = () => {
                               onClick={() => {
                                 setPaymentType('principal');
                                 setSelectedLoan(loan);
-                                setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: outstanding, interest_component: 0, principal_component: outstanding, payment_mode: "CASH", notes: "" });
+                                setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: outstanding, interest_component: 0, principal_component: outstanding, payment_mode: "CASH", notes: "", cash_amount: 0, bank_amount: 0 });
                                 setShowRepayModal(true);
                               }}
                             >
@@ -358,7 +380,7 @@ const LoanManagement: React.FC = () => {
                             onClick={() => {
                               setPaymentType('emi');
                               setSelectedLoan(loan);
-                              setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: interest, interest_component: interest, principal_component: 0, payment_mode: "BANK", notes: "" });
+                              setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: interest, interest_component: interest, principal_component: 0, payment_mode: "BANK", notes: "", cash_amount: 0, bank_amount: 0 });
                               setShowRepayModal(true);
                             }}
                             title="Record Repayment"
@@ -545,125 +567,228 @@ const LoanManagement: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* New Loan Modal */}
+      {/* New Loan Modal — redesigned */}
       <AnimatePresence>
         {showModal && (
-          <div className="page-modal-overlay">
-            <motion.div className="page-modal" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
-              <h2>Record New Loan</h2>
+          <div className="page-modal-overlay" style={{ alignItems: 'flex-start', paddingTop: '32px', overflowY: 'auto' }}>
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              style={{
+                background: '#fff', borderRadius: '20px',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
+                width: '100%', maxWidth: '560px',
+                padding: '32px', margin: '0 auto 40px',
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+                <div>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>🏦 Record New Loan</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>Track borrowed capital and liability</div>
+                </div>
+                <button onClick={() => setShowModal(false)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', padding: '8px', cursor: 'pointer', color: '#64748b', fontSize: '16px', lineHeight: 1 }}>✕</button>
+              </div>
+
               <form onSubmit={handleSubmit}>
-                {/* Existing vs New toggle */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
-                  <button type="button"
-                    onClick={() => setFormData({ ...formData, is_existing_loan: false })}
-                    style={{
-                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
-                      background: !formData.is_existing_loan ? '#2563eb' : 'transparent',
-                      color: !formData.is_existing_loan ? '#fff' : '#64748b'
-                    }}>
-                    New Loan (Cash Received)
-                  </button>
-                  <button type="button"
-                    onClick={() => setFormData({ ...formData, is_existing_loan: true })}
-                    style={{
-                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
-                      background: formData.is_existing_loan ? '#64748b' : 'transparent',
-                      color: formData.is_existing_loan ? '#fff' : '#64748b'
-                    }}>
-                    Existing Loan (No Cash Entry)
-                  </button>
+                {/* New / Existing toggle */}
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+                  {[
+                    { val: false, label: '✅ New Loan', sub: 'Cash Received' },
+                    { val: true,  label: '📋 Existing Loan', sub: 'No Cash Entry' },
+                  ].map(opt => (
+                    <button key={String(opt.val)} type="button"
+                      onClick={() => setFormData({ ...formData, is_existing_loan: opt.val })}
+                      style={{
+                        flex: 1, padding: '14px 16px', borderRadius: '10px', cursor: 'pointer',
+                        border: `2px solid ${formData.is_existing_loan === opt.val ? '#6366f1' : '#e5e7eb'}`,
+                        background: formData.is_existing_loan === opt.val ? '#eef2ff' : '#fff',
+                        textAlign: 'left', transition: 'all .15s',
+                      }}>
+                      <div style={{ fontWeight: 700, fontSize: '13px', color: formData.is_existing_loan === opt.val ? '#4338ca' : '#374151' }}>{opt.label}</div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{opt.sub}</div>
+                    </button>
+                  ))}
                 </div>
 
-                {/* Loan Type toggle */}
-                <label>Loan Type</label>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', borderRadius: '10px', padding: '4px' }}>
-                  <button type="button"
-                    onClick={() => setFormData({ ...formData, loan_type: 'BANK' })}
-                    style={{
-                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
-                      background: formData.loan_type === 'BANK' ? '#2563eb' : 'transparent',
-                      color: formData.loan_type === 'BANK' ? '#fff' : '#64748b'
-                    }}>
-                    BANK (Reducing Balance EMI)
-                  </button>
-                  <button type="button"
-                    onClick={() => setFormData({ ...formData, loan_type: 'PRIVATE' })}
-                    style={{
-                      flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '13px', cursor: 'pointer',
-                      background: formData.loan_type === 'PRIVATE' ? '#7c3aed' : 'transparent',
-                      color: formData.loan_type === 'PRIVATE' ? '#fff' : '#64748b'
-                    }}>
-                    PRIVATE (Flat Interest/Month)
-                  </button>
+                {/* Loan Type */}
+                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '8px' }}>Loan Type</div>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '22px' }}>
+                  {[
+                    { val: 'BANK',    icon: '🏛️', label: 'BANK',    sub: 'Reducing Balance EMI', activeColor: '#3b82f6', activeBg: '#eff6ff' },
+                    { val: 'PRIVATE', icon: '👤', label: 'PRIVATE', sub: 'Flat Interest / Month', activeColor: '#8b5cf6', activeBg: '#f5f3ff' },
+                  ].map(opt => (
+                    <button key={opt.val} type="button"
+                      onClick={() => setFormData({ ...formData, loan_type: opt.val })}
+                      style={{
+                        flex: 1, padding: '16px', borderRadius: '12px', cursor: 'pointer',
+                        border: `2px solid ${formData.loan_type === opt.val ? opt.activeColor : '#e5e7eb'}`,
+                        background: formData.loan_type === opt.val ? opt.activeBg : '#fff',
+                        textAlign: 'left', transition: 'all .15s',
+                      }}>
+                      <div style={{ fontSize: '18px', marginBottom: '4px' }}>{opt.icon}</div>
+                      <div style={{ fontWeight: 700, fontSize: '13px', color: formData.loan_type === opt.val ? opt.activeColor : '#374151' }}>{opt.label}</div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>{opt.sub}</div>
+                    </button>
+                  ))}
                 </div>
 
-                <label>Lender</label>
-                <select
-                  required
-                  value={formData.lender_id}
-                  onChange={e => setFormData({ ...formData, lender_id: e.target.value })}
-                >
+                {/* Lender */}
+                <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>👤 Lender</div>
+                <select required value={formData.lender_id} onChange={e => setFormData({ ...formData, lender_id: e.target.value })}
+                  style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', marginBottom: '18px', background: '#fff' }}>
                   <option value="">Select Lender</option>
                   {lenders.map(l => <option key={l.id} value={l.id}>{l.lender_name}</option>)}
                 </select>
 
-                <div className="form-grid-2">
+                {/* Principal + Interest */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '18px' }}>
                   <div>
-                    <label>Principal Amount (₹)</label>
-                    <input type="number" required value={formData.principal_amount} onChange={e => setFormData({ ...formData, principal_amount: Number(e.target.value) })} />
+                    <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>💰 Principal Amount</div>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', fontWeight: 700 }}>₹</span>
+                      <input type="number" required min={1} value={formData.principal_amount || ''}
+                        onChange={e => setFormData({ ...formData, principal_amount: Number(e.target.value) })}
+                        style={{ width: '100%', padding: '12px 12px 12px 28px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', boxSizing: 'border-box' }}
+                        placeholder="0" />
+                    </div>
                   </div>
                   <div>
-                    <label>Interest Rate (% p.a.)</label>
-                    <input type="number" step="0.1" required value={formData.interest_rate} onChange={e => setFormData({ ...formData, interest_rate: Number(e.target.value) })} />
+                    <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>📊 Interest Rate</div>
+                    <div style={{ position: 'relative' }}>
+                      <input type="number" step="0.1" required min={0} value={formData.interest_rate}
+                        onChange={e => setFormData({ ...formData, interest_rate: Number(e.target.value) })}
+                        style={{ width: '100%', padding: '12px 32px 12px 12px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', boxSizing: 'border-box' }} />
+                      <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: '12px' }}>% p.a.</span>
+                    </div>
+                    {formData.principal_amount > 0 && (
+                      <div style={{ fontSize: '11px', color: '#6366f1', marginTop: '4px', fontWeight: 600 }}>
+                        → ₹{monthlyInterestDisplay().toLocaleString('en-IN')}/month flat
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="form-grid-2">
+                {/* Start Date + Duration */}
+                <div style={{ display: 'grid', gridTemplateColumns: formData.loan_type === 'PRIVATE' ? '1fr' : '1fr 1fr', gap: '14px', marginBottom: '18px' }}>
                   <div>
-                    <label>Start Date</label>
-                    <input type="date" required value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })} />
+                    <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>📅 Start Date</div>
+                    <input type="date" required value={formData.start_date}
+                      onChange={e => setFormData({ ...formData, start_date: e.target.value })}
+                      style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', boxSizing: 'border-box' }} />
                   </div>
                   {formData.loan_type !== 'PRIVATE' && (
                     <div>
-                      <label>Duration (Months)</label>
-                      <input type="number" required min={1} value={formData.duration_months} onChange={e => setFormData({ ...formData, duration_months: Number(e.target.value) })} />
+                      <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>⏱️ Duration</div>
+                      <div style={{ position: 'relative' }}>
+                        <input type="number" required min={1} value={formData.duration_months}
+                          onChange={e => setFormData({ ...formData, duration_months: Number(e.target.value) })}
+                          style={{ width: '100%', padding: '12px 56px 12px 12px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', boxSizing: 'border-box' }} />
+                        <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: '12px' }}>months</span>
+                      </div>
+                      {calcEMIDisplay() !== null && (
+                        <div style={{ fontSize: '11px', color: '#2563eb', marginTop: '4px', fontWeight: 600 }}>
+                          EMI: ₹{Math.round(calcEMIDisplay()!).toLocaleString('en-IN')}/month
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                {formData.loan_type === 'PRIVATE' && (
-                  <div style={{ padding: '10px 14px', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', fontSize: '13px', color: '#7c3aed', fontWeight: 600 }}>
-                    Private loans run indefinitely — no fixed duration or EMI schedule. Pay interest monthly and principal whenever.
+                {/* Bank: Repayment Cycle */}
+                {formData.loan_type !== 'PRIVATE' && (
+                  <div style={{ marginBottom: '18px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>🔄 Repayment Cycle</div>
+                    <select value={formData.repayment_cycle} onChange={e => setFormData({ ...formData, repayment_cycle: e.target.value })}
+                      style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', background: '#fff' }}>
+                      <option value="MONTHLY">Monthly</option>
+                      <option value="WEEKLY">Weekly</option>
+                    </select>
                   </div>
                 )}
 
-                <div className="form-grid-2">
-                  {formData.loan_type !== 'PRIVATE' && (
-                    <div>
-                      <label>Repayment Cycle</label>
-                      <select value={formData.repayment_cycle} onChange={e => setFormData({ ...formData, repayment_cycle: e.target.value })}>
-                        <option value="MONTHLY">Monthly</option>
-                        <option value="WEEKLY">Weekly</option>
-                      </select>
+                {/* Private: info box */}
+                {formData.loan_type === 'PRIVATE' && (
+                  <div style={{ padding: '12px 16px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', fontSize: '13px', color: '#6d28d9', marginBottom: '18px', lineHeight: 1.5 }}>
+                    ℹ️ <strong>Runs indefinitely</strong> — no fixed duration or EMI schedule.<br />
+                    Pay interest monthly, repay principal whenever.
+                  </div>
+                )}
+
+                {/* Received Via — split rows */}
+                {!formData.is_existing_loan && (
+                  <div style={{ marginBottom: '18px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '8px' }}>💳 Received Via</div>
+                    <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {receiptRows.map((row, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <select value={row.mode}
+                            onChange={e => { const r = [...receiptRows]; r[i].mode = e.target.value; setReceiptRows(r); }}
+                            style={{ padding: '9px 12px', borderRadius: '7px', border: '1.5px solid #e5e7eb', fontSize: '13px', background: '#fff', flex: '0 0 110px' }}>
+                            <option value="CASH">💵 Cash</option>
+                            <option value="BANK">🏦 Bank</option>
+                            <option value="UPI">📱 UPI</option>
+                          </select>
+                          <div style={{ position: 'relative', flex: 1 }}>
+                            <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: '13px' }}>₹</span>
+                            <input type="number" min={0} value={row.amount || ''}
+                              placeholder="0"
+                              onChange={e => { const r = [...receiptRows]; r[i].amount = Number(e.target.value); setReceiptRows(r); }}
+                              style={{ width: '100%', padding: '9px 12px 9px 26px', borderRadius: '7px', border: '1.5px solid #e5e7eb', fontSize: '13px', boxSizing: 'border-box' }} />
+                          </div>
+                          {receiptRows.length > 1 && (
+                            <button type="button" onClick={() => setReceiptRows(receiptRows.filter((_, j) => j !== i))}
+                              style={{ background: '#fee2e2', border: 'none', borderRadius: '7px', padding: '9px 11px', cursor: 'pointer', color: '#dc2626', fontSize: '13px' }}>🗑</button>
+                          )}
+                        </div>
+                      ))}
+                      <button type="button"
+                        onClick={() => setReceiptRows([...receiptRows, { mode: 'CASH', amount: 0 }])}
+                        style={{ padding: '8px', borderRadius: '7px', border: '1.5px dashed #d1d5db', background: 'transparent', color: '#6b7280', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                        + Add Payment Mode
+                      </button>
+                      {/* Allocation status */}
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '8px 12px', borderRadius: '7px',
+                        background: allocationMatched ? '#f0fdf4' : totalAllocated > 0 ? '#fef2f2' : '#f8fafc',
+                        border: `1px solid ${allocationMatched ? '#86efac' : totalAllocated > 0 ? '#fca5a5' : '#e5e7eb'}`,
+                      }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#6b7280' }}>
+                          Total Allocated: <strong>₹{totalAllocated.toLocaleString('en-IN')}</strong>
+                        </span>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: allocationMatched ? '#16a34a' : totalAllocated > formData.principal_amount ? '#dc2626' : '#6b7280' }}>
+                          {allocationMatched ? '✅ Matched' : formData.principal_amount > 0 ? `${totalAllocated > formData.principal_amount ? '⚠️ Over by' : '⚠️ Short by'} ₹${Math.abs(formData.principal_amount - totalAllocated).toLocaleString('en-IN')}` : '—'}
+                        </span>
+                      </div>
                     </div>
-                  )}
-                  {!formData.is_existing_loan && (
-                    <div>
-                      <label>Received Via</label>
-                      <select value={formData.payment_mode} onChange={e => setFormData({ ...formData, payment_mode: e.target.value })}>
-                        <option value="BANK">Bank Transfer</option>
-                        <option value="CASH">Cash</option>
-                      </select>
-                    </div>
-                  )}
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div style={{ marginBottom: '24px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>📝 Notes (Optional)</div>
+                  <input value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="e.g. for business expansion"
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', boxSizing: 'border-box' }} />
                 </div>
 
-                <label>Notes</label>
-                <input value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} />
-
-                <div className="page-modal-actions">
-                  <button type="button" className="page-btn-round" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="page-btn-round page-btn-round-primary" disabled={loading}>Create Loan</button>
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="button" onClick={() => setShowModal(false)}
+                    style={{ flex: 1, padding: '14px', borderRadius: '10px', border: '1.5px solid #e5e7eb', background: '#fff', fontWeight: 600, fontSize: '14px', cursor: 'pointer', color: '#374151' }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={loading}
+                    style={{
+                      flex: 2, padding: '14px 32px', borderRadius: '10px', border: 'none',
+                      background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                      color: '#fff', fontWeight: 700, fontSize: '15px', cursor: 'pointer',
+                      opacity: loading ? 0.7 : 1, transition: 'all .15s',
+                    }}>
+                    {loading ? 'Creating…' : '🏦 Create Loan'}
+                  </button>
                 </div>
               </form>
             </motion.div>
