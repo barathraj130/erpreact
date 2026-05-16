@@ -296,12 +296,36 @@ router.get("/:id/ledger", authMiddleware, checkPermission("Sales", "view_invoice
 
 // DELETE USER (Customer or Staff)
 router.delete("/:id", authMiddleware, checkPermission("Sales", "delete_invoices"), async (req, res) => {
+    const id = req.params.id;
+    const companyId = req.user.active_company_id;
     try {
-        await db.pgRun(`DELETE FROM users WHERE id=$1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
+        // Block delete if customer has any invoices
+        const invoiceCount = await db.pgGet(
+            `SELECT COUNT(*) AS cnt FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+            [id, companyId]
+        );
+        if (Number(invoiceCount?.cnt) > 0) {
+            return res.status(409).json({
+                error: `Cannot delete: this customer has ${invoiceCount.cnt} invoice(s) on record. Cancel all invoices first.`
+            });
+        }
+
+        // Also block if there are outstanding transactions
+        const txCount = await db.pgGet(
+            `SELECT COUNT(*) AS cnt FROM transactions WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
+            [id, companyId]
+        );
+        if (Number(txCount?.cnt) > 0) {
+            return res.status(409).json({
+                error: `Cannot delete: this customer has ${txCount.cnt} payment record(s). Remove all transactions first.`
+            });
+        }
+
+        await db.pgRun(`DELETE FROM users WHERE id=$1 AND company_id = $2`, [id, companyId]);
         res.json({ success: true });
     } catch (err) {
         console.error("Delete user error:", err);
-        res.status(500).json({ error: "Failed to delete user" });
+        res.status(500).json({ error: "Failed to delete customer: " + err.message });
     }
 });
 

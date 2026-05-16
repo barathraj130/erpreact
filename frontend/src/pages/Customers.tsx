@@ -80,10 +80,14 @@ const Customers: React.FC = () => {
   const handleDelete = async (id: number) => {
     if (window.confirm("Delete this customer? This cannot be undone.")) {
       try {
-        await deleteCustomer(id);
+        const result = await deleteCustomer(id);
+        if (result.error) {
+          alert(result.error);
+          return;
+        }
         refresh();
       } catch (err) {
-        alert("Failed to delete customer.");
+        alert("Failed to delete customer. Please try again.");
       }
     }
   };
