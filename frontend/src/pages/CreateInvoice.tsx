@@ -295,7 +295,7 @@ const CreateInvoice: React.FC = () => {
     const rigstAmt = isTax ? returnTaxable * (gstState.igst * 0.01) : 0;
     const totalReturnGst = rcgstAmt + rsgstAmt + rigstAmt;
     
-    const saleTotal = invoiceType === "NOMINAL_TAX_INVOICE" ? totalGst : taxable + totalGst;
+    const saleTotal = taxable + totalGst;
     const returnTotal = returnTaxable + totalReturnGst;
 
     const grandTotal = saleTotal - returnTotal;
@@ -1454,46 +1454,30 @@ const CreateInvoice: React.FC = () => {
                       marginTop: "4px",
                     }}
                   >
-                    {useShippedSame
-                      ? customerInfo.name
-                      : shippedInfo.name || "---"}
+                    {company.name}
                   </div>
                   <div style={{ marginBottom: "4px" }}>
-                    {useShippedSame
-                      ? customerInfo.address
-                      : shippedInfo.address || "---"}
+                    {company.address}
                   </div>
                   <div
                     style={{ display: "flex", gap: "5px", marginBottom: "2px" }}
                   >
                     <span style={{ fontWeight: 700 }}>PH:</span>
-                    <span>{(!useShippedSame && shippedInfo.ph) || "---"}</span>
+                    <span>---</span>
                   </div>
                   <div
                     style={{ display: "flex", gap: "5px", marginBottom: "2px" }}
                   >
                     <span style={{ fontWeight: 700 }}>GSTIN:</span>
-                    <span>
-                      {useShippedSame
-                        ? customerInfo.gstin
-                        : shippedInfo.gstin || "---"}
-                    </span>
+                    <span>{company.gstin}</span>
                   </div>
                   <div style={{ display: "flex", gap: "5px" }}>
                     <span style={{ fontWeight: 700 }}>State:</span>
-                    <span>
-                      {useShippedSame
-                        ? customerInfo.state
-                        : shippedInfo.state || "---"}
-                    </span>
+                    <span>{company.state}</span>
                     <span style={{ fontWeight: 700, marginLeft: "10px" }}>
                       Code:
                     </span>
-                    <span>
-                      {useShippedSame
-                        ? customerInfo.code
-                        : shippedInfo.code || "---"}
-                    </span>
+                    <span>{company.stateCode}</span>
                   </div>
                 </div>
               </div>
