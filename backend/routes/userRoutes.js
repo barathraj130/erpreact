@@ -111,16 +111,37 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
 router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     try {
         const users = await db.pgAll(`
-            SELECT 
-                id, username, nickname, email, phone, role, gstin, 
-                address_line1, city_pincode, state, state_code,
-                initial_balance, COALESCE(initial_balance, 0) as remaining_balance, 
-                CASE WHEN meta IS NOT NULL AND (meta->>'customer_ledger_id') IS NOT NULL AND (meta->>'customer_ledger_id') != ''
-                     THEN (meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
-                bank_name, bank_account_no, bank_ifsc_code, created_at
-            FROM users 
-            WHERE role IN ('user', 'customer') AND company_id = COALESCE($1::int, $2::int)
-            ORDER BY id ASC
+            SELECT
+                u.id, u.username, u.nickname, u.email, u.phone, u.role, u.gstin,
+                u.address_line1, u.city_pincode, u.state, u.state_code,
+                u.initial_balance,
+                CASE WHEN u.meta IS NOT NULL AND (u.meta->>'customer_ledger_id') IS NOT NULL AND (u.meta->>'customer_ledger_id') != ''
+                     THEN (u.meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
+                u.bank_name, u.bank_account_no, u.bank_ifsc_code, u.created_at,
+                -- Real outstanding = opening + invoiced - invoice_payments - direct_transactions
+                GREATEST(0,
+                  COALESCE(u.initial_balance, 0)
+                  + COALESCE(inv_totals.total_billed, 0)
+                  - COALESCE(inv_totals.total_paid_invoice, 0)
+                  - COALESCE(direct.total_direct, 0)
+                ) as remaining_balance
+            FROM users u
+            LEFT JOIN (
+                SELECT customer_id,
+                       SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE 0 END) as total_billed,
+                       SUM(paid_amount) as total_paid_invoice
+                FROM invoices
+                WHERE company_id = COALESCE($1::int, $2::int)
+                GROUP BY customer_id
+            ) inv_totals ON inv_totals.customer_id = u.id
+            LEFT JOIN (
+                SELECT reference_id, SUM(amount) as total_direct
+                FROM transactions
+                WHERE company_id = COALESCE($1::int, $2::int) AND type = 'CUSTOMER_PAYMENT'
+                GROUP BY reference_id
+            ) direct ON direct.reference_id = u.id
+            WHERE u.role IN ('user', 'customer') AND u.company_id = COALESCE($1::int, $2::int)
+            ORDER BY u.id ASC
         `, [req.user.active_company_id, req.user.company_id]);
         res.json(users);
     } catch (err) {

@@ -54,12 +54,20 @@ router.get('/summary', authMiddleware, async (req, res) => {
               AND invoice_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
         `;
 
-        // OUTSTANDING — matches invoices page logic exactly
+        // OUTSTANDING — invoice balance minus any direct customer payments
         const outstandingSql = `
-            SELECT COALESCE(SUM(total_amount - paid_amount), 0) as outstanding
-            FROM invoices
-            WHERE company_id = $1
-              AND total_amount > paid_amount
+            SELECT GREATEST(0,
+                COALESCE((
+                    SELECT SUM(total_amount - paid_amount)
+                    FROM invoices
+                    WHERE company_id = $1 AND total_amount > paid_amount
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0)
+            ) as outstanding
         `;
 
         // SALES BREAKDOWN — no branch filter
@@ -136,15 +144,23 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
         const sql = `
-            SELECT 
+            SELECT
                 u.username as name,
-                COALESCE(SUM(i.total_amount - i.paid_amount), 0) as outstanding
+                GREATEST(0,
+                    COALESCE(SUM(i.total_amount - i.paid_amount), 0)
+                    - COALESCE(d.total_direct, 0)
+                ) as outstanding
             FROM users u
-            JOIN invoices i ON i.customer_id = u.id
+            JOIN invoices i ON i.customer_id = u.id AND i.company_id = $1 AND COALESCE(i.is_deleted, false) = false
+            LEFT JOIN (
+                SELECT reference_id, SUM(amount) as total_direct
+                FROM transactions
+                WHERE company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                GROUP BY reference_id
+            ) d ON d.reference_id = u.id
             WHERE i.company_id = $1
-              AND COALESCE(i.is_deleted, false) = false
-              AND (i.total_amount - i.paid_amount) > 0
-            GROUP BY u.id, u.username
+            GROUP BY u.id, u.username, d.total_direct
+            HAVING GREATEST(0, COALESCE(SUM(i.total_amount - i.paid_amount), 0) - COALESCE(d.total_direct, 0)) > 0
             ORDER BY outstanding DESC
             LIMIT 10
         `;
@@ -207,11 +223,18 @@ router.get('/kpis', authMiddleware, async (req, res) => {
         const salesRes = await db.pgGet(salesSql, [companyId]);
 
         const outstandingSql = `
-            SELECT 
-                COALESCE(SUM(total_amount - paid_amount), 0) as outstanding_receivables
-            FROM invoices 
-            WHERE company_id = $1 AND ${branchFilter} 
-              AND total_amount > paid_amount 
+            SELECT GREATEST(0,
+                COALESCE((
+                    SELECT SUM(total_amount - paid_amount)
+                    FROM invoices
+                    WHERE company_id = $1 AND ${branchFilter} AND total_amount > paid_amount
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0)
+            ) as outstanding_receivables
         `;
         const outstandingRes = await db.pgGet(outstandingSql, [companyId]);
 

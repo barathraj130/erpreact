@@ -62,7 +62,7 @@ const Customers: React.FC = () => {
   }, [customers, searchTerm]);
 
   // Stats calculation
-  const totalBalance = displayedCustomers.reduce((acc, curr) => acc + (Number(curr.initial_balance) || 0), 0);
+  const totalBalance = displayedCustomers.reduce((acc, curr) => acc + (Number(curr.remaining_balance) || 0), 0);
   const totalCustomers = displayedCustomers.length;
 
   const handleEdit = (customer: any) => {
@@ -178,7 +178,7 @@ const Customers: React.FC = () => {
                     <FaMapMarkerAlt size={10} /> {user.city_pincode || user.state || "Not specified"}
                   </span>
                   <span style={{ fontWeight: 600, color: "var(--text-1)", fontSize: "14px" }}>
-                    ₹{Number(user.initial_balance || 0).toLocaleString("en-IN")}
+                    ₹{Number(user.remaining_balance || 0).toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
@@ -253,7 +253,7 @@ const Customers: React.FC = () => {
                     </td>
                     <td className="text-right">
                       <span className="font-bold" style={{ color: "var(--text-2)" }}>
-                        ₹{Number(user.initial_balance || 0).toLocaleString("en-IN")}
+                        ₹{Number(user.remaining_balance || 0).toLocaleString("en-IN")}
                       </span>
                     </td>
                     <td className="text-center">
