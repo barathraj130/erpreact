@@ -392,6 +392,21 @@ export const runSchemaUpdates = async () => {
             )
         `);
 
+        // Invoice number series — TAX / INV / NSB separate counters per month
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS invoice_number_series (
+                id          SERIAL PRIMARY KEY,
+                bill_type   VARCHAR(20) NOT NULL,
+                prefix      VARCHAR(10) NOT NULL,
+                year        INTEGER NOT NULL,
+                month       INTEGER NOT NULL,
+                last_number INTEGER DEFAULT 0,
+                UNIQUE (bill_type, year, month)
+            )
+        `);
+        await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix VARCHAR(10)`);
+        await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_number INTEGER`);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

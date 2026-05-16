@@ -19,19 +19,22 @@ const router = express.Router();
 /* ============================================================
    HELPER: Generate Smart Invoice Number
 ============================================================ */
-// Prefix map — one unique prefix per invoice type
-const TYPE_PREFIX = {
-    TAX_INVOICE:         'TAX',
-    NON_TAX_INVOICE:     'NTAX',
-    RETAIL_SALE:         'RET',
-    GIFTED_ITEM:         'GFT',
-    NOMINAL_TAX_INVOICE: 'NM-TAX',
-};
+// Map invoice_type + bill_purpose → series bill_type and prefix
+// TAX series:    TAX_INVOICE, NOMINAL_TAX_INVOICE  → TAX/YYYY/MM/001
+// INV series:    NON_TAX_INVOICE, RETAIL_SALE, GIFTED_ITEM → INV/YYYY/MM/001
+// NSB series:    bill_purpose = 'name_only' (any type)       → NSB/YYYY/MM/001
+function resolveSeries(invoiceType, billPurpose) {
+    if (billPurpose === 'name_only') return { billType: 'NSB', prefix: 'NSB' };
+    if (invoiceType === 'TAX_INVOICE' || invoiceType === 'NOMINAL_TAX_INVOICE')
+        return { billType: 'TAX', prefix: 'TAX' };
+    return { billType: 'NON-TAX', prefix: 'INV' };
+}
 
-async function generateInvoiceNumber(client, type, companyId, branchId) {
+async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
     const date = new Date();
-    const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
     const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
     const financial_month = `${year}-${monthStr}`;
 
     if (branchId) {
@@ -44,26 +47,30 @@ async function generateInvoiceNumber(client, type, companyId, branchId) {
         const { bill_sequence, bill_prefix } = branchResult.rows[0];
         const padding = bill_sequence.toString().padStart(4, "0");
         const prefix = bill_prefix || `B${branchId}`;
-        return { number: `${prefix}-${padding}`, financial_month };
+        return { number: `${prefix}-${padding}`, financial_month, series_prefix: prefix, series_number: bill_sequence };
     }
 
-    // Main branch — atomic per-type per-month sequence via UPSERT
-    const prefix = TYPE_PREFIX[type] || 'INV';
+    // Main branch — atomic per-series per-month sequence
+    const { billType, prefix } = resolveSeries(type, billPurpose);
+    const paddedMonth = String(month).padStart(2, '0');
+
     const seqResult = await client.query(
-        `INSERT INTO invoice_sequences (company_id, invoice_type, financial_month, last_sequence)
-         VALUES ($1, $2, $3, 1)
-         ON CONFLICT (company_id, invoice_type, financial_month)
-         DO UPDATE SET last_sequence = invoice_sequences.last_sequence + 1
-         RETURNING last_sequence`,
-        [companyId, type, financial_month]
+        `INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
+         VALUES ($1, $2, $3, $4, 1)
+         ON CONFLICT (bill_type, year, month)
+         DO UPDATE SET last_number = invoice_number_series.last_number + 1
+         RETURNING last_number`,
+        [billType, prefix, year, month]
     );
 
-    const seq = seqResult.rows[0].last_sequence;
-    const padding = seq.toString().padStart(3, "0");
+    const num = seqResult.rows[0].last_number;
+    const paddedNum = String(num).padStart(3, '0');
 
     return {
-        number: `${prefix}/${year}/${monthStr}/${padding}`,
+        number: `${prefix}/${year}/${paddedMonth}/${paddedNum}`,
         financial_month,
+        series_prefix: prefix,
+        series_number: num,
     };
 }
 
@@ -118,16 +125,20 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         let finalInvoiceNumber = invoice_number;
         let financial_month;
+        let seriesPrefix = null;
+        let seriesNumber = null;
         const rawBranchId = req.body.branch_id || req.user.branch_id;
         const branchId = sanitizeInt(rawBranchId);
         const safeCustomerId = sanitizeInt(customer_id);
         const safeBrokerId = sanitizeInt(broker_id);
         const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
-        
+
         if (!finalInvoiceNumber) {
-            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId);
+            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
             finalInvoiceNumber = gen.number;
             financial_month = gen.financial_month;
+            seriesPrefix = gen.series_prefix;
+            seriesNumber = gen.series_number;
         } else {
             financial_month = `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`;
         }
@@ -272,8 +283,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 branch_id,
                 bill_purpose,
                 points_earned, points_redeemed, points_discount,
+                series_prefix, series_number,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, NOW())
             RETURNING id
         `;
 
@@ -288,7 +300,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             bill_purpose || 'real',
             0, // points_earned - will be updated after
             pointsRedeemed,
-            pointsDiscount
+            pointsDiscount,
+            seriesPrefix,
+            seriesNumber
         ]);
 
         const invoiceId = result.rows[0].id;

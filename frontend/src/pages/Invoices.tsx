@@ -23,6 +23,7 @@ const Invoices: React.FC = () => {
   const { invoices = [], loading, refresh } = useInvoices();
   const { user } = useAuthUser();
   const [searchTerm, setSearchTerm] = useState("");
+  const [seriesFilter, setSeriesFilter] = useState<"ALL" | "TAX" | "INV" | "NSB">("ALL");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   React.useEffect(() => {
@@ -45,11 +46,15 @@ const Invoices: React.FC = () => {
     }
   };
 
-  const filteredInvoices = invoices.filter(
-    (inv) =>
+  const filteredInvoices = invoices.filter((inv) => {
+    const matchSearch =
       inv.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+      inv.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchSeries =
+      seriesFilter === "ALL" ||
+      (inv.series_prefix || inv.invoice_number?.split("/")[0])?.toUpperCase() === seriesFilter;
+    return matchSearch && matchSeries;
+  });
 
   const stats = {
     totalValue: filteredInvoices.reduce((acc, curr) => acc + (Number(curr.total_amount) || 0), 0),
@@ -105,14 +110,37 @@ const Invoices: React.FC = () => {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="page-search-bar" style={{ width: isMobile ? "100%" : "340px", marginBottom: "12px" }}>
-        <FaSearch className="page-search-icon" size={13} />
-        <input
-          placeholder="Search by Invoice No or customer…"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      {/* Search + Series Filter */}
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "12px" }}>
+        <div className="page-search-bar" style={{ width: isMobile ? "100%" : "340px" }}>
+          <FaSearch className="page-search-icon" size={13} />
+          <input
+            placeholder="Search by Invoice No or customer…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          {(["ALL", "TAX", "INV", "NSB"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSeriesFilter(s)}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "20px",
+                border: "1px solid var(--border-soft)",
+                background: seriesFilter === s ? "var(--accent)" : "var(--bg-card)",
+                color: seriesFilter === s ? "#fff" : "var(--text-2)",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {s === "ALL" ? "All" : s}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Content */}

@@ -146,6 +146,8 @@ router.post("/full", authMiddleware, async (req, res) => {
             `UPDATE branches SET bill_sequence = 0 WHERE company_id = $1`, [cid]);
         await safeDel(client, 'invoice_sequences',
             `DELETE FROM invoice_sequences WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'invoice_number_series',
+            `DELETE FROM invoice_number_series`, []);
 
         // ── 12. CLEAR USER META (customer ledger pointers on staff) ────────────
         await safeDel(client, 'user_meta',

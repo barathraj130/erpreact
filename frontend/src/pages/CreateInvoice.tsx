@@ -418,7 +418,7 @@ const CreateInvoice: React.FC = () => {
         <div className="db-topbar-left">
           <span className="db-topbar-title">Sales</span>
           <span className="db-topbar-sep">/</span>
-          <span className="db-topbar-sub">New {invoiceType === "TAX_INVOICE" ? "Tax Invoice" : "Retail Bill (Anon)"}</span>
+          <span className="db-topbar-sub">New Invoice</span>
         </div>
         <div className="db-topbar-right">
           <button className="page-btn-round-ghost" onClick={() => navigate(-1)}>
@@ -1324,11 +1324,7 @@ const CreateInvoice: React.FC = () => {
                     letterSpacing: "1px",
                   }}
                 >
-                  {invoiceType === "NON_TAX_INVOICE" ? "Tax Exempted Bill" :
-                   invoiceType === "NOMINAL_TAX_INVOICE" ? "Nominal Tax Invoice" :
-                   invoiceType === "RETAIL_SALE" ? "Retail Sale Bill" :
-                   invoiceType === "GIFTED_ITEM" ? "Delivery Challan" :
-                   "Tax Invoice"}
+                  INVOICE
                 </h2>
               </div>
 
