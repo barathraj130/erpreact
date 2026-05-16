@@ -127,12 +127,13 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 ) as remaining_balance
             FROM users u
             LEFT JOIN (
-                SELECT customer_id,
-                       SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE 0 END) as total_billed,
-                       SUM(paid_amount) as total_paid_invoice
-                FROM invoices
-                WHERE company_id = COALESCE($1::int, $2::int)
-                GROUP BY customer_id
+                SELECT i.customer_id,
+                       SUM(CASE WHEN UPPER(COALESCE(i.invoice_type,'')) != 'SALES_RETURN' THEN i.total_amount ELSE 0 END) as total_billed,
+                       COALESCE(SUM(p.amount), 0) as total_paid_invoice
+                FROM invoices i
+                LEFT JOIN invoice_payments p ON p.invoice_id = i.id
+                WHERE i.company_id = COALESCE($1::int, $2::int)
+                GROUP BY i.customer_id
             ) inv_totals ON inv_totals.customer_id = u.id
             LEFT JOIN (
                 SELECT reference_id, SUM(amount) as total_direct
