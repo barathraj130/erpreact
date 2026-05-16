@@ -253,14 +253,14 @@ const Transactions: React.FC = () => {
 
       {showNewTxModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: "650px" }}>
+          <div className="modal-content" style={{ maxWidth: "650px", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
             <div className="modal-header">
               <span className="text-header">Record Financial Transaction</span>
               <button className="btn btn-secondary" style={{ padding: "4px 8px" }} onClick={() => setShowNewTxModal(false)}>✕</button>
             </div>
             
-            <form onSubmit={handleCreateTx}>
-              <div className="modal-body">
+            <form onSubmit={handleCreateTx} style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+              <div className="modal-body" style={{ overflowY: "auto", flex: 1 }}>
                 <div className="tx-modal-scan-box" style={{ borderRadius: "16px" }}>
                   <div className="tx-modal-scan-info">
                     <h4>SYNC BANK RECORD</h4>
