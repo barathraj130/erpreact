@@ -109,6 +109,7 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
 
 // GET ALL CUSTOMERS
 router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
+    const companyId = req.user.active_company_id || req.user.company_id;
     try {
         const users = await db.pgAll(`
             SELECT
@@ -118,36 +119,28 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 CASE WHEN u.meta IS NOT NULL AND (u.meta->>'customer_ledger_id') IS NOT NULL AND (u.meta->>'customer_ledger_id') != ''
                      THEN (u.meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 u.bank_name, u.bank_account_no, u.bank_ifsc_code, u.created_at,
-                -- Use meta.customer_opening_balance if set, else initial_balance (matches ledger service logic)
                 GREATEST(0,
                   COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
-                  + COALESCE(inv_totals.total_billed, 0)
-                  - COALESCE(inv_totals.total_paid_invoice, 0)
-                  - COALESCE(direct.total_direct, 0)
+                  + COALESCE((
+                      SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
+                      FROM invoices WHERE customer_id = u.id AND company_id = $1
+                  ), 0)
+                  - COALESCE((
+                      SELECT SUM(ip.amount)
+                      FROM invoice_payments ip
+                      JOIN invoices i ON i.id = ip.invoice_id
+                      WHERE i.customer_id = u.id AND i.company_id = $1
+                  ), 0)
+                  - COALESCE((
+                      SELECT SUM(amount)
+                      FROM transactions
+                      WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                  ), 0)
                 ) as remaining_balance
             FROM users u
-            LEFT JOIN (
-                SELECT i.customer_id,
-                       SUM(CASE WHEN UPPER(COALESCE(i.invoice_type,'')) != 'SALES_RETURN' THEN i.total_amount ELSE 0 END) as total_billed,
-                       COALESCE(SUM(ip.paid), 0) as total_paid_invoice
-                FROM invoices i
-                LEFT JOIN (
-                    SELECT invoice_id, SUM(amount) as paid
-                    FROM invoice_payments
-                    GROUP BY invoice_id
-                ) ip ON ip.invoice_id = i.id
-                WHERE i.company_id = COALESCE($1::int, $2::int)
-                GROUP BY i.customer_id
-            ) inv_totals ON inv_totals.customer_id = u.id
-            LEFT JOIN (
-                SELECT reference_id, SUM(amount) as total_direct
-                FROM transactions
-                WHERE company_id = COALESCE($1::int, $2::int) AND type = 'CUSTOMER_PAYMENT'
-                GROUP BY reference_id
-            ) direct ON direct.reference_id = u.id
-            WHERE u.role IN ('user', 'customer') AND u.company_id = COALESCE($1::int, $2::int)
+            WHERE u.role IN ('user', 'customer') AND u.company_id = $1
             ORDER BY u.id ASC
-        `, [req.user.active_company_id, req.user.company_id]);
+        `, [companyId]);
         res.json(users);
     } catch (err) {
         console.error("Fetch customers error:", err);
