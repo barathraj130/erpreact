@@ -872,28 +872,50 @@ const PurchaseBills: React.FC = () => {
                     <thead style={{ background: "#f8fafc" }}>
                       <tr>
                         <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>Product</th>
+                        <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>HSN</th>
                         <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Qty</th>
-                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Price</th>
+                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Rate</th>
+                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>GST%</th>
                         <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {loadingItems ? (
-                        <tr><td colSpan={4} style={{ padding: "20px", textAlign: "center" }}>Loading items...</td></tr>
+                        <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center" }}>Loading items...</td></tr>
                       ) : billItems.length === 0 ? (
-                        <tr><td colSpan={4} style={{ padding: "20px", textAlign: "center" }}>No items found</td></tr>
+                        <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>No items found</td></tr>
                       ) : (
-                        billItems.map((item, i) => (
+                        billItems.map((item: any, i: number) => (
                           <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "10px", fontSize: "0.85rem" }}>{item.product_name}</td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>{item.qty} {item.unit}</td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>₹{Number(item.price).toLocaleString()}</td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 600 }}>₹{(item.qty * item.price).toLocaleString()}</td>
+                            <td style={{ padding: "10px", fontSize: "0.85rem", fontWeight: 600 }}>
+                              {item.product_name || item.description || `Product #${item.product_id}`}
+                            </td>
+                            <td style={{ padding: "10px", fontSize: "0.75rem", color: "#64748b" }}>{item.hsn_code || "—"}</td>
+                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
+                              {Number(item.quantity).toLocaleString()} {item.unit || ""}
+                            </td>
+                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
+                              ₹{Number(item.unit_price).toLocaleString()}
+                            </td>
+                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
+                              {item.tax_percent || 0}%
+                            </td>
+                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 700 }}>
+                              ₹{Number(item.line_total).toLocaleString()}
+                            </td>
                           </tr>
                         ))
                       )}
                     </tbody>
                   </table>
+                </div>
+                {/* Payment summary */}
+                <div style={{ display: "flex", gap: "16px", justifyContent: "flex-end", marginTop: "16px", padding: "12px 16px", background: "#f8fafc", borderRadius: "10px" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b" }}>Total: <strong>₹{Number(viewBill.total_amount).toLocaleString()}</strong></span>
+                  <span style={{ fontSize: "13px", color: "#16a34a" }}>Paid: <strong>₹{Number(viewBill.paid_amount || 0).toLocaleString()}</strong></span>
+                  <span style={{ fontSize: "13px", color: Number(viewBill.balance_amount || 0) > 0 ? "#ef4444" : "#64748b" }}>
+                    Balance: <strong>₹{Number(viewBill.balance_amount || 0).toLocaleString()}</strong>
+                  </span>
                 </div>
 
                 <div style={{ marginTop: "24px", display: "flex", justifyContent: "flex-end" }}>

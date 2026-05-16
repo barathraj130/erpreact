@@ -407,6 +407,16 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix VARCHAR(10)`);
         await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_number INTEGER`);
 
+        // Loan improvements — private lender support
+        await db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS loan_type VARCHAR(20) DEFAULT 'BANK'`);
+        await db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS principal_outstanding NUMERIC(15,2)`);
+        await db.query(`ALTER TABLE loan_payments ADD COLUMN IF NOT EXISTS payment_type VARCHAR(20) DEFAULT 'emi'`);
+        // Make duration_months nullable so PRIVATE loans can omit it
+        await db.query(`ALTER TABLE loans ALTER COLUMN duration_months DROP NOT NULL`).catch(() => {});
+
+        // Purchase bill internal tracking number
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS purchase_number VARCHAR(30)`);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

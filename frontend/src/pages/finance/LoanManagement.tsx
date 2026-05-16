@@ -17,6 +17,7 @@ const LoanManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [scheduleTab, setScheduleTab] = useState<'history' | 'schedule'>('history');
+  const [paymentType, setPaymentType] = useState<'emi' | 'interest' | 'principal'>('emi');
 
   const fetchLoans = async () => {
     setLoading(true);
@@ -108,6 +109,7 @@ const LoanManagement: React.FC = () => {
       await financeApi.recordLoanRepayment({
         ...repayData,
         loan_id: selectedLoan.id,
+        payment_type: paymentType,
       });
       setShowRepayModal(false);
       fetchLoans();
@@ -280,10 +282,18 @@ const LoanManagement: React.FC = () => {
                 <td><div className="font-bold">{loan.lender_name}</div></td>
                 <td className="text-right font-mono">
                   <div>₹{Number(loan.remaining_principal ?? loan.principal_amount).toLocaleString()}</div>
-                  {Number(loan.paid_principal || 0) > 0 && (
-                    <div style={{ fontSize: '11px', color: '#16a34a' }}>
-                      ₹{Number(loan.paid_principal).toLocaleString()} paid
-                    </div>
+                  {(loan.loan_type || loan.party_type || 'BANK').toUpperCase() === 'PRIVATE' ? (
+                    Number(loan.total_interest_paid || 0) > 0 && (
+                      <div style={{ fontSize: '11px', color: '#f59e0b' }}>
+                        ₹{Number(loan.total_interest_paid).toLocaleString()} interest paid
+                      </div>
+                    )
+                  ) : (
+                    Number(loan.paid_principal || 0) > 0 && (
+                      <div style={{ fontSize: '11px', color: '#16a34a' }}>
+                        ₹{Number(loan.paid_principal).toLocaleString()} principal paid
+                      </div>
+                    )
                   )}
                 </td>
                 <td className="text-right">{loan.interest_rate}%</td>
@@ -294,34 +304,72 @@ const LoanManagement: React.FC = () => {
                     {loan.status}
                   </span>
                 </td>
-                <td className="text-center" style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                  <button
-                    className="page-btn-round-sm"
-                    onClick={() => {
-                      const interest = calcMonthlyInterest(loan);
-                      setSelectedLoan(loan);
-                      setRepayData({
-                        payment_date: new Date().toISOString().split("T")[0],
-                        total_amount: interest,
-                        interest_component: interest,
-                        principal_component: 0,
-                        payment_mode: "BANK",
-                        notes: "",
-                      });
-                      setShowRepayModal(true);
-                    }}
-                    title="Record Repayment"
-                  >
-                    <FaPlus size={10} />
-                  </button>
-                  <button
-                    className="page-btn-round-sm"
-                    onClick={async () => { setLedgerLoan(loan); setScheduleTab('history'); await loadRepaymentHistory(loan.id); }}
-                    title="View Repayment History"
-                    style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}
-                  >
-                    <FaListAlt size={10} />
-                  </button>
+                <td className="text-center">
+                  {(() => {
+                    const isPrivate = (loan.loan_type || loan.party_type || 'BANK').toUpperCase() === 'PRIVATE';
+                    const interest = calcMonthlyInterest(loan);
+                    const outstanding = Number(loan.remaining_principal ?? loan.principal_amount);
+                    return (
+                      <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                        {isPrivate ? (
+                          <>
+                            <button
+                              className="page-btn-round-sm"
+                              style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a", fontSize: "10px", padding: "4px 8px" }}
+                              title="Pay Interest"
+                              onClick={() => {
+                                setPaymentType('interest');
+                                setSelectedLoan(loan);
+                                setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: interest, interest_component: interest, principal_component: 0, payment_mode: "CASH", notes: "" });
+                                setShowRepayModal(true);
+                              }}
+                            >
+                              Interest
+                            </button>
+                            <button
+                              className="page-btn-round-sm"
+                              style={{ background: "#eff6ff", color: "#1e40af", border: "1px solid #bfdbfe", fontSize: "10px", padding: "4px 8px" }}
+                              title="Repay Principal"
+                              onClick={() => {
+                                setPaymentType('principal');
+                                setSelectedLoan(loan);
+                                setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: outstanding, interest_component: 0, principal_component: outstanding, payment_mode: "CASH", notes: "" });
+                                setShowRepayModal(true);
+                              }}
+                            >
+                              Principal
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="page-btn-round-sm"
+                            onClick={() => {
+                              setPaymentType('emi');
+                              setSelectedLoan(loan);
+                              setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: interest, interest_component: interest, principal_component: 0, payment_mode: "BANK", notes: "" });
+                              setShowRepayModal(true);
+                            }}
+                            title="Record Repayment"
+                          >
+                            <FaPlus size={10} />
+                          </button>
+                        )}
+                        <button
+                          className="page-btn-round-sm"
+                          onClick={async () => {
+                            const tab = isPrivate ? 'history' : 'history';
+                            setLedgerLoan(loan);
+                            setScheduleTab(tab);
+                            await loadRepaymentHistory(loan.id);
+                          }}
+                          title="View History"
+                          style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}
+                        >
+                          <FaListAlt size={10} />
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}
@@ -347,28 +395,34 @@ const LoanManagement: React.FC = () => {
               <button onClick={() => setLedgerLoan(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}><FaTimes size={16} /></button>
             </div>
 
-            {/* Tab Toggle */}
-            <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-              {(['history', 'schedule'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setScheduleTab(tab)}
-                  style={{
-                    padding: '10px 24px',
-                    border: 'none',
-                    borderBottom: scheduleTab === tab ? '2px solid #2563eb' : '2px solid transparent',
-                    background: 'none',
-                    fontWeight: scheduleTab === tab ? 700 : 500,
-                    color: scheduleTab === tab ? '#2563eb' : '#64748b',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    textTransform: 'capitalize',
-                  }}
-                >
-                  {tab === 'history' ? 'History' : 'Schedule'}
-                </button>
-              ))}
-            </div>
+            {/* Tab Toggle — hide Schedule for PRIVATE loans */}
+            {(() => {
+              const isPrivateLoan = (ledgerLoan.loan_type || ledgerLoan.party_type || 'BANK').toUpperCase() === 'PRIVATE';
+              const tabs = isPrivateLoan ? (['history'] as const) : (['history', 'schedule'] as const);
+              return (
+                <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  {tabs.map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setScheduleTab(tab)}
+                      style={{
+                        padding: '10px 24px',
+                        border: 'none',
+                        borderBottom: scheduleTab === tab ? '2px solid #2563eb' : '2px solid transparent',
+                        background: 'none',
+                        fontWeight: scheduleTab === tab ? 700 : 500,
+                        color: scheduleTab === tab ? '#2563eb' : '#64748b',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {tab === 'history' ? 'History' : 'Schedule'}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
 
             {scheduleTab === 'history' && (
               repaymentHistory.length === 0 ? (
@@ -557,20 +611,30 @@ const LoanManagement: React.FC = () => {
                     <label>Start Date</label>
                     <input type="date" required value={formData.start_date} onChange={e => setFormData({ ...formData, start_date: e.target.value })} />
                   </div>
-                  <div>
-                    <label>Duration (Months)</label>
-                    <input type="number" required min={1} value={formData.duration_months} onChange={e => setFormData({ ...formData, duration_months: Number(e.target.value) })} />
-                  </div>
+                  {formData.loan_type !== 'PRIVATE' && (
+                    <div>
+                      <label>Duration (Months)</label>
+                      <input type="number" required min={1} value={formData.duration_months} onChange={e => setFormData({ ...formData, duration_months: Number(e.target.value) })} />
+                    </div>
+                  )}
                 </div>
 
-                <div className="form-grid-2">
-                  <div>
-                    <label>Repayment Cycle</label>
-                    <select value={formData.repayment_cycle} onChange={e => setFormData({ ...formData, repayment_cycle: e.target.value })}>
-                      <option value="MONTHLY">Monthly</option>
-                      <option value="WEEKLY">Weekly</option>
-                    </select>
+                {formData.loan_type === 'PRIVATE' && (
+                  <div style={{ padding: '10px 14px', background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', fontSize: '13px', color: '#7c3aed', fontWeight: 600 }}>
+                    Private loans run indefinitely — no fixed duration or EMI schedule. Pay interest monthly and principal whenever.
                   </div>
+                )}
+
+                <div className="form-grid-2">
+                  {formData.loan_type !== 'PRIVATE' && (
+                    <div>
+                      <label>Repayment Cycle</label>
+                      <select value={formData.repayment_cycle} onChange={e => setFormData({ ...formData, repayment_cycle: e.target.value })}>
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="WEEKLY">Weekly</option>
+                      </select>
+                    </div>
+                  )}
                   {!formData.is_existing_loan && (
                     <div>
                       <label>Received Via</label>
@@ -597,20 +661,38 @@ const LoanManagement: React.FC = () => {
 
       {/* Repayment Modal */}
       <AnimatePresence>
-        {showRepayModal && (
+        {showRepayModal && selectedLoan && (
           <div className="page-modal-overlay">
             <motion.div className="page-modal" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
-              <h2>Record Repayment</h2>
-              <p style={{ fontSize: '13px', color: 'var(--text-3)' }}>Loan: {selectedLoan?.lender_name} (₹{selectedLoan?.principal_amount})</p>
-              {selectedLoan && (() => {
-                const monthlyInterest = calcMonthlyInterest(selectedLoan);
-                return (
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#166534' }}>
-                    Expected monthly interest: <strong>₹{monthlyInterest.toLocaleString('en-IN')}</strong>
-                    &nbsp;({selectedLoan.interest_rate}% p.a. on ₹{Number(selectedLoan.remaining_principal ?? selectedLoan.principal_amount).toLocaleString('en-IN')} remaining)
-                  </div>
-                );
-              })()}
+              <h2>
+                {paymentType === 'interest' ? 'Pay Interest' : paymentType === 'principal' ? 'Repay Principal' : 'Record Repayment'}
+              </h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-3)', marginBottom: '12px' }}>
+                {selectedLoan.lender_name} — Outstanding: ₹{Number(selectedLoan.remaining_principal ?? selectedLoan.principal_amount).toLocaleString('en-IN')}
+              </p>
+
+              {paymentType === 'interest' && (
+                <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#92400e' }}>
+                  <strong>Interest payment — principal will NOT be reduced.</strong><br />
+                  Monthly interest at {selectedLoan.interest_rate}% p.a.: ₹{calcMonthlyInterest(selectedLoan).toLocaleString('en-IN')}
+                </div>
+              )}
+
+              {paymentType === 'principal' && (
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#1e40af' }}>
+                  <strong>Principal repayment — reduces outstanding balance.</strong><br />
+                  {repayData.total_amount >= Number(selectedLoan.remaining_principal ?? selectedLoan.principal_amount)
+                    ? '⚠️ This will CLOSE the loan.' : ''}
+                </div>
+              )}
+
+              {paymentType === 'emi' && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#166534' }}>
+                  Monthly interest: ₹{calcMonthlyInterest(selectedLoan).toLocaleString('en-IN')}&nbsp;
+                  ({selectedLoan.interest_rate}% p.a.)
+                </div>
+              )}
+
               <form onSubmit={handleRepaySubmit}>
                 <div className="form-grid-2">
                   <div>
@@ -618,44 +700,55 @@ const LoanManagement: React.FC = () => {
                     <input type="date" required value={repayData.payment_date} onChange={e => setRepayData({ ...repayData, payment_date: e.target.value })} />
                   </div>
                   <div>
-                    <label>Total Amount Paid (₹)</label>
+                    <label>Amount (₹)</label>
                     <input
                       type="number" required value={repayData.total_amount}
                       onChange={e => {
                         const total = Number(e.target.value);
-                        const interest = repayData.interest_component;
-                        setRepayData({ ...repayData, total_amount: total, principal_component: Math.max(0, total - interest) });
+                        if (paymentType === 'interest') {
+                          setRepayData({ ...repayData, total_amount: total, interest_component: total, principal_component: 0 });
+                        } else if (paymentType === 'principal') {
+                          setRepayData({ ...repayData, total_amount: total, principal_component: total, interest_component: 0 });
+                        } else {
+                          const interest = repayData.interest_component;
+                          setRepayData({ ...repayData, total_amount: total, principal_component: Math.max(0, total - interest) });
+                        }
                       }}
                     />
                   </div>
                 </div>
 
-                <div className="form-grid-2">
-                  <div>
-                    <label>Principal Component (₹)</label>
-                    <input type="number" value={repayData.principal_component} onChange={e => {
-                      const p = Number(e.target.value);
-                      setRepayData({ ...repayData, principal_component: p, total_amount: p + repayData.interest_component });
-                    }} />
+                {paymentType === 'emi' && (
+                  <div className="form-grid-2">
+                    <div>
+                      <label>Principal Component (₹)</label>
+                      <input type="number" value={repayData.principal_component} onChange={e => {
+                        const p = Number(e.target.value);
+                        setRepayData({ ...repayData, principal_component: p, total_amount: p + repayData.interest_component });
+                      }} />
+                    </div>
+                    <div>
+                      <label>Interest Component (₹)</label>
+                      <input type="number" value={repayData.interest_component} onChange={e => {
+                        const i = Number(e.target.value);
+                        setRepayData({ ...repayData, interest_component: i, total_amount: repayData.principal_component + i });
+                      }} />
+                    </div>
                   </div>
-                  <div>
-                    <label>Interest Component (₹)</label>
-                    <input type="number" value={repayData.interest_component} onChange={e => {
-                      const i = Number(e.target.value);
-                      setRepayData({ ...repayData, interest_component: i, principal_component: Math.max(0, repayData.total_amount - i), total_amount: repayData.principal_component + i });
-                    }} />
-                  </div>
-                </div>
+                )}
 
                 <label>Payment Mode</label>
                 <select value={repayData.payment_mode} onChange={e => setRepayData({ ...repayData, payment_mode: e.target.value })}>
-                  <option value="BANK">Bank Transfer</option>
                   <option value="CASH">Cash</option>
+                  <option value="BANK">Bank Transfer</option>
+                  <option value="UPI">UPI</option>
                 </select>
 
                 <div className="page-modal-actions">
                   <button type="button" className="page-btn-round" onClick={() => setShowRepayModal(false)}>Cancel</button>
-                  <button type="submit" className="page-btn-round page-btn-round-primary" disabled={loading}>Record Payment</button>
+                  <button type="submit" className="page-btn-round page-btn-round-primary" disabled={loading}>
+                    {paymentType === 'interest' ? 'Confirm Interest Payment' : paymentType === 'principal' ? 'Confirm Principal Repayment' : 'Record Payment'}
+                  </button>
                 </div>
               </form>
             </motion.div>

@@ -10,6 +10,23 @@ import { triggerN8N } from "../utils/triggerN8N.js";
 
 const router = express.Router();
 
+// ─── Auto-increment purchase bill number: PUR/YYYY/MM/NNN ────────────────────
+async function generatePurchaseNumber(client) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const paddedMonth = String(month).padStart(2, '0');
+    const result = await client.query(`
+        INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
+        VALUES ('purchase', 'PUR', $1, $2, 1)
+        ON CONFLICT (bill_type, year, month)
+        DO UPDATE SET last_number = invoice_number_series.last_number + 1
+        RETURNING last_number
+    `, [year, month]);
+    const num = String(result.rows[0].last_number).padStart(3, '0');
+    return `PUR/${year}/${paddedMonth}/${num}`;
+}
+
 const sanitizeInt = (val) => {
     const p = parseInt(val);
     return isNaN(p) ? null : p;
@@ -74,15 +91,29 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// GET SINGLE BILL
+// GET SINGLE BILL — with items (joined to products) + expenses
 // ─────────────────────────────────────────────────────────
 router.get("/:id", authMiddleware, async (req, res) => {
     const { id } = req.params;
     try {
-        const bill = await db.pgGet(`SELECT * FROM purchase_bills WHERE id = $1`, [id]);
+        const bill = await db.pgGet(`
+            SELECT pb.*, s.name AS supplier_name, s.gstin AS supplier_gstin, s.phone AS supplier_phone
+            FROM purchase_bills pb
+            LEFT JOIN suppliers s ON s.id = pb.supplier_id
+            WHERE pb.id = $1
+        `, [id]);
         if (!bill) return res.status(404).json({ error: "Bill not found" });
 
-        const items = await db.pgAll(`SELECT * FROM purchase_bill_items WHERE bill_id = $1`, [id]);
+        const items = await db.pgAll(`
+            SELECT pbi.*,
+                p.name AS product_name,
+                p.hsn_code,
+                p.unit
+            FROM purchase_bill_items pbi
+            LEFT JOIN products p ON p.id = pbi.product_id
+            WHERE pbi.bill_id = $1
+            ORDER BY pbi.id
+        `, [id]);
         const expenses = await db.pgAll(`SELECT * FROM purchase_bill_expenses WHERE bill_id = $1`, [id]);
 
         res.json({ ...bill, items, expenses });
@@ -218,18 +249,20 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         const balance = Math.max(0, netAmount - paid);
         const status = paid >= netAmount ? "PAID" : (paid > 0 ? "PARTIAL" : "PENDING");
 
+        const purchaseNumber = await generatePurchaseNumber(client);
+
         const billRes = await client.query(`
             INSERT INTO purchase_bills
-            (company_id, branch_id, supplier_id, supplier_name, bill_number, bill_date,
+            (company_id, branch_id, supplier_id, supplier_name, bill_number, purchase_number, bill_date,
              sub_total, tax_total, cgst_total, sgst_total, igst_total, total_amount,
              discount_amount, gst_type, paid_amount, balance_amount, status, bill_type,
              file_url, broker_id, broker_commission_rate, bill_category, is_deleted)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,false)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,false)
             RETURNING id
         `, [
             companyId, safeBranchId, safeSupplierId,
             supplierRes.rows[0]?.name || supplier_name || "Unknown",
-            bill_number, bill_date || new Date(),
+            bill_number || purchaseNumber, purchaseNumber, bill_date || new Date(),
             subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, netAmount,
             discount, gstType, paid, balance, status, bill_type || "TAX",
             fileUrl, safeBrokerId, safeBrokerCommission, bill_category || 'PRODUCT'
@@ -252,28 +285,44 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             ]);
 
             if (pItem.product_id) {
-                // Update product stock and last purchase price
+                // UPSERT products stock
                 await client.query(`
-                    UPDATE products 
-                    SET current_stock = current_stock + $1, 
+                    UPDATE products
+                    SET current_stock = current_stock + $1,
                         cost_price = $2
                     WHERE id = $3
                 `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
 
-                // Sync with inventory table
+                // UPSERT main inventory table (product_id is UNIQUE)
                 await client.query(`
-                    UPDATE inventory 
-                    SET current_stock = current_stock + $1, 
-                        cost_price = $2,
-                        last_updated = NOW()
-                    WHERE product_id = $3
-                `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
+                    INSERT INTO inventory
+                        (company_id, branch_id, product_id, current_stock, cost_price, last_updated)
+                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT (product_id)
+                    DO UPDATE SET
+                        current_stock = inventory.current_stock + EXCLUDED.current_stock,
+                        cost_price    = EXCLUDED.cost_price,
+                        last_updated  = NOW()
+                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, pItem.unit_price]);
+
+                // UPSERT branch_inventory (branch_id, product_id unique)
+                await client.query(`
+                    INSERT INTO branch_inventory
+                        (company_id, branch_id, product_id, current_stock)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (branch_id, product_id)
+                    DO UPDATE SET
+                        current_stock = branch_inventory.current_stock + EXCLUDED.current_stock,
+                        last_updated  = NOW()
+                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity]);
 
                 // Record inventory movement
                 await client.query(`
-                    INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
+                    INSERT INTO inventory_movements
+                        (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
                     VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
-                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId, `Purchased via Bill #${bill_number}`]);
+                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId,
+                    `Purchased via Bill #${purchaseNumber}`]);
             }
         }
 
@@ -418,15 +467,15 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         }
 
         await client.query("COMMIT");
-        res.status(201).json({ success: true, id: billId, total: netAmount, balance, status });
+        res.status(201).json({ success: true, id: billId, purchase_number: purchaseNumber, total: netAmount, balance, status });
 
         // Fire n8n webhook (non-blocking, after response sent)
         triggerN8N('erp-alert', {
-            event_type:    'purchase_received',
-            supplier_name: supplierRes.rows[0]?.name || supplier_name || 'Unknown',
-            amount:        netAmount,
-            bill_number:   bill_number,
-            items_count:   Array.isArray(items) ? items.length : 0,
+            event_type:     'purchase_received',
+            supplier_name:  supplierRes.rows[0]?.name || supplier_name || 'Unknown',
+            amount:         netAmount,
+            bill_number:    purchaseNumber,
+            items_count:    Array.isArray(items) ? items.length : 0,
         });
     } catch (err) {
         if (client) await client.query("ROLLBACK");

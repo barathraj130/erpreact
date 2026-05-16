@@ -12,14 +12,7 @@ router.get('/', authMiddleware, async (req, res) => {
         const companyId = req.user.active_company_id;
         const loans = await db.pgAll(`
             SELECT l.*, ln.lender_name,
-                GREATEST(0,
-                    l.principal_amount
-                    - COALESCE((
-                        SELECT SUM(principal_component)
-                        FROM loan_payments
-                        WHERE loan_id = l.id AND company_id = $1
-                    ), 0)
-                ) AS remaining_principal,
+                COALESCE(l.principal_outstanding, l.principal_amount) AS remaining_principal,
                 COALESCE((
                     SELECT SUM(principal_component)
                     FROM loan_payments
@@ -29,7 +22,12 @@ router.get('/', authMiddleware, async (req, res) => {
                     SELECT SUM(total_amount)
                     FROM loan_payments
                     WHERE loan_id = l.id AND company_id = $1
-                ), 0) AS total_paid
+                ), 0) AS total_paid,
+                COALESCE((
+                    SELECT SUM(interest_component)
+                    FROM loan_payments
+                    WHERE loan_id = l.id AND company_id = $1
+                ), 0) AS total_interest_paid
             FROM loans l
             JOIN lenders ln ON l.lender_id = ln.id
             WHERE l.company_id = $1

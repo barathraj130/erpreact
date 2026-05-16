@@ -30,27 +30,34 @@ export const createLoan = async (user, loanData) => {
         }
 
         // 1. Insert into loans table
+        const loanType = (loanData.loan_type || loanData.party_type || loanData.type || 'BANK').toUpperCase();
+        const isPrivate = loanType === 'PRIVATE';
+        const principal = parseFloat(loanData.principal_amount || loanData.principal || 0);
+
         const loanSql = `
             INSERT INTO loans (
-                company_id, branch_id, lender_id, party_name, party_type, 
-                loan_direction, principal_amount, interest_rate, interest_type,
+                company_id, branch_id, lender_id, party_name, party_type,
+                loan_type, loan_direction, principal_amount, principal_outstanding,
+                interest_rate, interest_type,
                 start_date, duration_months, repayment_cycle, notes, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ACTIVE')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ACTIVE')
             RETURNING *
         `;
         const loanRes = await client.query(loanSql, [
-            companyId, 
-            branchId, 
-            lenderId, 
-            loanData.party_name || loanData.lender_name || 'Lender', 
-            loanData.party_type || loanData.type || 'BANK',
+            companyId,
+            branchId,
+            lenderId,
+            loanData.party_name || loanData.lender_name || 'Lender',
+            loanType,
+            loanType,
             loanData.loan_direction || 'BORROWED',
-            loanData.principal_amount || loanData.principal,
+            principal,
+            principal,
             loanData.interest_rate,
-            loanData.interest_type || 'SIMPLE',
+            loanData.interest_type || (isPrivate ? 'FLAT' : 'REDUCING'),
             loanData.start_date,
-            loanData.duration_months || 12,
-            loanData.repayment_cycle || 'MONTHLY',
+            isPrivate ? null : (loanData.duration_months || 12),
+            isPrivate ? null : (loanData.repayment_cycle || 'MONTHLY'),
             loanData.notes
         ]);
         const loan = loanRes.rows[0];
@@ -137,44 +144,61 @@ export const recordLoanRepayment = async (user, paymentData) => {
     try {
         await client.query('BEGIN');
 
+        const paymentType = paymentData.payment_type || 'emi';
+        let interestComp = parseFloat(paymentData.interest_component || 0);
+        let principalComp = parseFloat(paymentData.principal_component || 0);
+        const total = parseFloat(paymentData.total_amount || 0);
+
+        // Enforce split for typed payments
+        if (paymentType === 'interest') {
+            interestComp = total;
+            principalComp = 0;
+        } else if (paymentType === 'principal') {
+            principalComp = total;
+            interestComp = 0;
+        }
+
         // 1. Insert into loan_payments
         const paymentSql = `
             INSERT INTO loan_payments (
-                company_id, loan_id, payment_date, total_amount, 
-                interest_component, principal_component, payment_mode, notes
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                company_id, loan_id, payment_date, total_amount,
+                interest_component, principal_component, payment_mode, notes, payment_type
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
         `;
         const paymentRes = await client.query(paymentSql, [
-            companyId, paymentData.loan_id, paymentData.payment_date, paymentData.total_amount,
-            paymentData.interest_component || 0, paymentData.principal_component || 0,
-            paymentData.payment_mode || 'CASH', paymentData.notes
+            companyId, paymentData.loan_id, paymentData.payment_date, total,
+            interestComp, principalComp, paymentData.payment_mode || 'CASH', paymentData.notes, paymentType
         ]);
         const payment = paymentRes.rows[0];
 
-        // 2. Double-Entry
+        // 2. Reduce principal_outstanding for principal payments
+        if (principalComp > 0) {
+            await client.query(`
+                UPDATE loans SET
+                    principal_outstanding = GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1),
+                    status = CASE WHEN GREATEST(0, COALESCE(principal_outstanding, principal_amount) - $1) <= 0 THEN 'CLOSED' ELSE 'ACTIVE' END
+                WHERE id = $2
+            `, [principalComp, paymentData.loan_id]);
+        }
+
+        // 3. Double-Entry
         const cashAcc = await getAccountByCode(companyId, '1000');
         const loanAcc = await getAccountByCode(companyId, '2000');
         const interestAcc = await getAccountByCode(companyId, '5000');
 
         if (cashAcc && loanAcc) {
-            const interest = parseFloat(paymentData.interest_component || 0);
-            const principal = parseFloat(paymentData.principal_component || 0);
-            const total = parseFloat(paymentData.total_amount || 0);
-            // Any amount not split into components goes to loan payable
-            const remainder = Math.max(0, total - interest - principal);
-
+            const remainder = Math.max(0, total - interestComp - principalComp);
             const txLines = [];
-            if (interest > 0 && interestAcc) {
-                txLines.push({ account_id: interestAcc.id, debit_amount: interest, credit_amount: 0, description: 'Interest expense' });
+            if (interestComp > 0 && interestAcc) {
+                txLines.push({ account_id: interestAcc.id, debit_amount: interestComp, credit_amount: 0, description: 'Interest expense' });
             }
-            if (principal > 0) {
-                txLines.push({ account_id: loanAcc.id, debit_amount: principal, credit_amount: 0, description: 'Principal repayment' });
+            if (principalComp > 0) {
+                txLines.push({ account_id: loanAcc.id, debit_amount: principalComp, credit_amount: 0, description: 'Principal repayment' });
             }
             if (remainder > 0) {
                 txLines.push({ account_id: loanAcc.id, debit_amount: remainder, credit_amount: 0, description: 'Loan payment (other)' });
             }
-            // Credit cash = total (guaranteed to equal sum of debits above)
             txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: total, description: 'Payment from bank/cash' });
 
             await createTransactionInternal(client, {
