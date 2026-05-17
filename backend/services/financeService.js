@@ -21,10 +21,20 @@ export const createLoan = async (user, loanData) => {
 
         // 0. Ensure Lender exists or create it
         let lenderId = sanitizeInt(loanData.lender_id);
-        if (!lenderId && loanData.lender_name) {
+        const lenderNameRaw = loanData.lender_name || loanData.party_name;
+        if (!lenderId && lenderNameRaw) {
+            // Auto-create lender if name provided but no ID
             const lRes = await client.query(
-                "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (lender_name, company_id) DO UPDATE SET phone=$4 RETURNING id",
-                [companyId, loanData.lender_name, loanData.type || 'Bank', loanData.phone]
+                "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (lender_name, company_id) DO UPDATE SET phone=EXCLUDED.phone RETURNING id",
+                [companyId, lenderNameRaw, loanData.type || 'Bank', loanData.phone || null]
+            );
+            lenderId = lRes.rows[0].id;
+        }
+        // If still no lenderId, create a placeholder so the loan shows in the list
+        if (!lenderId) {
+            const lRes = await client.query(
+                "INSERT INTO lenders (company_id, lender_name, type) VALUES ($1, $2, $3) ON CONFLICT (lender_name, company_id) DO UPDATE SET type=EXCLUDED.type RETURNING id",
+                [companyId, 'Unknown Lender', 'Private']
             );
             lenderId = lRes.rows[0].id;
         }

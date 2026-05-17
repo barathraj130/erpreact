@@ -95,6 +95,10 @@ const LoanManagement: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.lender_id && !(formData as any).lender_name) {
+      alert("Please select a lender or type a lender name.");
+      return;
+    }
     if (!formData.is_existing_loan && !allocationMatched) {
       alert(`Total allocated ₹${totalAllocated.toLocaleString('en-IN')} must equal Principal ₹${formData.principal_amount.toLocaleString('en-IN')}`);
       return;
@@ -637,11 +641,23 @@ const LoanManagement: React.FC = () => {
 
                 {/* Lender */}
                 <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '1px', color: '#6b7280', textTransform: 'uppercase', marginBottom: '6px' }}>👤 Lender</div>
-                <select required value={formData.lender_id} onChange={e => setFormData({ ...formData, lender_id: e.target.value })}
-                  style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1.5px solid #e5e7eb', fontSize: '14px', marginBottom: '18px', background: '#fff' }}>
-                  <option value="">Select Lender</option>
-                  {lenders.map(l => <option key={l.id} value={l.id}>{l.lender_name}</option>)}
-                </select>
+                {lenders.length > 0 ? (
+                  <select value={formData.lender_id} onChange={e => setFormData({ ...formData, lender_id: e.target.value, lender_name: '' } as any)}
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: `1.5px solid ${!formData.lender_id ? '#f59e0b' : '#e5e7eb'}`, fontSize: '14px', marginBottom: '6px', background: '#fff' }}>
+                    <option value="">— Select Lender —</option>
+                    {lenders.map(l => <option key={l.id} value={l.id}>{l.lender_name}</option>)}
+                  </select>
+                ) : null}
+                {(!formData.lender_id) && (
+                  <input
+                    type="text"
+                    placeholder={lenders.length > 0 ? "Or type new lender name..." : "Type lender name (e.g. Ravi Kumar)"}
+                    value={(formData as any).lender_name || ''}
+                    onChange={e => setFormData({ ...formData, lender_id: '', lender_name: e.target.value } as any)}
+                    style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1.5px solid #6366f1', fontSize: '14px', marginBottom: '6px', boxSizing: 'border-box' }}
+                  />
+                )}
+                <div style={{ marginBottom: '12px' }} />
 
                 {/* Principal + Interest */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '18px' }}>
