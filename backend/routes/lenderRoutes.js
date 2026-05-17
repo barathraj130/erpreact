@@ -47,7 +47,45 @@ async function createLenderAndLedgerPG(client, companyId, lenderData) {
 
     await client.query(ledgerSql, [companyId, lender_name, groupId, Math.abs(initialBalanceParsed), isDebit]);
 
-    return { id: lenderResult.rows[0].id };
+    const lenderId = lenderResult.rows[0].id;
+
+    // 4. Auto-create a loan record if opening_balance > 0
+    //    so the loan appears immediately on the Loans page
+    if (initialBalanceParsed > 0) {
+        const isBank = (lender_type || '').toUpperCase() === 'BANK';
+        const loanIns = await client.query(`
+            INSERT INTO loans (
+                company_id, lender_id, party_name, party_type,
+                loan_direction, principal_amount,
+                interest_rate, interest_type, start_date, duration_months,
+                repayment_cycle, status, notes
+            ) VALUES ($1, $2, $3, $4,
+                'BORROWED', $5,
+                12, $6, CURRENT_DATE, 0,
+                $7, 'ACTIVE', 'Opening balance loan')
+            RETURNING id
+        `, [
+            companyId, lenderId, lender_name,
+            isBank ? 'BANK' : 'PRIVATE',
+            initialBalanceParsed,
+            isBank ? 'REDUCING' : 'FLAT',
+            isBank ? 'MONTHLY' : 'INDEFINITE'
+        ]);
+        // Best-effort new columns
+        await client.query(`SAVEPOINT sp_lender_loan_cols`);
+        try {
+            await client.query(
+                `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
+                [isBank ? 'BANK' : 'PRIVATE', initialBalanceParsed, loanIns.rows[0].id]
+            );
+            await client.query(`RELEASE SAVEPOINT sp_lender_loan_cols`);
+        } catch (_) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_lender_loan_cols`);
+            await client.query(`RELEASE SAVEPOINT sp_lender_loan_cols`);
+        }
+    }
+
+    return { id: lenderId };
 }
 
 router.get('/', authMiddleware, async (req, res) => {

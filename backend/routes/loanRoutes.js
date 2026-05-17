@@ -71,38 +71,44 @@ router.post('/sync-from-lenders', authMiddleware, async (req, res) => {
         const created = [];
         for (const l of orphans.rows) {
             const loanType = (l.lender_type === 'Bank' || l.lender_type === 'BANK') ? 'BANK' : 'PRIVATE';
+            const isBank = loanType === 'BANK';
+
+            // INSERT using only original stable columns — no loan_type/principal_outstanding
+            // (those may not exist on older deployed DBs)
             const ins = await client.query(`
                 INSERT INTO loans (
-                    company_id, lender_id, party_name, party_type, loan_type,
-                    loan_direction, principal_amount, principal_outstanding,
+                    company_id, lender_id, party_name, party_type,
+                    loan_direction, principal_amount,
                     interest_rate, interest_type, start_date, duration_months,
                     repayment_cycle, status, notes
-                ) VALUES ($1, $2, $3, $4, $5,
-                    'BORROWED', $6, $6,
-                    12, $7, CURRENT_DATE, 0,
-                    $8, 'ACTIVE',
-                    'Auto-created from lender opening balance')
+                ) VALUES ($1, $2, $3, $4,
+                    'BORROWED', $5,
+                    12, $6, CURRENT_DATE, 0,
+                    $7, 'ACTIVE', 'Auto-created from lender opening balance')
                 RETURNING id
             `, [
-                companyId, l.id, l.lender_name,
-                loanType, loanType,
+                companyId, l.id, l.lender_name, loanType,
                 l.opening_balance,
-                loanType === 'BANK' ? 'REDUCING' : 'FLAT',
-                loanType === 'BANK' ? 'MONTHLY' : 'INDEFINITE'
+                isBank ? 'REDUCING' : 'FLAT',
+                isBank ? 'MONTHLY' : 'INDEFINITE'
             ]);
-            // Best-effort set loan_type + principal_outstanding
-            await client.query(`SAVEPOINT sp_sync_cols`);
+
+            const loanId = ins.rows[0].id;
+
+            // Best-effort: set new columns if they exist
+            await client.query(`SAVEPOINT sp_sync_new_cols`);
             try {
                 await client.query(
                     `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
-                    [loanType, l.opening_balance, ins.rows[0].id]
+                    [loanType, l.opening_balance, loanId]
                 );
-                await client.query(`RELEASE SAVEPOINT sp_sync_cols`);
+                await client.query(`RELEASE SAVEPOINT sp_sync_new_cols`);
             } catch (_) {
-                await client.query(`ROLLBACK TO SAVEPOINT sp_sync_cols`);
-                await client.query(`RELEASE SAVEPOINT sp_sync_cols`);
+                await client.query(`ROLLBACK TO SAVEPOINT sp_sync_new_cols`);
+                await client.query(`RELEASE SAVEPOINT sp_sync_new_cols`);
             }
-            created.push({ lender: l.lender_name, loan_id: ins.rows[0].id, amount: l.opening_balance });
+
+            created.push({ lender: l.lender_name, loan_id: loanId, amount: l.opening_balance });
         }
 
         await client.query('COMMIT');
