@@ -29,7 +29,9 @@ interface Transaction {
   proof_url?: string;
   status?: string;
   created_at?: string;
+  display_party?: string;
   lender_name?: string;
+  supplier_name?: string;
   user_name?: string;
   party_name?: string;
 }
@@ -132,91 +134,66 @@ const Transactions: React.FC = () => {
     const INFLOW_TYPES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION', 'LOAN_DISBURSEMENT', 'LOAN_RECEIVED'];
     const isInflow = INFLOW_TYPES.includes(tx.type) || INFLOW_TYPES.includes(tx.reference_type || '');
 
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    // ASCII-only strings -- jsPDF built-in fonts do not support Unicode arrows/dashes
+    const flowLabel  = isInflow ? 'Inflow (Credit)' : 'Outflow (Debit)';
+    const modeLabel  = tx.mode === 'BANK' ? 'Bank Transfer'
+                     : tx.mode === 'UPI'  ? 'UPI'
+                     : tx.mode === 'CASH' ? 'Cash'
+                     : (tx.mode || 'N/A');
+    const partyLabel = tx.display_party || tx.party_name || tx.lender_name || tx.user_name || '-';
+    const category   = (tx.type || tx.reference_type || 'GENERAL').replace(/_/g, ' ');
+    const txnId      = 'TXN-' + tx.id;
+    const dateStr    = new Date(tx.date || tx.created_at || '').toLocaleDateString('en-IN');
+    const amountStr  = 'Rs.' + Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
-    // ── Header band ──────────────────────────────────────────────────────────
-    doc.setFillColor(15, 110, 60); // dark green
-    doc.rect(0, 0, 210, 38, 'F');
+    const doc = new jsPDF();
 
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
+    // Header
+    doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text('JBS KNIT WEAR', 105, 14, { align: 'center' });
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text('3/2B Nesavalar Colony, TNK Puram, Tiruppur – 641602', 105, 21, { align: 'center' });
-    doc.text('Ph: 8148232205', 105, 27, { align: 'center' });
-
-    // ── Title ────────────────────────────────────────────────────────────────
-    doc.setTextColor(15, 110, 60);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('TRANSACTION VOUCHER', 105, 50, { align: 'center' });
-
-    doc.setDrawColor(200, 200, 200);
-    doc.line(15, 54, 195, 54);
-
-    // ── Details table ────────────────────────────────────────────────────────
-    const partyLabel = tx.party_name || tx.lender_name || tx.user_name || '—';
-    const rows: [string, string][] = [
-      ['Transaction ID', `TXN-${tx.id}`],
-      ['Date',           new Date(tx.date || tx.created_at || '').toLocaleDateString('en-IN')],
-      ['Category',       (tx.type || tx.reference_type || 'GENERAL').replace(/_/g, ' ')],
-      ['Party / Lender', partyLabel],
-      ['Description',    tx.description || '—'],
-      ['Payment Mode',   (tx.mode || '—').toUpperCase()],
-      ['Flow',           isInflow ? '↑  Inflow (Credit)' : '↓  Outflow (Debit)'],
-      ['Amount',         `Rs. ${Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`],
-    ];
+    doc.text('JBS KNIT WEAR', 105, 20, { align: 'center' });
 
     doc.setFontSize(10);
-    let y = 64;
-    rows.forEach(([label, value], i) => {
-      const bg = i % 2 === 0 ? [248, 250, 252] : [255, 255, 255];
-      doc.setFillColor(bg[0], bg[1], bg[2]);
-      doc.rect(15, y - 5, 180, 10, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.text('3/2B Nesavalar Colony, TNK Puram, Tiruppur 641602', 105, 27, { align: 'center' });
+    doc.text('Ph: 8148232205', 105, 33, { align: 'center' });
 
+    doc.line(15, 37, 195, 37);
+
+    // Title
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TRANSACTION VOUCHER', 105, 45, { align: 'center' });
+    doc.line(15, 48, 195, 48);
+
+    // Detail rows
+    doc.setFontSize(10);
+    const details: [string, string][] = [
+      ['Transaction ID', txnId],
+      ['Date',           dateStr],
+      ['Category',       category],
+      ['Party',          partyLabel],
+      ['Description',    tx.description || '-'],
+      ['Mode',           modeLabel],
+      ['Type',           flowLabel],
+      ['Amount',         amountStr],
+    ];
+
+    let y = 58;
+    details.forEach(([label, value]) => {
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(80, 80, 80);
-      doc.text(label, 20, y);
-
+      doc.text(label + ':', 20, y);
       doc.setFont('helvetica', 'normal');
-      // Amount row: highlight in green/red
-      if (label === 'Amount') {
-        doc.setTextColor(isInflow ? 22 : 220, isInflow ? 163 : 38, isInflow ? 74 : 38);
-        doc.setFont('helvetica', 'bold');
-      } else if (label === 'Flow') {
-        doc.setTextColor(isInflow ? 22 : 220, isInflow ? 163 : 38, isInflow ? 74 : 38);
-      } else {
-        doc.setTextColor(30, 30, 30);
-      }
-      doc.text(String(value ?? '—'), 80, y);
-      doc.setTextColor(30, 30, 30);
-      y += 12;
+      doc.text(String(value ?? '-').substring(0, 60), 80, y);
+      y += 10;
     });
 
-    // ── Status stamp ─────────────────────────────────────────────────────────
-    doc.setDrawColor(15, 110, 60);
-    doc.setLineWidth(0.5);
-    doc.roundedRect(130, y + 4, 60, 16, 3, 3, 'D');
-    doc.setTextColor(15, 110, 60);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('VERIFIED ✓', 160, y + 14, { align: 'center' });
+    doc.line(15, y + 5, 195, y + 5);
+    doc.setFontSize(9);
+    doc.text('System generated voucher - Fluxora ERP', 105, y + 12, { align: 'center' });
+    doc.text('Generated: ' + new Date().toLocaleString('en-IN'), 105, y + 18, { align: 'center' });
 
-    // ── Footer ───────────────────────────────────────────────────────────────
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.3);
-    doc.line(15, 270, 195, 270);
-
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120, 120, 120);
-    doc.text('This is a system-generated voucher. No signature required.', 105, 276, { align: 'center' });
-    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 105, 281, { align: 'center' });
-
-    doc.save(`TXN-${tx.id}_${Date.now()}.pdf`);
+    doc.save('TXN_' + tx.id + '.pdf');
   };
 
   return (
@@ -312,11 +289,11 @@ const Transactions: React.FC = () => {
                     .filter(t =>
                       t.description?.toLowerCase().includes(search.toLowerCase()) ||
                       t.type?.toLowerCase().includes(search.toLowerCase()) ||
-                      (t.party_name || t.lender_name || t.user_name || '').toLowerCase().includes(search.toLowerCase())
+                      (t.display_party || t.party_name || t.lender_name || t.user_name || '').toLowerCase().includes(search.toLowerCase())
                     )
                     .map(tx => {
                       const isInflow = INFLOW_TYPES.includes(tx.type) || INFLOW_TYPES.includes(tx.reference_type || '');
-                      const partyLabel = tx.party_name || tx.lender_name || tx.user_name || null;
+                      const partyLabel = tx.display_party || tx.party_name || tx.lender_name || tx.user_name || null;
                       const typeLabel = (tx.type || tx.reference_type || 'GENERAL').replace(/_/g, ' ');
                       return (
                         <tr key={tx.id}>
