@@ -40,9 +40,12 @@ const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ onClose, onSuccess,
     address: supplier?.address || "",
   });
   const [loading, setLoading] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrMsg(null);
+    if (!formData.name.trim()) { setErrMsg("Supplier name is required."); return; }
     setLoading(true);
     try {
       if (isEdit) {
@@ -51,14 +54,17 @@ const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ onClose, onSuccess,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || `Update failed (${res.status})`);
+        }
       } else {
-        await createSupplier(formData);
+        await createSupplier(formData); // throws on error now
       }
-      onSuccess();
+      onSuccess(); // re-fetches supplier list
       onClose();
     } catch (err: any) {
-      alert(`Failed to ${isEdit ? "update" : "create"} supplier: ` + err.message);
+      setErrMsg(err.message || `Failed to ${isEdit ? "update" : "create"} supplier.`);
     } finally {
       setLoading(false);
     }
@@ -77,8 +83,13 @@ const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ onClose, onSuccess,
         </div>
 
         <form onSubmit={handleSubmit}>
+          {errMsg && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", padding: "10px 14px", borderRadius: "8px", marginBottom: "14px", fontSize: "0.85rem", fontWeight: 500 }}>
+              {errMsg}
+            </div>
+          )}
           <div style={{ marginBottom: "15px" }}>
-            <label style={lbl}>Supplier Name</label>
+            <label style={lbl}>Supplier Name *</label>
             <div style={{ position: "relative" }}>
               <FaBuilding style={iconStyle} />
               <input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} style={inp} placeholder="e.g. Global Tech Solutions" />

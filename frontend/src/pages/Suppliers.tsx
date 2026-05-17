@@ -41,26 +41,9 @@ const Suppliers: React.FC = () => {
       const data = await fetchSuppliers();
       setSuppliers(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      console.warn("API Error, using dummy data fallback:", err.message);
-      setSuppliers([
-        {
-          id: 101,
-          name: "Super Global Trading (Demo)",
-          phone: "+91 98765 43210",
-          email: "sales@superglobal.com",
-          opening_balance: 45000,
-          current_balance: 45000,
-        },
-        {
-          id: 102,
-          name: "Reliable Parts Co. (Demo)",
-          phone: "+91 91234 56789",
-          email: "contact@reliable.in",
-          opening_balance: 12500,
-          current_balance: 8400,
-        },
-      ]);
-      // Still show error in console but don't break UI
+      console.error("Suppliers fetch error:", err.message);
+      setError(err.message || "Failed to load suppliers.");
+      setSuppliers([]);
     } finally {
       setLoading(false);
     }

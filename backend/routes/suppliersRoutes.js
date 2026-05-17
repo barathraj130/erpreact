@@ -52,39 +52,56 @@ router.post('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const { name, phone, gstin, state, address, email, opening_balance } = req.body;
 
-    if (!name || !phone) return res.status(400).json({ error: "Name and Phone are required." });
+    if (!name) return res.status(400).json({ error: "Supplier name is required." });
 
     let client;
     try {
         client = await db.getClient();
         await client.query('BEGIN');
 
-        // 1. Insert Supplier
+        // 1. Insert Supplier (this is the critical step)
         const supplierSql = `
             INSERT INTO suppliers (company_id, name, phone, gstin, state, address, email, opening_balance, current_balance)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
             RETURNING *
         `;
         const supplier = (await client.query(supplierSql, [
-            companyId, name, phone, gstin || null, state || null, address || null, email || null, parseFloat(opening_balance || 0)
+            companyId,
+            name,
+            phone || null,
+            gstin || null,
+            state || null,
+            address || null,
+            email || null,
+            parseFloat(opening_balance || 0)
         ])).rows[0];
 
-        // 2. Auto-seed Accounts Payable if needed (Code 2000 range usually)
-        // For simplicity, we'll ensure a generic 'Accounts Payable' exists or create one for this supplier if needed
-        // Requirement says "Auto-create Accounts Payable ledger account for supplier"
-        const accountCode = `2100-${supplier.id}`; // Sub-account style or just link to main AP
-        await client.query(`
-            INSERT INTO chart_of_accounts (company_id, account_code, name, account_type, opening_balance)
-            VALUES ($1, $2, $3, 'LIABILITY', $4)
-            ON CONFLICT DO NOTHING
-        `, [companyId, accountCode, `Payable: ${name}`, parseFloat(opening_balance || 0)]);
+        console.log(`✅ Supplier created: id=${supplier.id}, name=${supplier.name}, company=${companyId}`);
+
+        // 2. Best-effort: auto-seed Accounts Payable ledger account.
+        //    Wrapped in SAVEPOINT so a schema mismatch or duplicate never
+        //    rolls back the supplier row that was just inserted.
+        await client.query(`SAVEPOINT sp_coa`);
+        try {
+            const accountCode = `AP-${supplier.id}`;
+            await client.query(`
+                INSERT INTO chart_of_accounts (company_id, account_code, name, account_type, opening_balance)
+                VALUES ($1, $2, $3, 'LIABILITY', $4)
+                ON CONFLICT DO NOTHING
+            `, [companyId, accountCode, `Payable: ${name}`, parseFloat(opening_balance || 0)]);
+            await client.query(`RELEASE SAVEPOINT sp_coa`);
+        } catch (coaErr) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_coa`);
+            await client.query(`RELEASE SAVEPOINT sp_coa`);
+            console.warn(`[supplier] COA insert skipped: ${coaErr.message.split('\n')[0]}`);
+        }
 
         await client.query('COMMIT');
         res.status(201).json(supplier);
     } catch (err) {
         if (client) await client.query('ROLLBACK');
         console.error("Create supplier error:", err);
-        res.status(500).json({ error: "Failed to create supplier." });
+        res.status(500).json({ error: err.message || "Failed to create supplier." });
     } finally {
         if (client) client.release();
     }

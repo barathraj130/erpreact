@@ -15,6 +15,10 @@ export interface Supplier {
 
 export const fetchSuppliers = async (): Promise<Supplier[]> => {
   const res = await apiFetch("/suppliers");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Failed to load suppliers (${res.status})`);
+  }
   return res.json();
 };
 
@@ -23,7 +27,11 @@ export const createSupplier = async (data: any): Promise<any> => {
     method: "POST",
     body: JSON.stringify(data),
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to create supplier (${res.status})`);
+  }
+  return body;
 };
 
 export const deleteSupplier = async (id: number): Promise<any> => {
