@@ -132,6 +132,13 @@ router.post("/full", authMiddleware, async (req, res) => {
             `DELETE FROM suppliers WHERE company_id = $1`, [cid]);
         await safeDel(client, 'employees',
             `DELETE FROM employees WHERE company_id = $1`, [cid]);
+        // Delete broker child tables before the parent (FK constraint)
+        await safeDel(client, 'broker_commissions',
+            `DELETE FROM broker_commissions WHERE broker_id IN (
+                SELECT id FROM brokers WHERE company_id = $1)`, [cid]);
+        await safeDel(client, 'broker_product_rates',
+            `DELETE FROM broker_product_rates WHERE broker_id IN (
+                SELECT id FROM brokers WHERE company_id = $1)`, [cid]);
         await safeDel(client, 'brokers',
             `DELETE FROM brokers WHERE company_id = $1`, [cid]);
         await safeDel(client, 'lenders',
