@@ -9,33 +9,47 @@ const router = express.Router();
 
 router.get('/', authMiddleware, async (req, res) => {
     try {
-        const companyId = req.user?.active_company_id || req.user?.company_id;
-
-        // Debug: log exactly what's in the loans table vs what filter returns
-        const allLoans = await db.pgAll(`SELECT id, company_id, lender_id, party_name, status FROM loans ORDER BY id DESC`);
-        console.log(`GET /loans DEBUG: token_company=${companyId}, total_loans_in_db=${allLoans.length}`, JSON.stringify(allLoans));
-
+        // Use ONLY columns guaranteed to exist in the original schema.
+        // Do NOT reference loan_type / principal_outstanding — they are new columns
+        // that may not exist yet on the deployed DB.
         const loans = await db.pgAll(`
             SELECT
-                l.*,
-                COALESCE(ln.lender_name, l.party_name, 'Unknown')    AS lender_name,
-                COALESCE(ln.lender_type, l.party_type, 'Bank')        AS lender_type,
-                ln.phone                                               AS lender_phone,
-                COALESCE(l.loan_type, l.party_type, 'BANK')           AS loan_type,
-                COALESCE(l.principal_outstanding, l.principal_amount)  AS remaining_principal,
-                COALESCE((SELECT SUM(principal_component) FROM loan_payments WHERE loan_id = l.id), 0) AS paid_principal,
-                COALESCE((SELECT SUM(total_amount)        FROM loan_payments WHERE loan_id = l.id), 0) AS total_paid,
-                COALESCE((SELECT SUM(interest_component)  FROM loan_payments WHERE loan_id = l.id), 0) AS total_interest_paid
+                l.id,
+                l.company_id,
+                l.branch_id,
+                l.lender_id,
+                l.party_name,
+                l.party_type,
+                l.loan_direction,
+                l.principal_amount,
+                l.interest_rate,
+                l.interest_type,
+                l.start_date,
+                l.duration_months,
+                l.repayment_cycle,
+                l.notes,
+                l.status,
+                l.emi_amount,
+                l.outstanding_amount,
+                l.created_at,
+                COALESCE(ln.lender_name, l.party_name, 'Unknown') AS lender_name,
+                COALESCE(ln.lender_type, l.party_type, 'Bank')    AS lender_type,
+                ln.phone                                           AS lender_phone,
+                l.party_type                                       AS loan_type,
+                l.principal_amount                                 AS remaining_principal,
+                COALESCE((SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS paid_principal,
+                COALESCE((SELECT SUM(lp.total_amount)        FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_paid,
+                COALESCE((SELECT SUM(lp.interest_component)  FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_interest_paid
             FROM loans l
-            LEFT JOIN lenders ln ON l.lender_id = ln.id
+            LEFT JOIN lenders ln ON ln.id = l.lender_id
             ORDER BY l.id DESC
         `);
 
-        console.log(`GET /loans → returning ${loans.length} rows (no company filter)`);
+        console.log(`GET /loans → ${loans.length} rows`);
         res.json(loans);
     } catch (err) {
-        console.error('GET /loans error:', err.message);
-        res.status(500).json({ error: 'Failed to fetch loans: ' + err.message });
+        console.error('GET /loans CRASH:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
