@@ -118,4 +118,18 @@ export const financeApi = {
     const res = await apiFetch("/bank-accounts"); // Assuming this exists or using generic ledger search
     return handleResponse(res);
   },
+
+  // Bank Reconciliation
+  getBankTransactions: async (companyId: number, bankAccountId: number) => {
+    const res = await apiFetch(`/bank-ledger?company_id=${companyId}&bank_account_id=${bankAccountId}`);
+    return handleResponse(res);
+  },
+
+  reconcileBank: async (companyId: number, bankAccountId: number) => {
+    const res = await apiFetch(`/bank-reconciliation/auto`, {
+      method: "POST",
+      body: { company_id: companyId, bank_account_id: bankAccountId },
+    });
+    return handleResponse(res);
+  },
 };

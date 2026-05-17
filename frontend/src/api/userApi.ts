@@ -26,6 +26,7 @@ interface ApiResponse {
   message: string;
   user?: Customer;
   id?: number;
+  error?: string;
 }
 
 export interface CustomerLedgerEntry {

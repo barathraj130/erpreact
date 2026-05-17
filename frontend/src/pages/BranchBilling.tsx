@@ -81,7 +81,7 @@ const BranchBilling: React.FC = () => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cart, paidAmount, selectedCustomerId]);
+  }, [cart, paymentsList, selectedCustomerId]);
 
   // Cart Handlers
   const addToCart = (product: any) => {
@@ -134,7 +134,7 @@ const BranchBilling: React.FC = () => {
   // Save Bill
   const handleSaveBill = async () => {
     if (cart.length === 0) return;
-    if (parseFloat(paidAmount) < totals.netTotal && !selectedCustomerId) {
+    if (totals.totalPaid < totals.netTotal && !selectedCustomerId) {
       return alert("Customer selection required for partial payments/credit.");
     }
 

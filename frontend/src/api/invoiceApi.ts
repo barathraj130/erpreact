@@ -32,6 +32,10 @@ export interface Invoice {
     | "NON_GST_RETAIL_BILL"
     | "N/A";
   notes?: string | null;
+  // Invoice number series fields
+  series_prefix?: string | null;  // e.g. "TAX", "INV", "NSB"
+  series_number?: number | null;
+  invoice_number_series?: string | null;
 }
 
 export const fetchInvoices = async (): Promise<Invoice[]> => {

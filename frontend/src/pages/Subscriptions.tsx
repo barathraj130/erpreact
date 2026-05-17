@@ -262,7 +262,7 @@ const Subscriptions: React.FC = () => {
   );
 };
 
-const FeatureItem: React.FC<{ icon: React.ReactNode; text: string }> = ({ icon, text }) => (
+const FeatureItem: React.FC<{ icon: React.ReactNode; text: React.ReactNode }> = ({ icon, text }) => (
   <div style={{ display: "flex", alignItems: "center", gap: "16px", color: "#334155", fontWeight: 600 }}>
     <span style={{ display: "flex" }}>{icon}</span>
     <span style={{ fontSize: "14px" }}>{text}</span>

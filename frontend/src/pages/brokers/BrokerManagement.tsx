@@ -231,7 +231,7 @@ const BrokerManagement: React.FC = () => {
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "6px" }}>Broker Type</label>
-                  <select value={formData.broker_type} onChange={e => setFormData({ ...formData, broker_type: e.target.value })}
+                  <select value={formData.broker_type} onChange={e => setFormData({ ...formData, broker_type: e.target.value as 'PURCHASE' | 'SALES' | 'BOTH' })}
                     style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #e2e8f0", outline: "none", fontSize: "14px", background: "#fff", boxSizing: "border-box" }}>
                     <option value="BOTH">Purchase & Sales</option>
                     <option value="PURCHASE">Purchase Only</option>
