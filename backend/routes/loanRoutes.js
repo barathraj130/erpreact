@@ -10,10 +10,11 @@ const router = express.Router();
 router.get('/', authMiddleware, async (req, res) => {
     try {
         const companyId = req.user?.active_company_id || req.user?.company_id;
-        if (!companyId) return res.status(400).json({ error: 'No company context in token' });
 
-        // Minimal safe query — no optional columns in WHERE/ORDER to avoid crashes
-        // when new columns haven't been migrated yet on the deployed DB
+        // Debug: log exactly what's in the loans table vs what filter returns
+        const allLoans = await db.pgAll(`SELECT id, company_id, lender_id, party_name, status FROM loans ORDER BY id DESC`);
+        console.log(`GET /loans DEBUG: token_company=${companyId}, total_loans_in_db=${allLoans.length}`, JSON.stringify(allLoans));
+
         const loans = await db.pgAll(`
             SELECT
                 l.*,
@@ -22,25 +23,15 @@ router.get('/', authMiddleware, async (req, res) => {
                 ln.phone                                               AS lender_phone,
                 COALESCE(l.loan_type, l.party_type, 'BANK')           AS loan_type,
                 COALESCE(l.principal_outstanding, l.principal_amount)  AS remaining_principal,
-                COALESCE((
-                    SELECT SUM(principal_component) FROM loan_payments
-                    WHERE loan_id = l.id
-                ), 0) AS paid_principal,
-                COALESCE((
-                    SELECT SUM(total_amount) FROM loan_payments
-                    WHERE loan_id = l.id
-                ), 0) AS total_paid,
-                COALESCE((
-                    SELECT SUM(interest_component) FROM loan_payments
-                    WHERE loan_id = l.id
-                ), 0) AS total_interest_paid
+                COALESCE((SELECT SUM(principal_component) FROM loan_payments WHERE loan_id = l.id), 0) AS paid_principal,
+                COALESCE((SELECT SUM(total_amount)        FROM loan_payments WHERE loan_id = l.id), 0) AS total_paid,
+                COALESCE((SELECT SUM(interest_component)  FROM loan_payments WHERE loan_id = l.id), 0) AS total_interest_paid
             FROM loans l
             LEFT JOIN lenders ln ON l.lender_id = ln.id
-            WHERE l.company_id = $1
             ORDER BY l.id DESC
-        `, [companyId]);
+        `);
 
-        console.log(`GET /loans → company=${companyId} rows=${loans.length}`);
+        console.log(`GET /loans → returning ${loans.length} rows (no company filter)`);
         res.json(loans);
     } catch (err) {
         console.error('GET /loans error:', err.message);
@@ -56,17 +47,25 @@ router.post('/sync-from-lenders', authMiddleware, async (req, res) => {
         client = await db.pool.connect();
         await client.query('BEGIN');
 
-        // Find lenders with opening_balance > 0 but no active loan
+        // Find lenders with any balance but no loan record at all
         const orphans = await client.query(`
-            SELECT id, lender_name, lender_type, opening_balance, phone
+            SELECT id, lender_name, lender_type, phone,
+                GREATEST(
+                    COALESCE(opening_balance, 0),
+                    COALESCE(current_balance, 0),
+                    COALESCE(initial_payable_balance, 0)
+                ) AS balance
             FROM lenders
             WHERE company_id = $1
-              AND COALESCE(opening_balance, 0) > 0
-              AND id NOT IN (
-                  SELECT lender_id FROM loans
-                  WHERE company_id = $1 AND lender_id IS NOT NULL
-              )
+              AND GREATEST(
+                    COALESCE(opening_balance, 0),
+                    COALESCE(current_balance, 0),
+                    COALESCE(initial_payable_balance, 0)
+                  ) > 0
+              AND id NOT IN (SELECT lender_id FROM loans WHERE lender_id IS NOT NULL)
         `, [companyId]);
+
+        console.log(`Sync: found ${orphans.rows.length} lenders needing loan records`);
 
         const created = [];
         for (const l of orphans.rows) {
@@ -88,7 +87,7 @@ router.post('/sync-from-lenders', authMiddleware, async (req, res) => {
                 RETURNING id
             `, [
                 companyId, l.id, l.lender_name, loanType,
-                l.opening_balance,
+                l.balance,
                 isBank ? 'REDUCING' : 'FLAT',
                 isBank ? 'MONTHLY' : 'INDEFINITE'
             ]);
@@ -100,7 +99,7 @@ router.post('/sync-from-lenders', authMiddleware, async (req, res) => {
             try {
                 await client.query(
                     `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
-                    [loanType, l.opening_balance, loanId]
+                    [loanType, l.balance, loanId]
                 );
                 await client.query(`RELEASE SAVEPOINT sp_sync_new_cols`);
             } catch (_) {
