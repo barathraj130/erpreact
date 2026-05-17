@@ -9,44 +9,35 @@ const router = express.Router();
 
 router.get('/', authMiddleware, async (req, res) => {
     try {
-        // Use ONLY columns guaranteed to exist in the original schema.
-        // Do NOT reference loan_type / principal_outstanding — they are new columns
-        // that may not exist yet on the deployed DB.
-        const loans = await db.pgAll(`
-            SELECT
-                l.id,
-                l.company_id,
-                l.branch_id,
-                l.lender_id,
-                l.party_name,
-                l.party_type,
-                l.loan_direction,
-                l.principal_amount,
-                l.interest_rate,
-                l.interest_type,
-                l.start_date,
-                l.duration_months,
-                l.repayment_cycle,
-                l.notes,
-                l.status,
-                l.emi_amount,
-                l.outstanding_amount,
-                l.created_at,
-                COALESCE(ln.lender_name, l.party_name, 'Unknown') AS lender_name,
-                COALESCE(ln.lender_type, l.party_type, 'Bank')    AS lender_type,
-                ln.phone                                           AS lender_phone,
-                l.party_type                                       AS loan_type,
-                l.principal_amount                                 AS remaining_principal,
-                COALESCE((SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS paid_principal,
-                COALESCE((SELECT SUM(lp.total_amount)        FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_paid,
-                COALESCE((SELECT SUM(lp.interest_component)  FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_interest_paid
-            FROM loans l
-            LEFT JOIN lenders ln ON ln.id = l.lender_id
-            ORDER BY l.id DESC
-        `);
-
+        // Absolute minimum query — no JOINs, no subqueries, no new columns.
+        // Just get all loan rows first. Frontend handles missing fields with fallbacks.
+        const loans = await db.pgAll(`SELECT * FROM loans ORDER BY id DESC`);
         console.log(`GET /loans → ${loans.length} rows`);
-        res.json(loans);
+
+        // Attach lender_name from lenders table (separate safe query)
+        const lenderIds = [...new Set(loans.map(l => l.lender_id).filter(Boolean))];
+        let lenderMap = {};
+        if (lenderIds.length > 0) {
+            const lenders = await db.pgAll(
+                `SELECT id, lender_name, lender_type, phone FROM lenders WHERE id = ANY($1)`,
+                [lenderIds]
+            );
+            lenders.forEach(ln => { lenderMap[ln.id] = ln; });
+        }
+
+        const result = loans.map(l => ({
+            ...l,
+            lender_name:  lenderMap[l.lender_id]?.lender_name || l.party_name || 'Unknown',
+            lender_type:  lenderMap[l.lender_id]?.lender_type || l.party_type || 'Bank',
+            lender_phone: lenderMap[l.lender_id]?.phone || null,
+            loan_type:    l.loan_type || l.party_type || 'BANK',
+            remaining_principal: l.principal_outstanding ?? l.outstanding_amount ?? l.principal_amount,
+            paid_principal:   0,
+            total_paid:       0,
+            total_interest_paid: 0,
+        }));
+
+        res.json(result);
     } catch (err) {
         console.error('GET /loans CRASH:', err.message);
         res.status(500).json({ error: err.message });
