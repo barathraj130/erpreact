@@ -38,7 +38,10 @@ router.get('/', authMiddleware, async (req, res) => {
             SELECT DISTINCT ON (t.id)
                    t.*,
                    l.lender_name,
-                   u.username as user_name
+                   u.username as user_name,
+                   COALESCE(NULLIF(t.amount, 0),
+                       (SELECT SUM(tl.credit_amount) FROM transaction_lines tl WHERE tl.transaction_id = t.id)
+                   ) AS computed_amount
             FROM transactions t
             LEFT JOIN lenders l ON t.lender_id = l.id
             LEFT JOIN users u ON t.user_id = u.id
@@ -78,7 +81,12 @@ router.get('/', authMiddleware, async (req, res) => {
         const normalised = rows.map(r => ({
             ...r,
             date: r.transaction_date || r.date || r.created_at,
-            amount: Number(r.amount) || 0,
+            // computed_amount = COALESCE(amount, sum of transaction_lines credits)
+            amount: Number(r.computed_amount) || Number(r.amount) || 0,
+            // Normalise type — accounting engine rows have reference_type, not type
+            type: r.type || r.reference_type || 'GENERAL',
+            // Party name: lender, user, or extracted from description
+            party_name: r.lender_name || r.user_name || null,
         }));
 
         res.json(normalised);
@@ -137,8 +145,19 @@ router.get('/:id/pdf', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
 
     try {
-        const txResult = await db.pgGet('SELECT * FROM transactions WHERE id = $1 AND company_id = $2', [transactionId, companyId]);
+        const txResult = await db.pgGet(`
+            SELECT t.*,
+                   COALESCE(NULLIF(t.amount, 0),
+                       (SELECT SUM(tl.credit_amount) FROM transaction_lines tl WHERE tl.transaction_id = t.id)
+                   ) AS display_amount,
+                   l.lender_name
+            FROM transactions t
+            LEFT JOIN lenders l ON t.lender_id = l.id
+            WHERE t.id = $1 AND t.company_id = $2
+        `, [transactionId, companyId]);
         if (!txResult) return res.status(404).json({ error: "Transaction not found" });
+        // Use display_amount for the PDF
+        txResult.amount = txResult.display_amount || txResult.amount || 0;
 
         const companyResult = await db.pgGet('SELECT * FROM companies WHERE id = $1', [companyId]);
         let companyName = companyResult ? companyResult.company_name : "RIDGE GREEN CORPORATION";
@@ -151,9 +170,9 @@ router.get('/:id/pdf', authMiddleware, async (req, res) => {
         }
 
         // Parse description dynamically
-        let partyName = "";
-        let purpose = txResult.description;
-        if (purpose && purpose.startsWith("Cash Receipt - ")) {
+        let partyName = txResult.lender_name || "";
+        let purpose = txResult.description || "";
+        if (!partyName && purpose.startsWith("Cash Receipt - ")) {
             const stripped = purpose.replace("Cash Receipt - ", "");
             const parts = stripped.split(": ");
             if (parts.length > 1) {
@@ -162,6 +181,9 @@ router.get('/:id/pdf', authMiddleware, async (req, res) => {
             } else {
                 partyName = stripped;
             }
+        } else if (!partyName && purpose.includes(" from ")) {
+            // e.g. "Loan received from MOHAN"
+            partyName = purpose.split(" from ").slice(1).join(" from ");
         }
 
         const dateStr = new Date(txResult.date || txResult.created_at).toLocaleDateString('en-IN');

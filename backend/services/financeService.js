@@ -140,7 +140,9 @@ export const createLoan = async (user, loanData) => {
                 reference_type: 'LOAN_DISBURSEMENT',
                 reference_id: loan.id,
                 description: `Loan received from ${loanData.lender_name || 'Lender'}`,
-                created_by: user.id
+                created_by: user.id,
+                lender_id: lenderId,
+                amount: principal
             }, txLines);
 
             // Write each mode to its ledger and save loan_receipts
@@ -284,7 +286,8 @@ export const recordLoanRepayment = async (user, paymentData) => {
                 reference_type: 'LOAN_REPAYMENT',
                 reference_id: payment.id,
                 description: `Loan repayment for loan ID: ${paymentData.loan_id}`,
-                created_by: user.id
+                created_by: user.id,
+                amount: total
             }, txLines);
         }
 

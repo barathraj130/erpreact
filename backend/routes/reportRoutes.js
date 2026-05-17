@@ -166,20 +166,32 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
     try {
         const todaySales = await db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices WHERE company_id = $1 AND DATE(invoice_date) = CURRENT_DATE AND bill_purpose != 'name_only'`, [companyId]);
         const todayPurchases = await db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_bills WHERE company_id = $1 AND DATE(bill_date) = CURRENT_DATE AND bill_purpose != 'name_only'`, [companyId]);
-        
+
         const receivables = await db.pgGet(`SELECT COALESCE(SUM(total_amount - paid_amount), 0) as total FROM invoices WHERE company_id = $1 AND bill_purpose != 'name_only' AND total_amount > paid_amount`, [companyId]);
-        
+
         const outputGst = await db.pgGet(`SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) as total FROM invoices WHERE company_id = $1 AND bill_purpose != 'name_only'`, [companyId]);
         const inputGst = await db.pgGet(`SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) as total FROM purchase_bills WHERE company_id = $1 AND bill_purpose != 'name_only'`, [companyId]);
-        
+
         const activeCustomers = await db.pgGet(`SELECT COUNT(*) as count FROM users WHERE company_id = $1 AND role = 'customer'`, [companyId]);
+
+        // Cash position: sum of cash_ledger + bank_ledger (in - out)
+        let cashBalance = 0;
+        try {
+            const cashIn  = await db.pgGet(`SELECT COALESCE(SUM(amount), 0) as total FROM cash_ledger WHERE company_id = $1 AND direction = 'in'`, [companyId]);
+            const cashOut = await db.pgGet(`SELECT COALESCE(SUM(amount), 0) as total FROM cash_ledger WHERE company_id = $1 AND direction = 'out'`, [companyId]);
+            const bankIn  = await db.pgGet(`SELECT COALESCE(SUM(amount), 0) as total FROM bank_ledger WHERE company_id = $1 AND direction = 'in'`, [companyId]);
+            const bankOut = await db.pgGet(`SELECT COALESCE(SUM(amount), 0) as total FROM bank_ledger WHERE company_id = $1 AND direction = 'out'`, [companyId]);
+            cashBalance = (parseFloat(cashIn?.total || 0) - parseFloat(cashOut?.total || 0))
+                        + (parseFloat(bankIn?.total || 0) - parseFloat(bankOut?.total || 0));
+        } catch (_) { /* cash/bank ledger tables may not exist yet */ }
 
         res.json({
             today_sales: parseFloat(todaySales?.total || 0),
             today_purchases: parseFloat(todayPurchases?.total || 0),
             total_receivables: parseFloat(receivables?.total || 0),
             gst_liability: (parseFloat(outputGst?.total || 0) - parseFloat(inputGst?.total || 0)),
-            active_customers: parseInt(activeCustomers?.count || 0)
+            active_customers: parseInt(activeCustomers?.count || 0),
+            cash_balance: cashBalance
         });
     } catch (err) {
         console.error("Dashboard stats error:", err);

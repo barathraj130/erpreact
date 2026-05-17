@@ -39,6 +39,21 @@ export async function createTransactionInternal(client, txData, lines) {
     ]);
     const transactionId = txRes.rows[0].id;
 
+    // Best-effort: set amount and lender_id on the transaction row.
+    // These columns exist in production but use SAVEPOINT in case of schema mismatch.
+    await client.query(`SAVEPOINT sp_tx_extra_cols`);
+    try {
+        const txAmount = txData.amount !== undefined ? txData.amount : totalCredit;
+        await client.query(
+            `UPDATE transactions SET amount = $1, lender_id = $2 WHERE id = $3`,
+            [txAmount, txData.lender_id || null, transactionId]
+        );
+        await client.query(`RELEASE SAVEPOINT sp_tx_extra_cols`);
+    } catch (_) {
+        await client.query(`ROLLBACK TO SAVEPOINT sp_tx_extra_cols`);
+        await client.query(`RELEASE SAVEPOINT sp_tx_extra_cols`);
+    }
+
     // 3. Process each line item
     for (const line of lines) {
         const lineSql = `

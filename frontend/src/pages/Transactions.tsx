@@ -20,12 +20,16 @@ interface Transaction {
   id: number;
   date: string;
   type: string;
+  reference_type?: string;
   amount: number;
   mode: string;
   description: string;
   expense_category?: string;
   proof_url?: string;
   status?: string;
+  lender_name?: string;
+  user_name?: string;
+  party_name?: string;
 }
 
 const Transactions: React.FC = () => {
@@ -149,26 +153,36 @@ const Transactions: React.FC = () => {
         </button>
       </header>
 
-      <div className="stats-grid">
-         <div className="stat-card card-emerald">
-           <FaWallet className="stat-icon" />
-           <span className="label">Total Inflow</span>
-           <span className="value">₹ {transactions.filter(t => ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(t.type)).reduce((a, c) => a + Number(c.amount), 0).toLocaleString()}</span>
-           <span className="stat-sub">Account Credit</span>
-         </div>
-         <div className="stat-card card-rose">
-           <FaMoneyBillWave className="stat-icon" />
-           <span className="label">Total Outflow</span>
-           <span className="value">₹ {transactions.filter(t => !['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(t.type)).reduce((a, c) => a + Number(c.amount), 0).toLocaleString()}</span>
-           <span className="stat-sub">Account Debit</span>
-         </div>
-         <div className="stat-card card-indigo">
-           <FaHistory className="stat-icon" />
-           <span className="label">Net Balance</span>
-           <span className="value">₹ {(transactions.filter(t => ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(t.type)).reduce((a, c) => a + Number(c.amount), 0) - transactions.filter(t => !['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE'].includes(t.type)).reduce((a, c) => a + Number(c.amount), 0)).toLocaleString()}</span>
-           <span className="stat-sub">Current Liquidity</span>
-         </div>
-      </div>
+      {/* Inflow = credit types (customer receipts, loans received) */}
+      {/* Outflow = debit types (payments out, repayments) */}
+      {(() => {
+        const INFLOW_TYPES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION', 'LOAN_DISBURSEMENT', 'LOAN_RECEIVED'];
+        const OUTFLOW_TYPES = ['SUPPLIER_PAYMENT', 'EXPENSE_PAYMENT', 'SALARY_PAYMENT', 'ADVANCE_PAYMENT', 'LOAN_REPAYMENT', 'EB_UTILITY_BILL', 'FESTIVAL_EXPENSE', 'DONATION', 'CHIT_INVESTMENT', 'MISC_EXPENSE', 'CHIT_INSTALLMENT'];
+        const inflow = transactions.filter(t => INFLOW_TYPES.includes(t.type) || INFLOW_TYPES.includes(t.reference_type || '')).reduce((a, c) => a + Number(c.amount), 0);
+        const outflow = transactions.filter(t => OUTFLOW_TYPES.includes(t.type) || OUTFLOW_TYPES.includes(t.reference_type || '')).reduce((a, c) => a + Number(c.amount), 0);
+        return (
+          <div className="stats-grid">
+            <div className="stat-card card-emerald">
+              <FaWallet className="stat-icon" />
+              <span className="label">Total Inflow</span>
+              <span className="value">₹ {inflow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <span className="stat-sub">Account Credit</span>
+            </div>
+            <div className="stat-card card-rose">
+              <FaMoneyBillWave className="stat-icon" />
+              <span className="label">Total Outflow</span>
+              <span className="value">₹ {outflow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <span className="stat-sub">Account Debit</span>
+            </div>
+            <div className="stat-card card-indigo">
+              <FaHistory className="stat-icon" />
+              <span className="label">Net Balance</span>
+              <span className="value">₹ {(inflow - outflow).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <span className="stat-sub">Current Liquidity</span>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="card" style={{ padding: "0", overflow: "hidden" }}>
         <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--erp-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -214,38 +228,52 @@ const Transactions: React.FC = () => {
                 </tr>
              </thead>
              <tbody>
-                {transactions.filter(t => t.description?.toLowerCase().includes(search.toLowerCase()) || t.type?.toLowerCase().includes(search.toLowerCase())).map(tx => (
-                   <tr key={tx.id}>
-                      <td className="timestamp-cell">
-                         <span className="primary">{new Date(tx.date).toLocaleDateString('en-IN')}</span>
-                         <span className="secondary">TXN-{tx.id}</span>
-                      </td>
-                      <td>
-                        <span className={`status-badge status-${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION'].includes(tx.type) ? 'success' : 'error'}`}>
-                          {tx.type?.replace(/_/g, ' ') || 'GENERAL'}
-                        </span>
-                      </td>
-                      <td className="text-body">
-                        <div style={{ fontWeight: 500 }}>{(tx as any).lender_name || (tx as any).user_name || '—'}</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--erp-text-secondary)' }}>{tx.description}</div>
-                      </td>
-                      <td className="text-center">
-                         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "var(--erp-text-secondary)" }}>
-                            {tx.mode === 'BANK' ? <FaUniversity size={14} /> : <FaWallet size={14} />}
-                            <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{tx.mode}</span>
-                         </div>
-                      </td>
-                      <td className={`currency-cell ${['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION'].includes(tx.type) ? 'positive' : 'negative'}`}>
-                         {['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION'].includes(tx.type) ? '↑ ' : '↓ '} ₹{Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="text-center">
-                         <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                            <button className="btn btn-secondary" style={{ padding: "6px" }} title="Receipt" onClick={() => downloadReceipt(tx.id)}><FaFileDownload /></button>
-                            {tx.proof_url && <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence" onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}${tx.proof_url}`, '_blank')}><FaEye /></button>}
-                         </div>
-                      </td>
-                   </tr>
-                ))}
+                {(() => {
+                  const INFLOW_TYPES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION', 'LOAN_DISBURSEMENT', 'LOAN_RECEIVED'];
+                  return transactions
+                    .filter(t =>
+                      t.description?.toLowerCase().includes(search.toLowerCase()) ||
+                      t.type?.toLowerCase().includes(search.toLowerCase()) ||
+                      (t.party_name || t.lender_name || t.user_name || '').toLowerCase().includes(search.toLowerCase())
+                    )
+                    .map(tx => {
+                      const isInflow = INFLOW_TYPES.includes(tx.type) || INFLOW_TYPES.includes(tx.reference_type || '');
+                      const partyLabel = tx.party_name || tx.lender_name || tx.user_name || null;
+                      const typeLabel = (tx.type || tx.reference_type || 'GENERAL').replace(/_/g, ' ');
+                      return (
+                        <tr key={tx.id}>
+                          <td className="timestamp-cell">
+                            <span className="primary">{new Date(tx.date).toLocaleDateString('en-IN')}</span>
+                            <span className="secondary">TXN-{tx.id}</span>
+                          </td>
+                          <td>
+                            <span className={`status-badge status-${isInflow ? 'success' : 'error'}`}>
+                              {typeLabel}
+                            </span>
+                          </td>
+                          <td className="text-body">
+                            {partyLabel && <div style={{ fontWeight: 500 }}>{partyLabel}</div>}
+                            <div style={{ fontSize: partyLabel ? '0.78rem' : '0.9rem', color: partyLabel ? 'var(--erp-text-secondary)' : 'inherit', fontWeight: partyLabel ? 400 : 500 }}>{tx.description}</div>
+                          </td>
+                          <td className="text-center">
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "var(--erp-text-secondary)" }}>
+                              {(tx.mode || '').toUpperCase() === 'BANK' ? <FaUniversity size={14} /> : <FaWallet size={14} />}
+                              <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{tx.mode || '—'}</span>
+                            </div>
+                          </td>
+                          <td className={`currency-cell ${isInflow ? 'positive' : 'negative'}`}>
+                            {isInflow ? '↑ ' : '↓ '} ₹{Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-center">
+                            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                              <button className="btn btn-secondary" style={{ padding: "6px" }} title="Receipt" onClick={() => downloadReceipt(tx.id)}><FaFileDownload /></button>
+                              {tx.proof_url && <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence" onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}${tx.proof_url}`, '_blank')}><FaEye /></button>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                })()}
              </tbody>
           </table>
         </div>
