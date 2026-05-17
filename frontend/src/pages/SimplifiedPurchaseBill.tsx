@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { 
-  FaSave, FaPlus, FaTrash, FaChevronLeft, FaFileUpload, 
-  FaFileInvoice, FaRegClock, FaUserAlt, FaBarcode, 
-  FaMoneyBillWave, FaPercentage, FaCalculator, FaTimes, FaCamera, FaBox
+import {
+  FaSave, FaPlus, FaTrash, FaChevronLeft, FaFileUpload,
+  FaFileInvoice, FaRegClock, FaUserAlt, FaBarcode,
+  FaMoneyBillWave, FaPercentage, FaCalculator, FaTimes, FaCamera, FaBox,
+  FaCreditCard
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../utils/api";
@@ -30,6 +31,25 @@ interface ExpenseItem {
   tax_percent: number;
 }
 
+interface PaymentEntry {
+  mode: string;
+  amount: number;
+  reference: string;
+}
+
+const PAYMENT_MODES = [
+  { value: "CASH",   label: "Liquid Cash" },
+  { value: "BANK",   label: "Bank Transfer" },
+  { value: "UPI",    label: "UPI" },
+  { value: "CHEQUE", label: "Cheque" },
+  { value: "CREDIT", label: "Credit (Due Later)" },
+];
+
+const MODE_COLORS: Record<string, string> = {
+  CASH: "#10b981", BANK: "#3b82f6", UPI: "#8b5cf6",
+  CHEQUE: "#f59e0b", CREDIT: "#ef4444",
+};
+
 const SimplifiedPurchaseBill: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -54,8 +74,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
     { expense_type: "Freight / Transport", description: "", amount: 0, tax_percent: 18 }
   ]);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
-  const [paidAmount, setPaidAmount] = useState<number>(0);
-  const [paymentMode, setPaymentMode] = useState<string>("CASH");
+  // Multi-mode split payments
+  const [payments, setPayments] = useState<PaymentEntry[]>([
+    { mode: "CASH", amount: 0, reference: "" }
+  ]);
   const [brokerId, setBrokerId] = useState<string>("");
   const [brokerCommRate, setBrokerCommRate] = useState<number>(0);
 
@@ -116,10 +138,11 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
     const grossTotal = subTotal + totalTax;
     const netTotal = grossTotal - discountAmount;
-    const balance = Math.max(0, netTotal - paidAmount);
+    const totalPaid = payments.reduce((s, p) => s + (p.amount || 0), 0);
+    const balance = Math.max(0, netTotal - totalPaid);
 
-    return { subTotal, totalTax, grossTotal, netTotal, balance };
-  }, [items, expenses, billCategory, billType, discountAmount, paidAmount]);
+    return { subTotal, totalTax, grossTotal, netTotal, totalPaid, balance };
+  }, [items, expenses, billCategory, billType, discountAmount, payments]);
 
   // Handlers
   const handleAddItem = () => {
@@ -137,6 +160,15 @@ const SimplifiedPurchaseBill: React.FC = () => {
         if (expenses.length > 1) setExpenses(expenses.filter((_, i) => i !== index));
     }
   };
+
+  const addPaymentRow = () =>
+    setPayments(prev => [...prev, { mode: "CASH", amount: 0, reference: "" }]);
+
+  const removePaymentRow = (i: number) =>
+    setPayments(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
+
+  const updatePayment = (i: number, field: keyof PaymentEntry, val: string | number) =>
+    setPayments(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: val } : p));
 
   const handleProductSelect = (index: number, val: string) => {
     const newItems = [...items];
@@ -163,6 +195,8 @@ const SimplifiedPurchaseBill: React.FC = () => {
     if (!billNumber) return alert("Please enter bill number.");
     if (billCategory === "PRODUCT" && items.some(i => !i.name || i.qty <= 0)) return alert("Please ensure all products have name and quantity.");
     if (billCategory === "EXPENSE" && expenses.some(e => !e.expense_type || e.amount <= 0)) return alert("Please ensure all expenses have type and amount.");
+    const validPayments = payments.filter(p => p.amount > 0);
+    if (totals.totalPaid > totals.netTotal + 0.01) return alert(`Total paid (₹${totals.totalPaid.toFixed(2)}) cannot exceed bill amount (₹${totals.netTotal.toFixed(2)}).`);
 
     setLoading(true);
     try {
@@ -183,8 +217,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
         })) : [],
         expenses: billCategory === "EXPENSE" ? expenses : [],
         discount_amount: discountAmount,
-        paid_amount: paidAmount,
-        payment_mode: paymentMode,
+        payments: validPayments.length > 0 ? validPayments : [],
         broker_id: brokerId || null,
         broker_commission_rate: brokerCommRate || 0
       };
@@ -523,29 +556,70 @@ const SimplifiedPurchaseBill: React.FC = () => {
                 <span style={{ fontSize: "1.5rem", fontWeight: 900, color: "#4f46e5" }}>₹{totals.netTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
 
-              <div style={{ padding: "20px", background: "#f0f9ff", borderRadius: "16px", border: "1px solid #e0f2fe", marginTop: "10px" }}>
-                <div className="form-group" style={{ marginBottom: "15px" }}>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#0369a1", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                    Amount Paid Now (₹)
-                  </label>
-                  <input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #bae6fd", fontSize: "1.1rem", fontWeight: 800, color: "#0369a1" }} />
+              {/* ── Split Payment Section ──────────────────────────── */}
+              <div style={{ background: "#f0f9ff", borderRadius: "16px", border: "1px solid #e0f2fe", overflow: "hidden", marginTop: "10px" }}>
+                <div style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e0f2fe" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <FaCreditCard color="#0369a1" size={14} />
+                    <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#0369a1", textTransform: "uppercase" }}>Payment Entries</span>
+                  </div>
+                  <button onClick={addPaymentRow} style={{ background: "#0369a1", color: "#fff", border: "none", borderRadius: "8px", padding: "5px 12px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <FaPlus size={10} /> Add Mode
+                  </button>
                 </div>
-                <div className="form-group">
-                  <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#0369a1", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                    Payment Mode
-                  </label>
-                  <CustomSelect value={paymentMode} onChange={(e: any) => setPaymentMode(e.target.value)} disableSearch>
-                    <option value="CASH">Liquid Cash</option>
-                    <option value="BANK">Bank / UPI</option>
-                    <option value="CHEQUE">Cheque</option>
-                  </CustomSelect>
+
+                <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <AnimatePresence>
+                    {payments.map((p, i) => (
+                      <motion.div key={i} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }}
+                        style={{ display: "grid", gridTemplateColumns: "110px 1fr auto", gap: "8px", alignItems: "center" }}>
+                        <select value={p.mode} onChange={e => updatePayment(i, "mode", e.target.value)}
+                          style={{ padding: "8px 6px", borderRadius: "8px", border: `1.5px solid ${MODE_COLORS[p.mode] || "#bae6fd"}`, fontSize: "0.78rem", fontWeight: 700, color: MODE_COLORS[p.mode] || "#0369a1", background: "#fff", cursor: "pointer" }}>
+                          {PAYMENT_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                        </select>
+                        <input type="number" min={0} placeholder="Amount (₹)" value={p.amount || ""}
+                          onChange={e => updatePayment(i, "amount", parseFloat(e.target.value) || 0)}
+                          style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid #bae6fd", fontWeight: 700, color: "#0369a1", fontSize: "0.9rem", width: "100%", boxSizing: "border-box" }} />
+                        <button onClick={() => removePaymentRow(i)} disabled={payments.length === 1}
+                          style={{ background: "none", border: "none", color: "#f43f5e", cursor: payments.length === 1 ? "default" : "pointer", opacity: payments.length === 1 ? 0.3 : 1, padding: "6px" }}>
+                          <FaTrash size={12} />
+                        </button>
+                        {/* Optional reference field (UTR / Cheque No) */}
+                        {(p.mode === "BANK" || p.mode === "UPI" || p.mode === "CHEQUE") && (
+                          <input type="text" placeholder={p.mode === "CHEQUE" ? "Cheque No." : "UTR / Ref No."}
+                            value={p.reference} onChange={e => updatePayment(i, "reference", e.target.value)}
+                            style={{ gridColumn: "1 / -1", padding: "7px 10px", borderRadius: "8px", border: "1px solid #bae6fd", fontSize: "0.78rem", color: "#475569", boxSizing: "border-box", width: "100%" }} />
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
+                {/* Summary row */}
+                <div style={{ padding: "12px 18px", borderTop: "1px solid #e0f2fe", display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0369a1" }}>Total Paying Now</span>
+                  <span style={{ fontWeight: 900, color: totals.totalPaid > totals.netTotal + 0.01 ? "#ef4444" : "#0369a1", fontSize: "1rem" }}>
+                    ₹{totals.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", padding: "10px 0" }}>
-                <span style={{ fontWeight: 600, color: "#64748b" }}>Balance Payable</span>
-                <span style={{ fontWeight: 900, color: totals.balance > 0 ? "#ef4444" : "#22c55e" }}>₹{totals.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
+              {/* Balance Payable */}
+              {(() => {
+                const isPaid = totals.balance <= 0 && totals.totalPaid > 0;
+                const isPartial = totals.totalPaid > 0 && totals.balance > 0;
+                const color = isPaid ? "#22c55e" : isPartial ? "#f59e0b" : "#ef4444";
+                const label = isPaid ? "Fully Paid" : isPartial ? "Partial — Balance Due" : "Unpaid";
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderRadius: "12px", background: isPaid ? "#f0fdf4" : isPartial ? "#fffbeb" : "#fef2f2", border: `1px solid ${color}22` }}>
+                    <div>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 800, color, textTransform: "uppercase", marginBottom: "2px" }}>{label}</div>
+                      <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#64748b" }}>Balance Payable</div>
+                    </div>
+                    <span style={{ fontWeight: 900, color, fontSize: "1.25rem" }}>₹{totals.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                );
+              })()}
 
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "20px" }}>
                 <button onClick={() => handleSave(false)} disabled={loading} style={{ background: "#4f46e5", color: "#fff", border: "none", borderRadius: "12px", padding: "15px", fontSize: "1rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)" }}>

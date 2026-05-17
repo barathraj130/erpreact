@@ -244,8 +244,14 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         const discount = isNaN(parseFloat(discount_amount)) ? 0 : parseFloat(discount_amount);
         const grossTotal = subTotal + taxTotal;
         const netAmount = grossTotal - discount;
-        const paymentsArray = Array.isArray(data.payments) ? data.payments : [];
-        const paid = parseFloat(paid_amount ?? data.total_paid ?? 0);
+        const paymentsArray = Array.isArray(data.payments) && data.payments.length > 0
+            ? data.payments.filter(p => parseFloat(p.amount || 0) > 0)
+            : [];
+        // If a payments[] array is provided, use its sum; otherwise fall back to the
+        // legacy scalar paid_amount field so old API calls still work.
+        const paid = paymentsArray.length > 0
+            ? Math.round(paymentsArray.reduce((s, p) => s + parseFloat(p.amount || 0), 0) * 100) / 100
+            : parseFloat(paid_amount ?? data.total_paid ?? 0);
         const balance = Math.max(0, netAmount - paid);
         const status = paid >= netAmount ? "PAID" : (paid > 0 ? "PARTIAL" : "PENDING");
 
@@ -487,13 +493,70 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 });
 
 // ─────────────────────────────────────────────────────────
-// PAY FOR BILL
+// HELPER — write one payment split to cash/bank ledger + accounting journal
+// ─────────────────────────────────────────────────────────
+async function recordPaymentSplit(client, { companyId, branchId, billId, billNumber, billPurpose, userId, payment_date, mode, amount, reference, apAccount }) {
+    const pMode = (mode || "CASH").toUpperCase();
+    if (pMode === "CASH") {
+        await client.query(
+            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+             VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4)`,
+            [companyId, branchId, amount, payment_date || new Date()]
+        );
+    } else {
+        await client.query(
+            `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
+             VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4,$5,$6)`,
+            [companyId, branchId, amount, pMode,
+             reference || `BPAY-${billId}-${Date.now()}`,
+             payment_date || new Date()]
+        );
+    }
+
+    if (apAccount) {
+        const isBank = pMode !== "CASH";
+        const payAccount = isBank
+            ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
+            : await getAccountByCode(companyId, "1000");
+
+        if (payAccount) {
+            await createTransactionInternal(client, {
+                company_id:       companyId,
+                branch_id:        branchId,
+                transaction_date: payment_date || new Date(),
+                reference_type:   "PURCHASE_BILL",
+                reference_id:     Number(billId),
+                description:      `Payment (${pMode}) for Bill #${billNumber}`,
+                created_by:       userId,
+                bill_purpose:     billPurpose || 'real',
+                amount
+            }, [
+                { account_id: apAccount.id,  debit_amount: amount, credit_amount: 0,      description: `AP Payment (${pMode}) - Bill #${billNumber}` },
+                { account_id: payAccount.id, debit_amount: 0,      credit_amount: amount, description: `${isBank ? 'Bank' : 'Cash'} - Bill #${billNumber}` }
+            ]);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// PAY FOR BILL  (supports both single and split payments)
+//
+// Request body:
+//   Single:  { amount, payment_mode, payment_date, reference }
+//   Split:   { payments: [{mode, amount, reference}], payment_date }
 // ─────────────────────────────────────────────────────────
 router.patch("/:id/pay", authMiddleware, async (req, res) => {
-    const { id }     = req.params;
-    const companyId  = req.user.active_company_id;
-    const { amount, payment_date, payment_mode } = req.body;
-    const payAmount  = Number(amount || 0);
+    const { id }    = req.params;
+    const companyId = req.user.active_company_id;
+    const { payment_date, payments: rawPayments, amount, payment_mode } = req.body;
+
+    // Normalise to an array of {mode, amount, reference}
+    let splits = Array.isArray(rawPayments) && rawPayments.length > 0
+        ? rawPayments.filter(p => parseFloat(p.amount || 0) > 0)
+        : [{ mode: payment_mode || "CASH", amount: Number(amount || 0), reference: req.body.reference || null }];
+
+    const totalAmount = Math.round(splits.reduce((s, p) => s + parseFloat(p.amount || 0), 0) * 100) / 100;
+    if (totalAmount <= 0) return res.status(400).json({ error: "Payment amount must be greater than 0" });
 
     let client;
     try {
@@ -506,71 +569,48 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
         );
         if (!bill.rows[0]) throw new Error("Bill not found");
 
-        const b          = bill.rows[0];
-        const newPaid    = Number(b.paid_amount) + payAmount;
-        const newBalance = Math.max(0, Number(b.total_amount) - newPaid);
-        const newStatus  = newPaid >= Number(b.total_amount) ? "PAID" : "PARTIAL";
+        const b = bill.rows[0];
+        if (totalAmount > Number(b.balance_amount) + 0.01) {
+            throw new Error(`Payment ₹${totalAmount} exceeds outstanding balance ₹${b.balance_amount}`);
+        }
 
-        await client.query(`
-            UPDATE purchase_bills
-            SET paid_amount = $1, balance_amount = $2, status = $3
-            WHERE id = $4
-        `, [newPaid, newBalance, newStatus, id]);
+        const newPaid    = Math.round((Number(b.paid_amount) + totalAmount) * 100) / 100;
+        const newBalance = Math.max(0, Math.round((Number(b.total_amount) - newPaid) * 100) / 100);
+        const newStatus  = newBalance <= 0 ? "PAID" : "PARTIAL";
+
+        await client.query(
+            `UPDATE purchase_bills SET paid_amount=$1, balance_amount=$2, status=$3 WHERE id=$4`,
+            [newPaid, newBalance, newStatus, id]
+        );
 
         if (b.supplier_id) {
             await client.query(
-                `UPDATE suppliers SET current_balance = current_balance - $1 WHERE id = $2`,
-                [payAmount, b.supplier_id]
+                `UPDATE suppliers SET current_balance = GREATEST(0, current_balance - $1) WHERE id = $2`,
+                [totalAmount, b.supplier_id]
             );
         }
 
-        const pMode = (payment_mode || "CASH").toUpperCase();
-        if (pMode === "CASH") {
-            await client.query(`
-                INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4)
-            `, [companyId, b.branch_id, payAmount, payment_date || new Date()]);
-        } else {
-            await client.query(`
-                INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4,$5,$6)
-            `, [
-                companyId, b.branch_id, payAmount,
-                pMode, `BPAY-${id}-${Date.now()}`,
-                payment_date || new Date()
-            ]);
-        }
+        const apAccount = await getAccountByCode(companyId, "2000");
 
-        // Accounting for this additional payment (runs inside BEGIN before COMMIT)
-        const apAccount   = await getAccountByCode(companyId, "2000");
-        const isBank      = pMode !== "CASH";
-        const payAccount  = isBank
-            ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
-            : await getAccountByCode(companyId, "1000");
-
-        if (apAccount && payAccount) {
-            await createTransactionInternal(client, {
-                company_id:       companyId,
-                branch_id:        b.branch_id || 1,
-                transaction_date: payment_date || new Date(),
-                reference_type:   "PURCHASE_BILL",
-                reference_id:     Number(id),
-                description:      `Payment for Bill #${b.bill_number}`,
-                created_by:       req.user.id,
-                bill_purpose:     b.bill_purpose || 'real'
-            }, [
-                { account_id: apAccount.id,  debit_amount: payAmount, credit_amount: 0,         description: `Accounts Payable Payment - Bill #${b.bill_number}` },
-                { account_id: payAccount.id, debit_amount: 0,         credit_amount: payAmount,  description: `${isBank ? 'Bank Account' : 'Cash Account'} - Bill #${b.bill_number}` }
-            ]);
-            console.log(`✅ Payment ledger written for Bill #${b.bill_number}: ₹${payAmount}`);
+        for (const split of splits) {
+            const splitAmt = Math.round(parseFloat(split.amount || 0) * 100) / 100;
+            if (splitAmt <= 0) continue;
+            await recordPaymentSplit(client, {
+                companyId, branchId: b.branch_id || 1,
+                billId: id, billNumber: b.bill_number,
+                billPurpose: b.bill_purpose,
+                userId: req.user.id,
+                payment_date, mode: split.mode,
+                amount: splitAmt, reference: split.reference,
+                apAccount
+            });
+            console.log(`✅ Split payment (${split.mode}) ₹${splitAmt} → Bill #${b.bill_number}`);
         }
 
         await client.query("COMMIT");
-        res.json({ success: true, message: "Payment recorded", newPaid, newBalance, newStatus });
+        res.json({ success: true, message: "Payment recorded", newPaid, newBalance, newStatus, splits: splits.length });
     } catch (err) {
-        if (client) {
-            try { await client.query("ROLLBACK"); } catch (_) {}
-        }
+        if (client) { try { await client.query("ROLLBACK"); } catch (_) {} }
         res.status(500).json({ error: err.message || "Payment failed" });
     } finally {
         if (client) client.release();
@@ -578,14 +618,23 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// POST /:id/payment — alias for PATCH /:id/pay (normalizes `mode` → `payment_mode`)
+// POST /:id/payment — accepts same body as PATCH /:id/pay
+// Normalises `mode` → `payment_mode` for backwards compatibility.
 // ─────────────────────────────────────────────────────────
 router.post("/:id/payment", authMiddleware, async (req, res) => {
+    // Normalise legacy field name
+    if (req.body.mode && !req.body.payment_mode) req.body.payment_mode = req.body.mode;
+    // Re-use the shared PATCH handler implementation by making an identical call
     const { id }    = req.params;
     const companyId = req.user.active_company_id;
-    const payment_mode = req.body.payment_mode || req.body.mode || "CASH";
-    const { amount, payment_date } = req.body;
-    const payAmount = Number(amount || 0);
+    const { payment_date, payments: rawPayments, amount, payment_mode } = req.body;
+
+    let splits = Array.isArray(rawPayments) && rawPayments.length > 0
+        ? rawPayments.filter(p => parseFloat(p.amount || 0) > 0)
+        : [{ mode: payment_mode || "CASH", amount: Number(amount || 0), reference: req.body.reference || null }];
+
+    const totalAmount = Math.round(splits.reduce((s, p) => s + parseFloat(p.amount || 0), 0) * 100) / 100;
+    if (totalAmount <= 0) return res.status(400).json({ error: "Payment amount must be greater than 0" });
 
     let client;
     try {
@@ -598,65 +647,43 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         );
         if (!bill.rows[0]) throw new Error("Bill not found");
 
-        const b          = bill.rows[0];
-        const newPaid    = Number(b.paid_amount) + payAmount;
-        const newBalance = Math.max(0, Number(b.total_amount) - newPaid);
-        const newStatus  = newPaid >= Number(b.total_amount) ? "PAID" : "PARTIAL";
+        const b = bill.rows[0];
+        if (totalAmount > Number(b.balance_amount) + 0.01) {
+            throw new Error(`Payment ₹${totalAmount} exceeds outstanding balance ₹${b.balance_amount}`);
+        }
 
-        await client.query(`
-            UPDATE purchase_bills
-            SET paid_amount = $1, balance_amount = $2, status = $3
-            WHERE id = $4
-        `, [newPaid, newBalance, newStatus, id]);
+        const newPaid    = Math.round((Number(b.paid_amount) + totalAmount) * 100) / 100;
+        const newBalance = Math.max(0, Math.round((Number(b.total_amount) - newPaid) * 100) / 100);
+        const newStatus  = newBalance <= 0 ? "PAID" : "PARTIAL";
 
+        await client.query(
+            `UPDATE purchase_bills SET paid_amount=$1, balance_amount=$2, status=$3 WHERE id=$4`,
+            [newPaid, newBalance, newStatus, id]
+        );
         if (b.supplier_id) {
             await client.query(
-                `UPDATE suppliers SET current_balance = current_balance - $1 WHERE id = $2`,
-                [payAmount, b.supplier_id]
+                `UPDATE suppliers SET current_balance = GREATEST(0, current_balance - $1) WHERE id = $2`,
+                [totalAmount, b.supplier_id]
             );
         }
 
-        const pMode = payment_mode.toUpperCase();
-        if (pMode === "CASH") {
-            await client.query(`
-                INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4)
-            `, [companyId, b.branch_id || 1, payAmount, payment_date || new Date()]);
-        } else {
-            await client.query(`
-                INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4,$5,$6)
-            `, [companyId, b.branch_id || 1, payAmount, pMode, `BPAY-${id}-${Date.now()}`, payment_date || new Date()]);
-        }
-
-        const apAccount  = await getAccountByCode(companyId, "2000");
-        const isBank     = pMode !== "CASH";
-        const payAccount = isBank
-            ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
-            : await getAccountByCode(companyId, "1000");
-
-        if (apAccount && payAccount) {
-            await createTransactionInternal(client, {
-                company_id:       companyId,
-                branch_id:        b.branch_id || 1,
-                transaction_date: payment_date || new Date(),
-                reference_type:   "PURCHASE_BILL",
-                reference_id:     Number(id),
-                description:      `Payment for Bill #${b.bill_number}`,
-                created_by:       req.user.id,
-                bill_purpose:     b.bill_purpose || 'real'
-            }, [
-                { account_id: apAccount.id,  debit_amount: payAmount, credit_amount: 0,        description: `Accounts Payable Payment - Bill #${b.bill_number}` },
-                { account_id: payAccount.id, debit_amount: 0,         credit_amount: payAmount, description: `${isBank ? 'Bank Account' : 'Cash Account'} - Bill #${b.bill_number}` }
-            ]);
+        const apAccount = await getAccountByCode(companyId, "2000");
+        for (const split of splits) {
+            const splitAmt = Math.round(parseFloat(split.amount || 0) * 100) / 100;
+            if (splitAmt <= 0) continue;
+            await recordPaymentSplit(client, {
+                companyId, branchId: b.branch_id || 1,
+                billId: id, billNumber: b.bill_number,
+                billPurpose: b.bill_purpose, userId: req.user.id,
+                payment_date, mode: split.mode, amount: splitAmt,
+                reference: split.reference, apAccount
+            });
         }
 
         await client.query("COMMIT");
-        res.json({ success: true, message: "Payment recorded", newPaid, newBalance, newStatus });
+        res.json({ success: true, message: "Payment recorded", newPaid, newBalance, newStatus, splits: splits.length });
     } catch (err) {
-        if (client) {
-            try { await client.query("ROLLBACK"); } catch (_) {}
-        }
+        if (client) { try { await client.query("ROLLBACK"); } catch (_) {} }
         res.status(500).json({ error: err.message || "Payment failed" });
     } finally {
         if (client) client.release();
