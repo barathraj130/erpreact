@@ -43,47 +43,43 @@ router.get('/', authMiddleware, async (req, res) => {
     const blFilter  = applyAlias(rawFilter, 'bl');
 
     try {
-        // ── 1. Enriched cash-ledger rows ──────────────────────────────────────
-        // cash_ledger.reference_id links to transactions.id when the entry was
-        // created by processTransaction() (Record Transaction form).
-        // Loan / chit entries have no reference_id — we still show them raw.
+        // ── Read cash_ledger + bank_ledger using ONLY base-schema columns ─────
+        // We deliberately avoid reference_id (added via schemaUpdates, may not
+        // exist in production) and any JOIN to other tables, so this query
+        // works on every deployment regardless of migration state.
         const sql = `
             SELECT
-                ('CL-' || cl.id::text)                                     AS id,
+                ('CL-' || cl.id::text)  AS id,
                 cl.date,
-                COALESCE(t.type, cl.source)                                AS type,
-                cl.source                                                   AS reference_type,
+                cl.source               AS type,
+                cl.source               AS reference_type,
                 cl.amount,
-                'CASH'                                                      AS mode,
-                COALESCE(t.description, cl.source)                         AS description,
-                'in'                                                        AS ledger_direction,
-                COALESCE(ln.lender_name, t.party_name, t.description)      AS display_party,
-                COALESCE(ln.lender_name, t.party_name)                     AS party_name,
-                t.proof_url,
+                'CASH'                  AS mode,
+                cl.source               AS description,
+                'in'                    AS ledger_direction,
+                NULL                    AS display_party,
+                NULL                    AS party_name,
+                NULL                    AS proof_url,
                 cl.created_at
             FROM cash_ledger cl
-            LEFT JOIN transactions t  ON t.id  = cl.reference_id AND t.company_id = $1
-            LEFT JOIN lenders      ln ON ln.id = t.lender_id
             WHERE cl.company_id = $1 AND ${clFilter}
 
             UNION ALL
 
             SELECT
-                ('BL-' || bl.id::text)                                     AS id,
+                ('BL-' || bl.id::text)              AS id,
                 bl.date,
-                COALESCE(t.type, bl.source)                                AS type,
-                bl.source                                                   AS reference_type,
+                bl.source                            AS type,
+                bl.source                            AS reference_type,
                 bl.amount,
-                'BANK'                                                      AS mode,
-                COALESCE(bl.bank_name, t.description, bl.source)           AS description,
-                bl.direction                                                AS ledger_direction,
-                COALESCE(ln.lender_name, t.party_name, t.description)      AS display_party,
-                COALESCE(ln.lender_name, t.party_name)                     AS party_name,
-                t.proof_url,
+                'BANK'                               AS mode,
+                COALESCE(bl.bank_name, bl.source)    AS description,
+                bl.direction                         AS ledger_direction,
+                NULL                                 AS display_party,
+                NULL                                 AS party_name,
+                NULL                                 AS proof_url,
                 bl.created_at
             FROM bank_ledger bl
-            LEFT JOIN transactions t  ON t.id  = bl.reference_id AND t.company_id = $1
-            LEFT JOIN lenders      ln ON ln.id = t.lender_id
             WHERE bl.company_id = $1 AND ${blFilter}
 
             ORDER BY date DESC, created_at DESC
@@ -150,7 +146,7 @@ router.get('/debug', authMiddleware, async (req, res) => {
             db.pgGet(`SELECT COUNT(*) AS cnt FROM transactions WHERE company_id = $1`, [cid]),
             db.pgGet(`SELECT COUNT(*) AS cnt FROM cash_ledger  WHERE company_id = $1`, [cid]),
             db.pgGet(`SELECT COUNT(*) AS cnt FROM bank_ledger  WHERE company_id = $1`, [cid]),
-            db.pgGet(`SELECT id, company_id, branch_id, amount, type, reference_type, date, transaction_date, created_at FROM transactions WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, created_at FROM transactions WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
             db.pgGet(`SELECT id, company_id, branch_id, source, amount, direction, date, created_at FROM cash_ledger  WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
             db.pgGet(`SELECT id, company_id, branch_id, source, amount, direction, date, created_at FROM bank_ledger  WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
         ]);
