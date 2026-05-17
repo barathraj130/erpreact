@@ -288,24 +288,42 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         const purchaseNumber = await generatePurchaseNumber(client);
 
+        // Use the auto-generated purchaseNumber as the bill_number if none supplied.
+        // purchase_number column may not exist in all deployments — omit it from
+        // the base INSERT and add it via a best-effort SAVEPOINT UPDATE below.
+        const finalBillNumber = bill_number || purchaseNumber;
+
         const billRes = await client.query(`
             INSERT INTO purchase_bills
-            (company_id, branch_id, supplier_id, supplier_name, bill_number, purchase_number, bill_date,
+            (company_id, branch_id, supplier_id, supplier_name, bill_number, bill_date,
              sub_total, tax_total, cgst_total, sgst_total, igst_total, total_amount,
              discount_amount, gst_type, paid_amount, balance_amount, status, bill_type,
              file_url, broker_id, broker_commission_rate, bill_category, is_deleted)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,false)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,false)
             RETURNING id
         `, [
             companyId, safeBranchId, safeSupplierId,
             supplierRes.rows[0]?.name || supplier_name || "Unknown",
-            bill_number || purchaseNumber, purchaseNumber, bill_date || new Date(),
+            finalBillNumber, bill_date || new Date(),
             subTotal, taxTotal, cgstTotal, sgstTotal, igstTotal, netAmount,
             discount, gstType, paid, balance, status, bill_type || "TAX",
             fileUrl, safeBrokerId, safeBrokerCommission, bill_category || 'PRODUCT'
         ]);
 
         const billId = billRes.rows[0].id;
+
+        // Best-effort: write purchase_number column if it exists in this deployment
+        await client.query(`SAVEPOINT sp_purchase_number`);
+        try {
+            await client.query(
+                `UPDATE purchase_bills SET purchase_number = $1 WHERE id = $2`,
+                [purchaseNumber, billId]
+            );
+            await client.query(`RELEASE SAVEPOINT sp_purchase_number`);
+        } catch (_) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_purchase_number`);
+            await client.query(`RELEASE SAVEPOINT sp_purchase_number`);
+        }
 
         for (const pItem of processedItems) {
             await client.query(`
