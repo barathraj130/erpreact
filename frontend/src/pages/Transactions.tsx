@@ -40,7 +40,9 @@ const Transactions: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showNewTxModal, setShowNewTxModal] = useState(false);
   const [search, setSearch] = useState("");
-  
+  // Financial summary — sourced from cash+bank ledger (same as Ledgers page)
+  const [summary, setSummary] = useState({ total_inflow: 0, total_outflow: 0, net_balance: 0 });
+
   const [formData, setFormData] = useState<any>({
     type: "CUSTOMER_PAYMENT",
     amount: "",
@@ -64,9 +66,17 @@ const Transactions: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch("/transactions");
-      const data = await res.json();
+      // Fetch audit trail + financial summary in parallel
+      const [txRes, sumRes] = await Promise.all([
+        apiFetch("/transactions"),
+        apiFetch("/transactions/financial-summary"),
+      ]);
+      const data = await txRes.json();
       setTransactions(Array.isArray(data) ? data : []);
+      if (sumRes.ok) {
+        const sumData = await sumRes.json();
+        if (sumData && !sumData.error) setSummary(sumData);
+      }
     } catch (err) {
       console.error("Failed to fetch transactions", err);
     } finally {
@@ -207,36 +217,33 @@ const Transactions: React.FC = () => {
         </button>
       </header>
 
-      {/* Inflow = credit types (customer receipts, loans received) */}
-      {/* Outflow = debit types (payments out, repayments) */}
-      {(() => {
-        const INFLOW_TYPES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION', 'LOAN_DISBURSEMENT', 'LOAN_RECEIVED'];
-        const OUTFLOW_TYPES = ['SUPPLIER_PAYMENT', 'EXPENSE_PAYMENT', 'SALARY_PAYMENT', 'ADVANCE_PAYMENT', 'LOAN_REPAYMENT', 'EB_UTILITY_BILL', 'FESTIVAL_EXPENSE', 'DONATION', 'CHIT_INVESTMENT', 'MISC_EXPENSE', 'CHIT_INSTALLMENT'];
-        const inflow = transactions.filter(t => INFLOW_TYPES.includes(t.type) || INFLOW_TYPES.includes(t.reference_type || '')).reduce((a, c) => a + Number(c.amount), 0);
-        const outflow = transactions.filter(t => OUTFLOW_TYPES.includes(t.type) || OUTFLOW_TYPES.includes(t.reference_type || '')).reduce((a, c) => a + Number(c.amount), 0);
-        return (
-          <div className="stats-grid">
-            <div className="stat-card card-emerald">
-              <FaWallet className="stat-icon" />
-              <span className="label">Total Inflow</span>
-              <span className="value">₹ {inflow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-              <span className="stat-sub">Account Credit</span>
-            </div>
-            <div className="stat-card card-rose">
-              <FaMoneyBillWave className="stat-icon" />
-              <span className="label">Total Outflow</span>
-              <span className="value">₹ {outflow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-              <span className="stat-sub">Account Debit</span>
-            </div>
-            <div className="stat-card card-indigo">
-              <FaHistory className="stat-icon" />
-              <span className="label">Net Balance</span>
-              <span className="value">₹ {(inflow - outflow).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-              <span className="stat-sub">Current Liquidity</span>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Stats sourced from cash+bank ledger (single source of truth = same as Ledgers page) */}
+      <div className="stats-grid">
+        <div className="stat-card card-emerald">
+          <FaWallet className="stat-icon" />
+          <span className="label">Total Inflow</span>
+          <span className="value">
+            {loading ? '...' : `₹ ${summary.total_inflow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+          </span>
+          <span className="stat-sub">Cash + Bank In</span>
+        </div>
+        <div className="stat-card card-rose">
+          <FaMoneyBillWave className="stat-icon" />
+          <span className="label">Total Outflow</span>
+          <span className="value">
+            {loading ? '...' : `₹ ${summary.total_outflow.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+          </span>
+          <span className="stat-sub">Cash + Bank Out</span>
+        </div>
+        <div className="stat-card card-indigo">
+          <FaHistory className="stat-icon" />
+          <span className="label">Net Balance</span>
+          <span className="value">
+            {loading ? '...' : `₹ ${summary.net_balance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+          </span>
+          <span className="stat-sub">Live Liquidity</span>
+        </div>
+      </div>
 
       <div className="card" style={{ padding: "0", overflow: "hidden" }}>
         <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--erp-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -283,50 +290,85 @@ const Transactions: React.FC = () => {
              </thead>
              <tbody>
                 {(() => {
-                  const INFLOW_TYPES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'INVOICE', 'GIFT_CONTRIBUTION', 'LOAN_DISBURSEMENT', 'LOAN_RECEIVED'];
-                  return transactions
-                    .filter(t =>
-                      t.description?.toLowerCase().includes(search.toLowerCase()) ||
-                      t.type?.toLowerCase().includes(search.toLowerCase()) ||
-                      (t.display_party || t.party_name || t.lender_name || t.user_name || '').toLowerCase().includes(search.toLowerCase())
-                    )
-                    .map(tx => {
-                      const isInflow = INFLOW_TYPES.includes(tx.type) || INFLOW_TYPES.includes(tx.reference_type || '');
-                      const partyLabel = tx.display_party || tx.party_name || tx.lender_name || tx.user_name || null;
-                      const typeLabel = (tx.type || tx.reference_type || 'GENERAL').replace(/_/g, ' ');
-                      return (
-                        <tr key={tx.id}>
-                          <td className="timestamp-cell">
-                            <span className="primary">{new Date(tx.date).toLocaleDateString('en-IN')}</span>
-                            <span className="secondary">TXN-{tx.id}</span>
-                          </td>
-                          <td>
-                            <span className={`status-badge status-${isInflow ? 'success' : 'error'}`}>
-                              {typeLabel}
-                            </span>
-                          </td>
-                          <td className="text-body">
-                            {partyLabel && <div style={{ fontWeight: 500 }}>{partyLabel}</div>}
-                            <div style={{ fontSize: partyLabel ? '0.78rem' : '0.9rem', color: partyLabel ? 'var(--erp-text-secondary)' : 'inherit', fontWeight: partyLabel ? 400 : 500 }}>{tx.description}</div>
-                          </td>
-                          <td className="text-center">
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "var(--erp-text-secondary)" }}>
-                              {(tx.mode || '').toUpperCase() === 'BANK' ? <FaUniversity size={14} /> : <FaWallet size={14} />}
-                              <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{tx.mode || '—'}</span>
-                            </div>
-                          </td>
-                          <td className={`currency-cell ${isInflow ? 'positive' : 'negative'}`}>
-                            {isInflow ? '↑ ' : '↓ '} ₹{Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="text-center">
-                            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                              <button className="btn btn-secondary" style={{ padding: "6px" }} title="Download Voucher" onClick={() => downloadTransactionPDF(tx)}><FaFileDownload /></button>
-                              {tx.proof_url && <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence" onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}${tx.proof_url}`, '_blank')}><FaEye /></button>}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    });
+                  const INFLOW_TYPES = [
+                    'CUSTOMER_PAYMENT','RECEIPT','INVOICE','GIFT_CONTRIBUTION',
+                    'LOAN_DISBURSEMENT','LOAN_RECEIVED','CHIT_AUCTION',
+                  ];
+                  const OUTFLOW_TYPES = [
+                    'SUPPLIER_PAYMENT','EXPENSE_PAYMENT','SALARY_PAYMENT',
+                    'ADVANCE_PAYMENT','LOAN_REPAYMENT','EB_UTILITY_BILL',
+                    'FESTIVAL_EXPENSE','DONATION','CHIT_INVESTMENT','MISC_EXPENSE',
+                    'CHIT_INSTALLMENT',
+                  ];
+
+                  const filtered = transactions.filter(t => {
+                    const haystack = [
+                      t.description, t.type, t.reference_type,
+                      t.display_party, t.party_name, t.lender_name, t.user_name
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    return haystack.includes(search.toLowerCase());
+                  });
+
+                  if (filtered.length === 0 && !loading) {
+                    return (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--erp-text-secondary)' }}>
+                          No transactions found. Record a transaction or check back after activity.
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filtered.map(tx => {
+                    const ledgerDir = (tx as any).ledger_direction;
+                    const isInflow = ledgerDir
+                      ? ledgerDir === 'in'
+                      : (INFLOW_TYPES.includes(tx.type) || INFLOW_TYPES.includes(tx.reference_type || ''));
+                    const partyLabel = tx.display_party || tx.party_name || tx.lender_name || tx.user_name || null;
+                    const typeLabel  = (tx.type || tx.reference_type || 'GENERAL').replace(/_/g, ' ');
+                    const txRef      = String(tx.id).startsWith('CL-') || String(tx.id).startsWith('BL-')
+                      ? tx.id : 'TXN-' + tx.id;
+                    return (
+                      <tr key={tx.id}>
+                        <td className="timestamp-cell">
+                          <span className="primary">{new Date(tx.date).toLocaleDateString('en-IN')}</span>
+                          <span className="secondary">{txRef}</span>
+                        </td>
+                        <td>
+                          <span className={`status-badge status-${isInflow ? 'success' : 'error'}`}>
+                            {typeLabel}
+                          </span>
+                        </td>
+                        <td className="text-body">
+                          {partyLabel && <div style={{ fontWeight: 500 }}>{partyLabel}</div>}
+                          <div style={{ fontSize: partyLabel ? '0.78rem' : '0.9rem', color: partyLabel ? 'var(--erp-text-secondary)' : 'inherit', fontWeight: partyLabel ? 400 : 500 }}>
+                            {tx.description}
+                          </div>
+                        </td>
+                        <td className="text-center">
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "var(--erp-text-secondary)" }}>
+                            {(tx.mode || '').toUpperCase() === 'BANK' ? <FaUniversity size={14} /> : <FaWallet size={14} />}
+                            <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>{tx.mode || '-'}</span>
+                          </div>
+                        </td>
+                        <td className={`currency-cell ${isInflow ? 'positive' : 'negative'}`}>
+                          {isInflow ? '(+) ' : '(-) '}
+                          Rs {Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-center">
+                          <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                            <button className="btn btn-secondary" style={{ padding: "6px" }} title="Download Voucher" onClick={() => downloadTransactionPDF(tx)}><FaFileDownload /></button>
+                            {tx.proof_url && (
+                              <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence"
+                                onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}${tx.proof_url}`, '_blank')}>
+                                <FaEye />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
                 })()}
              </tbody>
           </table>

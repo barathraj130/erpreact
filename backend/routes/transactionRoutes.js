@@ -91,10 +91,88 @@ router.get('/', authMiddleware, async (req, res) => {
             party_name:    r.display_party || r.lender_name || r.user_name || null,
         }));
 
+        // ── FALLBACK: if accounting-engine recorded 0 rows, expose cash/bank
+        //    ledger entries as synthetic transactions so the page is never empty.
+        if (normalised.length === 0) {
+            const ledgerRows = await db.pgAll(`
+                SELECT
+                    ('CL-' || cl.id::text)         AS id,
+                    cl.date,
+                    cl.source                       AS type,
+                    cl.source                       AS reference_type,
+                    cl.amount,
+                    cl.source                       AS description,
+                    'CASH'                          AS mode,
+                    NULL                            AS display_party,
+                    NULL                            AS party_name,
+                    cl.created_at,
+                    NULL                            AS proof_url,
+                    'in'                            AS ledger_direction
+                FROM cash_ledger cl
+                WHERE cl.company_id = $1
+
+                UNION ALL
+
+                SELECT
+                    ('BL-' || bl.id::text)         AS id,
+                    bl.date,
+                    bl.source                       AS type,
+                    bl.source                       AS reference_type,
+                    bl.amount,
+                    COALESCE(bl.bank_name, bl.source) AS description,
+                    'BANK'                          AS mode,
+                    NULL                            AS display_party,
+                    NULL                            AS party_name,
+                    bl.created_at,
+                    NULL                            AS proof_url,
+                    bl.direction                    AS ledger_direction
+                FROM bank_ledger bl
+                WHERE bl.company_id = $1
+
+                ORDER BY date DESC, created_at DESC
+            `, [companyId]);
+
+            const synthNorm = ledgerRows.map(r => ({
+                ...r,
+                date: r.date || r.created_at,
+                amount: Number(r.amount) || 0,
+            }));
+            return res.json(synthNorm);
+        }
+
         res.json(normalised);
     } catch (err) {
         console.error("Fetch Transactions Error:", err);
         res.status(500).json({ error: "Failed to fetch transactions" });
+    }
+});
+
+// ── FINANCIAL SUMMARY ────────────────────────────────────────────────────────
+// Single source of truth for inflow/outflow stats — reads directly from
+// cash_ledger + bank_ledger (same tables the Ledgers page uses).
+// This ensures Transactions stats cards always match the Ledgers page.
+router.get('/financial-summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchFilter = getBranchFilter(req);
+
+    try {
+        const row = await db.pgGet(`
+            SELECT
+                COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount ELSE 0 END), 0) AS total_inflow,
+                COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS total_outflow
+            FROM (
+                SELECT amount, direction FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}
+                UNION ALL
+                SELECT amount, direction FROM bank_ledger  WHERE company_id = $1 AND ${branchFilter}
+            ) combined
+        `, [companyId]);
+
+        const inflow  = Number(row?.total_inflow  || 0);
+        const outflow = Number(row?.total_outflow || 0);
+        res.json({ total_inflow: inflow, total_outflow: outflow, net_balance: inflow - outflow });
+    } catch (err) {
+        console.error("Financial summary error:", err);
+        res.status(500).json({ error: "Failed to fetch financial summary" });
     }
 });
 
