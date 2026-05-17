@@ -23,9 +23,12 @@ const LoanManagement: React.FC = () => {
     setLoading(true);
     try {
       const res = await financeApi.getLoans();
-      setLoans(Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []);
-    } catch (err) {
-      console.error("Failed to fetch loans", err);
+      // handleResponse wraps as { data: [...] }
+      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      console.log('Loans API →', list.length, 'records', list[0] ?? '(empty)');
+      setLoans(list);
+    } catch (err: any) {
+      console.error("Failed to fetch loans:", err?.message || err);
     } finally {
       setLoading(false);
     }

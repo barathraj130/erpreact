@@ -9,36 +9,41 @@ const router = express.Router();
 
 router.get('/', authMiddleware, async (req, res) => {
     try {
-        const companyId = req.user.active_company_id;
+        const companyId = req.user?.active_company_id || req.user?.company_id;
+        if (!companyId) return res.status(400).json({ error: 'No company context in token' });
+
+        // Minimal safe query — no optional columns in WHERE/ORDER to avoid crashes
+        // when new columns haven't been migrated yet on the deployed DB
         const loans = await db.pgAll(`
             SELECT
                 l.*,
-                COALESCE(ln.lender_name, l.party_name, 'Unknown')  AS lender_name,
-                COALESCE(ln.lender_type, l.party_type, 'Bank')      AS lender_type,
-                ln.phone                                             AS lender_phone,
-                COALESCE(l.loan_type, l.party_type, 'BANK')         AS loan_type,
-                COALESCE(l.principal_outstanding, l.principal_amount) AS remaining_principal,
+                COALESCE(ln.lender_name, l.party_name, 'Unknown')    AS lender_name,
+                COALESCE(ln.lender_type, l.party_type, 'Bank')        AS lender_type,
+                ln.phone                                               AS lender_phone,
+                COALESCE(l.loan_type, l.party_type, 'BANK')           AS loan_type,
+                COALESCE(l.principal_outstanding, l.principal_amount)  AS remaining_principal,
                 COALESCE((
                     SELECT SUM(principal_component) FROM loan_payments
-                    WHERE loan_id = l.id AND company_id = $1
+                    WHERE loan_id = l.id
                 ), 0) AS paid_principal,
                 COALESCE((
                     SELECT SUM(total_amount) FROM loan_payments
-                    WHERE loan_id = l.id AND company_id = $1
+                    WHERE loan_id = l.id
                 ), 0) AS total_paid,
                 COALESCE((
                     SELECT SUM(interest_component) FROM loan_payments
-                    WHERE loan_id = l.id AND company_id = $1
+                    WHERE loan_id = l.id
                 ), 0) AS total_interest_paid
             FROM loans l
             LEFT JOIN lenders ln ON l.lender_id = ln.id
             WHERE l.company_id = $1
-              AND (l.is_deleted IS NULL OR l.is_deleted = false)
-            ORDER BY l.created_at DESC NULLS LAST, l.start_date DESC
+            ORDER BY l.id DESC
         `, [companyId]);
+
+        console.log(`GET /loans → company=${companyId} rows=${loans.length}`);
         res.json(loans);
     } catch (err) {
-        console.error('GET /loans error:', err);
+        console.error('GET /loans error:', err.message);
         res.status(500).json({ error: 'Failed to fetch loans: ' + err.message });
     }
 });

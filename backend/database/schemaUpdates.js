@@ -468,6 +468,7 @@ export const runSchemaUpdates = async () => {
         `);
 
         // FIX 6: Sync lender current_balance = sum of active loan principals
+        // Only use stable columns (status) — is_deleted added above but may not exist yet on older DBs
         await db.query(`
             UPDATE lenders le
             SET current_balance = (
@@ -475,7 +476,6 @@ export const runSchemaUpdates = async () => {
                 FROM loans l
                 WHERE l.lender_id = le.id
                   AND l.status = 'ACTIVE'
-                  AND (l.is_deleted IS NULL OR l.is_deleted = false)
             )
         `);
 

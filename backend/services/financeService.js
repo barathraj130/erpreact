@@ -184,7 +184,7 @@ export const createLoan = async (user, loanData) => {
                         SELECT COALESCE(SUM(COALESCE(principal_outstanding, principal_amount)), 0)
                         FROM loans
                         WHERE lender_id = $1 AND status = 'ACTIVE'
-                          AND (is_deleted IS NULL OR is_deleted = false)
+                          
                     ) WHERE id = $1
                 `, [loan.lender_id]);
                 await client.query(`RELEASE SAVEPOINT sp_lender_sync_create`);
@@ -334,7 +334,7 @@ export const recordLoanRepayment = async (user, paymentData) => {
                         SELECT COALESCE(SUM(COALESCE(principal_outstanding, principal_amount)), 0)
                         FROM loans
                         WHERE lender_id = $1 AND status = 'ACTIVE'
-                          AND (is_deleted IS NULL OR is_deleted = false)
+                          
                     ) WHERE id = $1
                 `, [lenderId]);
             }
