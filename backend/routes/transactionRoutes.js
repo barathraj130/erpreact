@@ -9,6 +9,10 @@ const router = express.Router();
  * Direct transaction routes
  */
 
+// Helper: convert branch filter alias from 't.' to the given table alias
+const applyAlias = (filter, alias) =>
+    filter.includes('t.') ? filter.replace(/\bt\./g, alias + '.') : filter;
+
 // Helper for branch filtering
 const getBranchFilter = (req) => {
     const headerBranch = req.headers['x-branch-id'];
@@ -27,123 +31,80 @@ const getBranchFilter = (req) => {
     return '1=1';
 };
 
-// GET /api/transactions - Get all transactions (with optional filters)
+// ── GET /api/transactions ─────────────────────────────────────────────────────
+// Single Source of Truth: reads cash_ledger + bank_ledger (same tables the
+// financial-summary and Ledgers page use), enriched with transactions table
+// metadata where available.  This guarantees the audit trail always matches
+// the summary cards — no fallback logic required.
 router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { lender_id, user_id, type, category } = req.query;
-    const branchFilter = getBranchFilter(req);
+    const rawFilter = getBranchFilter(req);
+    const clFilter  = applyAlias(rawFilter, 'cl');
+    const blFilter  = applyAlias(rawFilter, 'bl');
 
     try {
-        let sql = `
-            SELECT DISTINCT ON (t.id)
-                   t.*,
-                   l.lender_name,
-                   u.username AS user_name,
-                   COALESCE(l.lender_name, u.username, t.party_name) AS display_party,
-                   COALESCE(NULLIF(t.amount, 0),
-                       (SELECT SUM(tl.credit_amount) FROM transaction_lines tl WHERE tl.transaction_id = t.id)
-                   ) AS computed_amount
-            FROM transactions t
-            LEFT JOIN lenders l ON l.id = t.lender_id
-            LEFT JOIN users   u ON u.id = t.user_id
-            WHERE t.company_id = $1 AND ${branchFilter}
+        // ── 1. Enriched cash-ledger rows ──────────────────────────────────────
+        // cash_ledger.reference_id links to transactions.id when the entry was
+        // created by processTransaction() (Record Transaction form).
+        // Loan / chit entries have no reference_id — we still show them raw.
+        const sql = `
+            SELECT
+                ('CL-' || cl.id::text)                                     AS id,
+                cl.date,
+                COALESCE(t.type, cl.source)                                AS type,
+                cl.source                                                   AS reference_type,
+                cl.amount,
+                'CASH'                                                      AS mode,
+                COALESCE(t.description, cl.source)                         AS description,
+                'in'                                                        AS ledger_direction,
+                COALESCE(ln.lender_name, t.party_name, t.description)      AS display_party,
+                COALESCE(ln.lender_name, t.party_name)                     AS party_name,
+                t.proof_url,
+                cl.created_at
+            FROM cash_ledger cl
+            LEFT JOIN transactions t  ON t.id  = cl.reference_id AND t.company_id = $1
+            LEFT JOIN lenders      ln ON ln.id = t.lender_id
+            WHERE cl.company_id = $1 AND ${clFilter}
+
+            UNION ALL
+
+            SELECT
+                ('BL-' || bl.id::text)                                     AS id,
+                bl.date,
+                COALESCE(t.type, bl.source)                                AS type,
+                bl.source                                                   AS reference_type,
+                bl.amount,
+                'BANK'                                                      AS mode,
+                COALESCE(bl.bank_name, t.description, bl.source)           AS description,
+                bl.direction                                                AS ledger_direction,
+                COALESCE(ln.lender_name, t.party_name, t.description)      AS display_party,
+                COALESCE(ln.lender_name, t.party_name)                     AS party_name,
+                t.proof_url,
+                bl.created_at
+            FROM bank_ledger bl
+            LEFT JOIN transactions t  ON t.id  = bl.reference_id AND t.company_id = $1
+            LEFT JOIN lenders      ln ON ln.id = t.lender_id
+            WHERE bl.company_id = $1 AND ${blFilter}
+
+            ORDER BY date DESC, created_at DESC
         `;
 
-        const params = [companyId];
-        let paramCount = 2;
+        const rows = await db.pgAll(sql, [companyId]);
+        console.log(`📊 Transactions (cash+bank ledger) returned: ${rows.length} rows`);
 
-        if (lender_id) {
-            sql += ` AND t.lender_id = $${paramCount++}`;
-            params.push(lender_id);
-        }
-        if (user_id) {
-            sql += ` AND t.user_id = $${paramCount++}`;
-            params.push(user_id);
-        }
-        if (type) {
-            sql += ` AND t.type = $${paramCount++}`;
-            params.push(type);
-        }
-        if (category) {
-            sql += ` AND t.category = $${paramCount++}`;
-            params.push(category);
-        }
-
-        sql += ` ORDER BY t.id DESC, t.created_at DESC`;
-
-        console.log('📊 SQL Query:', sql);
-        console.log('📊 Params:', params);
-
-        const rows = await db.pgAll(sql, params);
-        
-        console.log('📊 Rows returned:', rows?.length || 0);
-
-        // Normalise date + amount for accounting-engine transactions
         const normalised = rows.map(r => ({
             ...r,
-            date: r.transaction_date || r.date || r.created_at,
-            // computed_amount = COALESCE(amount, sum of transaction_lines credits)
-            amount: Number(r.computed_amount) || Number(r.amount) || 0,
-            // Normalise type — accounting engine rows have reference_type, not type
-            type: r.type || r.reference_type || 'GENERAL',
-            // display_party is the authoritative resolved name from SQL COALESCE
+            date:         r.date,
+            amount:       Number(r.amount) || 0,
+            type:         r.type || r.reference_type || 'GENERAL',
             display_party: r.display_party || null,
-            party_name:    r.display_party || r.lender_name || r.user_name || null,
+            party_name:   r.display_party || r.party_name || null,
         }));
-
-        // ── FALLBACK: if accounting-engine recorded 0 rows, expose cash/bank
-        //    ledger entries as synthetic transactions so the page is never empty.
-        if (normalised.length === 0) {
-            const ledgerRows = await db.pgAll(`
-                SELECT
-                    ('CL-' || cl.id::text)         AS id,
-                    cl.date,
-                    cl.source                       AS type,
-                    cl.source                       AS reference_type,
-                    cl.amount,
-                    cl.source                       AS description,
-                    'CASH'                          AS mode,
-                    NULL                            AS display_party,
-                    NULL                            AS party_name,
-                    cl.date                         AS created_at,
-                    NULL                            AS proof_url,
-                    'in'                            AS ledger_direction
-                FROM cash_ledger cl
-                WHERE cl.company_id = $1 AND ${branchFilter.includes('t.') ? branchFilter.replace(/\bt\./g, 'cl.') : branchFilter}
-
-                UNION ALL
-
-                SELECT
-                    ('BL-' || bl.id::text)         AS id,
-                    bl.date,
-                    bl.source                       AS type,
-                    bl.source                       AS reference_type,
-                    bl.amount,
-                    COALESCE(bl.bank_name, bl.source) AS description,
-                    'BANK'                          AS mode,
-                    NULL                            AS display_party,
-                    NULL                            AS party_name,
-                    bl.date                         AS created_at,
-                    NULL                            AS proof_url,
-                    bl.direction                    AS ledger_direction
-                FROM bank_ledger bl
-                WHERE bl.company_id = $1 AND ${branchFilter.includes('t.') ? branchFilter.replace(/\bt\./g, 'bl.') : branchFilter}
-
-                ORDER BY date DESC
-            `, [companyId]);
-
-            const synthNorm = ledgerRows.map(r => ({
-                ...r,
-                date: r.date,
-                amount: Number(r.amount) || 0,
-            }));
-            return res.json(synthNorm);
-        }
 
         res.json(normalised);
     } catch (err) {
-        console.error("Fetch Transactions Error:", err);
-        res.status(500).json({ error: "Failed to fetch transactions" });
+        console.error('Fetch Transactions Error:', err);
+        res.status(500).json({ error: 'Failed to fetch transactions' });
     }
 });
 
@@ -153,7 +114,9 @@ router.get('/', authMiddleware, async (req, res) => {
 // This ensures Transactions stats cards always match the Ledgers page.
 router.get('/financial-summary', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const branchFilter = getBranchFilter(req);
+    const rawFilter = getBranchFilter(req);
+    const clFilter  = applyAlias(rawFilter, 'cl');
+    const blFilter  = applyAlias(rawFilter, 'bl');
 
     try {
         const row = await db.pgGet(`
@@ -161,9 +124,9 @@ router.get('/financial-summary', authMiddleware, async (req, res) => {
                 COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount ELSE 0 END), 0) AS total_inflow,
                 COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS total_outflow
             FROM (
-                SELECT amount, direction FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}
+                SELECT amount, direction FROM cash_ledger cl WHERE cl.company_id = $1 AND ${clFilter}
                 UNION ALL
-                SELECT amount, direction FROM bank_ledger  WHERE company_id = $1 AND ${branchFilter}
+                SELECT amount, direction FROM bank_ledger bl WHERE bl.company_id = $1 AND ${blFilter}
             ) combined
         `, [companyId]);
 
@@ -173,6 +136,42 @@ router.get('/financial-summary', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error("Financial summary error:", err);
         res.status(500).json({ error: "Failed to fetch financial summary" });
+    }
+});
+
+// ── DEBUG ENDPOINT ────────────────────────────────────────────────────────────
+// GET /api/transactions/debug — raw DB counts so we can diagnose empty tables.
+// Admin only. Does NOT filter by branch so you see everything.
+router.get('/debug', authMiddleware, async (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const cid = req.user.active_company_id;
+    try {
+        const [txCount, clCount, blCount, latestTx, latestCl, latestBl] = await Promise.all([
+            db.pgGet(`SELECT COUNT(*) AS cnt FROM transactions WHERE company_id = $1`, [cid]),
+            db.pgGet(`SELECT COUNT(*) AS cnt FROM cash_ledger  WHERE company_id = $1`, [cid]),
+            db.pgGet(`SELECT COUNT(*) AS cnt FROM bank_ledger  WHERE company_id = $1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, amount, type, reference_type, date, transaction_date, created_at FROM transactions WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, source, amount, direction, date, created_at FROM cash_ledger  WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, source, amount, direction, date, created_at FROM bank_ledger  WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+        ]);
+        res.json({
+            company_id: cid,
+            user_branch_id: req.user.branch_id,
+            user_role: req.user.role,
+            counts: {
+                transactions: Number(txCount?.cnt || 0),
+                cash_ledger:  Number(clCount?.cnt || 0),
+                bank_ledger:  Number(blCount?.cnt || 0),
+            },
+            latest: {
+                transaction: latestTx || null,
+                cash_ledger: latestCl || null,
+                bank_ledger: latestBl || null,
+            }
+        });
+    } catch (err) {
+        console.error('Debug endpoint error:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
