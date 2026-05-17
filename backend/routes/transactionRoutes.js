@@ -105,11 +105,11 @@ router.get('/', authMiddleware, async (req, res) => {
                     'CASH'                          AS mode,
                     NULL                            AS display_party,
                     NULL                            AS party_name,
-                    cl.created_at,
+                    cl.date                         AS created_at,
                     NULL                            AS proof_url,
                     'in'                            AS ledger_direction
                 FROM cash_ledger cl
-                WHERE cl.company_id = $1
+                WHERE cl.company_id = $1 AND ${branchFilter.includes('t.') ? branchFilter.replace(/\bt\./g, 'cl.') : branchFilter}
 
                 UNION ALL
 
@@ -123,18 +123,18 @@ router.get('/', authMiddleware, async (req, res) => {
                     'BANK'                          AS mode,
                     NULL                            AS display_party,
                     NULL                            AS party_name,
-                    bl.created_at,
+                    bl.date                         AS created_at,
                     NULL                            AS proof_url,
                     bl.direction                    AS ledger_direction
                 FROM bank_ledger bl
-                WHERE bl.company_id = $1
+                WHERE bl.company_id = $1 AND ${branchFilter.includes('t.') ? branchFilter.replace(/\bt\./g, 'bl.') : branchFilter}
 
-                ORDER BY date DESC, created_at DESC
+                ORDER BY date DESC
             `, [companyId]);
 
             const synthNorm = ledgerRows.map(r => ({
                 ...r,
-                date: r.date || r.created_at,
+                date: r.date,
                 amount: Number(r.amount) || 0,
             }));
             return res.json(synthNorm);
