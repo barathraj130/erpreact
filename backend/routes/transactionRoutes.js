@@ -38,16 +38,14 @@ router.get('/', authMiddleware, async (req, res) => {
             SELECT DISTINCT ON (t.id)
                    t.*,
                    l.lender_name,
-                   s.name  AS supplier_name,
                    u.username AS user_name,
-                   COALESCE(l.lender_name, s.name, u.username, t.party_name) AS display_party,
+                   COALESCE(l.lender_name, u.username, t.party_name) AS display_party,
                    COALESCE(NULLIF(t.amount, 0),
                        (SELECT SUM(tl.credit_amount) FROM transaction_lines tl WHERE tl.transaction_id = t.id)
                    ) AS computed_amount
             FROM transactions t
-            LEFT JOIN lenders   l ON l.id = t.lender_id
-            LEFT JOIN suppliers s ON s.id = t.supplier_id
-            LEFT JOIN users     u ON u.id = t.user_id
+            LEFT JOIN lenders l ON l.id = t.lender_id
+            LEFT JOIN users   u ON u.id = t.user_id
             WHERE t.company_id = $1 AND ${branchFilter}
         `;
 
@@ -90,7 +88,7 @@ router.get('/', authMiddleware, async (req, res) => {
             type: r.type || r.reference_type || 'GENERAL',
             // display_party is the authoritative resolved name from SQL COALESCE
             display_party: r.display_party || null,
-            party_name:    r.display_party || r.lender_name || r.supplier_name || r.user_name || null,
+            party_name:    r.display_party || r.lender_name || r.user_name || null,
         }));
 
         res.json(normalised);

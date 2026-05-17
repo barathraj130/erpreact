@@ -31,7 +31,6 @@ interface Transaction {
   created_at?: string;
   display_party?: string;
   lender_name?: string;
-  supplier_name?: string;
   user_name?: string;
   party_name?: string;
 }
