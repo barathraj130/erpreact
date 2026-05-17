@@ -16,15 +16,46 @@ async function generatePurchaseNumber(client) {
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
     const paddedMonth = String(month).padStart(2, '0');
-    const result = await client.query(`
-        INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
-        VALUES ('purchase', 'PUR', $1, $2, 1)
-        ON CONFLICT (bill_type, year, month)
-        DO UPDATE SET last_number = invoice_number_series.last_number + 1
-        RETURNING last_number
-    `, [year, month]);
-    const num = String(result.rows[0].last_number).padStart(3, '0');
-    return `PUR/${year}/${paddedMonth}/${num}`;
+
+    // Ensure the series table exists before using it (production may not have run migrations)
+    await client.query(`SAVEPOINT sp_series_ddl`);
+    try {
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS invoice_number_series (
+                id        SERIAL PRIMARY KEY,
+                bill_type VARCHAR(50) NOT NULL,
+                prefix    VARCHAR(20),
+                year      INTEGER     NOT NULL,
+                month     INTEGER     NOT NULL,
+                last_number INTEGER   NOT NULL DEFAULT 0,
+                UNIQUE (bill_type, year, month)
+            )
+        `);
+        await client.query(`RELEASE SAVEPOINT sp_series_ddl`);
+    } catch (e) {
+        await client.query(`ROLLBACK TO SAVEPOINT sp_series_ddl`);
+        await client.query(`RELEASE SAVEPOINT sp_series_ddl`);
+        // Table creation failed — fall back to timestamp-based number
+        const ts = Date.now().toString().slice(-6);
+        console.warn(`[purchaseBill] invoice_number_series unavailable, using fallback: ${ts}`);
+        return `PUR/${year}/${paddedMonth}/${ts}`;
+    }
+
+    try {
+        const result = await client.query(`
+            INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
+            VALUES ('purchase', 'PUR', $1, $2, 1)
+            ON CONFLICT (bill_type, year, month)
+            DO UPDATE SET last_number = invoice_number_series.last_number + 1
+            RETURNING last_number
+        `, [year, month]);
+        const num = String(result.rows[0].last_number).padStart(3, '0');
+        return `PUR/${year}/${paddedMonth}/${num}`;
+    } catch (e) {
+        const ts = Date.now().toString().slice(-6);
+        console.warn(`[purchaseBill] series INSERT failed, fallback: ${ts}`);
+        return `PUR/${year}/${paddedMonth}/${ts}`;
+    }
 }
 
 const sanitizeInt = (val) => {
