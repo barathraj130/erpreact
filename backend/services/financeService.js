@@ -175,6 +175,25 @@ export const createLoan = async (user, loanData) => {
             }
         }
 
+        // FIX 6: Sync lender outstanding balance after loan creation
+        if (loan.lender_id) {
+            await client.query(`SAVEPOINT sp_lender_sync_create`);
+            try {
+                await client.query(`
+                    UPDATE lenders SET current_balance = (
+                        SELECT COALESCE(SUM(COALESCE(principal_outstanding, principal_amount)), 0)
+                        FROM loans
+                        WHERE lender_id = $1 AND status = 'ACTIVE'
+                          AND (is_deleted IS NULL OR is_deleted = false)
+                    ) WHERE id = $1
+                `, [loan.lender_id]);
+                await client.query(`RELEASE SAVEPOINT sp_lender_sync_create`);
+            } catch (_) {
+                await client.query(`ROLLBACK TO SAVEPOINT sp_lender_sync_create`);
+                await client.query(`RELEASE SAVEPOINT sp_lender_sync_create`);
+            }
+        }
+
         await client.query('COMMIT');
         return loan;
     } catch (err) {
@@ -302,6 +321,27 @@ export const recordLoanRepayment = async (user, paymentData) => {
                  VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
                 [companyId, branchId, total, paymentData.payment_date]
             );
+        }
+
+        // FIX 6: Sync lender outstanding balance after every repayment
+        await client.query(`SAVEPOINT sp_lender_sync_repay`);
+        try {
+            const loanRow = await client.query(`SELECT lender_id FROM loans WHERE id = $1`, [paymentData.loan_id]);
+            const lenderId = loanRow.rows[0]?.lender_id;
+            if (lenderId) {
+                await client.query(`
+                    UPDATE lenders SET current_balance = (
+                        SELECT COALESCE(SUM(COALESCE(principal_outstanding, principal_amount)), 0)
+                        FROM loans
+                        WHERE lender_id = $1 AND status = 'ACTIVE'
+                          AND (is_deleted IS NULL OR is_deleted = false)
+                    ) WHERE id = $1
+                `, [lenderId]);
+            }
+            await client.query(`RELEASE SAVEPOINT sp_lender_sync_repay`);
+        } catch (_) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_lender_sync_repay`);
+            await client.query(`RELEASE SAVEPOINT sp_lender_sync_repay`);
         }
 
         await client.query('COMMIT');

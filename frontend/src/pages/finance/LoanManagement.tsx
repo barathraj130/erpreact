@@ -179,13 +179,15 @@ const LoanManagement: React.FC = () => {
     l.lender_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // FIX 3: Stats use only ACTIVE loans (not filtered by search)
+  const activeLoans = loans.filter(l => l.status === 'ACTIVE');
   const stats = {
-    totalLiability: filteredLoans
+    totalLiability: activeLoans
       .reduce((acc, curr) => acc + (Number(curr.remaining_principal ?? curr.principal_amount) || 0), 0),
-    avgRate: filteredLoans.length > 0
-      ? filteredLoans.reduce((acc, curr) => acc + (Number(curr.interest_rate) || 0), 0) / filteredLoans.length
+    avgRate: activeLoans.length > 0
+      ? activeLoans.reduce((acc, curr) => acc + (Number(curr.interest_rate) || 0), 0) / activeLoans.length
       : 0,
-    activeCount: filteredLoans.filter(l => l.status === 'ACTIVE').length
+    activeCount: activeLoans.length,
   };
 
   // Calculate EMI for bank loans (reducing balance)
@@ -263,8 +265,29 @@ const LoanManagement: React.FC = () => {
           <p>Manage borrowed capital and repayment schedules.</p>
         </div>
         <div className="page-header-actions">
-          <button className="page-btn-round-sm" onClick={fetchLoans}>
+          <button className="page-btn-round-sm" onClick={fetchLoans} title="Refresh">
             <FaSync className={loading ? "fa-spin" : ""} size={12} />
+          </button>
+          <button
+            className="page-btn-round-sm"
+            title="Sync lender opening balances → create loan records"
+            style={{ fontSize: '11px', padding: '6px 12px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}
+            onClick={async () => {
+              try {
+                const res = await apiFetch('/loans/sync-from-lenders', { method: 'POST' });
+                const data = await res.json();
+                if (data.synced > 0) {
+                  alert(`✅ Synced ${data.synced} lender(s) → loan records created:\n${data.loans.map((l: any) => `• ${l.lender} ₹${Number(l.amount).toLocaleString('en-IN')}`).join('\n')}`);
+                } else {
+                  alert('All lenders already have loan records.');
+                }
+                fetchLoans();
+              } catch (e) {
+                alert('Sync failed');
+              }
+            }}
+          >
+            ⚡ Sync Lenders
           </button>
           <button className="page-btn-round page-btn-round-primary" onClick={() => setShowModal(true)}>
             <FaPlus size={11} /> New Loan
@@ -307,7 +330,9 @@ const LoanManagement: React.FC = () => {
           <thead>
             <tr>
               <th>Lender</th>
+              <th>Type</th>
               <th className="text-right">Principal</th>
+              <th className="text-right">Outstanding</th>
               <th className="text-right">Rate</th>
               <th>Start Date</th>
               <th>Cycle</th>
@@ -316,28 +341,51 @@ const LoanManagement: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredLoans.map((loan) => (
+            {filteredLoans.length === 0 && (
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: '32px', color: '#9ca3af' }}>
+                No loans found. Click <strong>+ New Loan</strong> to add one.
+              </td></tr>
+            )}
+            {filteredLoans.map((loan) => {
+              const loanType = (loan.loan_type || loan.party_type || 'BANK').toUpperCase();
+              const isPrivate = loanType === 'PRIVATE';
+              const outstanding = Number(loan.remaining_principal ?? loan.principal_amount);
+              const cycleLabel = isPrivate ? 'No Fixed Cycle' : (loan.repayment_cycle || 'Monthly');
+              return (
               <tr key={loan.id}>
-                <td><div className="font-bold">{loan.lender_name}</div></td>
+                <td>
+                  <div className="font-bold">{loan.lender_name}</div>
+                  {loan.lender_phone && <div style={{ fontSize: '11px', color: '#6b7280' }}>📞 {loan.lender_phone}</div>}
+                </td>
+                <td>
+                  <span style={{
+                    fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px',
+                    background: isPrivate ? '#f5f3ff' : '#eff6ff',
+                    color: isPrivate ? '#7c3aed' : '#1d4ed8',
+                    border: `1px solid ${isPrivate ? '#ddd6fe' : '#bfdbfe'}`
+                  }}>
+                    {isPrivate ? '👤 Private' : '🏛️ Bank'}
+                  </span>
+                </td>
+                <td className="text-right font-mono">₹{Number(loan.principal_amount).toLocaleString('en-IN')}</td>
                 <td className="text-right font-mono">
-                  <div>₹{Number(loan.remaining_principal ?? loan.principal_amount).toLocaleString()}</div>
-                  {(loan.loan_type || loan.party_type || 'BANK').toUpperCase() === 'PRIVATE' ? (
-                    Number(loan.total_interest_paid || 0) > 0 && (
-                      <div style={{ fontSize: '11px', color: '#f59e0b' }}>
-                        ₹{Number(loan.total_interest_paid).toLocaleString()} interest paid
-                      </div>
-                    )
-                  ) : (
-                    Number(loan.paid_principal || 0) > 0 && (
-                      <div style={{ fontSize: '11px', color: '#16a34a' }}>
-                        ₹{Number(loan.paid_principal).toLocaleString()} principal paid
-                      </div>
-                    )
+                  <div style={{ fontWeight: 700, color: outstanding > 0 ? '#dc2626' : '#16a34a' }}>
+                    ₹{outstanding.toLocaleString('en-IN')}
+                  </div>
+                  {isPrivate && Number(loan.total_interest_paid || 0) > 0 && (
+                    <div style={{ fontSize: '11px', color: '#f59e0b' }}>
+                      ₹{Number(loan.total_interest_paid).toLocaleString('en-IN')} int. paid
+                    </div>
+                  )}
+                  {!isPrivate && Number(loan.paid_principal || 0) > 0 && (
+                    <div style={{ fontSize: '11px', color: '#16a34a' }}>
+                      ₹{Number(loan.paid_principal).toLocaleString('en-IN')} repaid
+                    </div>
                   )}
                 </td>
                 <td className="text-right">{loan.interest_rate}%</td>
                 <td>{loan.start_date ? new Date(loan.start_date).toLocaleDateString('en-IN') : '-'}</td>
-                <td>{loan.repayment_cycle}</td>
+                <td style={{ fontSize: '12px', color: isPrivate ? '#7c3aed' : '#374151' }}>{cycleLabel}</td>
                 <td className="text-center">
                   <span className={`type-badge ${loan.status === 'ACTIVE' ? 'type-badge-green' : 'type-badge-blue'}`}>
                     {loan.status}
@@ -411,7 +459,8 @@ const LoanManagement: React.FC = () => {
                   })()}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -421,19 +470,69 @@ const LoanManagement: React.FC = () => {
         {ledgerLoan && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             style={{ margin: "24px 0", background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: "16px", color: "#0f172a" }}>Repayment History</div>
-                <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>
-                  {ledgerLoan.lender_name} · Original ₹{Number(ledgerLoan.principal_amount).toLocaleString()}
-                  {Number(ledgerLoan.paid_principal || 0) > 0 && (
-                    <> · <span style={{ color: '#dc2626', fontWeight: 600 }}>Remaining ₹{Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount).toLocaleString()}</span></>
-                  )}
-                </div>
-              </div>
-              <button onClick={() => setLedgerLoan(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}><FaTimes size={16} /></button>
-            </div>
 
+            {/* FIX 5 — Loan Detail Header */}
+            {(() => {
+              const lt = (ledgerLoan.loan_type || ledgerLoan.party_type || 'BANK').toUpperCase();
+              const isP = lt === 'PRIVATE';
+              const outstanding = Number(ledgerLoan.remaining_principal ?? ledgerLoan.principal_amount);
+              const monthlyInterest = Math.round(outstanding * Number(ledgerLoan.interest_rate || 0) / 12 / 100 * 100) / 100;
+              const since = ledgerLoan.start_date ? new Date(ledgerLoan.start_date).toLocaleDateString('en-IN') : '-';
+              return (
+                <div style={{ padding: '20px 24px', background: isP ? '#faf5ff' : '#eff6ff', borderBottom: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '18px', color: '#0f172a' }}>{ledgerLoan.lender_name}</div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
+                        {isP ? '👤 Private Person' : '🏛️ Bank / Institution'}
+                        {ledgerLoan.lender_phone && <> &nbsp;·&nbsp; 📞 {ledgerLoan.lender_phone}</>}
+                      </div>
+                    </div>
+                    <button onClick={() => setLedgerLoan(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><FaTimes size={16} /></button>
+                  </div>
+                  {/* Info grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginTop: '16px' }}>
+                    {[
+                      { label: 'Principal Borrowed', value: `₹${Number(ledgerLoan.principal_amount).toLocaleString('en-IN')}` },
+                      { label: 'Outstanding', value: `₹${outstanding.toLocaleString('en-IN')}`, highlight: outstanding > 0 },
+                      { label: 'Interest Paid', value: `₹${Number(ledgerLoan.total_interest_paid || 0).toLocaleString('en-IN')}` },
+                      { label: 'Interest Rate', value: `${ledgerLoan.interest_rate}% p.a.` },
+                      { label: isP ? 'Monthly Interest' : 'EMI', value: `₹${isP ? monthlyInterest.toLocaleString('en-IN') : Number(ledgerLoan.emi_amount || monthlyInterest).toLocaleString('en-IN')}` },
+                      { label: 'Running Since', value: since },
+                    ].map(({ label, value, highlight }) => (
+                      <div key={label} style={{ background: '#fff', borderRadius: '8px', padding: '10px 14px', border: `1px solid ${isP ? '#ddd6fe' : '#bfdbfe'}` }}>
+                        <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: 600, marginBottom: '4px' }}>{label}</div>
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: highlight ? '#dc2626' : '#0f172a' }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Quick pay buttons */}
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                    {isP ? (
+                      <>
+                        <button style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', borderRadius: '8px', padding: '8px 16px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                          onClick={() => { setPaymentType('interest'); setSelectedLoan(ledgerLoan); setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: monthlyInterest, interest_component: monthlyInterest, principal_component: 0, payment_mode: 'CASH', notes: '', cash_amount: 0, bank_amount: 0 }); setShowRepayModal(true); }}>
+                          💰 Pay Interest ₹{monthlyInterest.toLocaleString('en-IN')}
+                        </button>
+                        <button style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '8px 16px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                          onClick={() => { setPaymentType('principal'); setSelectedLoan(ledgerLoan); setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: outstanding, interest_component: 0, principal_component: outstanding, payment_mode: 'CASH', notes: '', cash_amount: 0, bank_amount: 0 }); setShowRepayModal(true); }}>
+                          🏦 Repay Principal
+                        </button>
+                      </>
+                    ) : (
+                      <button style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 20px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                        onClick={() => { setPaymentType('emi'); setSelectedLoan(ledgerLoan); setRepayData({ payment_date: new Date().toISOString().split("T")[0], total_amount: Number(ledgerLoan.emi_amount || 0), interest_component: 0, principal_component: 0, payment_mode: 'BANK', notes: '', cash_amount: 0, bank_amount: 0 }); setShowRepayModal(true); }}>
+                        + Record Repayment
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ marginTop: '8px', fontSize: '12px', color: '#94a3b8' }}>
+                    Status: <span style={{ fontWeight: 700, color: ledgerLoan.status === 'ACTIVE' ? '#16a34a' : '#6b7280' }}>{ledgerLoan.status}</span>
+                    {isP && <> &nbsp;·&nbsp; No Fixed Cycle — runs indefinitely</>}
+                  </div>
+                </div>
+              );
+            })()}
             {/* Tab Toggle — hide Schedule for PRIVATE loans */}
             {(() => {
               const isPrivateLoan = (ledgerLoan.loan_type || ledgerLoan.party_type || 'BANK').toUpperCase() === 'PRIVATE';
@@ -456,7 +555,7 @@ const LoanManagement: React.FC = () => {
                         textTransform: 'capitalize',
                       }}
                     >
-                      {tab === 'history' ? 'History' : 'Schedule'}
+                      {tab === 'history' ? '📋 Payment History' : '📅 Schedule'}
                     </button>
                   ))}
                 </div>

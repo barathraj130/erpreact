@@ -428,6 +428,57 @@ export const runSchemaUpdates = async () => {
         // Purchase bill internal tracking number
         await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS purchase_number VARCHAR(30)`);
 
+        // Loans — soft delete + lender outstanding sync columns
+        await db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false`);
+        await db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+        await db.query(`ALTER TABLE lenders ADD COLUMN IF NOT EXISTS current_balance NUMERIC(15,2) DEFAULT 0`);
+
+        // FIX 2: Auto-create loan records for lenders with opening_balance but no loan
+        // Safe: wrapped in DO $$ block so it only inserts missing ones
+        await db.query(`
+            DO $$
+            DECLARE r RECORD;
+            BEGIN
+                FOR r IN
+                    SELECT id, lender_name, lender_type, opening_balance, company_id
+                    FROM lenders
+                    WHERE COALESCE(opening_balance, 0) > 0
+                      AND id NOT IN (
+                          SELECT lender_id FROM loans WHERE lender_id IS NOT NULL
+                      )
+                LOOP
+                    INSERT INTO loans (
+                        company_id, lender_id, party_name, party_type, loan_type,
+                        loan_direction, principal_amount, principal_outstanding,
+                        interest_rate, interest_type, start_date, duration_months,
+                        repayment_cycle, status, notes
+                    ) VALUES (
+                        r.company_id, r.id, r.lender_name,
+                        CASE WHEN r.lender_type IN ('Bank','BANK') THEN 'BANK' ELSE 'PRIVATE' END,
+                        CASE WHEN r.lender_type IN ('Bank','BANK') THEN 'BANK' ELSE 'PRIVATE' END,
+                        'BORROWED', r.opening_balance, r.opening_balance,
+                        12,
+                        CASE WHEN r.lender_type IN ('Bank','BANK') THEN 'REDUCING' ELSE 'FLAT' END,
+                        CURRENT_DATE, 0,
+                        CASE WHEN r.lender_type IN ('Bank','BANK') THEN 'MONTHLY' ELSE 'INDEFINITE' END,
+                        'ACTIVE', 'Auto-created from lender opening balance'
+                    );
+                END LOOP;
+            END $$;
+        `);
+
+        // FIX 6: Sync lender current_balance = sum of active loan principals
+        await db.query(`
+            UPDATE lenders le
+            SET current_balance = (
+                SELECT COALESCE(SUM(COALESCE(l.principal_outstanding, l.principal_amount)), 0)
+                FROM loans l
+                WHERE l.lender_id = le.id
+                  AND l.status = 'ACTIVE'
+                  AND (l.is_deleted IS NULL OR l.is_deleted = false)
+            )
+        `);
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
