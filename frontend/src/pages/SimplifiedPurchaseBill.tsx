@@ -212,8 +212,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
           description: i.name,
           quantity: i.qty,
           unit_price: i.rate,
+          unit: i.unit || "pcs",
           tax_percent: billType === "TAX" ? i.gstRate : 0,
-          hsn_code: i.hsnCode
+          hsn_code: i.hsnCode || null
         })) : [],
         expenses: billCategory === "EXPENSE" ? expenses : [],
         discount_amount: discountAmount,
@@ -232,7 +233,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
       if (res.ok) {
         const result = await res.json();
-        alert("Purchase Bill Saved Successfully!");
+        const summary = result.items_saved > 0
+          ? `Bill saved! ${result.items_saved} item(s) recorded, ${result.products_created} new product(s) created, inventory updated.`
+          : "Purchase Bill Saved Successfully!";
+        alert(summary);
         if (print) {
             navigate(`/purchase-bills/${result.id}/print`);
         } else {

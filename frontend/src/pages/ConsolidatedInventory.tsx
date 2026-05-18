@@ -102,11 +102,11 @@ const ConsolidatedInventory: React.FC = () => {
                     <div style={{ fontWeight: 700, color: "#1e293b" }}>{p.name}</div>
                     <div style={{ fontSize: "0.75rem", color: "#64748b" }}>SKU: {p.sku || "N/A"}</div>
                   </td>
-                  <td style={{ textAlign: "right", fontWeight: 700 }}>{parseFloat(p.main_stock).toLocaleString()}</td>
-                  <td style={{ textAlign: "right", color: "#3b82f6", fontWeight: 700 }}>{parseFloat(p.total_branch_stock).toLocaleString()}</td>
-                  <td style={{ textAlign: "right", fontWeight: 900, color: "#0f172a" }}>{parseFloat(p.total_stock).toLocaleString()} {p.unit}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>{(parseFloat(p.main_stock) || 0).toLocaleString()}</td>
+                  <td style={{ textAlign: "right", color: "#3b82f6", fontWeight: 700 }}>{(parseFloat(p.total_branch_stock) || 0).toLocaleString()}</td>
+                  <td style={{ textAlign: "right", fontWeight: 900, color: "#0f172a" }}>{(parseFloat(p.total_stock) || 0).toLocaleString()} {p.unit}</td>
                   <td style={{ textAlign: "center" }}>
-                    {parseFloat(p.total_stock) <= 5 ? (
+                    {(parseFloat(p.total_stock) || 0) <= 5 ? (
                       <span style={{ padding: "4px 10px", borderRadius: "100px", background: "#fef2f2", color: "#ef4444", fontSize: "0.75rem", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: "5px" }}>
                         <FaExclamationTriangle /> LOW
                       </span>
@@ -139,13 +139,13 @@ const ConsolidatedInventory: React.FC = () => {
               
               <div style={{ padding: "15px", background: "#f8fafc", borderRadius: "12px", marginBottom: "20px" }}>
                 <div style={{ fontWeight: 800, color: "#1e293b" }}>{selectedProduct.name}</div>
-                <div style={{ fontSize: "0.85rem", color: "#64748b" }}>Current Value: ₹{(selectedProduct.main_stock * selectedProduct.selling_price).toLocaleString()}</div>
+                <div style={{ fontSize: "0.85rem", color: "#64748b" }}>Current Value: ₹{((parseFloat(selectedProduct.main_stock) || 0) * (parseFloat(selectedProduct.selling_price) || 0)).toLocaleString()}</div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "10px", background: "#f1f5f9", borderRadius: "8px", fontWeight: 700 }}>
                   <span>Main Branch</span>
-                  <span>{parseFloat(selectedProduct.main_stock).toLocaleString()}</span>
+                  <span>{(parseFloat(selectedProduct.main_stock) || 0).toLocaleString()}</span>
                 </div>
                 {breakdown.map(b => (
                   <div key={b.branch_name} style={{ display: "flex", justifyContent: "space-between", padding: "10px", borderBottom: "1px solid #f1f5f9", fontSize: "0.95rem" }}>

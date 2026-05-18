@@ -173,8 +173,19 @@ const Inventory: React.FC = () => {
         ) : filteredProducts.length === 0 ? (
           <div className="empty-state" style={{ padding: "100px 20px", textAlign: "center" }}>
             <FaBoxOpen size={56} style={{ color: "#cbd5e1", marginBottom: "20px" }} />
-            <h3 style={{ margin: 0, fontWeight: 700, color: "var(--erp-text-main)", fontSize: "1.25rem" }}>No products found</h3>
-            <p style={{ color: "var(--erp-text-secondary)", marginTop: "8px" }}>Try adjusting your filters or add a new product.</p>
+            {products.length === 0 ? (
+              <>
+                <h3 style={{ margin: 0, fontWeight: 700, color: "var(--erp-text-main)", fontSize: "1.25rem" }}>No products yet</h3>
+                <p style={{ color: "var(--erp-text-secondary)", marginTop: "8px", maxWidth: "420px", margin: "8px auto 0" }}>
+                  Products are created automatically when you save a <strong>Purchase Bill</strong> with product items. You can also add them manually using the button above.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 style={{ margin: 0, fontWeight: 700, color: "var(--erp-text-main)", fontSize: "1.25rem" }}>No products found</h3>
+                <p style={{ color: "var(--erp-text-secondary)", marginTop: "8px" }}>Try adjusting your filters or search term.</p>
+              </>
+            )}
           </div>
         ) : isMobile ? (
           <div className="inventory-cards-list" style={{ padding: "0 0 20px" }}>

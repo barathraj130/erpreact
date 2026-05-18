@@ -7,16 +7,25 @@ import { motion } from "framer-motion";
 const GlobalInventory: React.FC = () => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   const fetchData = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await apiFetch("/products/breakdown");
       if (res.ok) {
-        setProducts(await res.json());
+        const data = await res.json();
+        setProducts(Array.isArray(data) ? data : []);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.error || `Server error ${res.status}`);
+        setProducts([]);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setError(err?.message || "Network error");
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -26,9 +35,9 @@ const GlobalInventory: React.FC = () => {
     fetchData();
   }, []);
 
-  const filtered = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = products.filter(p =>
+    (p.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.sku || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -49,11 +58,20 @@ const GlobalInventory: React.FC = () => {
         </div>
       </div>
 
+      {error && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", padding: "12px 16px", borderRadius: "10px", marginBottom: "16px", fontSize: "0.875rem", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>
+          ⚠️ {error}
+          <button onClick={fetchData} style={{ marginLeft: "auto", background: "none", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: "6px", padding: "2px 10px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}>Retry</button>
+        </div>
+      )}
+
       <div className="grid-container" style={{ display: "grid", gridTemplateColumns: "1fr", gap: "25px" }}>
         {loading ? (
           <div className="loading-state">Loading inventory data...</div>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">No products found matching your search.</div>
+          <div className="empty-state">
+            {products.length === 0 ? "No products yet. Save a Purchase Bill with items to populate inventory." : "No products found matching your search."}
+          </div>
         ) : (
           filtered.map(p => {
             const totalStock = parseFloat(p.main_stock) + parseFloat(p.branches_total_stock);

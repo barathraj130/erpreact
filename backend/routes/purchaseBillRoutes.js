@@ -334,6 +334,9 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         // ITEM PROCESSING — every item must be fully persisted or the bill fails.
         // Product creation, bill_items, and inventory are all MANDATORY.
         // ═══════════════════════════════════════════════════════════════════════
+        let productsCreated = 0;
+        let inventoryUpdated = 0;
+        console.log(`[purchase-bill] Processing ${processedItems.length} item(s) for billId=${billId}`);
         for (let pItem of processedItems) {
 
             // ── Step A: Ensure product exists ────────────────────────────────
@@ -358,6 +361,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
                     if (autoProduct.rows.length > 0) {
                         pItem = { ...pItem, product_id: autoProduct.rows[0].id };
+                        productsCreated++;
                         console.log(`[purchase-bill] ✓ Auto-created product "${productName}" → id=${pItem.product_id}`);
                     }
                 } catch (productErr) {
@@ -433,6 +437,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         cost_price    = EXCLUDED.cost_price,
                         last_updated  = NOW()
                 `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, pItem.unit_price]);
+                inventoryUpdated++;
                 console.log(`[purchase-bill] ✓ inventory UPSERT done`);
 
                 // 3. UPSERT branch-level inventory (best-effort — table may not exist)
@@ -628,7 +633,18 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         }
 
         await client.query("COMMIT");
-        res.status(201).json({ success: true, id: billId, purchase_number: purchaseNumber, total: netAmount, balance, status });
+        console.log(`[purchase-bill] ✅ COMMIT success — billId=${billId} items=${processedItems.length} productsCreated=${productsCreated} inventoryUpdated=${inventoryUpdated}`);
+        res.status(201).json({
+            success: true,
+            id: billId,
+            purchase_number: purchaseNumber,
+            total: netAmount,
+            balance,
+            status,
+            items_saved: processedItems.length,
+            products_created: productsCreated,
+            inventory_updated: inventoryUpdated
+        });
 
         // Fire n8n webhook (non-blocking, after response sent)
         triggerN8N('erp-alert', {

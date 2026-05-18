@@ -193,15 +193,15 @@ router.get("/consolidated", authMiddleware, async (req, res) => {
     try {
         const companyId = req.user.active_company_id;
         const products = await db.pgAll(
-            `SELECT p.id, p.name, p.sku, p.unit, p.selling_price, 
-                    inv.current_stock as main_stock,
+            `SELECT p.id, p.name, p.sku, p.unit, p.selling_price,
+                    COALESCE(inv.current_stock, p.current_stock, 0) as main_stock,
                     COALESCE(SUM(bi.current_stock), 0) as total_branch_stock,
-                    (inv.current_stock + COALESCE(SUM(bi.current_stock), 0)) as total_stock
+                    (COALESCE(inv.current_stock, p.current_stock, 0) + COALESCE(SUM(bi.current_stock), 0)) as total_stock
              FROM products p
              LEFT JOIN inventory inv ON p.id = inv.product_id
              LEFT JOIN branch_inventory bi ON p.id = bi.product_id
              WHERE p.company_id = $1 AND p.is_deleted = false
-             GROUP BY p.id, inv.current_stock`,
+             GROUP BY p.id, p.current_stock, inv.current_stock`,
             [companyId]
         );
         res.json(products);
