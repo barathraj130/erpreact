@@ -190,11 +190,14 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
 
         // username has a global unique constraint — try up to 9 suffixed variants
         // so two customers named "BARATH" become "BARATH" and "BARATH_2" automatically.
-        // The display nickname is always stored as the original name regardless.
+        // CRITICAL: each attempt uses a SAVEPOINT so a failed INSERT doesn't abort
+        // the parent transaction (PostgreSQL marks a txn aborted on any error unless
+        // the error is caught via ROLLBACK TO SAVEPOINT before continuing).
         let insertedId = null;
         let usedUsername = username;
         for (let attempt = 1; attempt <= 9; attempt++) {
             usedUsername = attempt === 1 ? username : `${username}_${attempt}`;
+            await client.query(`SAVEPOINT sp_username`);
             try {
                 const result = await client.query(
                     `INSERT INTO users (
@@ -219,9 +222,14 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
                         password_hash
                     ]
                 );
+                await client.query(`RELEASE SAVEPOINT sp_username`);
                 insertedId = result.rows[0].id;
                 break; // success — exit retry loop
             } catch (insertErr) {
+                // ROLLBACK TO SAVEPOINT restores the txn to a clean state so
+                // subsequent queries (including the next loop iteration) can proceed
+                await client.query(`ROLLBACK TO SAVEPOINT sp_username`);
+                await client.query(`RELEASE SAVEPOINT sp_username`);
                 if (insertErr.code === '23505' && attempt < 9) {
                     // duplicate username — try next suffix
                     continue;
