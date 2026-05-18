@@ -38,29 +38,30 @@ router.get('/summary', authMiddleware, async (req, res) => {
         const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1`;
         const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1`;
 
-        // REVENUE ALL TIME — no branch filter, no is_deleted filter (matches invoices page: WHERE company_id = $1)
+        // REVENUE ALL TIME — only active (non-deleted) invoices
         const totalRevSql = `
             SELECT COALESCE(SUM(total_amount), 0) as total_revenue
             FROM invoices
-            WHERE company_id = $1
+            WHERE company_id = $1 AND COALESCE(is_deleted, false) = false
         `;
 
-        // THIS MONTH only
+        // THIS MONTH only — exclude deleted invoices
         const monthRevSql = `
             SELECT COALESCE(SUM(total_amount), 0) as month_revenue
             FROM invoices
             WHERE company_id = $1
+              AND COALESCE(is_deleted, false) = false
               AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
               AND invoice_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
         `;
 
-        // OUTSTANDING — invoice balance minus any direct customer payments
+        // OUTSTANDING — exclude deleted invoices
         const outstandingSql = `
             SELECT GREATEST(0,
                 COALESCE((
                     SELECT SUM(total_amount - paid_amount)
                     FROM invoices
-                    WHERE company_id = $1 AND total_amount > paid_amount
+                    WHERE company_id = $1 AND total_amount > paid_amount AND COALESCE(is_deleted, false) = false
                 ), 0)
                 - COALESCE((
                     SELECT SUM(amount)
@@ -70,13 +71,13 @@ router.get('/summary', authMiddleware, async (req, res) => {
             ) as outstanding
         `;
 
-        // SALES BREAKDOWN — no branch filter
+        // SALES BREAKDOWN — exclude deleted invoices
         const salesBreakdownSql = `
-            SELECT 
+            SELECT
                 COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) IN ('TAX', 'TAX INVOICE', 'GST', 'TAXABLE', 'TAX_INVOICE') THEN total_amount ELSE 0 END), 0) as tax_sales,
                 COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) NOT IN ('TAX', 'TAX INVOICE', 'GST', 'TAXABLE', 'TAX_INVOICE') THEN total_amount ELSE 0 END), 0) as anon_sales
             FROM invoices
-            WHERE company_id = $1
+            WHERE company_id = $1 AND COALESCE(is_deleted, false) = false
         `;
 
         const [cashRes, bankRes, totalRevRes, monthRevRes, outstandingRes, salesRes] = await Promise.all([

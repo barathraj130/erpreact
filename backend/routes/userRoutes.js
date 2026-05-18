@@ -139,13 +139,13 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
                 + COALESCE((
                     SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
-                    FROM invoices WHERE customer_id = u.id AND company_id = $1
+                    FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted, false) = false
                 ), 0)
                 - COALESCE((
                     SELECT SUM(ip.amount)
                     FROM invoice_payments ip
                     JOIN invoices i ON i.id = ip.invoice_id
-                    WHERE i.customer_id = u.id AND i.company_id = $1
+                    WHERE i.customer_id = u.id AND i.company_id = $1 AND COALESCE(i.is_deleted, false) = false
                 ), 0)
                 - COALESCE((
                     SELECT SUM(amount)

@@ -20,6 +20,10 @@ export const runSchemaUpdates = async () => {
         )
     `).catch(() => {});
 
+    // invoice_id on cash/bank ledger — enables cleanup when an invoice is deleted
+    await db.query(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
+    await db.query(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
+
     // Invoice columns (points & series numbering)
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_earned    INTEGER        DEFAULT 0`).catch(() => {});
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_redeemed  INTEGER        DEFAULT 0`).catch(() => {});

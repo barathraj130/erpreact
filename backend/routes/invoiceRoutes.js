@@ -433,14 +433,14 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     const pMethod = (p.payment_method || 'CASH').toUpperCase();
                     if (pMethod === 'CASH') {
                         await client.query(`
-                            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                            VALUES ($1, $2, $3, $4, $5, $6)
-                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', pDate]);
+                            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', pDate, invoiceId]);
                     } else if (pMethod === 'BANK' || pMethod === 'UPI') {
                         await client.query(`
-                            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || pMethod, p.reference_no || p.bank_transaction_id || '-', pDate]);
+                            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || pMethod, p.reference_no || p.bank_transaction_id || '-', pDate, invoiceId]);
                     }
                 }
             }
@@ -741,14 +741,14 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                     const pMethod = (p.payment_method || 'CASH').toUpperCase();
                     if (pMethod === 'CASH') {
                         await client.query(`
-                            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                            VALUES ($1, $2, $3, $4, $5, $6)
-                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', pDate]);
+                            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', pDate, id]);
                     } else if (pMethod === 'BANK') {
                         await client.query(`
-                            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || 'Bank', p.reference_no || p.bank_transaction_id || '-', pDate]);
+                            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || 'Bank', p.reference_no || p.bank_transaction_id || '-', pDate, id]);
                     }
                 }
             }
@@ -865,6 +865,10 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
             [id]
         );
         await client.query(`DELETE FROM invoice_payments WHERE invoice_id = $1`, [id]);
+
+        // 4b. Remove cash/bank ledger entries tied to this invoice
+        await client.query(`DELETE FROM cash_ledger WHERE invoice_id = $1`, [id]);
+        await client.query(`DELETE FROM bank_ledger WHERE invoice_id = $1`, [id]);
 
         // 5. Remove customer ledger events for this invoice
         if (customer_id) {
