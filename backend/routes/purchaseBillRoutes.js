@@ -413,59 +413,48 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 pItem.line_total  || (pItem.quantity * pItem.unit_price)
             ]);
 
-            // ── Step C: Update inventory — MANDATORY when product exists ─────
+            // ── Step C: Update inventory — branch_inventory is the SOLE SOURCE OF TRUTH ──
+            // Do NOT write to inventory.current_stock — that table is retired for stock.
+            // products.current_stock is a SUM cache recomputed below.
             if (pItem.product_id) {
-                console.log(`[purchase-bill] Step C: updating inventory for product_id=${pItem.product_id} qty=${pItem.quantity}`);
+                console.log(`[purchase-bill] Step C: branch_inventory UPSERT product_id=${pItem.product_id} qty=${pItem.quantity} branch=${safeBranchId}`);
 
-                // 1. Update master product stock and cost price
+                // 1. UPSERT branch_inventory for the purchasing branch ONLY.
+                //    Other branches are NOT touched — stock must be moved by explicit transfer.
+                await client.query(`
+                    INSERT INTO branch_inventory
+                        (company_id, branch_id, product_id, current_stock, last_updated)
+                    VALUES ($1, $2, $3, $4, NOW())
+                    ON CONFLICT (branch_id, product_id)
+                    DO UPDATE SET
+                        current_stock = branch_inventory.current_stock + EXCLUDED.current_stock,
+                        last_updated  = NOW()
+                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity]);
+                inventoryUpdated++;
+                console.log(`[purchase-bill] ✓ branch_inventory updated (branch ${safeBranchId})`);
+
+                // 2. Recompute products.current_stock as SUM across all branches (cache).
+                //    This keeps the product list accurate without double-counting.
                 await client.query(`
                     UPDATE products
-                    SET current_stock = current_stock + $1,
-                        cost_price    = $2
-                    WHERE id = $3
-                `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
-                console.log(`[purchase-bill] ✓ products.current_stock updated`);
+                    SET current_stock = (
+                            SELECT COALESCE(SUM(bi.current_stock), 0)
+                            FROM branch_inventory bi
+                            WHERE bi.product_id = $1
+                        ),
+                        cost_price = $2
+                    WHERE id = $1
+                `, [pItem.product_id, pItem.unit_price]);
+                console.log(`[purchase-bill] ✓ products.current_stock recomputed from branch_inventory`);
 
-                // 2. UPSERT main inventory table
-                await client.query(`
-                    INSERT INTO inventory
-                        (company_id, branch_id, product_id, current_stock, cost_price, last_updated)
-                    VALUES ($1, $2, $3, $4, $5, NOW())
-                    ON CONFLICT (product_id)
-                    DO UPDATE SET
-                        current_stock = inventory.current_stock + EXCLUDED.current_stock,
-                        cost_price    = EXCLUDED.cost_price,
-                        last_updated  = NOW()
-                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, pItem.unit_price]);
-                inventoryUpdated++;
-                console.log(`[purchase-bill] ✓ inventory UPSERT done`);
-
-                // 3. UPSERT branch-level inventory (best-effort — table may not exist)
-                await client.query(`SAVEPOINT sp_branch_inv`);
-                try {
-                    await client.query(`
-                        INSERT INTO branch_inventory
-                            (company_id, branch_id, product_id, current_stock)
-                        VALUES ($1, $2, $3, $4)
-                        ON CONFLICT (branch_id, product_id)
-                        DO UPDATE SET
-                            current_stock = branch_inventory.current_stock + EXCLUDED.current_stock,
-                            last_updated  = NOW()
-                    `, [companyId, safeBranchId, pItem.product_id, pItem.quantity]);
-                    await client.query(`RELEASE SAVEPOINT sp_branch_inv`);
-                } catch (_) {
-                    await client.query(`ROLLBACK TO SAVEPOINT sp_branch_inv`);
-                    await client.query(`RELEASE SAVEPOINT sp_branch_inv`);
-                }
-
-                // 4. Stock movement ledger entry (best-effort — table may not exist)
+                // 3. Stock movement log (best-effort)
                 await client.query(`SAVEPOINT sp_inv_movement`);
                 try {
                     await client.query(`
                         INSERT INTO inventory_movements
                             (company_id, branch_id, product_id, type, qty_in,
                              reference_type, reference_id, note)
-                        VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
+                        VALUES ($1,$2,$3,'PURCHASE_IN',$4,'purchase_bill',$5,$6)
                     `, [companyId, safeBranchId, pItem.product_id, pItem.quantity,
                         billId, `Purchased via Bill #${purchaseNumber}`]);
                     await client.query(`RELEASE SAVEPOINT sp_inv_movement`);

@@ -133,27 +133,35 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
 router.get("/breakdown", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {
+        // main_stock        = stock at the main hub branch (from branch_inventory)
+        // branches_total_stock = stock at all SUB-branches (excluding main hub)
+        // Grand total = main_stock + branches_total_stock
         const sql = `
-            SELECT 
-                p.id as product_id, 
-                p.name, 
-                p.sku, 
-                p.unit,
-                p.current_stock as main_stock,
+            WITH main_branch AS (
+                SELECT id FROM branches
+                WHERE company_id = $1
+                ORDER BY (LOWER(COALESCE(branch_type,'')) LIKE '%main%') DESC, id ASC
+                LIMIT 1
+            )
+            SELECT
+                p.id as product_id,
+                p.name, p.sku, p.unit,
                 p.min_stock as main_min_stock,
-                COALESCE(SUM(bi.current_stock), 0) as branches_total_stock,
+                COALESCE(SUM(CASE WHEN bi.branch_id = mb.id THEN bi.current_stock ELSE 0 END), 0) AS main_stock,
+                COALESCE(SUM(CASE WHEN bi.branch_id != mb.id THEN bi.current_stock ELSE 0 END), 0) AS branches_total_stock,
                 JSON_AGG(
                     JSON_BUILD_OBJECT(
                         'branch_id', b.id,
                         'branch_name', b.branch_name,
-                        'stock', bi.current_stock
-                    )
+                        'stock', COALESCE(bi.current_stock, 0)
+                    ) ORDER BY b.id
                 ) FILTER (WHERE b.id IS NOT NULL) as branch_details
             FROM products p
             LEFT JOIN branch_inventory bi ON p.id = bi.product_id
             LEFT JOIN branches b ON bi.branch_id = b.id
+            CROSS JOIN main_branch mb
             WHERE p.company_id = $1 AND p.is_deleted = false
-            GROUP BY p.id, p.name, p.sku, p.unit, p.current_stock, p.min_stock
+            GROUP BY p.id, p.name, p.sku, p.unit, p.min_stock, mb.id
             ORDER BY p.name ASC
         `;
         const breakdown = await pgModule.pgAll(sql, [companyId]);
@@ -167,26 +175,22 @@ router.get("/breakdown", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {
-        // current_stock = sum across all branches (branch_inventory) + main hub (products.current_stock)
-        // branch_inventory tracks per-branch transfers; products.current_stock tracks main hub purchases
+        // current_stock = SUM of branch_inventory for all branches (the single source of truth).
+        // Falls back to products.current_stock if no branch_inventory rows exist yet.
         const sql = `
             SELECT p.*,
-                   COALESCE(p.current_stock, 0)
-                   + COALESCE(bi.branch_total, 0) - COALESCE(bi.main_branch, 0) AS total_stock
+                   COALESCE(bi_sum.total_stock, p.current_stock, 0) AS total_stock
             FROM products p
             LEFT JOIN (
-                SELECT product_id,
-                       SUM(current_stock) AS branch_total,
-                       SUM(CASE WHEN branch_id = 1 THEN current_stock ELSE 0 END) AS main_branch
+                SELECT product_id, SUM(current_stock) AS total_stock
                 FROM branch_inventory
                 WHERE company_id = $1
                 GROUP BY product_id
-            ) bi ON bi.product_id = p.id
+            ) bi_sum ON bi_sum.product_id = p.id
             WHERE p.company_id = $1 AND p.is_deleted = false
             ORDER BY p.id DESC
         `;
         const list = await pgModule.pgAll(sql, [companyId]);
-        // expose total_stock as current_stock so frontend doesn't need changes
         return res.json((list || []).map(p => ({ ...p, current_stock: p.total_stock ?? p.current_stock })));
     } catch (err) {
         console.error("List Products Error:", err);

@@ -14,101 +14,82 @@ export async function createNotification(client, { company_id, branch_id, type, 
 
 /**
  * Atomic Stock Transfer
+ *
+ * branch_inventory is the SOLE SOURCE OF TRUTH for all stock levels.
+ * This function operates purely on branch_inventory — the inventory table
+ * is NOT used for stock counts. products.current_stock is a SUM cache and
+ * does not change during a transfer (total stock is conserved).
+ *
+ * Callers must pass the actual from_branch_id (never null).
+ * To transfer from the main hub, look up its branch ID first.
  */
 export async function transferStock(client, { company_id, from_branch_id, to_branch_id, product_id, qty, userId, notes, reference_type, reference_id }) {
     const amount = parseFloat(qty);
-    
-    // 1. Decrease source stock (Main if from_branch_id is null)
-    if (!from_branch_id) {
-        // Main Inventory
-        const mainInv = await client.query(
-            `UPDATE inventory SET current_stock = current_stock - $1 WHERE product_id = $2 RETURNING current_stock`,
-            [amount, product_id]
+    if (isNaN(amount) || amount <= 0) throw new Error("Transfer quantity must be a positive number");
+    if (!from_branch_id) throw new Error("from_branch_id is required. Resolve the main hub branch ID before calling transferStock.");
+
+    // 1. Deduct from source branch — only if sufficient stock exists
+    const srcResult = await client.query(
+        `UPDATE branch_inventory
+         SET current_stock = current_stock - $1, last_updated = NOW()
+         WHERE branch_id = $2 AND product_id = $3 AND current_stock >= $1
+         RETURNING current_stock`,
+        [amount, from_branch_id, product_id]
+    );
+    if (srcResult.rowCount === 0) {
+        // Distinguish "no row" from "insufficient stock"
+        const check = await client.query(
+            `SELECT current_stock FROM branch_inventory WHERE branch_id = $1 AND product_id = $2`,
+            [from_branch_id, product_id]
         );
-        if (mainInv.rowCount === 0) throw new Error("Product not found in Main Inventory");
-        
-        // Also update products table (convenience)
-        await client.query(`UPDATE products SET current_stock = current_stock - $1 WHERE id = $2`, [amount, product_id]);
-    } else {
-        // Branch Inventory
-        const branchInv = await client.query(
-            `UPDATE branch_inventory SET current_stock = current_stock - $1 WHERE branch_id = $2 AND product_id = $3 RETURNING current_stock`,
-            [amount, from_branch_id, product_id]
-        );
-        if (branchInv.rowCount === 0) throw new Error("Product not found in Source Branch Inventory");
+        if (check.rowCount === 0) throw new Error(`Product has no stock in the source branch. Purchase inventory first.`);
+        throw new Error(`Insufficient stock in source branch. Available: ${check.rows[0].current_stock}, Requested: ${amount}`);
     }
 
-    // 2. Increase destination stock
-    const toBranchInv = await client.query(
-        `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock)
-         VALUES ($1, $2, $3, $4)
+    // 2. Add to destination branch
+    await client.query(
+        `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
+         VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (branch_id, product_id)
-         DO UPDATE SET current_stock = branch_inventory.current_stock + $4, last_updated = NOW()
-         RETURNING current_stock`,
+         DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()`,
         [company_id, to_branch_id, product_id, amount]
     );
+    // Note: products.current_stock (the SUM cache) does not change — stock is conserved.
 
-    // 3. Log Transfer
+    // 3. Log the transfer record
     await client.query(
         `INSERT INTO stock_transfers (company_id, from_branch_id, to_branch_id, product_id, qty, transferred_by, notes, reference_type, reference_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [company_id, from_branch_id, to_branch_id, product_id, amount, userId, notes, reference_type, reference_id]
     );
 
-    // 4. Log Inventory Movement (Global log)
-    await client.query(
-        `INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_out, qty_in, reference_type, reference_id, note)
-         VALUES ($1, $2, $3, 'Transfer', $4, 0, 'stock_transfer', NULL, $5)`,
-        [company_id, from_branch_id || 0, product_id, amount, `Transfer to branch ${to_branch_id}`]
-    );
-    await client.query(
-        `INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_out, qty_in, reference_type, reference_id, note)
-         VALUES ($1, $2, $3, 'Transfer', 0, $4, 'stock_transfer', NULL, $5)`,
-        [company_id, to_branch_id, product_id, amount, `Received from branch ${from_branch_id || 'Main'}`]
-    );
-
-    // 5. Create Ledger Entries (Debit Branch Inventory -> Credit Main Inventory)
+    // 4. Log inventory movements (best-effort — table may not have all columns)
     try {
-        const productRes = await client.query(`SELECT purchase_price FROM products WHERE id = $1`, [product_id]);
-        const price = parseFloat(productRes.rows[0]?.purchase_price || 0);
-        const totalValue = price * amount;
-
-        const inventoryAccount = await getAccountByCode(company_id, '1400'); // Assuming 1400 is Inventory Asset
-        if (inventoryAccount && totalValue > 0) {
-            await createTransaction({
-                company_id,
-                branch_id: to_branch_id,
-                transaction_date: new Date(),
-                reference_type: 'STOCK_TRANSFER',
-                reference_id: reference_id || 0,
-                description: `Stock Transfer: ${amount} units of Product #${product_id}`,
-                created_by: userId
-            }, [
-                {
-                    account_id: inventoryAccount.id,
-                    debit_amount: totalValue,
-                    credit_amount: 0,
-                    description: `Debit Branch Inventory (Branch #${to_branch_id})`
-                },
-                {
-                    account_id: inventoryAccount.id,
-                    debit_amount: 0,
-                    credit_amount: totalValue,
-                    description: `Credit Main Inventory`
-                }
-            ]);
-        }
+        await client.query(
+            `INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_out, qty_in, reference_type, reference_id, note)
+             VALUES ($1,$2,$3,'TRANSFER_OUT',$4,0,'stock_transfer',$5,$6)`,
+            [company_id, from_branch_id, product_id, amount, reference_id || null, `Transfer out to branch ${to_branch_id}`]
+        );
+        await client.query(
+            `INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_out, qty_in, reference_type, reference_id, note)
+             VALUES ($1,$2,$3,'TRANSFER_IN',0,$4,'stock_transfer',$5,$6)`,
+            [company_id, to_branch_id, product_id, amount, reference_id || null, `Transfer in from branch ${from_branch_id}`]
+        );
     } catch (e) {
-        console.error("Ledger logging failed for transfer:", e.message);
+        console.warn('[transferStock] inventory_movements log failed (non-fatal):', e.message);
     }
 
-    // 5. Notify destination branch
-    await createNotification(client, {
-        company_id,
-        branch_id: to_branch_id,
-        type: 'TRANSFER_RECEIVED',
-        message: `✅ ${amount} units of product transferred to your branch.`
-    });
+    // 5. Notify destination branch (best-effort)
+    try {
+        await createNotification(client, {
+            company_id,
+            branch_id: to_branch_id,
+            type: 'TRANSFER_RECEIVED',
+            message: `✅ ${amount} units transferred to your branch.`
+        });
+    } catch (e) {
+        console.warn('[transferStock] notification failed (non-fatal):', e.message);
+    }
 
     return { success: true };
 }
@@ -146,19 +127,26 @@ export async function createStockRequest({ company_id, from_branch_id, product_i
 }
 
 /**
- * Get Consolidated Inventory (Main + Branches)
+ * Get Consolidated Inventory — branch_inventory is sole source of truth.
  */
 export async function getConsolidatedInventory(companyId) {
     const products = await db.pgAll(
-        `SELECT p.id, p.name, p.sku, p.unit, p.selling_price, 
-                inv.current_stock as main_stock,
-                COALESCE(SUM(bi.current_stock), 0) as total_branch_stock,
-                (inv.current_stock + COALESCE(SUM(bi.current_stock), 0)) as total_stock
-         FROM products p
-         LEFT JOIN inventory inv ON p.id = inv.product_id
-         LEFT JOIN branch_inventory bi ON p.id = bi.product_id
-         WHERE p.company_id = $1 AND p.is_deleted = false
-         GROUP BY p.id, inv.current_stock`,
+        `WITH main_branch AS (
+            SELECT id FROM branches
+            WHERE company_id = $1
+            ORDER BY (LOWER(COALESCE(branch_type,'')) LIKE '%main%') DESC, id ASC
+            LIMIT 1
+        )
+        SELECT
+            p.id, p.name, p.sku, p.unit, p.selling_price,
+            COALESCE(SUM(CASE WHEN bi.branch_id = mb.id THEN bi.current_stock ELSE 0 END), 0) AS main_stock,
+            COALESCE(SUM(CASE WHEN bi.branch_id != mb.id THEN bi.current_stock ELSE 0 END), 0) AS total_branch_stock,
+            COALESCE(SUM(bi.current_stock), 0) AS total_stock
+        FROM products p
+        LEFT JOIN branch_inventory bi ON p.id = bi.product_id
+        CROSS JOIN main_branch mb
+        WHERE p.company_id = $1 AND p.is_deleted = false
+        GROUP BY p.id, mb.id`,
         [companyId]
     );
     return products;
