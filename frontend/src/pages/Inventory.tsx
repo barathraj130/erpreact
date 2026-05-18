@@ -144,6 +144,25 @@ const Inventory: React.FC = () => {
         </div>
       </div>
 
+      {error && !loading && (
+        <div style={{
+          background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626",
+          padding: "12px 16px", borderRadius: "10px", marginBottom: "16px",
+          fontSize: "0.875rem", fontWeight: 500, display: "flex",
+          alignItems: "center", gap: "8px",
+        }}>
+          ⚠️ {error}
+          <button
+            onClick={refresh}
+            style={{ marginLeft: "auto", background: "none", border: "1px solid #fca5a5",
+              color: "#dc2626", borderRadius: "6px", padding: "2px 10px",
+              cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="table-container">
         {loading ? (
           <div style={{ padding: "60px", textAlign: "center" }}>

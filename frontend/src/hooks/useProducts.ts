@@ -21,7 +21,8 @@ export const useProducts = (): UseProductsState => {
     try {
       const data = await fetchProducts();
       const safeData = Array.isArray(data) ? data : [];
-      setProducts(safeData.filter((p) => p.is_active === 1)); // Filter active products
+      // is_active may be boolean (true) or integer (1) depending on DB driver — use truthy check
+      setProducts(safeData.filter((p) => p.is_active !== false && p.is_active !== 0));
     } catch (err) {
       console.error("Failed to load products:", err);
       setError(

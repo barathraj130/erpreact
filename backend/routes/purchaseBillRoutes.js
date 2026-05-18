@@ -325,7 +325,33 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             await client.query(`RELEASE SAVEPOINT sp_purchase_number`);
         }
 
-        for (const pItem of processedItems) {
+        for (let pItem of processedItems) {
+            // ── Auto-create product when user typed a name but didn't pick from dropdown ──
+            if (!pItem.product_id && (pItem.description || '').trim()) {
+                await client.query(`SAVEPOINT sp_auto_product`);
+                try {
+                    const autoProduct = await client.query(`
+                        INSERT INTO products
+                            (company_id, branch_id, name, cost_price, selling_price,
+                             current_stock, unit, hsn_code, gst_percent, is_active, is_deleted)
+                        VALUES ($1, $2, $3, $4, $4, 0, $5, $6, $7, true, false)
+                        RETURNING id
+                    `, [
+                        companyId, safeBranchId, pItem.description.trim(),
+                        pItem.unit_price, pItem.unit || 'pcs',
+                        pItem.hsn_code || null, pItem.tax_percent || 0
+                    ]);
+                    if (autoProduct.rows.length > 0) {
+                        pItem = { ...pItem, product_id: autoProduct.rows[0].id };
+                    }
+                    await client.query(`RELEASE SAVEPOINT sp_auto_product`);
+                } catch (autoErr) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_auto_product`);
+                    await client.query(`RELEASE SAVEPOINT sp_auto_product`);
+                    console.warn(`[purchase-bill] auto-product create skipped: ${(autoErr.message||'').split('\n')[0]}`);
+                }
+            }
+
             await client.query(`
                 INSERT INTO purchase_bill_items
                 (bill_id, product_id, description, hsn_code, quantity, unit_price, tax_percent,
@@ -334,50 +360,61 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             `, [
                 billId, sanitizeInt(pItem.product_id), pItem.description || null,
                 pItem.hsn_code || null, pItem.quantity, pItem.unit_price,
-                pItem.tax_percent || 0, 
+                pItem.tax_percent || 0,
                 pItem.cgst_rate, pItem.sgst_rate, pItem.igst_rate,
                 pItem.cgst_amount, pItem.sgst_amount, pItem.igst_amount, pItem.line_total
             ]);
 
             if (pItem.product_id) {
-                // UPSERT products stock
-                await client.query(`
-                    UPDATE products
-                    SET current_stock = current_stock + $1,
-                        cost_price = $2
-                    WHERE id = $3
-                `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
+                // All inventory writes are best-effort — a missing column or constraint
+                // must not abort the parent bill transaction.
+                await client.query(`SAVEPOINT sp_inventory`);
+                try {
+                    // Bump stock on the products master record
+                    await client.query(`
+                        UPDATE products
+                        SET current_stock = current_stock + $1,
+                            cost_price = $2
+                        WHERE id = $3
+                    `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
 
-                // UPSERT main inventory table (product_id is UNIQUE)
-                await client.query(`
-                    INSERT INTO inventory
-                        (company_id, branch_id, product_id, current_stock, cost_price, last_updated)
-                    VALUES ($1, $2, $3, $4, $5, NOW())
-                    ON CONFLICT (product_id)
-                    DO UPDATE SET
-                        current_stock = inventory.current_stock + EXCLUDED.current_stock,
-                        cost_price    = EXCLUDED.cost_price,
-                        last_updated  = NOW()
-                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, pItem.unit_price]);
+                    // UPSERT main inventory table (product_id UNIQUE)
+                    await client.query(`
+                        INSERT INTO inventory
+                            (company_id, branch_id, product_id, current_stock, cost_price, last_updated)
+                        VALUES ($1, $2, $3, $4, $5, NOW())
+                        ON CONFLICT (product_id)
+                        DO UPDATE SET
+                            current_stock = inventory.current_stock + EXCLUDED.current_stock,
+                            cost_price    = EXCLUDED.cost_price,
+                            last_updated  = NOW()
+                    `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, pItem.unit_price]);
 
-                // UPSERT branch_inventory (branch_id, product_id unique)
-                await client.query(`
-                    INSERT INTO branch_inventory
-                        (company_id, branch_id, product_id, current_stock)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (branch_id, product_id)
-                    DO UPDATE SET
-                        current_stock = branch_inventory.current_stock + EXCLUDED.current_stock,
-                        last_updated  = NOW()
-                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity]);
+                    // UPSERT branch_inventory (branch_id, product_id UNIQUE)
+                    await client.query(`
+                        INSERT INTO branch_inventory
+                            (company_id, branch_id, product_id, current_stock)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (branch_id, product_id)
+                        DO UPDATE SET
+                            current_stock = branch_inventory.current_stock + EXCLUDED.current_stock,
+                            last_updated  = NOW()
+                    `, [companyId, safeBranchId, pItem.product_id, pItem.quantity]);
 
-                // Record inventory movement
-                await client.query(`
-                    INSERT INTO inventory_movements
-                        (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
-                    VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
-                `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId,
-                    `Purchased via Bill #${purchaseNumber}`]);
+                    // Record inventory movement
+                    await client.query(`
+                        INSERT INTO inventory_movements
+                            (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
+                        VALUES ($1,$2,$3,'Purchase',$4,'purchase_bill',$5,$6)
+                    `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, billId,
+                        `Purchased via Bill #${purchaseNumber}`]);
+
+                    await client.query(`RELEASE SAVEPOINT sp_inventory`);
+                } catch (invErr) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_inventory`);
+                    await client.query(`RELEASE SAVEPOINT sp_inventory`);
+                    console.warn(`[purchase-bill] inventory update skipped for product ${pItem.product_id}: ${(invErr.message||'').split('\n')[0]}`);
+                }
             }
         }
 

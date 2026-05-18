@@ -70,6 +70,10 @@ interface ApiResponse {
  */
 export const fetchProducts = async (): Promise<Product[]> => {
   const res = await apiFetch("/products");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Failed to load products (${res.status})`);
+  }
   return res.json();
 };
 
@@ -79,7 +83,11 @@ export const createProduct = async (data: any): Promise<ApiResponse> => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to create product (${res.status})`);
+  }
+  return body;
 };
 
 export const updateProduct = async (
@@ -91,7 +99,11 @@ export const updateProduct = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to update product (${res.status})`);
+  }
+  return body;
 };
 
 export const scanProductFromBill = async (
