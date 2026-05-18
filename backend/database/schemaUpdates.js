@@ -3,7 +3,17 @@ import * as db from "./pg.js";
 
 export const runSchemaUpdates = async () => {
     console.log("🚀 Running Schema Updates...");
-    
+
+    // ── Critical invoice columns ──────────────────────────────────────────────
+    // Each runs independently so a failure in any other migration cannot block
+    // these. IF NOT EXISTS makes them safe to re-run on every startup.
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_earned    INTEGER        DEFAULT 0`).catch(() => {});
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_redeemed  INTEGER        DEFAULT 0`).catch(() => {});
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_discount  NUMERIC(10,2)  DEFAULT 0`).catch(() => {});
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix    VARCHAR(10)`).catch(() => {});
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_number    INTEGER        DEFAULT 0`).catch(() => {});
+    // ─────────────────────────────────────────────────────────────────────────
+
     try {
         // 1. Update products table
         await db.pgRun(`

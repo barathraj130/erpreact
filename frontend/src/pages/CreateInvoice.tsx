@@ -1862,13 +1862,6 @@ const CreateInvoice: React.FC = () => {
                     </div>
                   )}
 
-                  {invoiceType !== "TAX_INVOICE" && (
-                    <div style={{ marginBottom: "20px", fontSize: "10px" }}>
-                      <p style={{ margin: "0 0 8px 0", fontWeight: 700 }}>Points Earned:</p>
-                      <p style={{ margin: 0 }}>{paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) > 0 ? Math.floor(paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) / 10) : 0} Points</p>
-                    </div>
-                  )}
-
                   <p
                     style={{
                       textAlign: "right",
