@@ -4,9 +4,23 @@ import * as db from "./pg.js";
 export const runSchemaUpdates = async () => {
     console.log("🚀 Running Schema Updates...");
 
-    // ── Critical invoice columns ──────────────────────────────────────────────
-    // Each runs independently so a failure in any other migration cannot block
-    // these. IF NOT EXISTS makes them safe to re-run on every startup.
+    // ── Critical standalone migrations (each isolated — never blocks others) ──
+    // customer_points table — required by pointsService / invoiceRoutes
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS customer_points (
+            id               SERIAL PRIMARY KEY,
+            customer_id      INTEGER NOT NULL,
+            transaction_type VARCHAR(20) NOT NULL,
+            points           INTEGER NOT NULL,
+            reference_id     INTEGER,
+            description      TEXT,
+            balance_after    INTEGER NOT NULL DEFAULT 0,
+            expires_at       TIMESTAMP,
+            created_at       TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+
+    // Invoice columns (points & series numbering)
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_earned    INTEGER        DEFAULT 0`).catch(() => {});
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_redeemed  INTEGER        DEFAULT 0`).catch(() => {});
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_discount  NUMERIC(10,2)  DEFAULT 0`).catch(() => {});
