@@ -96,8 +96,8 @@ export async function ensureCustomerLedgerMetadata(client, customerId, companyId
 
 async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   const params = [companyId, customerId];
-  const invoiceConditions = ["i.company_id = $1", "i.customer_id = $2"];
-  const paymentConditions = ["i.company_id = $1", "i.customer_id = $2"];
+  const invoiceConditions = ["i.company_id = $1", "i.customer_id = $2", "COALESCE(i.is_deleted, false) = false"];
+  const paymentConditions = ["i.company_id = $1", "i.customer_id = $2", "COALESCE(i.is_deleted, false) = false"];
   let idx = 3;
 
   if (filters.start_date) {
@@ -197,7 +197,7 @@ async function getCustomerTotals(companyId, customerId) {
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(invoice_type, '')) <> 'SALES_RETURN' THEN total_amount ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(invoice_type, '')) = 'SALES_RETURN' THEN total_amount ELSE 0 END), 0) AS total_returns
      FROM invoices
-     WHERE company_id = $1 AND customer_id = $2`,
+     WHERE company_id = $1 AND customer_id = $2 AND COALESCE(is_deleted, false) = false`,
     [companyId, customerId],
   );
 
@@ -205,7 +205,7 @@ async function getCustomerTotals(companyId, customerId) {
     `SELECT COALESCE(SUM(p.amount), 0) AS total_paid
      FROM invoice_payments p
      JOIN invoices i ON i.id = p.invoice_id
-     WHERE i.company_id = $1 AND i.customer_id = $2`,
+     WHERE i.company_id = $1 AND i.customer_id = $2 AND COALESCE(i.is_deleted, false) = false`,
     [companyId, customerId],
   );
 
@@ -232,7 +232,7 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(invoice_type, '')) <> 'SALES_RETURN' THEN total_amount ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(invoice_type, '')) = 'SALES_RETURN' THEN total_amount ELSE 0 END), 0) AS total_returns
      FROM invoices
-     WHERE company_id = $1 AND customer_id = $2`,
+     WHERE company_id = $1 AND customer_id = $2 AND COALESCE(is_deleted, false) = false`,
     [companyId, customerId],
   );
 
@@ -240,7 +240,7 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     `SELECT COALESCE(SUM(p.amount), 0) AS total_paid
      FROM invoice_payments p
      JOIN invoices i ON i.id = p.invoice_id
-     WHERE i.company_id = $1 AND i.customer_id = $2`,
+     WHERE i.company_id = $1 AND i.customer_id = $2 AND COALESCE(i.is_deleted, false) = false`,
     [companyId, customerId],
   );
 
