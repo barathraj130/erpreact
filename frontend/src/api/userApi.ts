@@ -71,6 +71,10 @@ export interface CustomerLedgerResponse {
  */
 export const fetchCustomers = async (): Promise<Customer[]> => {
   const res = await apiFetch("/users");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Failed to load customers (${res.status})`);
+  }
   return res.json();
 };
 
@@ -82,7 +86,11 @@ export const createCustomer = async (data: any): Promise<ApiResponse> => {
     method: "POST",
     body: JSON.stringify(data),
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to create customer (${res.status})`);
+  }
+  return body;
 };
 
 /**
@@ -96,7 +104,11 @@ export const updateCustomer = async (
     method: "PUT",
     body: JSON.stringify(data),
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to update customer (${res.status})`);
+  }
+  return body;
 };
 
 /**
@@ -106,7 +118,12 @@ export const deleteCustomer = async (id: number, force = false): Promise<ApiResp
   const res = await apiFetch(`/users/${id}${force ? '?force=true' : ''}`, {
     method: "DELETE",
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  // 400 with error message = safe warning (linked records), not a throw
+  if (!res.ok && res.status !== 400) {
+    throw new Error(body?.error || `Failed to delete customer (${res.status})`);
+  }
+  return body;
 };
 
 export const fetchCustomerLedger = async (

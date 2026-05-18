@@ -38,6 +38,7 @@ interface Transaction {
 const Transactions: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showNewTxModal, setShowNewTxModal] = useState(false);
   const [search, setSearch] = useState("");
   // Financial summary — sourced from cash+bank ledger (same as Ledgers page)
@@ -64,21 +65,28 @@ const Transactions: React.FC = () => {
   }, []);
 
   const fetchData = async () => {
+    setLoading(true);
+    setFetchError(null);
     try {
-      setLoading(true);
       // Fetch audit trail + financial summary in parallel
       const [txRes, sumRes] = await Promise.all([
         apiFetch("/transactions"),
         apiFetch("/transactions/financial-summary"),
       ]);
+      if (!txRes.ok) {
+        const errBody = await txRes.json().catch(() => ({}));
+        throw new Error(errBody?.error || `Failed to load transactions (${txRes.status})`);
+      }
       const data = await txRes.json();
       setTransactions(Array.isArray(data) ? data : []);
       if (sumRes.ok) {
         const sumData = await sumRes.json();
         if (sumData && !sumData.error) setSummary(sumData);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch transactions", err);
+      setFetchError(err.message || "Failed to load transactions.");
+      setTransactions([]);
     } finally {
       setLoading(false);
     }
@@ -244,6 +252,25 @@ const Transactions: React.FC = () => {
           <span className="stat-sub">Live Liquidity</span>
         </div>
       </div>
+
+      {fetchError && (
+        <div style={{
+          background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626",
+          padding: "12px 16px", borderRadius: "10px", marginBottom: "16px",
+          fontSize: "0.875rem", fontWeight: 500, display: "flex",
+          alignItems: "center", gap: "8px",
+        }}>
+          ⚠️ {fetchError}
+          <button
+            onClick={fetchData}
+            style={{ marginLeft: "auto", background: "none", border: "1px solid #fca5a5",
+              color: "#dc2626", borderRadius: "6px", padding: "2px 10px",
+              cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="card" style={{ padding: "0", overflow: "hidden" }}>
         <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--erp-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>

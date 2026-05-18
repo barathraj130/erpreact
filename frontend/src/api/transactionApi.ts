@@ -32,6 +32,10 @@ export const fetchTransactions = async (
     params as Record<string, string>,
   ).toString();
   const res = await apiFetch(`/transactions?${query}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `Failed to load transactions (${res.status})`);
+  }
   return res.json();
 };
 
@@ -45,5 +49,9 @@ export const createTransaction = async (
     method: "POST",
     body: JSON.stringify(data),
   });
-  return res.json();
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to create transaction (${res.status})`);
+  }
+  return body;
 };

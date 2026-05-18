@@ -22,7 +22,7 @@ import AddCustomerModal from "./AddCustomerModal";
 import "./PageShared.css";
 
 const Customers: React.FC = () => {
-  const { customers = [], loading, refresh } = useUsers();
+  const { customers = [], loading, error: fetchError, refresh } = useUsers();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -167,6 +167,26 @@ const Customers: React.FC = () => {
           />
         </div>
       </div>
+
+      {/* Fetch error banner */}
+      {fetchError && !loading && (
+        <div style={{
+          background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626",
+          padding: "12px 16px", borderRadius: "10px", marginBottom: "16px",
+          fontSize: "0.875rem", fontWeight: 500, display: "flex",
+          alignItems: "center", gap: "8px",
+        }}>
+          ⚠️ {fetchError}
+          <button
+            onClick={refresh}
+            style={{ marginLeft: "auto", background: "none", border: "1px solid #fca5a5",
+              color: "#dc2626", borderRadius: "6px", padding: "2px 10px",
+              cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (

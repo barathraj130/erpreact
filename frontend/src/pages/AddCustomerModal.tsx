@@ -229,6 +229,7 @@ const AddCustomerModal: React.FC<Props> = ({
     password: "", // ✅ Added password field
   });
   const [loading, setLoading] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (customerToEdit) {
@@ -253,6 +254,11 @@ const AddCustomerModal: React.FC<Props> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrMsg(null);
+    if (!formData.username.trim()) {
+      setErrMsg("Customer name is required.");
+      return;
+    }
     setLoading(true);
     try {
       if (customerToEdit) {
@@ -263,7 +269,7 @@ const AddCustomerModal: React.FC<Props> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      alert(err.message || "Operation failed");
+      setErrMsg(err.message || "Operation failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -294,6 +300,15 @@ const AddCustomerModal: React.FC<Props> = ({
 
         <div style={styles.body}>
           <form id="customer-form" onSubmit={handleSubmit}>
+            {errMsg && (
+              <div style={{
+                background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626",
+                padding: "10px 14px", borderRadius: "8px", marginBottom: "14px",
+                fontSize: "0.85rem", fontWeight: 500,
+              }}>
+                {errMsg}
+              </div>
+            )}
             {/* 1. BUSINESS NAME */}
             <div style={{ ...styles.sectionTitle, marginTop: 0 }}>
               Business Details
