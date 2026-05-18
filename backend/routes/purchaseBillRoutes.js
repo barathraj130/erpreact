@@ -352,18 +352,37 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 }
             }
 
-            await client.query(`
-                INSERT INTO purchase_bill_items
-                (bill_id, product_id, description, hsn_code, quantity, unit_price, tax_percent,
-                 cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, line_total)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-            `, [
-                billId, sanitizeInt(pItem.product_id), pItem.description || null,
-                pItem.hsn_code || null, pItem.quantity, pItem.unit_price,
-                pItem.tax_percent || 0,
-                pItem.cgst_rate, pItem.sgst_rate, pItem.igst_rate,
-                pItem.cgst_amount, pItem.sgst_amount, pItem.igst_amount, pItem.line_total
-            ]);
+            // Wrap items INSERT in SAVEPOINT — production may lack GST columns
+            await client.query(`SAVEPOINT sp_bill_item`);
+            try {
+                await client.query(`
+                    INSERT INTO purchase_bill_items
+                    (bill_id, product_id, description, hsn_code, quantity, unit_price, tax_percent,
+                     cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, line_total)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                `, [
+                    billId, sanitizeInt(pItem.product_id), pItem.description || null,
+                    pItem.hsn_code || null, pItem.quantity, pItem.unit_price,
+                    pItem.tax_percent || 0,
+                    pItem.cgst_rate, pItem.sgst_rate, pItem.igst_rate,
+                    pItem.cgst_amount, pItem.sgst_amount, pItem.igst_amount, pItem.line_total
+                ]);
+                await client.query(`RELEASE SAVEPOINT sp_bill_item`);
+            } catch (itemErr) {
+                await client.query(`ROLLBACK TO SAVEPOINT sp_bill_item`);
+                await client.query(`RELEASE SAVEPOINT sp_bill_item`);
+                // Fall back to minimal 6-column INSERT (base schema only)
+                await client.query(`
+                    INSERT INTO purchase_bill_items
+                    (bill_id, product_id, description, quantity, unit_price, tax_percent)
+                    VALUES ($1,$2,$3,$4,$5,$6)
+                    ON CONFLICT DO NOTHING
+                `, [
+                    billId, sanitizeInt(pItem.product_id), pItem.description || null,
+                    pItem.quantity, pItem.unit_price, pItem.tax_percent || 0
+                ]);
+                console.warn(`[purchase-bill] bill_items full INSERT failed, used minimal schema: ${(itemErr.message||'').split('\n')[0]}`);
+            }
 
             if (pItem.product_id) {
                 // All inventory writes are best-effort — a missing column or constraint

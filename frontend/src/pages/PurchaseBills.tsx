@@ -47,21 +47,23 @@ const PurchaseBills: React.FC = () => {
   // View Bill Detail Modal
   const [viewBill, setViewBill] = useState<any | null>(null);
   const [billItems, setBillItems] = useState<any[]>([]);
+  const [billExpenses, setBillExpenses] = useState<any[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
 
   const handleViewBill = async (bill: any) => {
     setViewBill(bill);
+    setBillItems([]);
+    setBillExpenses([]);
     setLoadingItems(true);
     try {
       const res = await apiFetch(`/purchase-bills/${bill.id}`);
       if (res.ok) {
         const data = await res.json();
         setBillItems(Array.isArray(data.items) ? data.items : []);
-      } else {
-        setBillItems([]);
+        setBillExpenses(Array.isArray(data.expenses) ? data.expenses : []);
       }
     } catch {
-      setBillItems([]);
+      // ignore — modal will show empty state
     } finally {
       setLoadingItems(false);
     }
@@ -852,74 +854,121 @@ const PurchaseBills: React.FC = () => {
               </div>
 
               <div style={{ padding: "24px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "20px", marginBottom: "24px" }}>
-                  <div style={{ padding: "16px", background: "#f8fafc", borderRadius: "12px" }}>
-                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Supplier</div>
+                {/* Header info cards */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+                  <div style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: "12px" }}>
+                    <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Supplier</div>
                     <div style={{ fontSize: "1rem", fontWeight: 700, marginTop: "4px" }}>{viewBill.supplier_name || "Unknown"}</div>
                   </div>
-                  <div style={{ padding: "16px", background: "#f8fafc", borderRadius: "12px" }}>
-                    <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Financials</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
-                      <span style={{ fontWeight: 600 }}>Total: ₹{Number(viewBill.total_amount).toLocaleString()}</span>
-                      <span style={{ color: "#22c55e", fontWeight: 600 }}>Paid: ₹{Number(viewBill.paid_amount || 0).toLocaleString()}</span>
+                  <div style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: "12px" }}>
+                    <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Financials</div>
+                    <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Total: ₹{Number(viewBill.total_amount).toLocaleString()}</span>
+                      <span style={{ color: "#22c55e", fontWeight: 600, fontSize: "0.9rem" }}>Paid: ₹{Number(viewBill.paid_amount || 0).toLocaleString()}</span>
+                      <span style={{ color: Number(viewBill.balance_amount || 0) > 0 ? "#ef4444" : "#64748b", fontWeight: 600, fontSize: "0.9rem" }}>
+                        Bal: ₹{Number(viewBill.balance_amount || 0).toLocaleString()}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <h4 style={{ margin: "0 0 12px 0", fontWeight: 700 }}>Items</h4>
-                <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "12px" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead style={{ background: "#f8fafc" }}>
-                      <tr>
-                        <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>Product</th>
-                        <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>HSN</th>
-                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Qty</th>
-                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Rate</th>
-                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>GST%</th>
-                        <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadingItems ? (
-                        <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center" }}>Loading items...</td></tr>
-                      ) : billItems.length === 0 ? (
-                        <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>No items found</td></tr>
-                      ) : (
-                        billItems.map((item: any, i: number) => (
-                          <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "10px", fontSize: "0.85rem", fontWeight: 600 }}>
-                              {item.product_name || item.description || `Product #${item.product_id}`}
-                            </td>
-                            <td style={{ padding: "10px", fontSize: "0.75rem", color: "#64748b" }}>{item.hsn_code || "—"}</td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
-                              {Number(item.quantity).toLocaleString()} {item.unit || ""}
-                            </td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
-                              ₹{Number(item.unit_price).toLocaleString()}
-                            </td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
-                              {item.tax_percent || 0}%
-                            </td>
-                            <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 700 }}>
-                              ₹{Number(item.line_total).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {/* Payment summary */}
-                <div style={{ display: "flex", gap: "16px", justifyContent: "flex-end", marginTop: "16px", padding: "12px 16px", background: "#f8fafc", borderRadius: "10px" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b" }}>Total: <strong>₹{Number(viewBill.total_amount).toLocaleString()}</strong></span>
-                  <span style={{ fontSize: "13px", color: "#16a34a" }}>Paid: <strong>₹{Number(viewBill.paid_amount || 0).toLocaleString()}</strong></span>
-                  <span style={{ fontSize: "13px", color: Number(viewBill.balance_amount || 0) > 0 ? "#ef4444" : "#64748b" }}>
-                    Balance: <strong>₹{Number(viewBill.balance_amount || 0).toLocaleString()}</strong>
+                {/* Bill category badge */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+                  <h4 style={{ margin: 0, fontWeight: 700 }}>
+                    {viewBill.bill_category === 'EXPENSE' ? 'Expenses' : 'Items'}
+                  </h4>
+                  <span style={{
+                    fontSize: "0.65rem", fontWeight: 800, padding: "2px 8px",
+                    borderRadius: "4px", textTransform: "uppercase", letterSpacing: "0.5px",
+                    background: viewBill.bill_category === 'EXPENSE' ? "#fff7ed" : "#eff6ff",
+                    color: viewBill.bill_category === 'EXPENSE' ? "#c2410c" : "#1e40af",
+                  }}>
+                    {viewBill.bill_category || 'PRODUCT'}
                   </span>
                 </div>
 
-                <div style={{ marginTop: "24px", display: "flex", justifyContent: "flex-end" }}>
-                   <button className="btn-primary" onClick={() => setViewBill(null)}>Close</button>
+                {/* PRODUCT ITEMS TABLE */}
+                {(viewBill.bill_category !== 'EXPENSE') && (
+                  <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "12px", marginBottom: "16px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead style={{ background: "#f8fafc" }}>
+                        <tr>
+                          <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>Product</th>
+                          <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>HSN</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Qty</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Rate</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>GST%</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loadingItems ? (
+                          <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center" }}>Loading…</td></tr>
+                        ) : billItems.length === 0 ? (
+                          <tr><td colSpan={6} style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>No product items on this bill</td></tr>
+                        ) : (
+                          billItems.map((item: any, i: number) => (
+                            <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "10px", fontSize: "0.85rem", fontWeight: 600 }}>
+                                {item.product_name || item.description || `Item #${i + 1}`}
+                              </td>
+                              <td style={{ padding: "10px", fontSize: "0.75rem", color: "#64748b" }}>{item.hsn_code || "—"}</td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
+                                {Number(item.quantity).toLocaleString()} {item.unit || ""}
+                              </td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>
+                                ₹{Number(item.unit_price).toLocaleString()}
+                              </td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>{item.tax_percent || 0}%</td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 700 }}>
+                                ₹{Number(item.line_total || (item.quantity * item.unit_price)).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* EXPENSE TABLE */}
+                {viewBill.bill_category === 'EXPENSE' && (
+                  <div style={{ overflowX: "auto", border: "1px solid #fed7aa", borderRadius: "12px", marginBottom: "16px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead style={{ background: "#fff7ed" }}>
+                        <tr>
+                          <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>Expense Type</th>
+                          <th style={{ padding: "10px", textAlign: "left", fontSize: "0.75rem" }}>Description</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>GST%</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Amount</th>
+                          <th style={{ padding: "10px", textAlign: "right", fontSize: "0.75rem" }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loadingItems ? (
+                          <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center" }}>Loading…</td></tr>
+                        ) : billExpenses.length === 0 ? (
+                          <tr><td colSpan={5} style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>No expense entries on this bill</td></tr>
+                        ) : (
+                          billExpenses.map((exp: any, i: number) => (
+                            <tr key={i} style={{ borderTop: "1px solid #fed7aa" }}>
+                              <td style={{ padding: "10px", fontSize: "0.85rem", fontWeight: 600 }}>{exp.expense_type || "Expense"}</td>
+                              <td style={{ padding: "10px", fontSize: "0.8rem", color: "#64748b" }}>{exp.description || "—"}</td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>{exp.tax_percent || 0}%</td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem" }}>₹{Number(exp.amount).toLocaleString()}</td>
+                              <td style={{ padding: "10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 700 }}>
+                                ₹{Number(exp.total_amount || exp.amount).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
+                  <button className="btn-primary" onClick={() => setViewBill(null)}>Close</button>
                 </div>
               </div>
             </motion.div>
