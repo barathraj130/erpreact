@@ -396,12 +396,11 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
             // ── Step C: Update inventory — MANDATORY when product exists ─────
             if (pItem.product_id) {
-                // 1. Update master product stock and cost price (weighted average)
+                // 1. Update master product stock and cost price
                 await client.query(`
                     UPDATE products
                     SET current_stock = current_stock + $1,
-                        cost_price    = $2,
-                        updated_at    = NOW()
+                        cost_price    = $2
                     WHERE id = $3
                 `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
 

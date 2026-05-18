@@ -143,6 +143,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
             ALTER TABLE products ADD COLUMN IF NOT EXISTS location TEXT;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             ALTER TABLE users ADD COLUMN IF NOT EXISTS meta JSONB;
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_category VARCHAR(50);
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
