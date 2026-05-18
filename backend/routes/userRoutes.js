@@ -182,47 +182,71 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
         client = await db.getClient();
         await client.query("BEGIN");
 
-        let password_hash;
-        
-        // If admin sets a password, hash it so customer can login
-        if (password && password.trim() !== "") {
-            password_hash = await bcrypt.hash(password, 10);
-        } else {
-            // Live schema requires password_hash even when portal login is not intended.
-            password_hash = await bcrypt.hash(`disabled-${username}-${Date.now()}`, 10);
+        const password_hash = (password && password.trim() !== "")
+            ? await bcrypt.hash(password, 10)
+            : await bcrypt.hash(`disabled-${username}-${Date.now()}`, 10);
+
+        const companyId = req.user.active_company_id || req.user.company_id;
+
+        // username has a global unique constraint — try up to 9 suffixed variants
+        // so two customers named "BARATH" become "BARATH" and "BARATH_2" automatically.
+        // The display nickname is always stored as the original name regardless.
+        let insertedId = null;
+        let usedUsername = username;
+        for (let attempt = 1; attempt <= 9; attempt++) {
+            usedUsername = attempt === 1 ? username : `${username}_${attempt}`;
+            try {
+                const result = await client.query(
+                    `INSERT INTO users (
+                        company_id, username, nickname, email, phone, gstin,
+                        address_line1, city_pincode, state, state_code,
+                        bank_name, bank_account_no, bank_ifsc_code,
+                        initial_balance, role, active_company_id, password_hash
+                    )
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customer',$15,$16)
+                     RETURNING id`,
+                    [
+                        companyId,
+                        usedUsername,
+                        // always store the original name as nickname for display
+                        nickname || username,
+                        email || null, phone || null, gstin || null,
+                        address_line1 || null, city_pincode || null,
+                        state || null, state_code || null,
+                        bank_name || null, bank_account_no || null, bank_ifsc_code || null,
+                        opening_balance || 0,
+                        companyId,
+                        password_hash
+                    ]
+                );
+                insertedId = result.rows[0].id;
+                break; // success — exit retry loop
+            } catch (insertErr) {
+                if (insertErr.code === '23505' && attempt < 9) {
+                    // duplicate username — try next suffix
+                    continue;
+                }
+                throw insertErr; // re-throw non-duplicate or exhausted attempts
+            }
         }
 
-        const result = await client.query(
-            `INSERT INTO users (
-                company_id, username, nickname, email, phone, gstin, 
-                address_line1, city_pincode, state, state_code, 
-                bank_name, bank_account_no, bank_ifsc_code,
-                initial_balance, role, active_company_id,
-                password_hash  -- ✅ Storing hash
-            )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'customer', $15, $16)
-             RETURNING id`,
-            [
-                req.user.active_company_id || req.user.company_id,
-                username, nickname || null, email || null, phone || null, gstin || null,
-                address_line1 || null, city_pincode || null, state || null, state_code || null,
-                bank_name || null, bank_account_no || null, bank_ifsc_code || null,
-                opening_balance || 0,
-                req.user.active_company_id || req.user.company_id,
-                password_hash
-            ]
-        );
+        if (!insertedId) {
+            throw new Error(`A customer named "${username}" already exists (tried variants up to ${username}_9). Use a more specific name.`);
+        }
 
-        const companyIdResolved = req.user.active_company_id || req.user.company_id;
-        await ensureCustomerLedgerMetadata(client, result.rows[0].id, companyIdResolved);
-        await recomputeCustomerBalance(client, result.rows[0].id, companyIdResolved);
+        await ensureCustomerLedgerMetadata(client, insertedId, companyId);
+        await recomputeCustomerBalance(client, insertedId, companyId);
 
         await client.query("COMMIT");
-        res.status(201).json({ success: true, id: result.rows[0].id });
+        res.status(201).json({ success: true, id: insertedId, username: usedUsername });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Create customer error:", err);
-        res.status(500).json({ error: "Failed to create customer: " + err.message });
+        // Return friendly message for any remaining constraint violations
+        const msg = err.code === '23505'
+            ? `A customer with this name already exists. Please use a more specific name (e.g. add a city or branch).`
+            : `Failed to create customer: ${err.message}`;
+        res.status(err.code === '23505' ? 409 : 500).json({ error: msg });
     } finally {
         if (client) client.release();
     }
