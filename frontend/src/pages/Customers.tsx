@@ -58,7 +58,7 @@ const Customers: React.FC = () => {
 
         return isNotAdmin && matchesSearch;
       })
-      .sort((a, b) => (a.username || "").localeCompare(b.username || ""));
+      .sort((a, b) => (a.nickname || a.username || "").localeCompare(b.nickname || b.username || ""));
   }, [customers, searchTerm]);
 
   // Stats calculation — positive = outstanding (customer owes), negative = advance (we owe customer)
@@ -207,13 +207,12 @@ const Customers: React.FC = () => {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   <div className="tx-icon" style={{ background: "rgba(99, 102, 241, 0.1)", color: "#6366f1", fontWeight: 600, fontSize: "14px" }}>
-                    {(user.username || "U").charAt(0).toUpperCase()}
+                    {(user.nickname || user.username || "U").charAt(0).toUpperCase()}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div className="tx-desc" style={{ fontSize: "14.5px" }}>{user.username}</div>
+                    <div className="tx-desc" style={{ fontSize: "14.5px" }}>{user.nickname || user.username}</div>
                     <div className="tx-poster">
                       GSTIN: {user.gstin || "N/A"}
-                      {user.nickname && <> · <FaTag size={8} /> {user.nickname}</>}
                     </div>
                   </div>
                 </div>
@@ -280,13 +279,13 @@ const Customers: React.FC = () => {
                           display: "flex", alignItems: "center", justifyContent: "center",
                           fontWeight: 600, fontSize: "13.5px", flexShrink: 0
                         }}>
-                          {(user.username || "U").charAt(0).toUpperCase()}
+                          {(user.nickname || user.username || "U").charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-bold" style={{ fontSize: "13.5px" }}>{user.username}</div>
-                          {user.nickname && (
-                            <div style={{ fontSize: "11px", color: "#6366f1", display: "flex", alignItems: "center", gap: "4px", marginTop: "1px" }}>
-                              <FaTag size={8} /> {user.nickname}
+                          <div className="font-bold" style={{ fontSize: "13.5px" }}>{user.nickname || user.username}</div>
+                          {user.nickname && user.nickname !== user.username && (
+                            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px" }}>
+                              @{user.username}
                             </div>
                           )}
                         </div>
