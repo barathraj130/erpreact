@@ -11,13 +11,24 @@ const ConsolidatedInventory: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [breakdown, setBreakdown] = useState<any[]>([]);
 
+  const [error, setError] = useState<string | null>(null);
+
   const fetchConsolidated = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await apiFetch("/branch-inventory/consolidated");
-      if (res.ok) setProducts(await res.json());
-    } catch (err) {
-      console.error(err);
+      if (res.ok) {
+        const data = await res.json();
+        setProducts(Array.isArray(data) ? data : []);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.error || `Server error ${res.status}`);
+        setProducts([]);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Network error");
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -52,6 +63,13 @@ const ConsolidatedInventory: React.FC = () => {
           <FaSync className={loading ? "fa-spin" : ""} /> Refresh Data
         </button>
       </div>
+
+      {error && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", padding: "12px 16px", borderRadius: "10px", marginBottom: "16px", fontSize: "0.875rem", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>
+          ⚠️ {error}
+          <button onClick={fetchConsolidated} style={{ marginLeft: "auto", background: "none", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: "6px", padding: "2px 10px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}>Retry</button>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: selectedProduct ? "1fr 400px" : "1fr", gap: "30px", transition: "all 0.3s ease" }}>
         {/* Main List */}

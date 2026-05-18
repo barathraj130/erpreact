@@ -62,6 +62,7 @@ import testRoutes from "./routes/testRoutes.js";
 import intelligenceRoutes from "./routes/intelligenceRoutes.js";
 import pointsRoutes from "./routes/pointsRoutes.js";
 import resetRoutes from "./routes/resetRoutes.js";
+import debugRoutes from "./routes/debugRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -162,6 +163,7 @@ app.use("/api/test", testRoutes);
 app.use("/api/intelligence", intelligenceRoutes);
 app.use("/api/points", pointsRoutes);
 app.use("/api/reset", resetRoutes);
+app.use("/api/debug", debugRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");

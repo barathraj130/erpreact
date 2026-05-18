@@ -163,7 +163,9 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
     let data = req.body;
     if (typeof req.body.data === 'string') {
-        try { data = JSON.parse(req.body.data); } catch(e) {}
+        try { data = JSON.parse(req.body.data); } catch(e) {
+            console.error('[purchase-bill] JSON.parse failed:', e.message, '| raw:', (req.body.data||'').slice(0,200));
+        }
     }
 
     const {
@@ -171,6 +173,9 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         paid_amount, payment_mode, bill_type, items, expenses,
         broker_id, broker_commission_rate, discount_amount, bill_category
     } = data;
+
+    console.log(`[purchase-bill] START companyId=${companyId} branchId=${branchId} category=${bill_category} items=${JSON.stringify((items||[]).map(i=>({id:i.product_id,desc:i.description,qty:i.quantity})))}`);
+
 
     // Safety: ensure no NaN values reach the DB
     const safeSupplierId = sanitizeInt(supplier_id);
@@ -332,41 +337,51 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         for (let pItem of processedItems) {
 
             // ── Step A: Ensure product exists ────────────────────────────────
+            console.log(`[purchase-bill] Step A: product_id=${pItem.product_id} description="${pItem.description}"`);
             if (!pItem.product_id && (pItem.description || '').trim()) {
-                // User typed a product name without selecting from dropdown.
-                // Create the product now. This is MANDATORY — if it fails, the bill fails.
-                // ON CONFLICT DO NOTHING + RETURNING handles the race where the same
-                // product name was inserted concurrently.
                 const productName = pItem.description.trim();
-                const autoProduct = await client.query(`
-                    INSERT INTO products
-                        (company_id, branch_id, name, cost_price, selling_price,
-                         current_stock, unit, hsn_code, gst_percent, is_active)
-                    VALUES ($1, $2, $3, $4, $4, 0, $5, $6, $7, 1)
-                    ON CONFLICT DO NOTHING
-                    RETURNING id
-                `, [
-                    companyId, safeBranchId, productName,
-                    pItem.unit_price, pItem.unit || 'pcs',
-                    pItem.hsn_code || null, pItem.tax_percent || 0
-                ]);
+                console.log(`[purchase-bill] Auto-creating product "${productName}" companyId=${companyId} branchId=${safeBranchId}`);
+                try {
+                    const autoProduct = await client.query(`
+                        INSERT INTO products
+                            (company_id, branch_id, name, cost_price, selling_price,
+                             current_stock, unit, hsn_code, gst_percent, is_active)
+                        VALUES ($1, $2, $3, $4, $4, 0, $5, $6, $7, 1)
+                        RETURNING id
+                    `, [
+                        companyId, safeBranchId, productName,
+                        pItem.unit_price || 0,
+                        pItem.unit || 'pcs',
+                        pItem.hsn_code || null,
+                        pItem.tax_percent || 0
+                    ]);
 
-                if (autoProduct.rows.length > 0) {
-                    pItem = { ...pItem, product_id: autoProduct.rows[0].id };
-                    console.log(`[purchase-bill] Auto-created product '${productName}' → id=${pItem.product_id}`);
-                } else {
-                    // Row already exists (ON CONFLICT hit) — look it up by name + company
-                    const existing = await client.query(
-                        `SELECT id FROM products WHERE company_id=$1 AND name=$2 LIMIT 1`,
-                        [companyId, productName]
-                    );
-                    if (existing.rows.length > 0) {
-                        pItem = { ...pItem, product_id: existing.rows[0].id };
-                        console.log(`[purchase-bill] Matched existing product '${productName}' → id=${pItem.product_id}`);
+                    if (autoProduct.rows.length > 0) {
+                        pItem = { ...pItem, product_id: autoProduct.rows[0].id };
+                        console.log(`[purchase-bill] ✓ Auto-created product "${productName}" → id=${pItem.product_id}`);
                     }
-                    // If still no product_id the item will save without a product link (unusual)
+                } catch (productErr) {
+                    // Duplicate name — look up existing product for this company
+                    if (productErr.code === '23505') {
+                        console.log(`[purchase-bill] Product "${productName}" already exists (23505), looking up...`);
+                        const existing = await client.query(
+                            `SELECT id FROM products WHERE company_id=$1 AND name=$2 AND is_deleted=false LIMIT 1`,
+                            [companyId, productName]
+                        );
+                        if (existing.rows.length > 0) {
+                            pItem = { ...pItem, product_id: existing.rows[0].id };
+                            console.log(`[purchase-bill] ✓ Found existing product "${productName}" → id=${pItem.product_id}`);
+                        } else {
+                            console.error(`[purchase-bill] ✗ Product "${productName}" 23505 but lookup returned nothing`);
+                            throw productErr;
+                        }
+                    } else {
+                        console.error(`[purchase-bill] ✗ Auto-product INSERT failed: ${productErr.message}`);
+                        throw productErr;
+                    }
                 }
             }
+            console.log(`[purchase-bill] Step A done: product_id=${pItem.product_id}`);
 
             // ── Step B: Insert bill item row — MANDATORY ─────────────────────
             // schemaUpdates.js guarantees all columns exist; no fallback needed.
@@ -396,6 +411,8 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
             // ── Step C: Update inventory — MANDATORY when product exists ─────
             if (pItem.product_id) {
+                console.log(`[purchase-bill] Step C: updating inventory for product_id=${pItem.product_id} qty=${pItem.quantity}`);
+
                 // 1. Update master product stock and cost price
                 await client.query(`
                     UPDATE products
@@ -403,6 +420,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         cost_price    = $2
                     WHERE id = $3
                 `, [pItem.quantity, pItem.unit_price, pItem.product_id]);
+                console.log(`[purchase-bill] ✓ products.current_stock updated`);
 
                 // 2. UPSERT main inventory table
                 await client.query(`
@@ -415,6 +433,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         cost_price    = EXCLUDED.cost_price,
                         last_updated  = NOW()
                 `, [companyId, safeBranchId, pItem.product_id, pItem.quantity, pItem.unit_price]);
+                console.log(`[purchase-bill] ✓ inventory UPSERT done`);
 
                 // 3. UPSERT branch-level inventory (best-effort — table may not exist)
                 await client.query(`SAVEPOINT sp_branch_inv`);
