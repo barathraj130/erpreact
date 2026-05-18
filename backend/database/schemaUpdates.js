@@ -141,11 +141,36 @@ export const runSchemaUpdates = async () => {
         await db.pgRun(`
             ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS location TEXT;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS meta JSONB;
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_category VARCHAR(50);
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS tax_total NUMERIC(15,2) DEFAULT 0;
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS sub_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS cgst_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS sgst_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS igst_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS gst_type VARCHAR(20);
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS broker_id INTEGER;
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS broker_commission_rate NUMERIC(5,2);
+            ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS purchase_number VARCHAR(100);
+        `);
+
+        // 9b. Ensure purchase_bill_items has all required columns
+        //     (this table may have been created before GST columns were added to the schema)
+        await db.pgRun(`
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(20);
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS tax_percent NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS cgst_rate NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS sgst_rate NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS igst_rate NUMERIC(5,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS cgst_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS sgst_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS igst_amount NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS line_total NUMERIC(15,2) DEFAULT 0;
+            ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS unit VARCHAR(50);
         `);
 
         // 10. Create Stock Requests and Branch Inventory
@@ -187,6 +212,23 @@ export const runSchemaUpdates = async () => {
         `);
 
         // Force add columns if table already existed
+        // 10b. Ensure purchase_bill_expenses table exists (expense bills)
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS purchase_bill_expenses (
+                id SERIAL PRIMARY KEY,
+                bill_id INTEGER REFERENCES purchase_bills(id) ON DELETE CASCADE,
+                expense_type VARCHAR(100) NOT NULL,
+                description TEXT,
+                amount NUMERIC(15,2) NOT NULL DEFAULT 0,
+                tax_percent NUMERIC(5,2) DEFAULT 0,
+                cgst_amount NUMERIC(15,2) DEFAULT 0,
+                sgst_amount NUMERIC(15,2) DEFAULT 0,
+                igst_amount NUMERIC(15,2) DEFAULT 0,
+                total_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
         await db.pgRun(`
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS requested_qty NUMERIC(12,2) DEFAULT 0;
             ALTER TABLE stock_requests ADD COLUMN IF NOT EXISTS urgency VARCHAR(20) DEFAULT 'Normal';
