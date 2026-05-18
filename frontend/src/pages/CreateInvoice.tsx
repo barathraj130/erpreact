@@ -152,6 +152,7 @@ const CreateInvoice: React.FC = () => {
   const [discount, setDiscount] = useState<number>(0);
   const [customerAdvance, setCustomerAdvance] = useState<number>(0);
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [customerInfo, setCustomerInfo] = useState({
     name: "---",
     address: "---",
@@ -345,15 +346,17 @@ const CreateInvoice: React.FC = () => {
   );
 
   const saveInvoice = async () => {
+    if (isSaving) return; // prevent double-submit
     if (invoiceType !== "RETAIL_SALE" && !customerId) {
         return alert("Please select a customer for this invoice type. Retail Sale allows anonymous customers.");
     }
-    
+
     if (invoiceType !== "GIFTED_ITEM" && (amountPaid + discount) > totals.grandTotal) {
-        // Allow overpayment if they really want, but warn. 
+        // Allow overpayment if they really want, but warn.
         // Actually, usually we don't want overpayment on a single invoice unless it creates a credit.
     }
 
+    setIsSaving(true);
     try {
       const body = {
         invoice_number: invoiceNo,
@@ -392,6 +395,8 @@ const CreateInvoice: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       alert("Failure saving transaction.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -424,8 +429,8 @@ const CreateInvoice: React.FC = () => {
           <button className="page-btn-round-ghost" onClick={() => navigate(-1)}>
             <FaArrowLeft size={12} /> Back
           </button>
-          <button className="page-btn-round page-btn-round-primary" onClick={saveInvoice} id="save-invoice-btn">
-            <FaSave size={12} /> Save Invoice
+          <button className="page-btn-round page-btn-round-primary" onClick={saveInvoice} id="save-invoice-btn" disabled={isSaving} style={isSaving ? { opacity: 0.6, cursor: "not-allowed" } : {}}>
+            <FaSave size={12} /> {isSaving ? "Saving…" : "Save Invoice"}
           </button>
         </div>
       </header>
