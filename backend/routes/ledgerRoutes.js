@@ -112,17 +112,30 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        // Opening balance = net of ALL cash transactions strictly BEFORE startDate
+        const openingParams = [companyId];
+        let openingSql = `
+            SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
+            FROM cash_ledger
+            WHERE company_id = $1 AND ${branchFilter}
+        `;
+        if (startDate) {
+            openingSql += ` AND date < $${openingParams.length + 1}`;
+            openingParams.push(startDate);
+        }
+        const openingRow = await db.pgGet(openingSql, openingParams);
+        const opening_balance = Number(openingRow?.balance || 0);
+
+        // Entries within the requested date range
         const params = [companyId];
-
-        let pIndex = params.length + 1;
-
+        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        let pIndex = 2;
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
-        if (endDate) { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
+        if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
         const entries = await db.pgAll(sql, params);
-        res.json({ entries });
+        res.json({ entries, opening_balance });
     } catch (err) {
         console.error("Cash ledger error:", err);
         res.status(500).json({ error: "Failed to fetch cash ledger" });
@@ -135,17 +148,30 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        // Opening balance = net of ALL bank transactions strictly BEFORE startDate
+        const openingParams = [companyId];
+        let openingSql = `
+            SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
+            FROM bank_ledger
+            WHERE company_id = $1 AND ${branchFilter}
+        `;
+        if (startDate) {
+            openingSql += ` AND date < $${openingParams.length + 1}`;
+            openingParams.push(startDate);
+        }
+        const openingRow = await db.pgGet(openingSql, openingParams);
+        const opening_balance = Number(openingRow?.balance || 0);
+
+        // Entries within the requested date range
         const params = [companyId];
-
-        let pIndex = params.length + 1;
-
+        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        let pIndex = 2;
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
-        if (endDate) { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
+        if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
         const entries = await db.pgAll(sql, params);
-        res.json({ entries });
+        res.json({ entries, opening_balance });
     } catch (err) {
         console.error("Bank ledger error:", err);
         res.status(500).json({ error: "Failed to fetch bank ledger" });

@@ -106,15 +106,15 @@ const Ledgers: React.FC = () => {
     }
   };
 
-  const computeBalance = (entries: LedgerEntry[], opening: number) => {
-    return opening + entries.reduce((acc, entry) => {
-      const amt = Number(entry.amount) || 0;
-      return entry.direction === "in" ? acc + amt : acc - amt;
+  // Closing balance for the visible date range = opening + net of shown entries
+  const computeClosingBalance = (entries: LedgerEntry[], opening: number) =>
+    opening + entries.reduce((acc, e) => {
+      const amt = Number(e.amount) || 0;
+      return e.direction === "in" ? acc + amt : acc - amt;
     }, 0);
-  };
 
-  const cashBalance = computeBalance(cashEntries, cashOpeningBalance);
-  const bankBalance = computeBalance(bankEntries, bankOpeningBalance);
+  const cashBalance = computeClosingBalance(cashEntries, cashOpeningBalance);
+  const bankBalance = computeClosingBalance(bankEntries, bankOpeningBalance);
   const totalBalance = cashBalance + bankBalance;
 
   const filteredAccounts = accounts.filter(acc => 
@@ -131,46 +131,100 @@ const Ledgers: React.FC = () => {
     }
   };
 
-  const renderEntries = (entries: LedgerEntry[], type: "CASH"|"BANK", opening: number) => {
+  const fmt = (n: number) => `₹${Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+  const colSpan = (type: "CASH" | "BANK") => type === "BANK" ? 6 : 5;
+
+  const renderEntries = (entries: LedgerEntry[], type: "CASH" | "BANK", opening: number) => {
+    // Group entries by calendar date (YYYY-MM-DD)
+    const groups: Record<string, LedgerEntry[]> = {};
+    entries.forEach(e => {
+      const key = (e.date || e.created_at || "").slice(0, 10);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(e);
+    });
+
+    const rows: React.ReactNode[] = [];
     let runningBalance = opening;
-    const rows = entries.map((entry, idx) => {
-      const amt = Number(entry.amount) || 0;
-      if (entry.direction === "in") runningBalance += amt;
-      else runningBalance -= amt;
-      const dateStr = new Date(entry.date || entry.created_at).toLocaleDateString('en-IN');
-      return (
-        <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-          <td style={{ padding: "16px", color: "#64748b" }}>{dateStr}</td>
-          <td style={{ padding: "16px", fontWeight: 500, textTransform: "capitalize" }}>{entry.source}</td>
-          {type === "BANK" && (
-            <td style={{ padding: "16px" }}>
-              <div style={{ fontWeight: 600 }}>{entry.bank_name || "-"}</div>
-              <div style={{ fontSize: "11px", color: "#94a3b8" }}>{entry.transaction_id || ""}</div>
+
+    // If no entries, just show opening row
+    if (Object.keys(groups).length === 0) {
+      rows.push(
+        <tr key="ob" style={{ background: "#eff6ff", borderTop: "2px solid #bfdbfe" }}>
+          <td colSpan={colSpan(type)} style={{ padding: "14px 16px", fontWeight: 700, color: "#1d4ed8" }}>
+            Balance b/d (Opening Balance)
+          </td>
+          <td style={{ padding: "14px 16px", fontWeight: 800, textAlign: "right", color: "#1d4ed8" }}>
+            {fmt(opening)}
+          </td>
+        </tr>
+      );
+      return rows;
+    }
+
+    Object.entries(groups).forEach(([dateKey, dayEntries], gi) => {
+      const displayDate = fmtDate(dateKey);
+
+      // Balance b/d row — blue header for this day
+      rows.push(
+        <tr key={`bd-${gi}`} style={{ background: "#eff6ff", borderTop: "2px solid #bfdbfe" }}>
+          <td colSpan={colSpan(type)} style={{ padding: "12px 16px", fontWeight: 700, color: "#1d4ed8", fontSize: "13px" }}>
+            Balance b/d &nbsp;·&nbsp; {displayDate}
+          </td>
+          <td style={{ padding: "12px 16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#1d4ed8" }}>
+            {fmt(runningBalance)}
+          </td>
+        </tr>
+      );
+
+      // Transaction rows for this day
+      dayEntries.forEach((entry, idx) => {
+        const amt = Number(entry.amount) || 0;
+        if (entry.direction === "in") runningBalance += amt;
+        else runningBalance -= amt;
+
+        rows.push(
+          <tr key={`${gi}-${idx}`} style={{ borderBottom: "1px solid #f1f5f9", background: "white" }}>
+            <td style={{ padding: "14px 16px", color: "#64748b", fontSize: "13px" }}>
+              {fmtDate(entry.date || entry.created_at)}
             </td>
-          )}
-          <td style={{ padding: "16px", color: "#10b981", fontWeight: 600, textAlign: "right" }}>
-            {entry.direction === "in" ? `₹${amt.toLocaleString("en-IN", {minimumFractionDigits:2})}` : "-"}
+            <td style={{ padding: "14px 16px", fontWeight: 500, textTransform: "capitalize" }}>
+              {entry.source}
+            </td>
+            {type === "BANK" && (
+              <td style={{ padding: "14px 16px" }}>
+                <div style={{ fontWeight: 600 }}>{entry.bank_name || "-"}</div>
+                <div style={{ fontSize: "11px", color: "#94a3b8" }}>{entry.transaction_id || ""}</div>
+              </td>
+            )}
+            <td style={{ padding: "14px 16px", color: "#10b981", fontWeight: 600, textAlign: "right" }}>
+              {entry.direction === "in" ? fmt(amt) : "-"}
+            </td>
+            <td style={{ padding: "14px 16px", color: "#ef4444", fontWeight: 600, textAlign: "right" }}>
+              {entry.direction === "out" ? fmt(amt) : "-"}
+            </td>
+            <td style={{ padding: "14px 16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#1e293b" }}>
+              {fmt(runningBalance)}
+            </td>
+          </tr>
+        );
+      });
+
+      // Closing Balance row — green footer for this day
+      rows.push(
+        <tr key={`cb-${gi}`} style={{ background: "#f0fdf4", borderBottom: "2px solid #bbf7d0" }}>
+          <td colSpan={colSpan(type)} style={{ padding: "12px 16px", fontWeight: 700, color: "#15803d", fontSize: "13px" }}>
+            Closing Balance &nbsp;·&nbsp; {displayDate}
           </td>
-          <td style={{ padding: "16px", color: "#ef4444", fontWeight: 600, textAlign: "right" }}>
-            {entry.direction === "out" ? `₹${amt.toLocaleString("en-IN", {minimumFractionDigits:2})}` : "-"}
-          </td>
-          <td style={{ padding: "16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#1e293b" }}>
-            ₹{runningBalance.toLocaleString("en-IN", {minimumFractionDigits:2})}
+          <td style={{ padding: "12px 16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#15803d" }}>
+            {fmt(runningBalance)}
           </td>
         </tr>
       );
     });
-    const openingRow = (
-      <tr key="opening_balance" style={{ borderBottom: "2px solid #e2e8f0", background: "#f8fafc" }}>
-        <td colSpan={type === "BANK" ? 3 : 2} style={{ padding: "16px", fontWeight: 700, color: "#475569" }}>Balance b/d (Opening Balance)</td>
-        <td style={{ padding: "16px" }}></td>
-        <td style={{ padding: "16px" }}></td>
-        <td style={{ padding: "16px", fontWeight: 800, textAlign: "right", color: opening < 0 ? "#ef4444" : "#1e293b" }}>
-            ₹{opening.toLocaleString("en-IN", {minimumFractionDigits:2})}
-        </td>
-      </tr>
-    );
-    return [openingRow, ...rows];
+
+    return rows;
   };
 
   return (
