@@ -184,7 +184,6 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             SELECT type, category, SUM(amount) as total
             FROM transactions
             WHERE company_id=$1 AND ${branchFilter}
-              AND COALESCE(is_deleted, false) = false
             GROUP BY type, category
         `, queryParams);
 

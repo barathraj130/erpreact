@@ -24,38 +24,65 @@ export const runSchemaUpdates = async () => {
     await db.query(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
     await db.query(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
 
-    // ── One-time cleanup: remove orphaned payment entries in cash/bank ledger ──
-    // These are rows created before invoice_id was tracked (invoice_id IS NULL),
-    // where the invoice was later deleted and invoice_payments were removed.
-    // Safe: only deletes payment rows with NO matching active invoice_payment record.
+    // ── One-time cleanup: remove excess orphaned payment entries ──────────────
+    // Problem: when an invoice is deleted its invoice_payments are removed but
+    // the cash/bank ledger rows (created before invoice_id was tracked) remain.
+    // If two invoices had the same amount on the same date, a simple NOT EXISTS
+    // check keeps all rows. Instead we count how many active invoice_payments
+    // exist for each (company, amount, date, method) group and delete the
+    // excess older rows (lowest IDs = oldest = from the deleted invoice).
     await db.query(`
         DELETE FROM cash_ledger
-        WHERE source = 'payment'
-          AND invoice_id IS NULL
-          AND NOT EXISTS (
-              SELECT 1
-              FROM invoice_payments ip
-              JOIN invoices i ON i.id = ip.invoice_id
-              WHERE ip.amount       = cash_ledger.amount
-                AND ip.payment_date::date = cash_ledger.date::date
-                AND i.company_id    = cash_ledger.company_id
-                AND COALESCE(i.is_deleted, false) = false
-          )
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT
+                    cl.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY cl.company_id, cl.amount, cl.date::date
+                        ORDER BY cl.id DESC           -- keep newest (real), delete oldest (ghost)
+                    ) AS rn,
+                    (
+                        SELECT COUNT(*)
+                        FROM invoice_payments ip
+                        JOIN invoices i ON i.id = ip.invoice_id
+                        WHERE UPPER(COALESCE(ip.payment_method,'')) = 'CASH'
+                          AND ip.amount              = cl.amount
+                          AND ip.payment_date::date  = cl.date::date
+                          AND i.company_id           = cl.company_id
+                          AND COALESCE(i.is_deleted, false) = false
+                    ) AS active_count
+                FROM cash_ledger cl
+                WHERE cl.source = 'payment' AND cl.invoice_id IS NULL
+            ) ranked
+            WHERE rn > active_count
+        )
     `).catch(() => {});
 
     await db.query(`
         DELETE FROM bank_ledger
-        WHERE source = 'payment'
-          AND invoice_id IS NULL
-          AND NOT EXISTS (
-              SELECT 1
-              FROM invoice_payments ip
-              JOIN invoices i ON i.id = ip.invoice_id
-              WHERE ip.amount       = bank_ledger.amount
-                AND ip.payment_date::date = bank_ledger.date::date
-                AND i.company_id    = bank_ledger.company_id
-                AND COALESCE(i.is_deleted, false) = false
-          )
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT
+                    bl.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY bl.company_id, bl.amount, bl.date::date
+                        ORDER BY bl.id DESC
+                    ) AS rn,
+                    (
+                        SELECT COUNT(*)
+                        FROM invoice_payments ip
+                        JOIN invoices i ON i.id = ip.invoice_id
+                        WHERE UPPER(COALESCE(ip.payment_method,'')) IN ('BANK','UPI')
+                          AND ip.amount              = bl.amount
+                          AND ip.payment_date::date  = bl.date::date
+                          AND i.company_id           = bl.company_id
+                          AND COALESCE(i.is_deleted, false) = false
+                    ) AS active_count
+                FROM bank_ledger bl
+                WHERE bl.source = 'payment' AND bl.invoice_id IS NULL
+            ) ranked
+            WHERE rn > active_count
+        )
     `).catch(() => {});
 
     // Invoice columns (points & series numbering)
