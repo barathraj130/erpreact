@@ -24,6 +24,40 @@ export const runSchemaUpdates = async () => {
     await db.query(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
     await db.query(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
 
+    // ── One-time cleanup: remove orphaned payment entries in cash/bank ledger ──
+    // These are rows created before invoice_id was tracked (invoice_id IS NULL),
+    // where the invoice was later deleted and invoice_payments were removed.
+    // Safe: only deletes payment rows with NO matching active invoice_payment record.
+    await db.query(`
+        DELETE FROM cash_ledger
+        WHERE source = 'payment'
+          AND invoice_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM invoice_payments ip
+              JOIN invoices i ON i.id = ip.invoice_id
+              WHERE ip.amount       = cash_ledger.amount
+                AND ip.payment_date::date = cash_ledger.date::date
+                AND i.company_id    = cash_ledger.company_id
+                AND COALESCE(i.is_deleted, false) = false
+          )
+    `).catch(() => {});
+
+    await db.query(`
+        DELETE FROM bank_ledger
+        WHERE source = 'payment'
+          AND invoice_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM invoice_payments ip
+              JOIN invoices i ON i.id = ip.invoice_id
+              WHERE ip.amount       = bank_ledger.amount
+                AND ip.payment_date::date = bank_ledger.date::date
+                AND i.company_id    = bank_ledger.company_id
+                AND COALESCE(i.is_deleted, false) = false
+          )
+    `).catch(() => {});
+
     // Invoice columns (points & series numbering)
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_earned    INTEGER        DEFAULT 0`).catch(() => {});
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_redeemed  INTEGER        DEFAULT 0`).catch(() => {});
