@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import * as pgModule from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { addStock } from "../utils/inventoryEngine.js";
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -85,33 +86,36 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
             hsn_code || null, gst_percent || 0, category || "Other", location || null
         ]);
         
-        // 2.1 Branch Inventory Sync (If created within a branch context)
+        // 2.1 + 3. Opening Stock via centralized inventory engine
+        // Stock is placed ONLY in the owning branch — never duplicated to other branches.
         if (branchId && parseFloat(opening_stock || 0) > 0) {
-            await client.query(`
-                INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (branch_id, product_id)
-                DO UPDATE SET current_stock = branch_inventory.current_stock + $4;
-            `, [companyId, branchId, product.id, opening_stock]);
+            await addStock(client, {
+                companyId,
+                branchId,
+                productId: product.id,
+                qty: parseFloat(opening_stock),
+                movementType: 'Opening Stock',
+                referenceType: 'product_creation',
+                referenceId: product.id,
+                note: 'Opening stock entered at product creation'
+            });
         }
 
-        // 3. Inventory Movement Log (opening stock entry)
+        // Ledger Entry for Opening Stock
         if (parseFloat(opening_stock || 0) > 0) {
-            await client.query(`
-                INSERT INTO inventory_movements (
-                    company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note
-                )
-                VALUES ($1,$2,$3,'Opening Stock',$4,'product_creation',$5,'Opening stock entered at product creation')
-            `, [companyId, branchId, product.id, opening_stock, product.id]);
-
-            // 4. Ledger Entry (if Opening Stock > 0)
-            const inventoryAccount = await client.query(`SELECT id FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = '1400' LIMIT 1`, [companyId]);
-            const openingStockAdjAccount = await client.query(`SELECT id FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = '3000' LIMIT 1`, [companyId]);
+            const inventoryAccount = await client.query(
+                `SELECT id FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = '1400' LIMIT 1`,
+                [companyId]
+            );
+            const openingStockAdjAccount = await client.query(
+                `SELECT id FROM chart_of_accounts WHERE (company_id = $1 OR company_id IS NULL) AND account_code = '3000' LIMIT 1`,
+                [companyId]
+            );
 
             if (inventoryAccount.rows[0] && openingStockAdjAccount.rows[0]) {
                 const stockValue = parseFloat(cost_price || 0) * parseFloat(opening_stock);
                 const { createTransaction } = await import("../utils/accountingEngine.js");
-                
+
                 await createTransaction({
                     company_id: companyId,
                     branch_id: branchId,

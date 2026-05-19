@@ -653,6 +653,49 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS is_personal_account BOOLEAN DEFAULT false`).catch(() => {});
         await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(() => {});
 
+        // ═══════════════════════════════════════════════════════════
+        // ENTERPRISE INVENTORY ENGINE — Schema + Data Integrity Fixes
+        // ═══════════════════════════════════════════════════════════
+
+        // 1. Add audit columns to inventory_movements (for full audit trail)
+        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS previous_qty NUMERIC(12,2)`).catch(() => {});
+        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS new_qty NUMERIC(12,2)`).catch(() => {});
+        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_type VARCHAR(50)`).catch(() => {});
+
+        // 2. Normalize movement type — old rows used type='SALE' or type='Opening Stock';
+        //    new engine uses type='SALE_OUT' / 'PURCHASE_IN' etc. Keep old rows as-is.
+
+        // 3. DATA INTEGRITY: Remove ghost branch_inventory rows.
+        //    A ghost row is one where a branch has stock > 0 but NO inventory movement
+        //    has ever added stock to that branch (no PURCHASE_IN, no Opening Stock, no TRANSFER_IN).
+        //    These are caused by the old `branch_id || 1` product-creation bug or stale migrations.
+        await db.query(`
+            UPDATE branch_inventory bi
+            SET current_stock = 0, last_updated = NOW()
+            WHERE bi.current_stock > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM inventory_movements im
+                WHERE im.branch_id   = bi.branch_id
+                  AND im.product_id  = bi.product_id
+                  AND im.qty_in      > 0
+              )
+        `).catch((e) => { console.warn('[schemaUpdates] ghost-row cleanup skipped:', e.message); });
+
+        // 4. Recompute products.current_stock = SUM(branch_inventory) for all products.
+        //    Ensures the cache is consistent after any cleanup above.
+        await db.query(`
+            UPDATE products p
+            SET current_stock = COALESCE((
+                SELECT SUM(bi.current_stock)
+                FROM branch_inventory bi
+                WHERE bi.product_id = p.id
+            ), 0)
+            WHERE p.is_deleted = false
+        `).catch((e) => { console.warn('[schemaUpdates] current_stock recompute skipped:', e.message); });
+
+        // 5. Ensure last_updated column exists on branch_inventory (older DBs may lack it)
+        await db.query(`ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()`).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

@@ -15,9 +15,9 @@ import { fetchProducts, Product } from "../api/productApi";
 import { Customer } from "../api/userApi";
 import CustomSelect from "../components/CustomSelect";
 import PaymentPopup from "../components/PaymentPopup";
+import { useTenant } from "../context/TenantContext";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useUsers } from "../hooks/useUsers";
-import { useTenant } from "../context/TenantContext";
 import { apiFetch } from "../utils/api";
 import "./CreateInvoice.css";
 import "./Dashboard.css";
@@ -452,7 +452,15 @@ const CreateInvoice: React.FC = () => {
           <div className="ci-card">
             <div className="ci-card-title">Invoice Details</div>
             
-            <div className="ci-row-2">
+            <div className="ci-row-3">
+              <div className="ci-field">
+                <label>Invoice No</label>
+                <input
+                  value={invoiceNo}
+                  onChange={(e) => setInvoiceNo(e.target.value.toUpperCase())}
+                  placeholder="INV-001"
+                />
+              </div>
               <div className="ci-field">
                 <label>Invoice Type</label>
                 <div style={{ marginTop: '8px' }}>
