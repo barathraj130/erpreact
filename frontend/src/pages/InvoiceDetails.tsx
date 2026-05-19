@@ -4,6 +4,29 @@ import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/** GST state code lookup — auto-fills code from state name when DB value is missing */
+const STATE_CODES: Record<string, string> = {
+  "ANDHRA PRADESH": "28", "ARUNACHAL PRADESH": "12", "ASSAM": "18",
+  "BIHAR": "10", "CHHATTISGARH": "22", "GOA": "30", "GUJARAT": "24",
+  "HARYANA": "06", "HIMACHAL PRADESH": "02", "JAMMU AND KASHMIR": "01",
+  "J&K": "01", "JHARKHAND": "20", "KARNATAKA": "29", "KERALA": "32",
+  "LADAKH": "38", "MADHYA PRADESH": "23", "MP": "23", "MAHARASHTRA": "27",
+  "MANIPUR": "14", "MEGHALAYA": "17", "MIZORAM": "15", "NAGALAND": "13",
+  "ODISHA": "21", "PUNJAB": "03", "RAJASTHAN": "08", "SIKKIM": "11",
+  "TAMIL NADU": "33", "TN": "33", "TAMILNADU": "33",
+  "TELANGANA": "36", "TRIPURA": "16", "UTTAR PRADESH": "09", "UP": "09",
+  "UTTARAKHAND": "05", "WEST BENGAL": "19", "WB": "19",
+  "ANDAMAN AND NICOBAR": "35", "CHANDIGARH": "04", "DADRA AND NAGAR HAVELI": "26",
+  "DAMAN AND DIU": "25", "DELHI": "07", "LAKSHADWEEP": "31", "PUDUCHERRY": "34",
+};
+
+function resolveStateCode(stateName: any, existingCode: any): string {
+  if (existingCode) return String(existingCode);
+  if (!stateName) return "";
+  return STATE_CODES[String(stateName).toUpperCase().trim()] || "";
+}
+
 const val = (n: any) => Number(n) || 0;
 const fmt = (n: any) =>
   val(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -113,13 +136,13 @@ function buildPrintHTML(p: {
       <div style="display:grid;grid-template-columns:110px 1fr;margin-bottom:2px"><span>Reverse Charge</span><span>: ${data.reverse_charge || ""}</span></div>
       <div style="display:grid;grid-template-columns:110px 1fr;margin-bottom:2px"><span><b>Invoice No</b></span><span>: <b>${data.invoice_number || ""}</b></span></div>
       <div style="display:grid;grid-template-columns:110px 1fr;margin-bottom:2px"><span>Invoice Date</span><span>: ${data.invoice_date ? new Date(data.invoice_date).toLocaleDateString("en-GB") : ""}</span></div>
-      <div style="display:grid;grid-template-columns:110px 1fr"><span>State</span><span>: ${data.c_state || ""} &nbsp;&nbsp; <b>State Code:</b> ${data.company_state_code || "33"}</span></div>
+      <div style="display:grid;grid-template-columns:110px 1fr"><span>State</span><span>: ${data.c_state || ""} &nbsp;&nbsp; <b>State Code:</b> ${resolveStateCode(data.c_state, data.company_state_code) || "33"}</span></div>
     </div>
     <div style="padding:4px 8px">
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Transportation Mode</span><span>: ${data.transport_mode || ""}</span></div>
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Vehicle Number</span><span>: ${data.vehicle_number || ""}</span></div>
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Date of Supply</span><span>: ${data.date_of_supply ? new Date(data.date_of_supply).toLocaleDateString("en-GB") : ""}</span></div>
-      <div style="display:grid;grid-template-columns:130px 1fr"><span><b>Place of Supply</b></span><span>: ${data.customer_state || data.state || ""} &nbsp;&nbsp; <b>State Code:</b> ${data.customer_state_code || data.state_code || "33"}</span></div>
+      <div style="display:grid;grid-template-columns:130px 1fr"><span><b>Place of Supply</b></span><span>: ${data.customer_state || data.state || ""} &nbsp;&nbsp; <b>State Code:</b> ${resolveStateCode(data.customer_state || data.state, data.customer_state_code || data.state_code) || "33"}</span></div>
     </div>
   </div>
 
@@ -132,7 +155,7 @@ function buildPrintHTML(p: {
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>Address</span><span>: ${data.address_line1 || ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span></span><span>: ${data.city_pincode || ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>GSTIN</span><span>: <b>${data.customer_gstin || ""}</b></span></div>
-        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ""} &nbsp; <b>State Code:</b> ${data.customer_state_code || data.state_code || ""}</span></div>
+        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ""} &nbsp; <b>State Code:</b> ${resolveStateCode(data.state, data.customer_state_code || data.state_code)}</span></div>
       </div>
     </div>
     <div>
@@ -143,7 +166,7 @@ function buildPrintHTML(p: {
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span></span><span>: Pin-${data.c_pincode || (data.c_city || "").replace(/[^0-9]/g, "") || ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span></span><span>: ${data.c_phone ? "PH-" + data.c_phone : ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>GSTIN</span><span>: <b>${data.c_gstin || ""}</b></span></div>
-        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.c_state || ""} &nbsp; <b>State Code:</b> ${data.company_state_code || "33"}</span></div>
+        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.c_state || ""} &nbsp; <b>State Code:</b> ${resolveStateCode(data.c_state, data.company_state_code) || "33"}</span></div>
       </div>
     </div>
   </div>
@@ -412,13 +435,13 @@ const InvoiceDetails: React.FC = () => {
           <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", marginBottom: "2px" }}><span>Reverse Charge</span><span>: {data.reverse_charge || ""}</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", marginBottom: "2px" }}><b>Invoice No</b><span>: <b>{data.invoice_number}</b></span></div>
           <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", marginBottom: "2px" }}><span>Invoice Date</span><span>: {new Date(data.invoice_date).toLocaleDateString("en-GB")}</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "110px 1fr" }}><span>State</span><span>: {data.c_state} &nbsp; <b>State Code:</b> {data.company_state_code || "33"}</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "110px 1fr" }}><span>State</span><span>: {data.c_state} &nbsp; <b>State Code:</b> {resolveStateCode(data.c_state, data.company_state_code) || "33"}</span></div>
         </div>
         <div style={{ padding: "4px 8px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", marginBottom: "2px" }}><span>Transportation Mode</span><span>: {data.transport_mode || ""}</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", marginBottom: "2px" }}><span>Vehicle Number</span><span>: {data.vehicle_number || ""}</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", marginBottom: "2px" }}><span>Date of Supply</span><span>: {data.date_of_supply ? new Date(data.date_of_supply).toLocaleDateString("en-GB") : ""}</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "130px 1fr" }}><b>Place of Supply</b><span>: {data.customer_state || data.state} &nbsp; <b>State Code:</b> {data.customer_state_code || data.state_code || ""}</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "130px 1fr" }}><b>Place of Supply</b><span>: {data.customer_state || data.state} &nbsp; <b>State Code:</b> {resolveStateCode(data.customer_state || data.state, data.customer_state_code || data.state_code) || "33"}</span></div>
         </div>
       </div>
 
@@ -431,7 +454,7 @@ const InvoiceDetails: React.FC = () => {
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>Address</span><span>: {data.address_line1}</span></div>
             {data.city_pincode && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span></span><span>: {data.city_pincode}</span></div>}
             {data.customer_gstin && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>GSTIN</span><span>: <b>{data.customer_gstin}</b></span></div>}
-            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.state} &nbsp; <b>State Code:</b> {data.customer_state_code || data.state_code}</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.state} &nbsp; <b>State Code:</b> {resolveStateCode(data.state, data.customer_state_code || data.state_code)}</span></div>
           </div>
         </div>
         <div>
@@ -441,7 +464,7 @@ const InvoiceDetails: React.FC = () => {
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>Address</span><span>: {data.c_address}</span></div>
             {data.c_phone && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span></span><span>: PH-{data.c_phone}</span></div>}
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>GSTIN</span><span>: <b>{data.c_gstin}</b></span></div>
-            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.c_state} &nbsp; <b>State Code:</b> {data.company_state_code || "33"}</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.c_state} &nbsp; <b>State Code:</b> {resolveStateCode(data.c_state, data.company_state_code) || "33"}</span></div>
           </div>
         </div>
       </div>

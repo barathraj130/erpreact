@@ -117,6 +117,27 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// STATE CODE LOOKUP — auto-derives GST state code from name
+// ─────────────────────────────────────────────────────────────
+const STATE_CODES = {
+    "ANDHRA PRADESH":"28","ARUNACHAL PRADESH":"12","ASSAM":"18","BIHAR":"10",
+    "CHHATTISGARH":"22","GOA":"30","GUJARAT":"24","HARYANA":"06",
+    "HIMACHAL PRADESH":"02","JAMMU AND KASHMIR":"01","J&K":"01","JHARKHAND":"20",
+    "KARNATAKA":"29","KERALA":"32","LADAKH":"38","MADHYA PRADESH":"23","MP":"23",
+    "MAHARASHTRA":"27","MANIPUR":"14","MEGHALAYA":"17","MIZORAM":"15",
+    "NAGALAND":"13","ODISHA":"21","PUNJAB":"03","RAJASTHAN":"08","SIKKIM":"11",
+    "TAMIL NADU":"33","TN":"33","TAMILNADU":"33","TELANGANA":"36","TRIPURA":"16",
+    "UTTAR PRADESH":"09","UP":"09","UTTARAKHAND":"05","WEST BENGAL":"19","WB":"19",
+    "ANDAMAN AND NICOBAR":"35","CHANDIGARH":"04","DADRA AND NAGAR HAVELI":"26",
+    "DAMAN AND DIU":"25","DELHI":"07","LAKSHADWEEP":"31","PUDUCHERRY":"34",
+};
+function resolveStateCode(stateName, existingCode) {
+    if (existingCode) return String(existingCode);
+    if (!stateName) return '';
+    return STATE_CODES[String(stateName).toUpperCase().trim()] || '';
+}
+
+// ─────────────────────────────────────────────────────────────
 // HTML TEMPLATE — matches JBS KNIT WEAR invoice format exactly
 // ─────────────────────────────────────────────────────────────
 function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
@@ -283,13 +304,13 @@ function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
       <div class="meta-row"><span class="meta-label">Reverse Charge</span><span>:</span><span>${invoice.reverse_charge||''}</span></div>
       <div class="meta-row"><span class="meta-label">Invoice No</span><span>:</span><span>${invoice.invoice_number||''}</span></div>
       <div class="meta-row"><span class="meta-label">Invoice Date</span><span>:</span><span>${fmtDate(invoice.invoice_date)}</span></div>
-      <div class="meta-row"><span class="meta-label">State</span><span>:</span><span>${co.state||''}&nbsp;&nbsp;&nbsp;<b>State Code:</b>&nbsp;${co.state_code||''}</span></div>
+      <div class="meta-row"><span class="meta-label">State</span><span>:</span><span>${co.state||''}&nbsp;&nbsp;&nbsp;<b>State Code:</b>&nbsp;${resolveStateCode(co.state, co.state_code) || '33'}</span></div>
     </div>
     <div class="meta-right">
       <div class="meta-row"><span class="meta-label">Transportation Mode</span><span>:</span><span>${invoice.transportation_mode||''}</span></div>
       <div class="meta-row"><span class="meta-label">Vehicle Number</span><span>:</span><span>${invoice.vehicle_number||''}</span></div>
       <div class="meta-row"><span class="meta-label">Date of Supply</span><span>:</span><span>${fmtDate(invoice.date_of_supply)}</span></div>
-      <div class="meta-row"><span class="meta-label">Place of Supply</span><span>:</span><span>${invoice.customer_state||''}&nbsp;&nbsp;&nbsp;<b>State Code:</b>&nbsp;${invoice.customer_state_code||''}</span></div>
+      <div class="meta-row"><span class="meta-label">Place of Supply</span><span>:</span><span>${invoice.customer_state||''}&nbsp;&nbsp;&nbsp;<b>State Code:</b>&nbsp;${resolveStateCode(invoice.customer_state, invoice.customer_state_code) || '33'}</span></div>
     </div>
   </div>
 
@@ -300,7 +321,7 @@ function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
       <div class="meta-row"><b style="min-width:55px;">Name</b><span>:</span><span class="party-name">&nbsp;${(invoice.customer_name||'').toUpperCase()}</span></div>
       <div class="meta-row"><b style="min-width:55px;">Address</b><span>:</span><span>&nbsp;${custAddr}</span></div>
       <div class="meta-row"><b style="min-width:55px;">GSTIN</b><span>:</span><span>&nbsp;<b>${invoice.customer_gstin||''}</b></span></div>
-      <div class="meta-row"><b style="min-width:55px;">State</b><span>:</span><span>&nbsp;${invoice.customer_state||''}&nbsp;&nbsp;<b>State Code:</b>&nbsp;${invoice.customer_state_code||''}</span></div>
+      <div class="meta-row"><b style="min-width:55px;">State</b><span>:</span><span>&nbsp;${invoice.customer_state||''}&nbsp;&nbsp;<b>State Code:</b>&nbsp;${resolveStateCode(invoice.customer_state, invoice.customer_state_code)}</span></div>
     </div>
     <div class="party-right">
       <div class="party-title">Details of Consignee :</div>
@@ -309,7 +330,7 @@ function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
       <div class="meta-row"><b style="min-width:55px;"></b><span></span><span>&nbsp;${co.city ? 'Pin-' + co.city : ''}</span></div>
       <div class="meta-row"><b style="min-width:55px;"></b><span></span><span>&nbsp;${co.phone ? 'PH-' + co.phone : ''}</span></div>
       <div class="meta-row"><b style="min-width:55px;">GSTIN</b><span>:</span><span>&nbsp;<b>${co.gstin}</b></span></div>
-      <div class="meta-row"><b style="min-width:55px;">State</b><span>:</span><span>&nbsp;${co.state||''}&nbsp;&nbsp;<b>State Code:</b>&nbsp;${co.state_code||''}</span></div>
+      <div class="meta-row"><b style="min-width:55px;">State</b><span>:</span><span>&nbsp;${co.state||''}&nbsp;&nbsp;<b>State Code:</b>&nbsp;${resolveStateCode(co.state, co.state_code) || '33'}</span></div>
     </div>
   </div>
 
