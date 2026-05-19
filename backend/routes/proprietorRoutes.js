@@ -10,7 +10,10 @@ router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
         const rows = await db.pgAll(
-            `SELECT * FROM proprietor_transactions WHERE company_id = $1 ORDER BY transaction_date DESC, created_at DESC`,
+            `SELECT pt.*, pa.account_name as personal_account_name, pa.account_type as personal_account_type
+             FROM proprietor_transactions pt
+             LEFT JOIN personal_accounts pa ON pa.id = pt.personal_account_id
+             WHERE pt.company_id = $1 ORDER BY pt.transaction_date DESC, pt.created_at DESC`,
             [companyId]
         );
         res.json(rows);
@@ -19,21 +22,16 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 });
 
-// POST — record withdrawal or investment
-router.post('/', authMiddleware, async (req, res) => {
+// POST /drawings — Withdrawal (affects cash/bank ledger)
+router.post('/drawings', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id || 1;
-    const { transaction_type, amount, payment_mode, transaction_date, notes } = req.body;
+    const { amount, payment_mode, transaction_date, notes } = req.body;
+    if (!amount || parseFloat(amount) <= 0) return res.status(400).json({ error: 'Valid amount required' });
 
-    if (!['WITHDRAWAL', 'INVESTMENT'].includes(transaction_type)) {
-        return res.status(400).json({ error: 'transaction_type must be WITHDRAWAL or INVESTMENT' });
-    }
-    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-        return res.status(400).json({ error: 'Valid amount required' });
-    }
-
-    const amt = parseFloat(amount);
+    const amt   = parseFloat(amount);
     const pMode = (payment_mode || 'CASH').toUpperCase();
+    const tDate = transaction_date || new Date().toISOString().split('T')[0];
 
     let client;
     try {
@@ -41,59 +39,37 @@ router.post('/', authMiddleware, async (req, res) => {
         await client.query('BEGIN');
 
         const row = await client.query(
-            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-            [companyId, branchId, transaction_type, amt, pMode, transaction_date || new Date(), notes || null, req.user.id]
+            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, affects_ledger)
+             VALUES ($1,$2,'DRAWINGS',$3,$4,$5,$6,$7,true) RETURNING *`,
+            [companyId, branchId, amt, pMode, tDate, notes || null, req.user.id]
         );
         const record = row.rows[0];
 
-        // Double-entry: cash/bank ↔ proprietor capital account
-        const cashAcct  = await getAccountByCode(companyId, '1000');
-        const bankAcct  = await getAccountByCode(companyId, '1200') || cashAcct;
-        const capAcct   = await getAccountByCode(companyId, '3000'); // Owner's Equity / Capital
-
+        const cashAcct = await getAccountByCode(companyId, '1000');
+        const bankAcct = await getAccountByCode(companyId, '1200') || cashAcct;
+        const capAcct  = await getAccountByCode(companyId, '3000');
         const moneyAcct = pMode !== 'CASH' ? bankAcct : cashAcct;
 
         if (moneyAcct && capAcct) {
-            const isInvestment = transaction_type === 'INVESTMENT';
             await createTransactionInternal(client, {
-                company_id:       companyId,
-                branch_id:        branchId,
-                transaction_date: transaction_date || new Date(),
-                reference_type:   'PROPRIETOR',
-                reference_id:     record.id,
-                description:      `Proprietor ${transaction_type} - ${pMode}`,
-                created_by:       req.user.id,
-                bill_purpose:     'real'
+                company_id: companyId, branch_id: branchId, transaction_date: tDate,
+                reference_type: 'PROPRIETOR', reference_id: record.id,
+                description: `Drawings (Withdrawal) via ${pMode}`, created_by: req.user.id, bill_purpose: 'real'
             }, [
-                // Investment: DR Cash/Bank, CR Capital
-                // Withdrawal: DR Capital, CR Cash/Bank
-                {
-                    account_id:    isInvestment ? moneyAcct.id : capAcct.id,
-                    debit_amount:  amt,
-                    credit_amount: 0,
-                    description:   isInvestment ? `Investment received via ${pMode}` : `Withdrawal by proprietor`
-                },
-                {
-                    account_id:    isInvestment ? capAcct.id : moneyAcct.id,
-                    debit_amount:  0,
-                    credit_amount: amt,
-                    description:   isInvestment ? `Proprietor capital increase` : `Paid via ${pMode}`
-                }
+                { account_id: capAcct.id, debit_amount: amt, credit_amount: 0, description: 'Drawings debit capital' },
+                { account_id: moneyAcct.id, debit_amount: 0, credit_amount: amt, description: `Paid via ${pMode}` }
             ]);
         }
 
-        // Update cash/bank ledger for real-time balance tracking
-        const direction = transaction_type === 'INVESTMENT' ? 'in' : 'out';
         if (pMode === 'CASH') {
             await client.query(
-                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,$4,$5)`,
-                [companyId, branchId, amt, direction, transaction_date || new Date()]
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,'out',$4)`,
+                [companyId, branchId, amt, tDate]
             );
         } else {
             await client.query(
-                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'PROPRIETOR',$3,$4,'Main Account',$5,$6)`,
-                [companyId, branchId, amt, direction, `PROP-${record.id}`, transaction_date || new Date()]
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'PROPRIETOR',$3,'out','Main Account',$4,$5)`,
+                [companyId, branchId, amt, `PROP-${record.id}`, tDate]
             );
         }
 
@@ -101,11 +77,141 @@ router.post('/', authMiddleware, async (req, res) => {
         res.status(201).json(record);
     } catch (err) {
         if (client) await client.query('ROLLBACK');
-        console.error('Proprietor transaction error:', err);
+        console.error('Drawings error:', err);
         res.status(500).json({ error: err.message });
     } finally {
         if (client) client.release();
     }
+});
+
+// POST /capital — Capital Introduction / Investment (affects cash/bank ledger)
+router.post('/capital', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const { amount, payment_mode, transaction_date, notes } = req.body;
+    if (!amount || parseFloat(amount) <= 0) return res.status(400).json({ error: 'Valid amount required' });
+
+    const amt   = parseFloat(amount);
+    const pMode = (payment_mode || 'CASH').toUpperCase();
+    const tDate = transaction_date || new Date().toISOString().split('T')[0];
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const row = await client.query(
+            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, affects_ledger)
+             VALUES ($1,$2,'CAPITAL_INTRO',$3,$4,$5,$6,$7,true) RETURNING *`,
+            [companyId, branchId, amt, pMode, tDate, notes || null, req.user.id]
+        );
+        const record = row.rows[0];
+
+        const cashAcct  = await getAccountByCode(companyId, '1000');
+        const bankAcct  = await getAccountByCode(companyId, '1200') || cashAcct;
+        const capAcct   = await getAccountByCode(companyId, '3000');
+        const moneyAcct = pMode !== 'CASH' ? bankAcct : cashAcct;
+
+        if (moneyAcct && capAcct) {
+            await createTransactionInternal(client, {
+                company_id: companyId, branch_id: branchId, transaction_date: tDate,
+                reference_type: 'PROPRIETOR', reference_id: record.id,
+                description: `Capital Introduction via ${pMode}`, created_by: req.user.id, bill_purpose: 'real'
+            }, [
+                { account_id: moneyAcct.id, debit_amount: amt, credit_amount: 0, description: `Capital received via ${pMode}` },
+                { account_id: capAcct.id, debit_amount: 0, credit_amount: amt, description: 'Proprietor capital increase' }
+            ]);
+        }
+
+        if (pMode === 'CASH') {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,'in',$4)`,
+                [companyId, branchId, amt, tDate]
+            );
+        } else {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'PROPRIETOR',$3,'in','Main Account',$4,$5)`,
+                [companyId, branchId, amt, `PROP-${record.id}`, tDate]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json(record);
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Capital intro error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// POST /personal-receipt — Customer paid to personal account (NO cash/bank ledger)
+router.post('/personal-receipt', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const { amount, personal_account_id, party_name, reference_id, reference_type, transaction_date, notes } = req.body;
+    if (!amount || parseFloat(amount) <= 0) return res.status(400).json({ error: 'Valid amount required' });
+    if (!personal_account_id) return res.status(400).json({ error: 'personal_account_id is required' });
+
+    const amt   = parseFloat(amount);
+    const tDate = transaction_date || new Date().toISOString().split('T')[0];
+
+    try {
+        const row = await db.pgGet(
+            `INSERT INTO proprietor_transactions
+             (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by,
+              affects_ledger, personal_account_id, party_name, reference_id, reference_type)
+             VALUES ($1,$2,'PERSONAL_RECEIPT',$3,'PERSONAL',$4,$5,$6, false,$7,$8,$9,$10) RETURNING *`,
+            [companyId, branchId, amt, tDate, notes || null, req.user.id,
+             personal_account_id, party_name || null, reference_id || null, reference_type || null]
+        );
+        res.status(201).json(row);
+    } catch (err) {
+        console.error('Personal receipt error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /personal-payment — Paid supplier from personal account (NO cash/bank ledger)
+router.post('/personal-payment', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const { amount, personal_account_id, party_name, reference_id, reference_type, transaction_date, notes } = req.body;
+    if (!amount || parseFloat(amount) <= 0) return res.status(400).json({ error: 'Valid amount required' });
+    if (!personal_account_id) return res.status(400).json({ error: 'personal_account_id is required' });
+
+    const amt   = parseFloat(amount);
+    const tDate = transaction_date || new Date().toISOString().split('T')[0];
+
+    try {
+        const row = await db.pgGet(
+            `INSERT INTO proprietor_transactions
+             (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by,
+              affects_ledger, personal_account_id, party_name, reference_id, reference_type)
+             VALUES ($1,$2,'PERSONAL_PAYMENT',$3,'PERSONAL',$4,$5,$6, false,$7,$8,$9,$10) RETURNING *`,
+            [companyId, branchId, amt, tDate, notes || null, req.user.id,
+             personal_account_id, party_name || null, reference_id || null, reference_type || null]
+        );
+        res.status(201).json(row);
+    } catch (err) {
+        console.error('Personal payment error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Backward-compat POST / (maps WITHDRAWAL→drawings, INVESTMENT→capital)
+router.post('/', authMiddleware, async (req, res) => {
+    const { transaction_type } = req.body;
+    if (transaction_type === 'WITHDRAWAL') {
+        req.url = '/drawings';
+        return router.handle(Object.assign(req, { url: '/drawings', path: '/drawings', method: 'POST' }), res, () => {});
+    }
+    if (transaction_type === 'INVESTMENT') {
+        req.url = '/capital';
+        return router.handle(Object.assign(req, { url: '/capital', path: '/capital', method: 'POST' }), res, () => {});
+    }
+    return res.status(400).json({ error: 'Use /drawings or /capital instead' });
 });
 
 export default router;

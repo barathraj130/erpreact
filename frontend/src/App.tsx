@@ -71,6 +71,7 @@ import BrokerLedger from "./pages/brokers/BrokerLedger";
 import LenderManagement from "./pages/finance/LenderManagement";
 import ProprietorAccount from "./pages/finance/ProprietorAccount";
 import CashTransfers from "./pages/finance/CashTransfers";
+import PersonalAccountsAdmin from "./pages/PersonalAccountsAdmin";
 
 // New Reports Module
 import ReportsDashboard from "./pages/reports/ReportsDashboard";
@@ -305,6 +306,7 @@ const App: React.FC = () => {
             <Route path="/finance/brokers/ledger/:id" element={<BrokerLedger />} />
             <Route path="/finance/proprietor" element={<ProprietorAccount />} />
             <Route path="/finance/cash-transfers" element={<CashTransfers />} />
+            <Route path="/settings/personal-accounts" element={<PersonalAccountsAdmin />} />
             <Route path="/reports/world-class" element={<AdvancedReports />} />
             
             {/* New Comprehensive Reports Module */}

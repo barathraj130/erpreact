@@ -611,6 +611,36 @@ export const runSchemaUpdates = async () => {
             )
         `);
 
+        // Personal Accounts (proprietor's GPay, PhonePe, bank, cash)
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS personal_accounts (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                account_name VARCHAR(100) NOT NULL,
+                account_type VARCHAR(20) NOT NULL DEFAULT 'upi',
+                upi_id VARCHAR(100),
+                bank_name VARCHAR(100),
+                account_number VARCHAR(100),
+                ifsc_code VARCHAR(50),
+                holder_name VARCHAR(100),
+                notes TEXT,
+                is_active BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        // Extend proprietor_transactions for 4-type system
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(() => {});
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS party_name VARCHAR(200)`).catch(() => {});
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_id INTEGER`).catch(() => {});
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50)`).catch(() => {});
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS affects_ledger BOOLEAN DEFAULT true`).catch(() => {});
+
+        // Extend invoice_payments for personal-account payment mode
+        await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS is_personal_account BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
