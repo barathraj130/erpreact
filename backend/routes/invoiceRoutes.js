@@ -607,7 +607,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
 
     const sql = `
-        SELECT i.*, 
+        SELECT i.*,
                u.username as customer_name, u.address_line1, u.city_pincode, u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
                c.company_name, c.address_line1 as c_address, c.city_pincode as c_city, c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
                c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.signature_url, c.phone as c_phone
@@ -622,7 +622,26 @@ router.get("/:id", authMiddleware, async (req, res) => {
         if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
         const items = await db.pgAll("SELECT * FROM invoice_line_items WHERE invoice_id = $1", [id]);
-        res.json({ ...invoice, items });
+
+        // Fetch default bank account from Finance & Banking setup
+        const defaultBank = await db.pgGet(
+            `SELECT bank_name, account_number, ifsc_code, upi_id
+             FROM bank_details
+             WHERE company_id = $1
+             ORDER BY is_default DESC, id ASC
+             LIMIT 1`,
+            [companyId]
+        );
+
+        // Merge: bank_details (admin setup) wins over companies table columns
+        const bankDetails = {
+            bank_name:      defaultBank?.bank_name      || invoice.bank_name       || '',
+            bank_account_no: defaultBank?.account_number || invoice.bank_account_no || '',
+            bank_ifsc_code:  defaultBank?.ifsc_code      || invoice.bank_ifsc_code  || '',
+            bank_upi_id:     defaultBank?.upi_id         || '',
+        };
+
+        res.json({ ...invoice, ...bankDetails, items });
     } catch (err) {
         console.error("Fetch Invoice Error:", err.message);
         res.status(500).json({ error: "Failed to fetch invoice" });

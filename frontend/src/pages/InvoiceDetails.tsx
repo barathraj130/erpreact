@@ -200,9 +200,10 @@ function buildPrintHTML(p: {
       <div style="font-size:12px;font-style:italic;font-weight:600;line-height:1.4;min-height:32px">${toWords(Math.round(grandTotal))}</div>
       <div style="margin-top:4px"><b>Bundles</b> : ${data.bundles_count || ""}</div>
       <div style="margin-top:6px;font-weight:700;text-align:center">: Bank Details :</div>
-      <div>* BANK NAME : ${data.bank_name || ""}</div>
-      <div>* A/C NO &nbsp;&nbsp;: ${data.bank_account_no || ""}</div>
-      <div>* IFSC NO &nbsp;: ${data.bank_ifsc_code || ""}</div>
+      ${data.bank_name       ? `<div>* BANK NAME : ${data.bank_name}</div>`       : ""}
+      ${data.bank_account_no ? `<div>* A/C NO &nbsp;&nbsp;: ${data.bank_account_no}</div>` : ""}
+      ${data.bank_ifsc_code  ? `<div>* IFSC NO &nbsp;: ${data.bank_ifsc_code}</div>`  : ""}
+      ${data.bank_upi_id     ? `<div>* UPI ID &nbsp;&nbsp;: ${data.bank_upi_id}</div>`    : ""}
       ${data.notes ? `<div style="margin-top:4px;font-size:9px;color:#444">${data.notes}</div>` : ""}
       <div style="margin-top:auto;padding-top:20px;text-align:center;font-size:9px;color:#666">(Common Seal)</div>
     </div>
@@ -519,9 +520,10 @@ const InvoiceDetails: React.FC = () => {
           <div style={{ fontSize: "11px", fontStyle: "italic", fontWeight: 600, lineHeight: 1.4, minHeight: "28px" }}>{toWords(Math.round(grandTotal))}</div>
           <div style={{ marginTop: "4px" }}><b>Bundles</b> : {data.bundles_count || ""}</div>
           <div style={{ marginTop: "6px", fontWeight: 700, textAlign: "center" }}>: Bank Details :</div>
-          <div>* BANK NAME : {data.bank_name}</div>
-          <div>* A/C NO &nbsp;&nbsp;: {data.bank_account_no}</div>
-          <div>* IFSC NO &nbsp;: {data.bank_ifsc_code}</div>
+          {data.bank_name       && <div>* BANK NAME : {data.bank_name}</div>}
+          {data.bank_account_no && <div>* A/C NO &nbsp;&nbsp;: {data.bank_account_no}</div>}
+          {data.bank_ifsc_code  && <div>* IFSC NO &nbsp;: {data.bank_ifsc_code}</div>}
+          {data.bank_upi_id     && <div>* UPI ID &nbsp;&nbsp;: {data.bank_upi_id}</div>}
           {data.notes && <div style={{ fontSize: "9px", color: "#444", marginTop: "4px" }}>{data.notes}</div>}
           <div style={{ marginTop: "auto", paddingTop: "16px", textAlign: "center", fontSize: "9px", color: "#666" }}>(Common Seal)</div>
         </div>

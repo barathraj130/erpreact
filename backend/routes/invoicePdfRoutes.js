@@ -50,6 +50,16 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
             `SELECT * FROM bill_format_settings WHERE company_id = $1`, [companyId]
         );
 
+        // 2b. Fetch default bank account from bank_details (the Finance & Banking setup)
+        const defaultBank = await db.pgGet(
+            `SELECT bank_name, account_number, ifsc_code, upi_id
+             FROM bank_details
+             WHERE company_id = $1
+             ORDER BY is_default DESC, id ASC
+             LIMIT 1`,
+            [companyId]
+        );
+
         // 3. Fetch line items
         const items = await db.pgAll(
             `SELECT * FROM invoice_line_items WHERE invoice_id = $1 ORDER BY id`, [invoiceId]
@@ -79,10 +89,11 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
             state_code:  fmt?.state_code     || invoice.company_state_code || '33',
             gstin:       fmt?.gstin          || invoice.company_gstin    || '',
             phone:       fmt?.phone          || invoice.company_phone    || '',
-            bank_name:   fmt?.bank_name      || invoice.bank_name        || '',
-            bank_ac:     fmt?.bank_account_no|| invoice.bank_account_no  || '',
-            bank_ifsc:   fmt?.bank_ifsc_code || invoice.bank_ifsc_code   || '',
-            bill_title:  fmt?.bill_title     || 'INVOICE',
+            bank_name:   fmt?.bank_name       || defaultBank?.bank_name      || invoice.bank_name        || '',
+            bank_ac:     fmt?.bank_account_no || defaultBank?.account_number || invoice.bank_account_no  || '',
+            bank_ifsc:   fmt?.bank_ifsc_code  || defaultBank?.ifsc_code      || invoice.bank_ifsc_code   || '',
+            bank_upi:    defaultBank?.upi_id  || '',
+            bill_title:  fmt?.bill_title      || 'INVOICE',
         };
 
         const html = generateInvoiceHTML(invoice, items, { subtotal, cgst, sgst, igst, grandTotal }, co, isSameState);
@@ -360,6 +371,7 @@ function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
           ${co.bank_name  ? `<div>* <b>BANK NAME</b> : ${co.bank_name}</div>`  : ''}
           ${co.bank_ac    ? `<div>* <b>A/C NO</b>    : ${co.bank_ac}</div>`    : ''}
           ${co.bank_ifsc  ? `<div>* <b>IFSC NO</b>   : ${co.bank_ifsc}</div>`  : ''}
+          ${co.bank_upi   ? `<div>* <b>UPI ID</b>    : ${co.bank_upi}</div>`   : ''}
         </div>
       </div>
     </div>
