@@ -170,13 +170,27 @@ export async function deductStock(client, {
     // ── 2. Recompute products.current_stock (SUM cache) ────────
     await recomputeProductStock(client, productId);
 
-    // ── 3. Log inventory movement ──────────────────────────────
-    await client.query(`
-        INSERT INTO inventory_movements
-            (company_id, branch_id, product_id, type, qty_out,
-             previous_qty, new_qty, reference_type, reference_id, note)
-        VALUES ($1, $2, $3, 'SALE_OUT', $4, $5, $6, $7, $8, $9)
-    `, [companyId, branchId, productId, qty, prevQty, newQty, referenceType, referenceId, note]);
+    // ── 3. Log inventory movement (SAVEPOINT: log failure never aborts the stock update) ──
+    await client.query('SAVEPOINT sp_inv_log');
+    try {
+        await client.query(`
+            INSERT INTO inventory_movements
+                (company_id, branch_id, product_id, type, qty_out,
+                 previous_qty, new_qty, reference_type, reference_id, note)
+            VALUES ($1, $2, $3, 'SALE_OUT', $4, $5, $6, $7, $8, $9)
+        `, [companyId, branchId, productId, qty, prevQty, newQty, referenceType, referenceId, note]);
+        await client.query('RELEASE SAVEPOINT sp_inv_log');
+    } catch (logErr) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_inv_log');
+        await client.query('RELEASE SAVEPOINT sp_inv_log');
+        // Fallback: insert without optional audit columns
+        await client.query(`
+            INSERT INTO inventory_movements
+                (company_id, branch_id, product_id, type, qty_out, reference_type, reference_id, note)
+            VALUES ($1, $2, $3, 'SALE_OUT', $4, $5, $6, $7)
+        `, [companyId, branchId, productId, qty, referenceType, referenceId, note]).catch(() => {});
+        console.warn('[inventoryEngine] Movement log used fallback (missing audit columns):', logErr.message);
+    }
 
     console.log(
         `[inventoryEngine] ✓ SALE_OUT product#${productId} (${productName}) ` +
@@ -226,13 +240,27 @@ export async function addStock(client, {
     );
     const newQty = Number(stockRes.rows[0]?.current_stock ?? 0);
 
-    // ── Log movement ───────────────────────────────────────────
-    await client.query(`
-        INSERT INTO inventory_movements
-            (company_id, branch_id, product_id, type, qty_in,
-             new_qty, reference_type, reference_id, note)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [companyId, branchId, productId, movementType, qty, newQty, referenceType, referenceId, note]);
+    // ── Log movement (SAVEPOINT: log failure never aborts the stock update) ──
+    await client.query('SAVEPOINT sp_inv_log');
+    try {
+        await client.query(`
+            INSERT INTO inventory_movements
+                (company_id, branch_id, product_id, type, qty_in,
+                 new_qty, reference_type, reference_id, note)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [companyId, branchId, productId, movementType, qty, newQty, referenceType, referenceId, note]);
+        await client.query('RELEASE SAVEPOINT sp_inv_log');
+    } catch (logErr) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_inv_log');
+        await client.query('RELEASE SAVEPOINT sp_inv_log');
+        // Fallback: insert without optional audit columns
+        await client.query(`
+            INSERT INTO inventory_movements
+                (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [companyId, branchId, productId, movementType, qty, referenceType, referenceId, note]).catch(() => {});
+        console.warn('[inventoryEngine] Movement log used fallback (missing audit columns):', logErr.message);
+    }
 
     console.log(
         `[inventoryEngine] ✓ ${movementType} product#${productId} ` +
