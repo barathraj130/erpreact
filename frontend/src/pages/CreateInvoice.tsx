@@ -474,11 +474,11 @@ const CreateInvoice: React.FC = () => {
             
             <div className="ci-row-3">
               <div className="ci-field">
-                <label>Invoice No</label>
+                <label>Invoice No <span style={{fontSize:"10px",color:"#888",fontWeight:400}}>(leave blank to auto-generate)</span></label>
                 <input
                   value={invoiceNo}
                   onChange={(e) => setInvoiceNo(e.target.value.toUpperCase())}
-                  placeholder="INV-001"
+                  placeholder="Auto-generated if left blank"
                 />
               </div>
               <div className="ci-field">

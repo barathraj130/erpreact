@@ -124,7 +124,11 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             return isNaN(p) ? null : p;
         };
 
-        let finalInvoiceNumber = invoice_number;
+        // Track whether the user manually typed an invoice number or left it to auto-generate.
+        // This controls retry behaviour: manual numbers get a clear error on conflict;
+        // auto-generated numbers are silently retried.
+        const userProvidedNumber = !!(invoice_number && String(invoice_number).trim());
+        let finalInvoiceNumber = userProvidedNumber ? String(invoice_number).trim().toUpperCase() : null;
         let financial_month;
         let seriesPrefix = null;
         let seriesNumber = null;
@@ -136,12 +140,25 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
 
         if (!finalInvoiceNumber) {
+            // Auto-generate invoice number
             const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
             finalInvoiceNumber = gen.number;
             financial_month = gen.financial_month;
             seriesPrefix = gen.series_prefix;
             seriesNumber = gen.series_number;
         } else {
+            // User provided a number — validate it's not already taken
+            const exists = await client.query(
+                `SELECT id FROM invoices WHERE invoice_number = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false LIMIT 1`,
+                [finalInvoiceNumber, companyId]
+            );
+            if (exists.rows.length > 0) {
+                await client.query('ROLLBACK');
+                client.release();
+                return res.status(409).json({
+                    error: `Invoice number "${finalInvoiceNumber}" already exists. Please use a different number.`
+                });
+            }
             financial_month = `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`;
         }
 
@@ -317,9 +334,14 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             await client.query('ROLLBACK TO SAVEPOINT sp_invoice_hdr');
             await client.query('RELEASE SAVEPOINT sp_invoice_hdr');
 
-            // 23505 = unique_violation on invoice_number (stale pre-fetched number)
+            // 23505 = unique_violation on invoice_number
             if (insertErr.code === '23505' && (insertErr.constraint || '').includes('invoice_number')) {
-                console.warn(`[invoice] Duplicate number "${finalInvoiceNumber}", auto-regenerating…`);
+                if (userProvidedNumber) {
+                    // User manually typed this number — give a clear error, don't silently change it
+                    throw new Error(`Invoice number "${finalInvoiceNumber}" already exists. Please use a different number.`);
+                }
+                // Auto-generated number went stale — regenerate and retry silently
+                console.warn(`[invoice] Duplicate auto-number "${finalInvoiceNumber}", regenerating…`);
                 const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
                 finalInvoiceNumber = gen.number;
                 financial_month   = gen.financial_month;
