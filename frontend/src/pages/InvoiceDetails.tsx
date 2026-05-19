@@ -71,7 +71,7 @@ function buildPrintHTML(p: {
       ${Array(14).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
     </tr>`).join("");
 
-  const invoiceTypeLabel = isNonTax ? "NON-TAX INVOICE" : "INVOICE";
+  const invoiceTypeLabel = "INVOICE";
 
   return `<!DOCTYPE html>
 <html>
@@ -131,7 +131,7 @@ function buildPrintHTML(p: {
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>Name</span><span>: <b>${data.customer_name || ""}</b></span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>Address</span><span>: ${data.address_line1 || ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span></span><span>: ${data.city_pincode || ""}</span></div>
-        <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>GSTIN</span><span>: <b>${data.customer_gstin || "UNREGISTERED"}</b></span></div>
+        <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>GSTIN</span><span>: <b>${data.customer_gstin || ""}</b></span></div>
         <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ""} &nbsp; <b>State Code:</b> ${data.customer_state_code || data.state_code || ""}</span></div>
       </div>
     </div>
@@ -400,7 +400,7 @@ const InvoiceDetails: React.FC = () => {
 
       {/* TITLE */}
       <div style={{ textAlign: "center", padding: "4px", borderBottom: "1px solid #000" }}>
-        <span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "2px" }}>{isNonTax ? "NON-TAX INVOICE" : "INVOICE"}</span>
+        <span style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "2px" }}>INVOICE</span>
       </div>
 
       {/* META */}
@@ -427,7 +427,7 @@ const InvoiceDetails: React.FC = () => {
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>Name</span><span>: <b>{data.customer_name}</b></span></div>
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>Address</span><span>: {data.address_line1}</span></div>
             {data.city_pincode && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span></span><span>: {data.city_pincode}</span></div>}
-            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>GSTIN</span><span>: <b>{data.customer_gstin || "UNREGISTERED"}</b></span></div>
+            {data.customer_gstin && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>GSTIN</span><span>: <b>{data.customer_gstin}</b></span></div>}
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.state} &nbsp; <b>State Code:</b> {data.customer_state_code || data.state_code}</span></div>
           </div>
         </div>

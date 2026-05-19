@@ -611,6 +611,18 @@ export const runSchemaUpdates = async () => {
             )
         `);
 
+        // DATA FIX: ensure every product with opening_stock > 0 has a branch_inventory row
+        // for its owning branch (backfill for products created before branch_inventory was enforced)
+        await db.query(`
+            INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock)
+            SELECT p.company_id, p.branch_id, p.id, p.current_stock
+            FROM products p
+            WHERE p.is_deleted = false
+              AND p.branch_id IS NOT NULL
+              AND p.current_stock > 0
+            ON CONFLICT (branch_id, product_id) DO NOTHING
+        `).catch(() => {});
+
         // Personal Accounts (proprietor's GPay, PhonePe, bank, cash)
         await db.query(`
             CREATE TABLE IF NOT EXISTS personal_accounts (

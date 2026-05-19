@@ -253,12 +253,12 @@ function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
   <div class="hdr">
     <h1>${co.name.toUpperCase()}</h1>
     <div class="sub">${co.address}${co.city ? ', ' + co.city : ''}${co.state ? ' - ' + co.state : ''}</div>
-    <div class="gstin">GSTIN No. : ${co.gstin}</div>
+    ${co.gstin ? `<div class="gstin">GSTIN No. : ${co.gstin}</div>` : ''}
   </div>
 
   <!-- INVOICE TITLE -->
   <div class="inv-title">
-    ${co.bill_title || 'INVOICE'}
+    INVOICE
     <div class="triplicate">
       <span style="color:red;">Original for Recipient</span><br>
       <span style="color:#1a56db;">Duplicate for Supplier / Transporter</span><br>

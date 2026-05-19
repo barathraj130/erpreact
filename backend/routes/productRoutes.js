@@ -22,7 +22,15 @@ const router = express.Router();
 
 router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
     const companyId = parseInt(req.user?.active_company_id);
-    const branchId = parseInt(req.user?.branch_id || 1);
+    // Resolve branch: use user's assigned branch, or find the main hub
+    let branchId = parseInt(req.user?.branch_id);
+    if (!branchId) {
+        const mbRes = await pgModule.pgGet(
+            `SELECT id FROM branches WHERE company_id = $1 ORDER BY (LOWER(COALESCE(branch_type,'')) LIKE '%main%') DESC, id ASC LIMIT 1`,
+            [companyId]
+        );
+        branchId = mbRes?.id || null;
+    }
     const userId = req.user?.id;
 
     const {
