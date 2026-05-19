@@ -17,6 +17,7 @@ import CustomSelect from "../components/CustomSelect";
 import PaymentPopup from "../components/PaymentPopup";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useUsers } from "../hooks/useUsers";
+import { useTenant } from "../context/TenantContext";
 import { apiFetch } from "../utils/api";
 import "./CreateInvoice.css";
 import "./Dashboard.css";
@@ -119,6 +120,7 @@ const CreateInvoice: React.FC = () => {
   const navigate = useNavigate();
   const { customers } = useUsers();
   const { user: authUser } = useAuthUser();
+  const { activeBranch } = useTenant();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [brokers, setBrokers] = useState<any[]>([]);
@@ -380,6 +382,7 @@ const CreateInvoice: React.FC = () => {
         logistics: meta,
         broker_id: brokerId || null,
         broker_commission_rate: brokerCommRate || null,
+        branch_id: (activeBranch && (activeBranch as any).id !== 'all') ? (activeBranch as any).id : null,
       };
       const res = await apiFetch("/invoice", {
         method: "POST",

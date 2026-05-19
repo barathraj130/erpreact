@@ -127,7 +127,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let financial_month;
         let seriesPrefix = null;
         let seriesNumber = null;
-        const rawBranchId = req.body.branch_id || req.user.branch_id;
+        const headerBranchId = req.headers['x-branch-id'] !== 'all' ? req.headers['x-branch-id'] : null;
+        const rawBranchId = req.body.branch_id || req.user.branch_id || headerBranchId;
         const branchId = sanitizeInt(rawBranchId);
         const safeCustomerId = sanitizeInt(customer_id);
         const safeBrokerId = sanitizeInt(broker_id);
@@ -325,36 +326,43 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const allItems = [...processedItems, ...processedReturnItems];
         for (const item of allItems) {
             if (item.product_id) {
+                // Per-item branch fallback: if global effectiveBranchId failed, use the product's own branch
+                let itemBranchId = effectiveBranchId;
+                if (!itemBranchId) {
+                    const pbRes = await client.query('SELECT branch_id FROM products WHERE id = $1', [item.product_id]);
+                    itemBranchId = pbRes.rows[0]?.branch_id || null;
+                }
+
                 if (item.is_return) {
                     // Increment stock for returns (skip for name_only bills)
                     if (!isNameOnly) {
                         await client.query('UPDATE products SET current_stock = current_stock + $1 WHERE id = $2', [item.qty, item.product_id]);
-                        if (effectiveBranchId) {
+                        if (itemBranchId) {
                             await client.query(`
                                 INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock)
                                 VALUES ($1,$2,$3,$4)
                                 ON CONFLICT (branch_id, product_id) DO UPDATE SET current_stock = branch_inventory.current_stock + $4
-                            `, [companyId, effectiveBranchId, item.product_id, item.qty]);
+                            `, [companyId, itemBranchId, item.product_id, item.qty]);
                         }
                     }
                 } else if (!isNameOnly) {
                     // Ensure branch_inventory row exists before deducting
-                    if (effectiveBranchId) {
+                    if (itemBranchId) {
                         await client.query(`
                             INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock)
                             SELECT $1, $2, $3, COALESCE(p.current_stock, 0) FROM products p WHERE p.id = $3
                             ON CONFLICT (branch_id, product_id) DO NOTHING
-                        `, [companyId, effectiveBranchId, item.product_id]);
+                        `, [companyId, itemBranchId, item.product_id]);
 
                         const branchStockRes = await client.query(
                             'SELECT bi.current_stock, p.name FROM branch_inventory bi JOIN products p ON p.id = bi.product_id WHERE bi.branch_id = $1 AND bi.product_id = $2',
-                            [effectiveBranchId, item.product_id]
+                            [itemBranchId, item.product_id]
                         );
                         const stock = Number(branchStockRes.rows[0]?.current_stock || 0);
                         const pName = branchStockRes.rows[0]?.name || `Product #${item.product_id}`;
                         if (stock < item.qty) throw new Error(`Insufficient stock for ${pName}. Available: ${stock}, Required: ${item.qty}`);
 
-                        await client.query('UPDATE branch_inventory SET current_stock = current_stock - $1 WHERE branch_id = $2 AND product_id = $3', [item.qty, effectiveBranchId, item.product_id]);
+                        await client.query('UPDATE branch_inventory SET current_stock = current_stock - $1 WHERE branch_id = $2 AND product_id = $3', [item.qty, itemBranchId, item.product_id]);
                         await client.query('UPDATE products SET current_stock = current_stock - $1 WHERE id = $2', [item.qty, item.product_id]);
                     } else {
                         // No branches configured — fall back to products table only
@@ -372,7 +380,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     await client.query(`
                         INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_out, reference_type, reference_id, bill_purpose)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                    `, [companyId, effectiveBranchId || null, item.product_id, 'SALE', item.qty, 'INVOICE', invoiceId, bill_purpose || 'real']);
+                    `, [companyId, itemBranchId || null, item.product_id, 'SALE', item.qty, 'INVOICE', invoiceId, bill_purpose || 'real']);
                 }
             }
 
