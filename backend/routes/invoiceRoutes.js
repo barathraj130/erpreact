@@ -306,17 +306,26 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             seriesPrefix, seriesNumber
         ];
 
+        // Use SAVEPOINT so a duplicate-number failure can be recovered inside the transaction.
+        // Without SAVEPOINT, a failed INSERT aborts the whole TX and all subsequent queries fail.
+        await client.query('SAVEPOINT sp_invoice_hdr');
         try {
             result = await client.query(headerSQL, buildParams(finalInvoiceNumber));
+            await client.query('RELEASE SAVEPOINT sp_invoice_hdr');
         } catch (insertErr) {
-            // 23505 = unique_violation — invoice_number already used (pre-fetched number went stale)
-            if (insertErr.code === '23505' && insertErr.constraint?.includes('invoice_number')) {
+            // Always roll back to savepoint first — restores TX to healthy state
+            await client.query('ROLLBACK TO SAVEPOINT sp_invoice_hdr');
+            await client.query('RELEASE SAVEPOINT sp_invoice_hdr');
+
+            // 23505 = unique_violation on invoice_number (stale pre-fetched number)
+            if (insertErr.code === '23505' && (insertErr.constraint || '').includes('invoice_number')) {
                 console.warn(`[invoice] Duplicate number "${finalInvoiceNumber}", auto-regenerating…`);
                 const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
                 finalInvoiceNumber = gen.number;
                 financial_month   = gen.financial_month;
                 seriesPrefix      = gen.series_prefix;
                 seriesNumber      = gen.series_number;
+                // Retry — transaction is healthy again after the savepoint rollback
                 result = await client.query(headerSQL, buildParams(finalInvoiceNumber));
             } else {
                 throw insertErr;

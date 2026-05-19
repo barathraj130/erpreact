@@ -116,6 +116,25 @@ interface InvoiceItem {
   rate: number;
 }
 
+/** Derive GST state code from state name when DB value is missing */
+const STATE_CODES: Record<string, string> = {
+  "ANDHRA PRADESH":"28","ARUNACHAL PRADESH":"12","ASSAM":"18","BIHAR":"10",
+  "CHHATTISGARH":"22","GOA":"30","GUJARAT":"24","HARYANA":"06",
+  "HIMACHAL PRADESH":"02","JAMMU AND KASHMIR":"01","J&K":"01","JHARKHAND":"20",
+  "KARNATAKA":"29","KERALA":"32","LADAKH":"38","MADHYA PRADESH":"23","MP":"23",
+  "MAHARASHTRA":"27","MANIPUR":"14","MEGHALAYA":"17","MIZORAM":"15",
+  "NAGALAND":"13","ODISHA":"21","PUNJAB":"03","RAJASTHAN":"08","SIKKIM":"11",
+  "TAMIL NADU":"33","TN":"33","TAMILNADU":"33","TELANGANA":"36","TRIPURA":"16",
+  "UTTAR PRADESH":"09","UP":"09","UTTARAKHAND":"05","WEST BENGAL":"19","WB":"19",
+  "ANDAMAN AND NICOBAR":"35","CHANDIGARH":"04","DADRA AND NAGAR HAVELI":"26",
+  "DAMAN AND DIU":"25","DELHI":"07","LAKSHADWEEP":"31","PUDUCHERRY":"34",
+};
+function resolveCode(stateName?: string | null, existingCode?: string | null): string {
+  if (existingCode && existingCode !== "---") return existingCode;
+  if (!stateName || stateName === "---") return "";
+  return STATE_CODES[stateName.toUpperCase().trim()] || "";
+}
+
 const CreateInvoice: React.FC = () => {
   const navigate = useNavigate();
   const { customers } = useUsers();
@@ -249,9 +268,10 @@ const CreateInvoice: React.FC = () => {
           `${c.address_line1 || ""}, ${c.city_pincode || ""}`.toUpperCase(),
         gstin: c.gstin || "---",
         state: c.state?.toUpperCase() || "---",
-        code: c.state_code || "---",
+        code: resolveCode(c.state, c.state_code) || "---",
       });
-      const isInterState = c.state_code && c.state_code !== company.stateCode;
+      const resolvedCode = resolveCode(c.state, c.state_code);
+      const isInterState = resolvedCode && resolvedCode !== company.stateCode;
       const currentTotal = gstState.totalRate;
       
       setGstType(isInterState ? "INTER" : "INTRA");
