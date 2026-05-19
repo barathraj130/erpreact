@@ -168,12 +168,15 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
         let totalBank = Number(bankRows?.balance || 0);
 
         const invoiceRows = await db.pgAll(`
-            SELECT 
+            SELECT
                 COALESCE(SUM(total_amount), 0) as total_invoice,
                 COALESCE(SUM(paid_amount), 0) as total_payments
-            FROM invoices WHERE company_id=$1 AND ${branchFilter} AND bill_purpose != 'name_only'
+            FROM invoices
+            WHERE company_id=$1 AND ${branchFilter}
+              AND COALESCE(is_deleted, false) = false
+              AND bill_purpose != 'name_only'
         `, queryParams);
-        
+
         let totalSales = Number(invoiceRows[0]?.total_invoice || 0);
         let totalPayments = Number(invoiceRows[0]?.total_payments || 0);
 
@@ -181,6 +184,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             SELECT type, category, SUM(amount) as total
             FROM transactions
             WHERE company_id=$1 AND ${branchFilter}
+              AND COALESCE(is_deleted, false) = false
             GROUP BY type, category
         `, queryParams);
 
@@ -190,13 +194,16 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             if (['EXPENSE', 'EXPENSE_PAYMENT', 'PURCHASE'].includes(r.type)) {
                 totalExpenses += amt;
             }
-            // Add non-invoice income to totalSales
-            if (['RECEIPT', 'INCOME'].includes(r.type)) {
-                totalSales += amt;
-            }
+            // NOTE: RECEIPT/INCOME are customer payments — already captured in
+            // paid_amount on invoices. Do NOT add them to totalSales or they
+            // inflate INFLOW and RECEIVABLES with double-counted amounts.
         });
+
         const billRows = await db.pgAll(`
-            SELECT SUM(total_amount) as total FROM purchase_bills WHERE company_id=$1 AND ${branchFilter}
+            SELECT SUM(total_amount) as total
+            FROM purchase_bills
+            WHERE company_id=$1 AND ${branchFilter}
+              AND COALESCE(is_deleted, false) = false
         `, queryParams);
         totalExpenses += Number(billRows[0]?.total || 0);
 
