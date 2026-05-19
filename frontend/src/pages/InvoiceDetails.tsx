@@ -199,11 +199,13 @@ function buildPrintHTML(p: {
       <div style="font-size:9px;font-weight:700;border-bottom:1px solid #ddd;padding-bottom:3px;margin-bottom:2px">Total Invoice Amount in words</div>
       <div style="font-size:12px;font-style:italic;font-weight:600;line-height:1.4;min-height:32px">${toWords(Math.round(grandTotal))}</div>
       <div style="margin-top:4px"><b>Bundles</b> : ${data.bundles_count || ""}</div>
-      <div style="margin-top:6px;font-weight:700;text-align:center">: Bank Details :</div>
-      ${data.bank_name       ? `<div>* BANK NAME : ${data.bank_name}</div>`       : ""}
-      ${data.bank_account_no ? `<div>* A/C NO &nbsp;&nbsp;: ${data.bank_account_no}</div>` : ""}
-      ${data.bank_ifsc_code  ? `<div>* IFSC NO &nbsp;: ${data.bank_ifsc_code}</div>`  : ""}
-      ${data.bank_upi_id     ? `<div>* UPI ID &nbsp;&nbsp;: ${data.bank_upi_id}</div>`    : ""}
+      <div style="margin-top:8px;font-size:9px;font-weight:700;text-decoration:underline;letter-spacing:0.3px;">&#9654; Bank Details</div>
+      <table style="border-collapse:collapse;font-size:9px;margin-top:3px;width:100%;">
+        ${data.bank_name       ? `<tr><td style="padding:1px 4px 1px 0;font-weight:600;color:#333;white-space:nowrap;">Bank Name</td><td style="padding:1px 4px;color:#333;">:</td><td style="padding:1px 0;font-weight:700;">${data.bank_name}</td></tr>` : ""}
+        ${data.bank_account_no ? `<tr><td style="padding:1px 4px 1px 0;font-weight:600;color:#333;white-space:nowrap;">Account No</td><td style="padding:1px 4px;color:#333;">:</td><td style="padding:1px 0;font-weight:700;letter-spacing:0.5px;">${data.bank_account_no}</td></tr>` : ""}
+        ${data.bank_ifsc_code  ? `<tr><td style="padding:1px 4px 1px 0;font-weight:600;color:#333;white-space:nowrap;">IFSC Code</td><td style="padding:1px 4px;color:#333;">:</td><td style="padding:1px 0;font-weight:700;">${data.bank_ifsc_code}</td></tr>` : ""}
+        ${data.bank_upi_id     ? `<tr><td style="padding:1px 4px 1px 0;font-weight:600;color:#333;white-space:nowrap;">UPI ID</td><td style="padding:1px 4px;color:#333;">:</td><td style="padding:1px 0;font-weight:700;">${data.bank_upi_id}</td></tr>` : ""}
+      </table>
       ${data.notes ? `<div style="margin-top:4px;font-size:9px;color:#444">${data.notes}</div>` : ""}
       <div style="margin-top:auto;padding-top:20px;text-align:center;font-size:9px;color:#666">(Common Seal)</div>
     </div>
@@ -519,11 +521,15 @@ const InvoiceDetails: React.FC = () => {
           <div style={{ fontSize: "9px", fontWeight: 700, borderBottom: "1px solid #ddd", paddingBottom: "2px", marginBottom: "2px" }}>Total Invoice Amount in words</div>
           <div style={{ fontSize: "11px", fontStyle: "italic", fontWeight: 600, lineHeight: 1.4, minHeight: "28px" }}>{toWords(Math.round(grandTotal))}</div>
           <div style={{ marginTop: "4px" }}><b>Bundles</b> : {data.bundles_count || ""}</div>
-          <div style={{ marginTop: "6px", fontWeight: 700, textAlign: "center" }}>: Bank Details :</div>
-          {data.bank_name       && <div>* BANK NAME : {data.bank_name}</div>}
-          {data.bank_account_no && <div>* A/C NO &nbsp;&nbsp;: {data.bank_account_no}</div>}
-          {data.bank_ifsc_code  && <div>* IFSC NO &nbsp;: {data.bank_ifsc_code}</div>}
-          {data.bank_upi_id     && <div>* UPI ID &nbsp;&nbsp;: {data.bank_upi_id}</div>}
+          <div style={{ marginTop: "8px", fontSize: "9px", fontWeight: 700, textDecoration: "underline", letterSpacing: "0.3px" }}>▶ Bank Details</div>
+          <table style={{ borderCollapse: "collapse", fontSize: "9px", marginTop: "3px", width: "100%" }}>
+            <tbody>
+              {data.bank_name       && <tr><td style={{ padding: "1px 4px 1px 0", fontWeight: 600, color: "#333", whiteSpace: "nowrap" }}>Bank Name</td><td style={{ padding: "1px 4px", color: "#333" }}>:</td><td style={{ padding: "1px 0", fontWeight: 700 }}>{data.bank_name}</td></tr>}
+              {data.bank_account_no && <tr><td style={{ padding: "1px 4px 1px 0", fontWeight: 600, color: "#333", whiteSpace: "nowrap" }}>Account No</td><td style={{ padding: "1px 4px", color: "#333" }}>:</td><td style={{ padding: "1px 0", fontWeight: 700, letterSpacing: "0.5px" }}>{data.bank_account_no}</td></tr>}
+              {data.bank_ifsc_code  && <tr><td style={{ padding: "1px 4px 1px 0", fontWeight: 600, color: "#333", whiteSpace: "nowrap" }}>IFSC Code</td><td style={{ padding: "1px 4px", color: "#333" }}>:</td><td style={{ padding: "1px 0", fontWeight: 700 }}>{data.bank_ifsc_code}</td></tr>}
+              {data.bank_upi_id     && <tr><td style={{ padding: "1px 4px 1px 0", fontWeight: 600, color: "#333", whiteSpace: "nowrap" }}>UPI ID</td><td style={{ padding: "1px 4px", color: "#333" }}>:</td><td style={{ padding: "1px 0", fontWeight: 700 }}>{data.bank_upi_id}</td></tr>}
+            </tbody>
+          </table>
           {data.notes && <div style={{ fontSize: "9px", color: "#444", marginTop: "4px" }}>{data.notes}</div>}
           <div style={{ marginTop: "auto", paddingTop: "16px", textAlign: "center", fontSize: "9px", color: "#666" }}>(Common Seal)</div>
         </div>

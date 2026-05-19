@@ -366,13 +366,33 @@ function generateInvoiceHTML(invoice, items, totals, co, isSameState) {
       <div class="amount-words">${amtWords.toUpperCase()}</div>
       <div style="margin-top:8px;"><b>Bundles :</b>&nbsp;&nbsp;${invoice.bundles_count||''}</div>
       <div style="margin-top:8px;">
-        <b style="text-decoration:underline;">Bank Details :</b><br>
-        <div style="margin-top:3px;">
-          ${co.bank_name  ? `<div>* <b>BANK NAME</b> : ${co.bank_name}</div>`  : ''}
-          ${co.bank_ac    ? `<div>* <b>A/C NO</b>    : ${co.bank_ac}</div>`    : ''}
-          ${co.bank_ifsc  ? `<div>* <b>IFSC NO</b>   : ${co.bank_ifsc}</div>`  : ''}
-          ${co.bank_upi   ? `<div>* <b>UPI ID</b>    : ${co.bank_upi}</div>`   : ''}
-        </div>
+        <div style="font-size:9px;font-weight:700;text-decoration:underline;margin-bottom:4px;letter-spacing:0.3px;">&#9654; Bank Details</div>
+        <table style="border-collapse:collapse;font-size:9px;width:100%;">
+          ${co.bank_name ? `
+          <tr>
+            <td style="padding:1px 4px 1px 0;font-weight:600;white-space:nowrap;color:#333;">Bank Name</td>
+            <td style="padding:1px 4px;color:#333;">:</td>
+            <td style="padding:1px 0;font-weight:700;">${co.bank_name}</td>
+          </tr>` : ''}
+          ${co.bank_ac ? `
+          <tr>
+            <td style="padding:1px 4px 1px 0;font-weight:600;white-space:nowrap;color:#333;">Account No</td>
+            <td style="padding:1px 4px;color:#333;">:</td>
+            <td style="padding:1px 0;font-weight:700;letter-spacing:0.5px;">${co.bank_ac}</td>
+          </tr>` : ''}
+          ${co.bank_ifsc ? `
+          <tr>
+            <td style="padding:1px 4px 1px 0;font-weight:600;white-space:nowrap;color:#333;">IFSC Code</td>
+            <td style="padding:1px 4px;color:#333;">:</td>
+            <td style="padding:1px 0;font-weight:700;">${co.bank_ifsc}</td>
+          </tr>` : ''}
+          ${co.bank_upi ? `
+          <tr>
+            <td style="padding:1px 4px 1px 0;font-weight:600;white-space:nowrap;color:#333;">UPI ID</td>
+            <td style="padding:1px 4px;color:#333;">:</td>
+            <td style="padding:1px 0;font-weight:700;">${co.bank_upi}</td>
+          </tr>` : ''}
+        </table>
       </div>
     </div>
     <div class="footer-right">
