@@ -291,8 +291,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             RETURNING id
         `;
 
-        const result = await client.query(headerSQL, [
-            companyId, safeCustomerId, finalInvoiceNumber, invoice_type || 'TAX_INVOICE',
+        // Insert invoice header — retry once if the invoice_number collides (stale pre-fetched number)
+        let result;
+        const buildParams = (invNum) => [
+            companyId, safeCustomerId, invNum, invoice_type || 'TAX_INVOICE',
             financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(), payment_status || 'UNPAID',
             totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, netInvoiceAmount,
             gstType, finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
@@ -300,12 +302,26 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             safeBrokerId, safeBrokerCommission,
             branchId,
             bill_purpose || 'real',
-            0, // points_earned - will be updated after
-            pointsRedeemed,
-            pointsDiscount,
-            seriesPrefix,
-            seriesNumber
-        ]);
+            0, pointsRedeemed, pointsDiscount,
+            seriesPrefix, seriesNumber
+        ];
+
+        try {
+            result = await client.query(headerSQL, buildParams(finalInvoiceNumber));
+        } catch (insertErr) {
+            // 23505 = unique_violation — invoice_number already used (pre-fetched number went stale)
+            if (insertErr.code === '23505' && insertErr.constraint?.includes('invoice_number')) {
+                console.warn(`[invoice] Duplicate number "${finalInvoiceNumber}", auto-regenerating…`);
+                const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
+                finalInvoiceNumber = gen.number;
+                financial_month   = gen.financial_month;
+                seriesPrefix      = gen.series_prefix;
+                seriesNumber      = gen.series_number;
+                result = await client.query(headerSQL, buildParams(finalInvoiceNumber));
+            } else {
+                throw insertErr;
+            }
+        }
 
         const invoiceId = result.rows[0].id;
 
