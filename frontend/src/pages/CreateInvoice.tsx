@@ -382,8 +382,16 @@ const CreateInvoice: React.FC = () => {
         invoice_number: invoiceNo,
         invoice_type: invoiceType,
         customer_id: customerId,
-        items: items.filter((i) => i.desc && i.qty > 0),
-        return_items: returnItems.filter((i) => i.desc && i.qty > 0),
+        // For each item, ensure gst_rate is set. If the product has no GST rate (0 or null),
+        // fall back to the invoice-level GST rate the user selected (gstState.totalRate).
+        items: items.filter((i) => i.desc && i.qty > 0).map(i => ({
+          ...i,
+          gst_rate: (i.gst_rate != null && Number(i.gst_rate) > 0) ? i.gst_rate : gstState.totalRate,
+        })),
+        return_items: returnItems.filter((i) => i.desc && i.qty > 0).map(i => ({
+          ...i,
+          gst_rate: (i.gst_rate != null && Number(i.gst_rate) > 0) ? i.gst_rate : gstState.totalRate,
+        })),
         notes,
         grand_total: totals.grandTotal,
         discount_amount: discount,

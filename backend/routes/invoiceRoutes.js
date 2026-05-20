@@ -189,7 +189,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         transport_details, bundles_count, return_items,
         broker_id, broker_commission_rate,
         bill_purpose, // 'real' or 'name_only'
-        points_to_redeem // Points to redeem on this invoice
+        points_to_redeem, // Points to redeem on this invoice
+        tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST from frontend
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
@@ -273,12 +274,22 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         const isNonTax = invoice_type === 'NON_TAX_INVOICE';
 
+        // Invoice-level GST rate sent from frontend (e.g. 18 for 18% GST).
+        // Used as fallback when a line item has no product-level GST rate (0 or null).
+        const invoiceLevelGstRate = (tax_details && !isNaN(Number(tax_details.totalRate)) && Number(tax_details.totalRate) > 0)
+            ? Number(tax_details.totalRate)
+            : 5; // ultimate fallback: 5%
+
         const processedItems = items.map(i => {
             const qty = isNaN(parseFloat(i.qty)) ? 0 : parseFloat(i.qty);
             const rate = isNaN(parseFloat(i.rate)) ? 0 : parseFloat(i.rate);
             const amount = qty * rate;
-            // FIX: If NON_TAX, tax is always 0. Also fix 0% fallback issue.
-            const taxRate = isNonTax ? 0 : ( (i.gst_rate !== undefined && i.gst_rate !== null) ? (isNaN(parseFloat(i.gst_rate)) ? 5 : parseFloat(i.gst_rate)) : 5);
+            // Use per-item gst_rate if it's a positive number; otherwise fall back to the
+            // invoice-level GST rate chosen by the user (tax_details.totalRate).
+            const itemGstRate = parseFloat(i.gst_rate);
+            const taxRate = isNonTax ? 0 : (
+                (!isNaN(itemGstRate) && itemGstRate > 0) ? itemGstRate : invoiceLevelGstRate
+            );
             
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;

@@ -377,8 +377,13 @@ const InvoiceDetails: React.FC = () => {
     const qty = val(item.quantity || item.qty);
     const rate = val(item.unit_price || item.rate);
     const taxable = Math.abs(qty) * rate;
-    const gstRate = isNonTax ? 0 : val(item.tax_percent || item.gst_rate || 0);
+    // gst_rate stored per line item (tax_percent or gst_rate column); also check cgst_rate + sgst_rate
+    const storedCgstRate = val(item.cgst_rate || 0);
+    const storedSgstRate = val(item.sgst_rate || 0);
+    const storedIgstRate = val(item.igst_rate || 0);
+    const gstRate = isNonTax ? 0 : val(item.tax_percent || item.gst_rate || (storedCgstRate + storedSgstRate + storedIgstRate) || 0);
     const gstAmt = (taxable * gstRate) / 100;
+    // Use stored amounts if non-zero; otherwise re-derive from gstRate so old invoices display correctly
     const cgst = val(item.cgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
     const sgst = val(item.sgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
     const igst = val(item.igst_amount) || (!isSameState && !isNonTax ? gstAmt : 0);
