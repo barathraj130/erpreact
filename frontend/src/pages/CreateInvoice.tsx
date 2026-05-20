@@ -109,11 +109,13 @@ const fmt = (n: any) =>
 
 interface InvoiceItem {
   id: number;
+  product_id?: number | null;  // links to products table for stock deduction
   desc: string;
   hsn: string;
   uom: string;
   qty: number;
   rate: number;
+  gst_rate?: number | null;
 }
 
 /** Derive GST state code from state name when DB value is missing */
@@ -233,25 +235,21 @@ const CreateInvoice: React.FC = () => {
   const handleProductSelect = (i: number, pid: string, isReturn = false) => {
     const prod = products.find((p) => p.id === parseInt(pid));
     if (prod) {
+      const patch = {
+        product_id: prod.id,              // ← critical for stock deduction
+        desc: prod.name.toUpperCase(),
+        hsn: prod.hsn_code || "",
+        uom: prod.unit || "Pcs",
+        rate: prod.selling_price || 0,
+        gst_rate: prod.gst_percent ?? null, // ← preserve product-level GST rate
+      };
       if (isReturn) {
         const t = [...returnItems];
-        t[i] = {
-          ...t[i],
-          desc: prod.name.toUpperCase(),
-          hsn: prod.hsn_code || "",
-          uom: prod.unit || "Pcs",
-          rate: prod.selling_price || 0,
-        };
+        t[i] = { ...t[i], ...patch };
         setReturnItems(t);
       } else {
         const t = [...items];
-        t[i] = {
-          ...t[i],
-          desc: prod.name.toUpperCase(),
-          hsn: prod.hsn_code || "",
-          uom: prod.unit || "Pcs",
-          rate: prod.selling_price || 0,
-        };
+        t[i] = { ...t[i], ...patch };
         setItems(t);
       }
     }
