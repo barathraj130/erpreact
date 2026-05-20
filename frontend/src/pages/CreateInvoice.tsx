@@ -485,11 +485,11 @@ const CreateInvoice: React.FC = () => {
                   value={invoiceNo}
                   onChange={(e) => setInvoiceNo(e.target.value.toUpperCase())}
                   placeholder={
-                    invoiceType === "TAX_INVOICE"          ? "Auto → TAX/YYYY/MM/001" :
-                    invoiceType === "NOMINAL_TAX_INVOICE"  ? "Auto → NTX/YYYY/MM/001" :
-                    invoiceType === "NON_TAX_INVOICE"      ? "Auto → INV/YYYY/MM/001" :
-                    invoiceType === "RETAIL_SALE"          ? "Auto → RET/YYYY/MM/001" :
-                    invoiceType === "GIFTED_ITEM"          ? "Auto → GFT/YYYY/MM/001" :
+                    invoiceType === "TAX_INVOICE"          ? "Auto: 1, 2, 3… (TAX series)" :
+                    invoiceType === "NOMINAL_TAX_INVOICE"  ? "Auto: 1, 2, 3… (NTX series)" :
+                    invoiceType === "NON_TAX_INVOICE"      ? "Auto: 1, 2, 3… (INV series)" :
+                    invoiceType === "RETAIL_SALE"          ? "Auto: 1, 2, 3… (RET series)" :
+                    invoiceType === "GIFTED_ITEM"          ? "Auto: 1, 2, 3… (GFT series)" :
                     "Auto-generated if left blank"
                   }
                 />
@@ -502,11 +502,11 @@ const CreateInvoice: React.FC = () => {
                     onChange={(e: any) => setInvoiceType(e.target.value as any)}
                     disableSearch
                   >
-                    <option value="TAX_INVOICE">TAX INVOICE (GST) → TAX/…</option>
-                    <option value="NOMINAL_TAX_INVOICE">NOMINAL TAX → NTX/…</option>
-                    <option value="NON_TAX_INVOICE">NON-TAX INVOICE → INV/…</option>
-                    <option value="RETAIL_SALE">RETAIL SALE → RET/… (No Customer Req.)</option>
-                    <option value="GIFTED_ITEM">GIFTED ITEM → GFT/…</option>
+                    <option value="TAX_INVOICE">TAX INVOICE (GST)</option>
+                    <option value="NOMINAL_TAX_INVOICE">NOMINAL TAX INVOICE</option>
+                    <option value="NON_TAX_INVOICE">NON-TAX INVOICE</option>
+                    <option value="RETAIL_SALE">RETAIL SALE (No Customer Req.)</option>
+                    <option value="GIFTED_ITEM">GIFTED ITEM</option>
                   </CustomSelect>
                 </div>
               </div>

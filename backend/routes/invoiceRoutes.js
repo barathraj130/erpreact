@@ -20,31 +20,32 @@ const router = express.Router();
 /* ============================================================
    HELPER: Generate Smart Invoice Number
 ============================================================ */
-// SEPARATE bill number series for EVERY invoice type — each starts from 1 independently
-// TAX_INVOICE         → TAX/YYYY/MM/001
-// NOMINAL_TAX_INVOICE → NTX/YYYY/MM/001
-// NON_TAX_INVOICE     → INV/YYYY/MM/001
-// RETAIL_SALE         → RET/YYYY/MM/001
-// GIFTED_ITEM         → GFT/YYYY/MM/001
-// NSB (name_only)     → NSB/YYYY/MM/001
-function resolveSeries(invoiceType, billPurpose) {
-    if (billPurpose === 'name_only') return { billType: 'NSB', prefix: 'NSB' };
+// Each invoice type has its own bill_type key for the series counter
+function resolveBillType(invoiceType, billPurpose) {
+    if (billPurpose === 'name_only') return 'NSB';
     switch ((invoiceType || '').toUpperCase()) {
-        case 'TAX_INVOICE':         return { billType: 'TAX', prefix: 'TAX' };
-        case 'NOMINAL_TAX_INVOICE': return { billType: 'NTX', prefix: 'NTX' };
-        case 'NON_TAX_INVOICE':     return { billType: 'INV', prefix: 'INV' };
-        case 'RETAIL_SALE':         return { billType: 'RET', prefix: 'RET' };
-        case 'GIFTED_ITEM':         return { billType: 'GFT', prefix: 'GFT' };
-        default:                    return { billType: 'INV', prefix: 'INV' };
+        case 'TAX_INVOICE':         return 'TAX';
+        case 'NOMINAL_TAX_INVOICE': return 'NTX';
+        case 'NON_TAX_INVOICE':     return 'INV';
+        case 'RETAIL_SALE':         return 'RET';
+        case 'GIFTED_ITEM':         return 'GFT';
+        default:                    return 'INV';
     }
 }
 
+// Indian financial year: April 1 – March 31.
+// Returns e.g. 2025 for both May-2025 and Jan-2026.
+function getFinancialYear() {
+    const now = new Date();
+    const m = now.getMonth() + 1; // 1-12
+    const y = now.getFullYear();
+    return m >= 4 ? y : y - 1;
+}
+
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const monthStr = date.toLocaleString("default", { month: "short" }).toUpperCase();
-    const financial_month = `${year}-${monthStr}`;
+    const monthStr = new Date().toLocaleString("default", { month: "short" }).toUpperCase();
+    const financial_year = getFinancialYear();
+    const financial_month = `${new Date().getFullYear()}-${monthStr}`;
 
     if (branchId) {
         // Branch-specific sequence (stored on the branches row)
@@ -54,43 +55,49 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
             [branchId]
         );
         const { bill_sequence, bill_prefix } = branchResult.rows[0];
-        const padding = bill_sequence.toString().padStart(4, "0");
         const prefix = bill_prefix || `B${branchId}`;
-        return { number: `${prefix}-${padding}`, financial_month, series_prefix: prefix, series_number: bill_sequence };
+        return {
+            number: String(bill_sequence),
+            financial_month,
+            series_prefix: prefix,
+            series_number: bill_sequence
+        };
     }
 
-    // Main branch — atomic per-company, per-series, per-month sequence
-    // Each invoice TYPE gets its own completely independent number series.
-    const { billType, prefix } = resolveSeries(type, billPurpose);
-    const paddedMonth = String(month).padStart(2, '0');
+    // Main branch:
+    // Each invoice TYPE gets its own sequential counter starting from 1.
+    // Counter resets every financial year (April 1).
+    // Unique constraint on invoices is (company_id, invoice_type, invoice_number)
+    // so "1" in RETAIL_SALE never conflicts with "1" in TAX_INVOICE.
+    const billType = resolveBillType(type, billPurpose);
 
     const seqResult = await client.query(
-        `INSERT INTO invoice_number_series (company_id, bill_type, prefix, year, month, last_number)
-         VALUES ($1, $2, $3, $4, $5, 1)
+        `INSERT INTO invoice_number_series
+            (company_id, bill_type, prefix, year, month, last_number)
+         VALUES ($1, $2, $3, $4, 0, 1)
          ON CONFLICT (company_id, bill_type, year, month)
          DO UPDATE SET last_number = invoice_number_series.last_number + 1
          RETURNING last_number`,
-        [companyId, billType, prefix, year, month]
+        [companyId, billType, billType, financial_year]
     ).catch(async () => {
-        // Fallback: old constraint without company_id (before migration ran)
+        // Fallback for DBs where migration hasn't run yet (no company_id column)
         const r = await client.query(
             `INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
-             VALUES ($1, $2, $3, $4, 1)
+             VALUES ($1, $2, $3, 0, 1)
              ON CONFLICT (bill_type, year, month)
              DO UPDATE SET last_number = invoice_number_series.last_number + 1
              RETURNING last_number`,
-            [billType, prefix, year, month]
+            [billType, billType, financial_year]
         );
         return r;
     });
 
     const num = seqResult.rows[0].last_number;
-    const paddedNum = String(num).padStart(3, '0');
 
     return {
-        number: `${prefix}/${year}/${paddedMonth}/${paddedNum}`,
+        number: String(num),   // Simple: 1, 2, 3 …
         financial_month,
-        series_prefix: prefix,
+        series_prefix: billType,
         series_number: num,
     };
 }
@@ -249,14 +256,17 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             seriesPrefix = gen.series_prefix;
             seriesNumber = gen.series_number;
         } else {
-            // User provided a number — validate it's not already taken
+            // User provided a number — validate it's not already taken FOR THIS invoice type.
+            // Each type (TAX_INVOICE, RETAIL_SALE, etc.) has its own independent counter,
+            // so "1" in TAX_INVOICE is allowed even if "1" in RETAIL_SALE already exists.
             const exists = await client.query(
                 `SELECT i.id, i.invoice_date, u.username AS customer_name
                  FROM invoices i
                  LEFT JOIN users u ON i.customer_id = u.id
-                 WHERE i.invoice_number = $1 AND i.company_id = $2 AND i.is_deleted IS NOT TRUE
+                 WHERE i.invoice_number = $1 AND i.company_id = $2
+                   AND i.invoice_type = $3 AND i.is_deleted IS NOT TRUE
                  LIMIT 1`,
-                [finalInvoiceNumber, companyId]
+                [finalInvoiceNumber, companyId, invoice_type || 'TAX_INVOICE']
             );
             if (exists.rows.length > 0) {
                 const ex = exists.rows[0];
@@ -845,7 +855,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
 
         // 0. Fetch Old Invoice for Balance Adjustment (only active, same company)
         const oldInv = await client.query(
-            `SELECT total_amount, customer_id, invoice_number FROM invoices
+            `SELECT total_amount, customer_id, invoice_number, invoice_type FROM invoices
              WHERE id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
             [id, companyId]
         );
@@ -859,14 +869,19 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             ? newInvoiceNumber.trim().toUpperCase()
             : oldInvoiceNumber;
 
+        // Also fetch the old invoice_type to scope the duplicate check
+        const oldInvoiceType = oldInv.rows[0].invoice_type || editInvoiceType || 'TAX_INVOICE';
+
         if (finalInvoiceNumber !== oldInvoiceNumber) {
             const dup = await client.query(
                 `SELECT i.id, i.invoice_date, u.username AS customer_name
                  FROM invoices i
                  LEFT JOIN users u ON i.customer_id = u.id
-                 WHERE i.invoice_number = $1 AND i.company_id = $2 AND COALESCE(i.is_deleted,false) = false AND i.id <> $3
+                 WHERE i.invoice_number = $1 AND i.company_id = $2
+                   AND i.invoice_type = $3
+                   AND COALESCE(i.is_deleted,false) = false AND i.id <> $4
                  LIMIT 1`,
-                [finalInvoiceNumber, companyId, id]
+                [finalInvoiceNumber, companyId, oldInvoiceType, id]
             );
             if (dup.rows.length > 0) {
                 const ex = dup.rows[0];

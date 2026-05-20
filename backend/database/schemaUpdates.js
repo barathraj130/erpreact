@@ -696,10 +696,10 @@ export const runSchemaUpdates = async () => {
         // 5. Ensure last_updated column exists on branch_inventory (older DBs may lack it)
         await db.query(`ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()`).catch(() => {});
 
-        // ── Per-company invoice number uniqueness ─────────────────────────────
-        // The original UNIQUE constraint on invoice_number is global — two different
-        // companies cannot share a number (e.g. TAX/2026/05/001 for company A AND B).
-        // Drop the global constraint and replace it with (company_id, invoice_number).
+        // ── Per-company, per-type invoice number uniqueness ───────────────────
+        // Each invoice TYPE now has its own independent counter starting at 1.
+        // "1" in TAX_INVOICE must NOT conflict with "1" in RETAIL_SALE.
+        // So the unique constraint must be (company_id, invoice_type, invoice_number).
         await db.query(`
             DO $$
             BEGIN
@@ -710,13 +710,20 @@ export const runSchemaUpdates = async () => {
                 ) THEN
                     ALTER TABLE invoices DROP CONSTRAINT invoices_invoice_number_key;
                 END IF;
-                -- Add per-company unique index
-                IF NOT EXISTS (
+                -- Drop old per-company (without type) constraint if it exists
+                IF EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = 'invoices_company_invoice_number_key'
                 ) THEN
-                    ALTER TABLE invoices ADD CONSTRAINT invoices_company_invoice_number_key
-                        UNIQUE (company_id, invoice_number);
+                    ALTER TABLE invoices DROP CONSTRAINT invoices_company_invoice_number_key;
+                END IF;
+                -- Add per-company-per-type unique constraint
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'invoices_company_type_invoice_number_key'
+                ) THEN
+                    ALTER TABLE invoices ADD CONSTRAINT invoices_company_type_invoice_number_key
+                        UNIQUE (company_id, invoice_type, invoice_number);
                 END IF;
             END $$;
         `).catch((e) => { console.warn('[schemaUpdates] invoice unique constraint migration skipped:', e.message); });
