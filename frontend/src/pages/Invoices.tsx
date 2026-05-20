@@ -50,9 +50,10 @@ const Invoices: React.FC = () => {
     const matchSearch =
       inv.invoice_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       inv.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const seriesPrefix = inv.series_prefix || (inv.invoice_number?.includes("/") ? inv.invoice_number.split("/")[0] : null);
     const matchSeries =
       seriesFilter === "ALL" ||
-      (inv.series_prefix || inv.invoice_number?.split("/")[0])?.toUpperCase() === seriesFilter;
+      seriesPrefix?.toUpperCase() === seriesFilter;
     return matchSearch && matchSeries;
   });
 

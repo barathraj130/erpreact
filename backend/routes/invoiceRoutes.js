@@ -152,7 +152,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 `SELECT i.id, i.invoice_date, u.username AS customer_name
                  FROM invoices i
                  LEFT JOIN users u ON i.customer_id = u.id
-                 WHERE i.invoice_number = $1 AND i.company_id = $2 AND COALESCE(i.is_deleted, false) = false
+                 WHERE i.invoice_number = $1 AND i.company_id = $2 AND i.is_deleted IS NOT TRUE
                  LIMIT 1`,
                 [finalInvoiceNumber, companyId]
             );
@@ -724,9 +724,13 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         client = await db.getClient();
         await client.query("BEGIN");
 
-        // 0. Fetch Old Invoice for Balance Adjustment
-        const oldInv = await client.query(`SELECT total_amount, customer_id, invoice_number FROM invoices WHERE id = $1`, [id]);
-        if (oldInv.rows.length === 0) throw new Error("Invoice not found");
+        // 0. Fetch Old Invoice for Balance Adjustment (only active, same company)
+        const oldInv = await client.query(
+            `SELECT total_amount, customer_id, invoice_number FROM invoices
+             WHERE id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+            [id, companyId]
+        );
+        if (oldInv.rows.length === 0) throw new Error("Invoice not found or already deleted");
         const oldTotal = Number(oldInv.rows[0].total_amount);
         const oldCustId = oldInv.rows[0].customer_id;
         const oldInvoiceNumber = oldInv.rows[0].invoice_number;
