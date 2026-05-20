@@ -12,6 +12,7 @@ export function useAuthUser() {
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem("erp-refresh-token");
     setUser(null);
     window.location.href = "/login";
   }, []);
@@ -19,22 +20,25 @@ export function useAuthUser() {
   const decodeAndSetUser = useCallback((token: string) => {
     try {
       const decoded = jwtDecode<any>(token);
-      
+
       // The backend puts user data in a 'user' property of the payload
       const userData: User = decoded.user || decoded;
-      
-      // Check for expiry
+
+      // JWT `exp` is always at the TOP LEVEL of the decoded payload,
+      // NOT nested inside decoded.user — so we read decoded.exp here.
       const currentTime = Date.now() / 1000;
-      if (userData.exp && userData.exp < currentTime) {
+      const tokenExp: number | undefined = decoded.exp;
+
+      if (tokenExp && tokenExp < currentTime) {
         throw new Error("Token expired");
       }
 
       setUser(userData);
       setError(null);
 
-      // Set up auto-logout timer
-      if (userData.exp) {
-        const timeout = (userData.exp - currentTime) * 1000;
+      // Set up auto-logout timer using the correct top-level exp
+      if (tokenExp) {
+        const timeout = (tokenExp - currentTime) * 1000;
         const timer = setTimeout(() => {
           console.warn("Session expired. Logging out...");
           logout();

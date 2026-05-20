@@ -85,6 +85,10 @@ export default function Login() {
 
         if (res && res.success && res.token) {
           localStorage.setItem("erp-token", res.token);
+          // Store refresh token so we can silently renew expired access tokens
+          if (res.refreshToken) {
+            localStorage.setItem("erp-refresh-token", res.refreshToken);
+          }
 
           if (rememberMe) {
             localStorage.setItem("rem-company", companyCode);
