@@ -437,12 +437,13 @@ const EditInvoice: React.FC = () => {
         hsn_acs_code: item.hsn || "",
         quantity: Number(item.qty) || 0,
         unit_price: Number(item.rate) || 0,
-        gst_rate: 0, // Will be calculated by backend or ignored as layout does calc
+        gst_rate: null, // Let backend use the 5% default (same as CreateInvoice)
       }));
 
     // Create payload
     const payload: any = {
       invoice_number: invoiceNo.trim(),
+      invoice_date: meta.invoiceDate,
       customer_id: customerId,
       items: formattedItems,
       notes: notes.trim(),

@@ -149,14 +149,23 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         } else {
             // User provided a number — validate it's not already taken
             const exists = await client.query(
-                `SELECT id FROM invoices WHERE invoice_number = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false LIMIT 1`,
+                `SELECT i.id, i.invoice_date, u.username AS customer_name
+                 FROM invoices i
+                 LEFT JOIN users u ON i.customer_id = u.id
+                 WHERE i.invoice_number = $1 AND i.company_id = $2 AND COALESCE(i.is_deleted, false) = false
+                 LIMIT 1`,
                 [finalInvoiceNumber, companyId]
             );
             if (exists.rows.length > 0) {
+                const ex = exists.rows[0];
+                const dateStr = ex.invoice_date
+                    ? new Date(ex.invoice_date).toLocaleDateString('en-GB')
+                    : 'unknown date';
+                const custStr = ex.customer_name || 'unknown customer';
                 await client.query('ROLLBACK');
                 client.release();
                 return res.status(409).json({
-                    error: `Invoice number "${finalInvoiceNumber}" already exists. Please use a different number.`
+                    error: `Invoice number "${finalInvoiceNumber}" is already used by invoice #${ex.id} (${custStr}, ${dateStr}). Leave the number blank for auto-generation, or use a different number.`
                 });
             }
             financial_month = `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`;
@@ -700,7 +709,14 @@ router.get("/:id", authMiddleware, async (req, res) => {
 ============================================================ */
 router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async (req, res) => {
     const id = Number(req.params.id);
-    const { items, notes, payments, customer_id, amount_paid, payment_status } = req.body;
+    const {
+        items, notes, payments,
+        customer_id, amount_paid, payment_status,
+        invoice_number: newInvoiceNumber,
+        invoice_date: newInvoiceDate,
+        transport_details,
+        bundles_count,
+    } = req.body;
     const companyId = req.user.active_company_id;
 
     let client;
@@ -713,7 +729,33 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         if (oldInv.rows.length === 0) throw new Error("Invoice not found");
         const oldTotal = Number(oldInv.rows[0].total_amount);
         const oldCustId = oldInv.rows[0].customer_id;
-        const invoiceNumber = oldInv.rows[0].invoice_number;
+        const oldInvoiceNumber = oldInv.rows[0].invoice_number;
+
+        // If user changed the invoice number, verify the new number is not already taken
+        const finalInvoiceNumber = (newInvoiceNumber && newInvoiceNumber.trim())
+            ? newInvoiceNumber.trim().toUpperCase()
+            : oldInvoiceNumber;
+
+        if (finalInvoiceNumber !== oldInvoiceNumber) {
+            const dup = await client.query(
+                `SELECT i.id, i.invoice_date, u.username AS customer_name
+                 FROM invoices i
+                 LEFT JOIN users u ON i.customer_id = u.id
+                 WHERE i.invoice_number = $1 AND i.company_id = $2 AND COALESCE(i.is_deleted,false) = false AND i.id <> $3
+                 LIMIT 1`,
+                [finalInvoiceNumber, companyId, id]
+            );
+            if (dup.rows.length > 0) {
+                const ex = dup.rows[0];
+                const dateStr = ex.invoice_date ? new Date(ex.invoice_date).toLocaleDateString('en-GB') : 'unknown date';
+                const custStr = ex.customer_name || 'unknown customer';
+                await client.query('ROLLBACK');
+                client.release();
+                return res.status(409).json({ error: `Invoice number "${finalInvoiceNumber}" is already used by invoice #${ex.id} (${custStr}, ${dateStr}). Please use a different number.` });
+            }
+        }
+
+        const effectiveCustomerId = (customer_id && !isNaN(Number(customer_id))) ? Number(customer_id) : oldCustId;
 
         // 1. Calculate New Totals
         let totalTaxable = 0;
@@ -722,31 +764,58 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             const qty = Number(i.qty || i.quantity) || 0;
             const rate = Number(i.rate || i.unit_price) || 0;
             const amount = qty * rate;
-            const gstRate = Number(i.gst_rate) || 5;
+            // gst_rate from frontend is 0 (no per-item field in EditInvoice).
+            // Fall back to 5% only when explicitly null/undefined — treat 0 as 0% (non-tax item).
+            const gstRate = (i.gst_rate !== undefined && i.gst_rate !== null && !isNaN(Number(i.gst_rate)))
+                ? Number(i.gst_rate)
+                : 5;
             totalTaxable += amount;
             totalGST += (amount * (gstRate / 100));
-            return { 
-                description: i.description || i.name, 
-                hsn: i.hsn || i.hsn_acs_code, 
-                qty, 
-                rate, 
-                amount, 
-                gstRate 
+            return {
+                description: i.description || i.name,
+                hsn: i.hsn || i.hsn_acs_code,
+                qty,
+                rate,
+                amount,
+                gstRate
             };
         });
 
         const totalAmount = Math.round(totalTaxable + totalGST);
 
-        // 2. Update Header
+        // 2. Update Header — persist ALL editable fields
         await client.query(
-            `UPDATE invoices SET 
-                notes = $1, 
-                total_amount = $2, 
-                paid_amount = $3,
-                status = $4,
-                updated_at = NOW() 
-             WHERE id = $5 AND company_id = $6`,
-            [notes || null, totalAmount, amount_paid || 0, payment_status || 'UNPAID', id, companyId]
+            `UPDATE invoices SET
+                invoice_number     = $1,
+                customer_id        = $2,
+                notes              = $3,
+                total_amount       = $4,
+                paid_amount        = $5,
+                status             = $6,
+                invoice_date       = COALESCE($7::date, invoice_date),
+                vehicle_number     = COALESCE($8, vehicle_number),
+                transportation_mode = COALESCE($9, transportation_mode),
+                date_of_supply     = COALESCE($10::date, date_of_supply),
+                reverse_charge     = COALESCE($11, reverse_charge),
+                bundles_count      = COALESCE($12, bundles_count),
+                updated_at         = NOW()
+             WHERE id = $13 AND company_id = $14`,
+            [
+                finalInvoiceNumber,
+                effectiveCustomerId,
+                notes || null,
+                totalAmount,
+                amount_paid || 0,
+                payment_status || 'UNPAID',
+                newInvoiceDate || null,
+                transport_details?.vehicle || null,
+                transport_details?.mode   || null,
+                transport_details?.supply_date || null,
+                transport_details?.reverse_charge || null,
+                bundles_count != null ? Number(bundles_count) : null,
+                id,
+                companyId,
+            ]
         );
 
         // 3. Replace Invoice Ledger Event
@@ -757,15 +826,17 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 type: "INVOICE",
                 relatedInvoiceId: id,
             });
+        }
+        if (effectiveCustomerId) {
             await createCustomerLedgerEvent(client, {
                 companyId,
                 branchId: req.user.branch_id || 1,
-                customerId: oldCustId,
+                customerId: effectiveCustomerId,
                 type: "INVOICE",
                 category: "SALES",
                 amount: totalAmount,
                 date: new Date().toISOString().split("T")[0],
-                description: `Invoice #${invoiceNumber}`,
+                description: `Invoice #${finalInvoiceNumber}`,
                 relatedInvoiceId: id,
                 referenceType: "INVOICE",
                 referenceId: id,
@@ -787,16 +858,16 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                         [id, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null]
                     );
 
-                    if (oldCustId) {
+                    if (effectiveCustomerId) {
                         await createCustomerLedgerEvent(client, {
                             companyId,
                             branchId: req.user.branch_id || 1,
-                            customerId: Number(oldCustId),
+                            customerId: Number(effectiveCustomerId),
                             type: "RECEIPT",
                             category: "PAYMENT",
                             amount: pAmt,
                             date: pDate,
-                            description: `Payment for Invoice #${invoiceNumber}`,
+                            description: `Payment for Invoice #${finalInvoiceNumber}`,
                             relatedInvoiceId: Number(id),
                             referenceType: "PAYMENT",
                             referenceId: paymentResult.rows[0].id,
@@ -841,8 +912,10 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             );
         }
 
-        if (oldCustId) {
-            await recomputeCustomerBalance(client, oldCustId, companyId);
+        // Recompute balance for old AND new customer (handles customer change)
+        const custIdsToRecompute = [...new Set([oldCustId, effectiveCustomerId].filter(Boolean))];
+        for (const cid of custIdsToRecompute) {
+            await recomputeCustomerBalance(client, cid, companyId);
         }
 
         await client.query("COMMIT");
