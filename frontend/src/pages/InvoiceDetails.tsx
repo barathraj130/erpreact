@@ -69,6 +69,7 @@ function buildPrintHTML(p: {
   const itemRowsHTML = rows.map((r: any, i: number) => {
     const discount = 0;
     const itemCGSTRate = (!isNonTax && isSameState) ? (r.gstRate / 2) : 0;
+    const itemSGSTRate = (!isNonTax && isSameState) ? (r.gstRate / 2) : 0;
     const itemIGSTRate = (!isNonTax && !isSameState) ? r.gstRate : 0;
     return `
       <tr style="font-size:10px">
@@ -83,6 +84,8 @@ function buildPrintHTML(p: {
         <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.taxable)}</td>
         <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemCGSTRate || 0}</td>
         <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(isNonTax ? 0 : r.cgst)}</td>
+        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemSGSTRate || 0}</td>
+        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(isNonTax ? 0 : r.sgst)}</td>
         <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemIGSTRate || 0}</td>
         <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(isNonTax ? 0 : r.igst)}</td>
         <td style="text-align:right;border:1px solid #000;padding:2px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
@@ -91,7 +94,7 @@ function buildPrintHTML(p: {
 
   const emptyRowsHTML = Array(emptyCount).fill(`
     <tr style="height:18px">
-      ${Array(14).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
+      ${Array(16).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
     </tr>`).join("");
 
   const invoiceTypeLabel = "INVOICE";
@@ -185,10 +188,13 @@ function buildPrintHTML(p: {
         <th rowspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;width:46px;font-size:9px">Less:<br>Discount</th>
         <th rowspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;width:52px;font-size:9px">Taxable<br>Value</th>
         <th colspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;font-size:9px">CGST</th>
+        <th colspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;font-size:9px">SGST</th>
         <th colspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;font-size:9px">IGST</th>
         <th rowspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;width:52px;font-size:9px">Total</th>
       </tr>
       <tr style="background:#f0f0f0">
+        <th style="border:1px solid #000;padding:2px;text-align:center;width:34px;font-size:9px">Rate</th>
+        <th style="border:1px solid #000;padding:2px;text-align:center;width:48px;font-size:9px">Amount</th>
         <th style="border:1px solid #000;padding:2px;text-align:center;width:34px;font-size:9px">Rate</th>
         <th style="border:1px solid #000;padding:2px;text-align:center;width:48px;font-size:9px">Amount</th>
         <th style="border:1px solid #000;padding:2px;text-align:center;width:34px;font-size:9px">Rate</th>
@@ -207,6 +213,8 @@ function buildPrintHTML(p: {
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalTaxable)}</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : 0}</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : fmtInt(totalCGST)}</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : 0}</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : fmtInt(totalSGST)}</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">0</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : fmtInt(totalIGST)}</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right;font-weight:700">${fmtInt(grandTotal)}</td>
@@ -483,10 +491,13 @@ const InvoiceDetails: React.FC = () => {
             <th rowSpan={2} style={{ ...TH, width: "46px" }}>Less:<br/>Discount</th>
             <th rowSpan={2} style={{ ...TH, width: "52px" }}>Taxable<br/>Value</th>
             <th colSpan={2} style={TH}>CGST</th>
+            <th colSpan={2} style={TH}>SGST</th>
             <th colSpan={2} style={TH}>IGST</th>
             <th rowSpan={2} style={{ ...TH, width: "52px" }}>Total</th>
           </tr>
           <tr style={{ background: "#f0f0f0" }}>
+            <th style={{ ...TH, width: "34px" }}>Rate</th>
+            <th style={{ ...TH, width: "48px" }}>Amount</th>
             <th style={{ ...TH, width: "34px" }}>Rate</th>
             <th style={{ ...TH, width: "48px" }}>Amount</th>
             <th style={{ ...TH, width: "34px" }}>Rate</th>
@@ -496,6 +507,7 @@ const InvoiceDetails: React.FC = () => {
         <tbody>
           {rows.map((r: any, i: number) => {
             const cgstR = (!isNonTax && isSameState) ? r.gstRate / 2 : 0;
+            const sgstR = (!isNonTax && isSameState) ? r.gstRate / 2 : 0;
             const igstR = (!isNonTax && !isSameState) ? r.gstRate : 0;
             return (
               <tr key={i}>
@@ -510,6 +522,8 @@ const InvoiceDetails: React.FC = () => {
                 <td style={{ ...TD, textAlign: "right" }}>{fmtInt(r.taxable)}</td>
                 <td style={{ ...TD, textAlign: "center" }}>{cgstR || 0}</td>
                 <td style={{ ...TD, textAlign: "right" }}>{fmtInt(isNonTax ? 0 : r.cgst)}</td>
+                <td style={{ ...TD, textAlign: "center" }}>{sgstR || 0}</td>
+                <td style={{ ...TD, textAlign: "right" }}>{fmtInt(isNonTax ? 0 : r.sgst)}</td>
                 <td style={{ ...TD, textAlign: "center" }}>{igstR || 0}</td>
                 <td style={{ ...TD, textAlign: "right" }}>{fmtInt(isNonTax ? 0 : r.igst)}</td>
                 <td style={{ ...TD, textAlign: "right", fontWeight: 600 }}>{fmtInt(r.lineTotal)}</td>
@@ -518,7 +532,7 @@ const InvoiceDetails: React.FC = () => {
           })}
           {Array(emptyCount).fill(0).map((_: any, i: number) => (
             <tr key={`e${i}`} style={{ height: "18px" }}>
-              {Array(14).fill(0).map((__: any, j: number) => <td key={j} style={TD}></td>)}
+              {Array(16).fill(0).map((__: any, j: number) => <td key={j} style={TD}></td>)}
             </tr>
           ))}
           <tr style={{ fontWeight: 700, background: "#f5f5f5" }}>
@@ -530,6 +544,8 @@ const InvoiceDetails: React.FC = () => {
             <td style={{ ...TD, textAlign: "right" }}>{fmtInt(totalTaxable)}</td>
             <td style={{ ...TD, textAlign: "right" }}>0</td>
             <td style={{ ...TD, textAlign: "right" }}>{isNonTax ? 0 : fmtInt(totalCGST)}</td>
+            <td style={{ ...TD, textAlign: "right" }}>0</td>
+            <td style={{ ...TD, textAlign: "right" }}>{isNonTax ? 0 : fmtInt(totalSGST)}</td>
             <td style={{ ...TD, textAlign: "right" }}>0</td>
             <td style={{ ...TD, textAlign: "right" }}>{isNonTax ? 0 : fmtInt(totalIGST)}</td>
             <td style={{ ...TD, textAlign: "right", fontWeight: 700 }}>{fmtInt(grandTotal)}</td>
