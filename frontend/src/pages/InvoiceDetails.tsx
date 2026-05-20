@@ -322,6 +322,8 @@ const InvoiceDetails: React.FC = () => {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  // Allows user to override GST rate for display when old invoices have 0 GST stored
+  const [gstOverrideRate, setGstOverrideRate] = useState<number>(0);
 
   useEffect(() => {
     const h = () => setWindowWidth(window.innerWidth);
@@ -377,13 +379,15 @@ const InvoiceDetails: React.FC = () => {
     const qty = val(item.quantity || item.qty);
     const rate = val(item.unit_price || item.rate);
     const taxable = Math.abs(qty) * rate;
-    // gst_rate stored per line item (tax_percent or gst_rate column); also check cgst_rate + sgst_rate
-    const storedCgstRate = val(item.cgst_rate || 0);
-    const storedSgstRate = val(item.sgst_rate || 0);
-    const storedIgstRate = val(item.igst_rate || 0);
-    const gstRate = isNonTax ? 0 : val(item.tax_percent || item.gst_rate || (storedCgstRate + storedSgstRate + storedIgstRate) || 0);
+    // Determine GST rate: stored per-line rate → stored cgst/sgst/igst rates → user override
+    const storedCgstRate = val(item.cgst_rate);
+    const storedSgstRate = val(item.sgst_rate);
+    const storedIgstRate = val(item.igst_rate);
+    const storedLineRate = val(item.tax_percent || item.gst_rate || (storedCgstRate + storedSgstRate + storedIgstRate));
+    // Fall back to the user's override rate when nothing is stored (old invoices with 0 GST)
+    const gstRate = isNonTax ? 0 : (storedLineRate > 0 ? storedLineRate : gstOverrideRate);
     const gstAmt = (taxable * gstRate) / 100;
-    // Use stored amounts if non-zero; otherwise re-derive from gstRate so old invoices display correctly
+    // Use stored amounts if non-zero; otherwise re-derive from gstRate
     const cgst = val(item.cgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
     const sgst = val(item.sgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
     const igst = val(item.igst_amount) || (!isSameState && !isNonTax ? gstAmt : 0);
@@ -633,9 +637,26 @@ const InvoiceDetails: React.FC = () => {
       {showModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", overflowY: "auto", padding: "16px 0 40px" }}>
           {/* Sticky bar */}
-          <div style={{ position: "sticky", top: 0, width: "min(794px,96vw)", background: "#1e293b", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderRadius: "8px 8px 0 0", zIndex: 1, flexShrink: 0 }}>
+          <div style={{ position: "sticky", top: 0, width: "min(794px,96vw)", background: "#1e293b", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderRadius: "8px 8px 0 0", zIndex: 1, flexShrink: 0, flexWrap: "wrap", gap: "8px" }}>
             <span style={{ fontWeight: 600, fontSize: "13px" }}>Print Preview — Invoice #{data.invoice_number}</span>
-            <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              {/* GST override — shown when invoice has 0 GST but is a TAX_INVOICE */}
+              {!isNonTax && totalGST === 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.4)", borderRadius: "6px", padding: "4px 10px" }}>
+                  <span style={{ fontSize: "11px", color: "#fbbf24", fontWeight: 600 }}>⚠ GST Rate:</span>
+                  <select
+                    value={gstOverrideRate}
+                    onChange={e => setGstOverrideRate(Number(e.target.value))}
+                    style={{ background: "#1e293b", color: "white", border: "1px solid #475569", borderRadius: "4px", padding: "2px 6px", fontSize: "12px", cursor: "pointer" }}
+                  >
+                    <option value={0}>0% (as saved)</option>
+                    <option value={5}>5%</option>
+                    <option value={12}>12%</option>
+                    <option value={18}>18%</option>
+                    <option value={28}>28%</option>
+                  </select>
+                </div>
+              )}
               <button onClick={doPrint} style={{ background: "#3b82f6", color: "white", border: "none", borderRadius: "6px", padding: "7px 16px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}><FaPrint /> Print Now</button>
               <button onClick={() => setShowModal(false)} style={{ background: "transparent", color: "white", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "6px", padding: "7px 12px", cursor: "pointer" }}><FaTimes /></button>
             </div>

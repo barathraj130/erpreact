@@ -330,7 +330,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             const qty = Number(i.qty) || 0;
             const rate = Number(i.rate) || 0;
             const amount = qty * rate;
-            const taxRate = isNonTax ? 0 : ((i.gst_rate !== undefined && i.gst_rate !== null) ? Number(i.gst_rate) : 5);
+            // Same fix as processedItems: use per-item rate if > 0, else fall back to invoice-level rate
+            const retItemRate = parseFloat(i.gst_rate);
+            const taxRate = isNonTax ? 0 : ((!isNaN(retItemRate) && retItemRate > 0) ? retItemRate : invoiceLevelGstRate);
 
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;
@@ -811,6 +813,8 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         invoice_date: newInvoiceDate,
         transport_details,
         bundles_count,
+        tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST rate
+        invoice_type: editInvoiceType,
     } = req.body;
     const companyId = req.user.active_company_id;
 
@@ -857,26 +861,55 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         const effectiveCustomerId = (customer_id && !isNaN(Number(customer_id))) ? Number(customer_id) : oldCustId;
 
         // 1. Calculate New Totals
+        // Determine GST type (intra vs inter state) from company + customer
+        const editCompany = await client.query(`SELECT state_code FROM companies WHERE id = $1`, [companyId]);
+        const editCustId = (customer_id && !isNaN(Number(customer_id))) ? Number(customer_id) : oldCustId;
+        const editCustomer = editCustId ? await client.query(`SELECT state_code FROM users WHERE id = $1`, [editCustId]) : null;
+        const editCompanyCode = editCompany.rows[0]?.state_code;
+        const editCustomerCode = editCustomer?.rows[0]?.state_code;
+        const editIsInterState = editCompanyCode && editCustomerCode && editCompanyCode !== editCustomerCode;
+        const editIsNonTax = (editInvoiceType || '').toUpperCase() === 'NON_TAX_INVOICE';
+
+        // Invoice-level GST rate fallback (from the GST selector in EditInvoice UI)
+        const editInvoiceLevelGst = (tax_details && !isNaN(Number(tax_details.totalRate)) && Number(tax_details.totalRate) > 0)
+            ? Number(tax_details.totalRate)
+            : 5;
+
         let totalTaxable = 0;
         let totalGST = 0;
+        let totalCGST_edit = 0;
+        let totalSGST_edit = 0;
+        let totalIGST_edit = 0;
         const processedItems = (items || []).map(i => {
             const qty = Number(i.qty || i.quantity) || 0;
             const rate = Number(i.rate || i.unit_price) || 0;
             const amount = qty * rate;
-            // gst_rate from frontend is 0 (no per-item field in EditInvoice).
-            // Fall back to 5% only when explicitly null/undefined — treat 0 as 0% (non-tax item).
-            const gstRate = (i.gst_rate !== undefined && i.gst_rate !== null && !isNaN(Number(i.gst_rate)))
-                ? Number(i.gst_rate)
-                : 5;
+            // Use per-item gst_rate if > 0; fall back to invoice-level GST rate
+            const itemRate = parseFloat(i.gst_rate);
+            const gstRate = editIsNonTax ? 0 : ((!isNaN(itemRate) && itemRate > 0) ? itemRate : editInvoiceLevelGst);
+
+            let cgstR = 0, sgstR = 0, igstR = 0;
+            let cgstA = 0, sgstA = 0, igstA = 0;
+            if (!editIsNonTax) {
+                if (!editIsInterState) {
+                    cgstR = gstRate / 2; sgstR = gstRate / 2;
+                    cgstA = (amount * cgstR) / 100;
+                    sgstA = (amount * sgstR) / 100;
+                } else {
+                    igstR = gstRate;
+                    igstA = (amount * igstR) / 100;
+                }
+            }
             totalTaxable += amount;
-            totalGST += (amount * (gstRate / 100));
+            totalGST += cgstA + sgstA + igstA;
+            totalCGST_edit += cgstA;
+            totalSGST_edit += sgstA;
+            totalIGST_edit += igstA;
             return {
                 description: i.description || i.name,
                 hsn: i.hsn || i.hsn_acs_code,
-                qty,
-                rate,
-                amount,
-                gstRate
+                qty, rate, amount, gstRate,
+                cgstR, sgstR, igstR, cgstA, sgstA, igstA,
             };
         });
 
@@ -998,18 +1031,34 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             }
         }
 
-        // 5. Sync Line Items
+        // 5. Sync Line Items — store full GST breakdown so print preview works correctly
         await client.query("DELETE FROM invoice_line_items WHERE invoice_id = $1", [id]);
 
         for (const item of processedItems) {
+            const lineTax = item.cgstA + item.sgstA + item.igstA;
             await client.query(
                 `INSERT INTO invoice_line_items (
-                    invoice_id, description, hsn_acs_code, quantity, 
-                    unit_price, taxable_value, line_total, gst_rate
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [id, item.description, item.hsn, item.qty, item.rate, item.amount, item.amount, item.gstRate]
+                    invoice_id, description, hsn_acs_code, quantity,
+                    unit_price, taxable_value, tax_percent,
+                    cgst_rate, sgst_rate, igst_rate,
+                    cgst_amount, sgst_amount, igst_amount,
+                    line_total
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+                [
+                    id, item.description, item.hsn, item.qty, item.rate, item.amount,
+                    item.gstRate,
+                    item.cgstR, item.sgstR, item.igstR,
+                    item.cgstA, item.sgstA, item.igstA,
+                    item.amount + lineTax,
+                ]
             );
         }
+
+        // Also update invoice header GST totals
+        await client.query(
+            `UPDATE invoices SET cgst_total = $1, sgst_total = $2, igst_total = $3, tax_total = $4 WHERE id = $5`,
+            [Math.round(totalCGST_edit), Math.round(totalSGST_edit), Math.round(totalIGST_edit), Math.round(totalGST), id]
+        );
 
         // Recompute balance for old AND new customer (handles customer change)
         const custIdsToRecompute = [...new Set([oldCustId, effectiveCustomerId].filter(Boolean))];
