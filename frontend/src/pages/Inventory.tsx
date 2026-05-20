@@ -8,6 +8,7 @@ import {
   FaPlus,
   FaSearch,
   FaSync,
+  FaTools,
   FaTrash,
 } from "react-icons/fa";
 import { deleteProduct } from "../api/productApi";
@@ -15,6 +16,7 @@ import { useProducts } from "../hooks/useProducts";
 import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
 import CustomSelect from "../components/CustomSelect";
+import { apiFetch } from "../utils/api";
 
 const Inventory: React.FC = () => {
   const { products, loading, error, refresh } = useProducts();
@@ -97,8 +99,27 @@ const Inventory: React.FC = () => {
             className="btn btn-secondary"
             onClick={() => refresh()}
             style={{ width: "42px", height: "42px", padding: 0 }}
+            title="Refresh"
           >
             <FaSync className={loading ? "fa-spin" : ""} />
+          </button>
+          <button
+            className="btn btn-secondary"
+            title="Repair stock: re-run deductions for invoices missing stock movements"
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#f59e0b", borderColor: "#f59e0b" }}
+            onClick={async () => {
+              if (!window.confirm("This will re-deduct stock for all invoices that are missing stock movements. Proceed?")) return;
+              try {
+                const res = await apiFetch("/invoice/repair-stock", { method: "POST" });
+                const data = await res.json();
+                alert(data.message || "Stock repair complete");
+                refresh();
+              } catch (e: any) {
+                alert("Repair failed: " + (e.message || "Unknown error"));
+              }
+            }}
+          >
+            <FaTools size={13} /> Repair Stock
           </button>
           <button
             className="btn btn-primary"

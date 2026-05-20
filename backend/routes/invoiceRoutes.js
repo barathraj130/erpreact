@@ -76,6 +76,87 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
 }
 
 /* ============================================================
+   0. STOCK REPAIR — re-run deductions for invoices missing movements
+   POST /invoice/repair-stock   (admin only, idempotent)
+============================================================ */
+router.post("/repair-stock", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        // Find all active invoices for this company
+        const invoices = await client.query(
+            `SELECT i.id, i.branch_id, i.bill_purpose FROM invoices i
+             WHERE i.company_id = $1 AND COALESCE(i.is_deleted, false) = false`,
+            [companyId]
+        );
+
+        let repaired = 0;
+        for (const inv of invoices.rows) {
+            if (inv.bill_purpose === 'name_only') continue;
+
+            // Find line items that have a product_id but no SALE_OUT movement
+            const items = await client.query(
+                `SELECT li.product_id, li.quantity
+                 FROM invoice_line_items li
+                 WHERE li.invoice_id = $1
+                   AND li.product_id IS NOT NULL
+                   AND COALESCE(li.is_return, false) = false
+                   AND NOT EXISTS (
+                       SELECT 1 FROM inventory_movements im
+                       WHERE im.reference_type = 'INVOICE'
+                         AND im.reference_id = $1
+                         AND im.product_id = li.product_id
+                         AND im.type = 'SALE_OUT'
+                   )`,
+                [inv.id]
+            );
+
+            for (const item of items.rows) {
+                if (!item.product_id || !(item.quantity > 0)) continue;
+
+                const branchId = await resolveStockBranch(client, {
+                    companyId,
+                    requestedBranchId: inv.branch_id || null,
+                    productId: item.product_id,
+                });
+
+                if (!branchId) continue;
+
+                try {
+                    const result = await deductStock(client, {
+                        companyId,
+                        branchId,
+                        productId: item.product_id,
+                        qty: Number(item.quantity),
+                        referenceType: 'INVOICE',
+                        referenceId: inv.id,
+                        note: 'Repaired by /repair-stock',
+                    });
+                    if (result.success) {
+                        repaired++;
+                        console.log(`[repair-stock] ✓ invoice#${inv.id} product#${item.product_id} −${item.quantity}`);
+                    }
+                } catch (e) {
+                    console.warn(`[repair-stock] SKIP invoice#${inv.id} product#${item.product_id}: ${e.message}`);
+                }
+            }
+        }
+
+        await client.query("COMMIT");
+        res.json({ success: true, repaired, message: `Fixed ${repaired} missing stock deduction(s)` });
+    } catch (err) {
+        if (client) await client.query("ROLLBACK");
+        console.error("[repair-stock] Error:", err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+/* ============================================================
    1. GET ALL INVOICES
 ============================================================ */
 router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (req, res) => {
@@ -375,8 +456,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             requestedBranchId: branchId || null
         });
 
+        console.log(`[invoice-create] invoiceLevelBranchId=${invoiceLevelBranchId} isNameOnly=${isNameOnly}`);
         const allItems = [...processedItems, ...processedReturnItems];
         for (const item of allItems) {
+            console.log(`[invoice-create] item: product_id=${item.product_id} desc=${item.desc || item.description} qty=${item.qty}`);
             if (item.product_id) {
                 // Resolve per-item branch: invoice-level first, then fall back to product's own branch
                 const itemBranchId = await resolveStockBranch(client, {
@@ -384,6 +467,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     requestedBranchId: invoiceLevelBranchId || null,
                     productId: item.product_id
                 });
+                console.log(`[invoice-create] deducting stock: product_id=${item.product_id} branch=${itemBranchId} qty=${item.qty}`);
 
                 if (item.is_return) {
                     // Stock return: add back to branch (skip for name_only bills)
