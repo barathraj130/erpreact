@@ -65,34 +65,52 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
     }
 
     // Main branch:
-    // Each invoice TYPE gets its own sequential counter starting from 1.
+    // Each invoice TYPE gets its own independent counter (TAX: 1,2,3 | RET: 1,2,3 | etc.)
     // Counter resets every financial year (April 1).
-    // Unique constraint on invoices is (company_id, invoice_type, invoice_number)
-    // so "1" in RETAIL_SALE never conflicts with "1" in TAX_INVOICE.
+    // CRITICAL: We ALWAYS sync the series counter with the max existing invoice number
+    // for this type so manually created or legacy invoices don't cause duplicates.
     const billType = resolveBillType(type, billPurpose);
 
-    const seqResult = await client.query(
-        `INSERT INTO invoice_number_series
-            (company_id, bill_type, prefix, year, month, last_number)
-         VALUES ($1, $2, $3, $4, 0, 1)
-         ON CONFLICT (company_id, bill_type, year, month)
-         DO UPDATE SET last_number = invoice_number_series.last_number + 1
-         RETURNING last_number`,
-        [companyId, billType, billType, financial_year]
-    ).catch(async () => {
-        // Fallback for DBs where migration hasn't run yet (no company_id column)
-        const r = await client.query(
-            `INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
-             VALUES ($1, $2, $3, 0, 1)
-             ON CONFLICT (bill_type, year, month)
-             DO UPDATE SET last_number = invoice_number_series.last_number + 1
-             RETURNING last_number`,
-            [billType, billType, financial_year]
-        );
-        return r;
-    });
+    // Step 1: Find the highest existing numeric invoice number for this (company, type).
+    // This handles legacy invoices created before the series table existed, or manually entered numbers.
+    const maxResult = await client.query(
+        `SELECT COALESCE(MAX(
+            CASE WHEN invoice_number ~ '^[0-9]+$'
+                 THEN CAST(invoice_number AS INTEGER)
+                 ELSE 0 END
+         ), 0) AS existing_max
+         FROM invoices
+         WHERE company_id = $1
+           AND invoice_type = $2
+           AND COALESCE(is_deleted, false) = false`,
+        [companyId, type]
+    );
+    const existingMax = Number(maxResult.rows[0].existing_max) || 0;
+    // The next safe number is at least existingMax + 1
+    const safeNext = existingMax + 1;
 
-    const num = seqResult.rows[0].last_number;
+    // Step 2: Atomically upsert the series counter so it is always ≥ safeNext.
+    // GREATEST ensures we never go backwards even under concurrent requests.
+    let num;
+    try {
+        const seqResult = await client.query(
+            `INSERT INTO invoice_number_series
+                 (company_id, bill_type, prefix, year, month, last_number)
+             VALUES ($1, $2, $3, $4, 0, $5)
+             ON CONFLICT (company_id, bill_type, year, month)
+             DO UPDATE SET last_number = GREATEST(
+                 invoice_number_series.last_number + 1,
+                 EXCLUDED.last_number
+             )
+             RETURNING last_number`,
+            [companyId, billType, billType, financial_year, safeNext]
+        );
+        num = Number(seqResult.rows[0].last_number);
+    } catch (_) {
+        // Fallback: constraint might not exist yet on this DB instance.
+        // Use the max-existing approach directly — safe and simple.
+        num = safeNext;
+    }
 
     return {
         number: String(num),   // Simple: 1, 2, 3 …
