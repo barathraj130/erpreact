@@ -20,15 +20,23 @@ const router = express.Router();
 /* ============================================================
    HELPER: Generate Smart Invoice Number
 ============================================================ */
-// Map invoice_type + bill_purpose → series bill_type and prefix
-// TAX series:    TAX_INVOICE, NOMINAL_TAX_INVOICE  → TAX/YYYY/MM/001
-// INV series:    NON_TAX_INVOICE, RETAIL_SALE, GIFTED_ITEM → INV/YYYY/MM/001
-// NSB series:    bill_purpose = 'name_only' (any type)       → NSB/YYYY/MM/001
+// SEPARATE bill number series for EVERY invoice type — each starts from 1 independently
+// TAX_INVOICE         → TAX/YYYY/MM/001
+// NOMINAL_TAX_INVOICE → NTX/YYYY/MM/001
+// NON_TAX_INVOICE     → INV/YYYY/MM/001
+// RETAIL_SALE         → RET/YYYY/MM/001
+// GIFTED_ITEM         → GFT/YYYY/MM/001
+// NSB (name_only)     → NSB/YYYY/MM/001
 function resolveSeries(invoiceType, billPurpose) {
     if (billPurpose === 'name_only') return { billType: 'NSB', prefix: 'NSB' };
-    if (invoiceType === 'TAX_INVOICE' || invoiceType === 'NOMINAL_TAX_INVOICE')
-        return { billType: 'TAX', prefix: 'TAX' };
-    return { billType: 'NON-TAX', prefix: 'INV' };
+    switch ((invoiceType || '').toUpperCase()) {
+        case 'TAX_INVOICE':         return { billType: 'TAX', prefix: 'TAX' };
+        case 'NOMINAL_TAX_INVOICE': return { billType: 'NTX', prefix: 'NTX' };
+        case 'NON_TAX_INVOICE':     return { billType: 'INV', prefix: 'INV' };
+        case 'RETAIL_SALE':         return { billType: 'RET', prefix: 'RET' };
+        case 'GIFTED_ITEM':         return { billType: 'GFT', prefix: 'GFT' };
+        default:                    return { billType: 'INV', prefix: 'INV' };
+    }
 }
 
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
@@ -51,18 +59,30 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
         return { number: `${prefix}-${padding}`, financial_month, series_prefix: prefix, series_number: bill_sequence };
     }
 
-    // Main branch — atomic per-series per-month sequence
+    // Main branch — atomic per-company, per-series, per-month sequence
+    // Each invoice TYPE gets its own completely independent number series.
     const { billType, prefix } = resolveSeries(type, billPurpose);
     const paddedMonth = String(month).padStart(2, '0');
 
     const seqResult = await client.query(
-        `INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
-         VALUES ($1, $2, $3, $4, 1)
-         ON CONFLICT (bill_type, year, month)
+        `INSERT INTO invoice_number_series (company_id, bill_type, prefix, year, month, last_number)
+         VALUES ($1, $2, $3, $4, $5, 1)
+         ON CONFLICT (company_id, bill_type, year, month)
          DO UPDATE SET last_number = invoice_number_series.last_number + 1
          RETURNING last_number`,
-        [billType, prefix, year, month]
-    );
+        [companyId, billType, prefix, year, month]
+    ).catch(async () => {
+        // Fallback: old constraint without company_id (before migration ran)
+        const r = await client.query(
+            `INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
+             VALUES ($1, $2, $3, $4, 1)
+             ON CONFLICT (bill_type, year, month)
+             DO UPDATE SET last_number = invoice_number_series.last_number + 1
+             RETURNING last_number`,
+            [billType, prefix, year, month]
+        );
+        return r;
+    });
 
     const num = seqResult.rows[0].last_number;
     const paddedNum = String(num).padStart(3, '0');

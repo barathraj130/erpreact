@@ -484,22 +484,29 @@ const CreateInvoice: React.FC = () => {
                 <input
                   value={invoiceNo}
                   onChange={(e) => setInvoiceNo(e.target.value.toUpperCase())}
-                  placeholder="Auto-generated if left blank"
+                  placeholder={
+                    invoiceType === "TAX_INVOICE"          ? "Auto → TAX/YYYY/MM/001" :
+                    invoiceType === "NOMINAL_TAX_INVOICE"  ? "Auto → NTX/YYYY/MM/001" :
+                    invoiceType === "NON_TAX_INVOICE"      ? "Auto → INV/YYYY/MM/001" :
+                    invoiceType === "RETAIL_SALE"          ? "Auto → RET/YYYY/MM/001" :
+                    invoiceType === "GIFTED_ITEM"          ? "Auto → GFT/YYYY/MM/001" :
+                    "Auto-generated if left blank"
+                  }
                 />
               </div>
               <div className="ci-field">
                 <label>Invoice Type</label>
                 <div style={{ marginTop: '8px' }}>
-                  <CustomSelect 
-                    value={invoiceType} 
+                  <CustomSelect
+                    value={invoiceType}
                     onChange={(e: any) => setInvoiceType(e.target.value as any)}
                     disableSearch
                   >
-                    <option value="TAX_INVOICE">TAX INVOICE (GST)</option>
-                    <option value="NOMINAL_TAX_INVOICE">NOMINAL TAX (Charge Tax Only)</option>
-                    <option value="NON_TAX_INVOICE">NON-TAX INVOICE</option>
-                    <option value="RETAIL_SALE">RETAIL SALE (No Customer Req.)</option>
-                    <option value="GIFTED_ITEM">GIFTED ITEM</option>
+                    <option value="TAX_INVOICE">TAX INVOICE (GST) → TAX/…</option>
+                    <option value="NOMINAL_TAX_INVOICE">NOMINAL TAX → NTX/…</option>
+                    <option value="NON_TAX_INVOICE">NON-TAX INVOICE → INV/…</option>
+                    <option value="RETAIL_SALE">RETAIL SALE → RET/… (No Customer Req.)</option>
+                    <option value="GIFTED_ITEM">GIFTED ITEM → GFT/…</option>
                   </CustomSelect>
                 </div>
               </div>

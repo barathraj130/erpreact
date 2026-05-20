@@ -696,6 +696,52 @@ export const runSchemaUpdates = async () => {
         // 5. Ensure last_updated column exists on branch_inventory (older DBs may lack it)
         await db.query(`ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()`).catch(() => {});
 
+        // ── Per-company invoice number uniqueness ─────────────────────────────
+        // The original UNIQUE constraint on invoice_number is global — two different
+        // companies cannot share a number (e.g. TAX/2026/05/001 for company A AND B).
+        // Drop the global constraint and replace it with (company_id, invoice_number).
+        await db.query(`
+            DO $$
+            BEGIN
+                -- Drop old global unique index if it still exists
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'invoices_invoice_number_key'
+                ) THEN
+                    ALTER TABLE invoices DROP CONSTRAINT invoices_invoice_number_key;
+                END IF;
+                -- Add per-company unique index
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'invoices_company_invoice_number_key'
+                ) THEN
+                    ALTER TABLE invoices ADD CONSTRAINT invoices_company_invoice_number_key
+                        UNIQUE (company_id, invoice_number);
+                END IF;
+            END $$;
+        `).catch((e) => { console.warn('[schemaUpdates] invoice unique constraint migration skipped:', e.message); });
+
+        // ── invoice_number_series: add company_id column so each company has its own counters ──
+        await db.query(`ALTER TABLE invoice_number_series ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
+        // Drop old constraint and add company-scoped one
+        await db.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'invoice_number_series_company_bill_type_year_month_key'
+                ) THEN
+                    -- Old constraint was (bill_type, year, month) — drop it first
+                    BEGIN
+                        ALTER TABLE invoice_number_series DROP CONSTRAINT IF EXISTS invoice_number_series_bill_type_year_month_key;
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END;
+                    ALTER TABLE invoice_number_series ADD CONSTRAINT invoice_number_series_company_bill_type_year_month_key
+                        UNIQUE (company_id, bill_type, year, month);
+                END IF;
+            END $$;
+        `).catch((e) => { console.warn('[schemaUpdates] invoice_number_series constraint migration skipped:', e.message); });
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
