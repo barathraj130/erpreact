@@ -1,8 +1,10 @@
 // backend/routes/resetRoutes.js
-// ADMIN-ONLY: Full ERP data reset
+// ADMIN-ONLY: Full ERP data reset for market launch.
 // Wipes all transactional + master data for the company.
 // Preserves: admin/staff users, company record, branches, roles,
 //            permissions, bill format settings, chart of accounts.
+//
+// Confirm phrase: "RESET FLUXORA"
 
 import express from "express";
 import * as db from "../database/pg.js";
@@ -10,9 +12,11 @@ import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 
 const router = express.Router();
 
+const CONFIRM_PHRASE = "RESET FLUXORA";
+
 // Each step runs inside its own SAVEPOINT so a missing table / column
 // rolls back only that one step — the outer transaction stays alive.
-async function safeDel(client, label, sql, params) {
+async function safeDel(client, label, sql, params = []) {
     await client.query(`SAVEPOINT "${label}"`);
     try {
         await client.query(sql, params);
@@ -24,18 +28,27 @@ async function safeDel(client, label, sql, params) {
     }
 }
 
+// ── POST /reset/full ────────────────────────────────────────────────────────
 router.post("/full", authMiddleware, async (req, res) => {
     if (req.user?.role !== "admin") {
         return res.status(403).json({ error: "Admin access required" });
     }
 
+    const { confirm_text } = req.body || {};
+    if (confirm_text !== CONFIRM_PHRASE) {
+        return res.status(400).json({
+            error: `Type exactly "${CONFIRM_PHRASE}" to confirm`,
+        });
+    }
+
     const cid = req.user.active_company_id;
+    const branchId = req.user.branch_id || 1;
     let client;
     try {
         client = await db.getClient();
         await client.query("BEGIN");
 
-        // ── 1. LEDGER ENTRIES (FK dep of transactions) ─────────────────────────
+        // ── 1. LEDGER / TRANSACTION LINES ──────────────────────────────────────
         await safeDel(client, 'ledger_entries',
             `DELETE FROM ledger_entries WHERE transaction_id IN (
                 SELECT id FROM transactions WHERE company_id = $1)`, [cid]);
@@ -62,10 +75,13 @@ router.post("/full", authMiddleware, async (req, res) => {
         await safeDel(client, 'purchase_bill_expenses',
             `DELETE FROM purchase_bill_expenses WHERE bill_id IN (
                 SELECT id FROM purchase_bills WHERE company_id = $1)`, [cid]);
+        await safeDel(client, 'purchase_payments',
+            `DELETE FROM purchase_payments WHERE bill_id IN (
+                SELECT id FROM purchase_bills WHERE company_id = $1)`, [cid]);
         await safeDel(client, 'purchase_bills',
             `DELETE FROM purchase_bills WHERE company_id = $1`, [cid]);
 
-        // ── 4. ALL TRANSACTIONS ─────────────────────────────────────────────────
+        // ── 4. ALL TRANSACTIONS / LEDGERS ───────────────────────────────────────
         await safeDel(client, 'transactions',
             `DELETE FROM transactions WHERE company_id = $1`, [cid]);
         await safeDel(client, 'cash_ledger',
@@ -88,18 +104,24 @@ router.post("/full", authMiddleware, async (req, res) => {
             `DELETE FROM stock_transfers WHERE company_id = $1`, [cid]);
         await safeDel(client, 'products_stock_reset',
             `UPDATE products SET current_stock = 0 WHERE company_id = $1`, [cid]);
-        await safeDel(client, 'inventory_reset',
+        await safeDel(client, 'inventory_qty_reset',
+            `UPDATE inventory SET quantity = 0 WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'inventory_current_reset',
             `UPDATE inventory SET current_stock = 0 WHERE company_id = $1`, [cid]);
         await safeDel(client, 'branch_inventory_reset',
             `UPDATE branch_inventory SET current_stock = 0 WHERE company_id = $1`, [cid]);
 
         // ── 6. HR / PAYROLL ─────────────────────────────────────────────────────
-        await safeDel(client, 'payroll_runs',
-            `DELETE FROM payroll_runs WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'advance_repayments',
+            `DELETE FROM advance_repayments WHERE advance_id IN (
+                SELECT id FROM salary_advances WHERE company_id = $1)`, [cid]);
         await safeDel(client, 'salary_advances',
             `DELETE FROM salary_advances WHERE company_id = $1`, [cid]);
-        await safeDel(client, 'advance_repayments',
-            `DELETE FROM advance_repayments WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'employee_advances',
+            `DELETE FROM employee_advances WHERE employee_id IN (
+                SELECT id FROM employees WHERE company_id = $1)`, [cid]);
+        await safeDel(client, 'payroll_runs',
+            `DELETE FROM payroll_runs WHERE company_id = $1`, [cid]);
         await safeDel(client, 'attendance',
             `DELETE FROM attendance WHERE company_id = $1`, [cid]);
         await safeDel(client, 'attendance_logs',
@@ -114,8 +136,19 @@ router.post("/full", authMiddleware, async (req, res) => {
             `DELETE FROM chit_installments WHERE company_id = $1`, [cid]);
         await safeDel(client, 'chit_groups',
             `DELETE FROM chit_groups WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'chit_fund_members',
+            `DELETE FROM chit_fund_members WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'chit_fund_groups',
+            `DELETE FROM chit_fund_groups WHERE company_id = $1`, [cid]);
 
         // ── 8. CUSTOMERS (non-admin/staff users) ────────────────────────────────
+        await safeDel(client, 'customer_ledger',
+            `DELETE FROM customer_ledger WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'customer_points',
+            `DELETE FROM customer_points WHERE customer_id IN (
+                SELECT id FROM users WHERE company_id = $1)`, [cid]);
+        await safeDel(client, 'customer_notifications',
+            `DELETE FROM customer_notifications WHERE company_id = $1`, [cid]);
         await safeDel(client, 'customers',
             `DELETE FROM users WHERE company_id = $1 AND role IN ('customer', 'user')`, [cid]);
 
@@ -132,7 +165,6 @@ router.post("/full", authMiddleware, async (req, res) => {
             `DELETE FROM suppliers WHERE company_id = $1`, [cid]);
         await safeDel(client, 'employees',
             `DELETE FROM employees WHERE company_id = $1`, [cid]);
-        // Delete broker child tables before the parent (FK constraint)
         await safeDel(client, 'broker_commissions',
             `DELETE FROM broker_commissions WHERE broker_id IN (
                 SELECT id FROM brokers WHERE company_id = $1)`, [cid]);
@@ -144,69 +176,137 @@ router.post("/full", authMiddleware, async (req, res) => {
         await safeDel(client, 'lenders',
             `DELETE FROM lenders WHERE company_id = $1`, [cid]);
 
-        // ── 10. NOTIFICATIONS ───────────────────────────────────────────────────
-        await safeDel(client, 'customer_notifications',
-            `DELETE FROM customer_notifications WHERE company_id = $1`, [cid]);
-
-        // ── 11. RESET BILL SEQUENCES ────────────────────────────────────────────
-        await safeDel(client, 'branch_sequences',
-            `UPDATE branches SET bill_sequence = 0 WHERE company_id = $1`, [cid]);
+        // ── 10. INVOICE NUMBER SERIES ───────────────────────────────────────────
         await safeDel(client, 'invoice_sequences',
             `DELETE FROM invoice_sequences WHERE company_id = $1`, [cid]);
         await safeDel(client, 'invoice_number_series',
             `DELETE FROM invoice_number_series WHERE company_id = $1`, [cid]);
-        await safeDel(client, 'customer_ledger',
-            `DELETE FROM customer_ledger WHERE company_id = $1`, [cid]);
-        await safeDel(client, 'customer_points',
-            `DELETE FROM customer_points WHERE customer_id IN (SELECT id FROM users WHERE company_id = $1)`, [cid]);
+        await safeDel(client, 'branch_sequences',
+            `UPDATE branches SET bill_sequence = 0 WHERE company_id = $1`, [cid]);
 
-        // ── 12. CLEAR USER META ─────────────────────────────────────────────────
-        await safeDel(client, 'user_meta',
-            `UPDATE users SET meta = NULL WHERE company_id = $1`,  [cid]);
-
-        // ── 13. DROP OLD BROKEN UNIQUE CONSTRAINTS on invoice_number ───────────
-        // These block creating invoice #1 after a reset.
-        // Use separate queries — DROP CONSTRAINT IF EXISTS never errors.
+        // ── 11. DROP OLD BROKEN UNIQUE CONSTRAINTS on invoice_number ───────────
         await safeDel(client, 'drop_inv_num_key',
-            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`, []);
+            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`);
         await safeDel(client, 'drop_inv_company_key',
-            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`, []);
+            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`);
         await safeDel(client, 'drop_inv_type_key',
-            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`, []);
+            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`);
         await safeDel(client, 'drop_idx_active',
-            `DROP INDEX IF EXISTS idx_invoices_company_number_active`, []);
+            `DROP INDEX IF EXISTS idx_invoices_company_number_active`);
         await safeDel(client, 'drop_idx_type_num',
-            `DROP INDEX IF EXISTS idx_invoices_company_type_number`, []);
+            `DROP INDEX IF EXISTS idx_invoices_company_type_number`);
 
-        // ── 14. RESET ALL TABLE ID SEQUENCES to 1 ──────────────────────────────
+        // ── 12. USER META CLEANUP ───────────────────────────────────────────────
+        await safeDel(client, 'user_meta',
+            `UPDATE users SET meta = NULL WHERE company_id = $1`, [cid]);
+
+        // ── 13. RESET ALL TABLE ID SEQUENCES to 1 ──────────────────────────────
         const sequences = [
             'invoices_id_seq', 'invoice_line_items_id_seq', 'invoice_payments_id_seq',
-            'purchase_bills_id_seq', 'purchase_bill_items_id_seq',
+            'purchase_bills_id_seq', 'purchase_bill_items_id_seq', 'purchase_payments_id_seq',
             'products_id_seq', 'inventory_id_seq', 'inventory_movements_id_seq',
-            'branch_inventory_id_seq', 'employees_id_seq', 'payroll_runs_id_seq',
-            'attendance_id_seq', 'loans_id_seq', 'loan_payments_id_seq',
+            'branch_inventory_id_seq',
+            'employees_id_seq', 'payroll_runs_id_seq', 'attendance_id_seq',
+            'salary_advances_id_seq', 'advance_repayments_id_seq', 'employee_advances_id_seq',
+            'loans_id_seq', 'loan_payments_id_seq',
+            'chit_groups_id_seq', 'chit_installments_id_seq',
             'transactions_id_seq', 'transaction_lines_id_seq', 'ledger_entries_id_seq',
             'cash_ledger_id_seq', 'bank_ledger_id_seq',
             'customer_ledger_id_seq', 'customer_points_id_seq',
             'invoice_number_series_id_seq', 'invoice_sequences_id_seq',
             'brokers_id_seq', 'suppliers_id_seq', 'lenders_id_seq',
             'stock_requests_id_seq', 'stock_transfers_id_seq',
+            'proprietor_transactions_id_seq', 'cash_transfers_id_seq',
         ];
         for (const seq of sequences) {
             await safeDel(client, `seq_${seq}`,
-                `ALTER SEQUENCE IF EXISTS ${seq} RESTART WITH 1`, []);
+                `ALTER SEQUENCE IF EXISTS ${seq} RESTART WITH 1`);
         }
+
+        // ── 14. SEED FRESH INVOICE NUMBER SERIES ───────────────────────────────
+        const yr  = new Date().getFullYear();
+        const mon = new Date().getMonth() + 1;
+        await safeDel(client, 'seed_invoice_series', `
+            INSERT INTO invoice_number_series
+                (company_id, bill_type, year, month, last_number)
+            VALUES
+                ($1, 'TAX',       $2, $3, 0),
+                ($1, 'NSB',       $2, $3, 0),
+                ($1, 'INV',       $2, $3, 0),
+                ($1, 'RET',       $2, $3, 0),
+                ($1, 'GFT',       $2, $3, 0)
+            ON CONFLICT (company_id, bill_type, year, month)
+            DO UPDATE SET last_number = 0
+        `, [cid, yr, mon]);
 
         await client.query("COMMIT");
 
         res.json({
             success: true,
-            message: "✅ Entire ERP data wiped. All IDs reset to 1. Invoice series reset. Start fresh!"
+            message: "✅ ERP data fully wiped. All IDs reset to 1. Invoice series seeded. Ready for market launch!",
         });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("ERP Reset Error:", err.message);
         res.status(500).json({ error: "Reset failed: " + err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// ── POST /reset/opening-balance ─────────────────────────────────────────────
+// Enter opening cash and/or bank balance after a fresh reset.
+// Records go into cash_ledger / bank_ledger as 'opening_balance' source.
+router.post("/opening-balance", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const { cash_amount = 0, bank_amount = 0, bank_name = "Main Account", date } = req.body || {};
+    const cid      = req.user.active_company_id;
+    const branchId = req.user.branch_id || 1;
+    const entryDate = date || new Date().toISOString().split('T')[0];
+    const cashAmt  = Number(cash_amount) || 0;
+    const bankAmt  = Number(bank_amount) || 0;
+
+    if (cashAmt <= 0 && bankAmt <= 0) {
+        return res.status(400).json({ error: "Enter at least one balance > 0" });
+    }
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        if (cashAmt > 0) {
+            await client.query(
+                `INSERT INTO cash_ledger
+                 (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1, $2, 'opening_balance', $3, 'in', $4)`,
+                [cid, branchId, cashAmt, entryDate]
+            );
+        }
+
+        if (bankAmt > 0) {
+            await client.query(
+                `INSERT INTO bank_ledger
+                 (company_id, branch_id, source, amount, direction, bank_name, date)
+                 VALUES ($1, $2, 'opening_balance', $3, 'in', $4, $5)`,
+                [cid, branchId, bankAmt, bank_name, entryDate]
+            );
+        }
+
+        await client.query("COMMIT");
+        res.json({
+            success: true,
+            message: `Opening balance saved — Cash: ₹${cashAmt.toLocaleString('en-IN')}, Bank: ₹${bankAmt.toLocaleString('en-IN')}`,
+            cash_amount: cashAmt,
+            bank_amount: bankAmt,
+        });
+    } catch (err) {
+        if (client) await client.query("ROLLBACK");
+        console.error("[opening-balance]", err.message);
+        res.status(500).json({ error: "Failed to save opening balance: " + err.message });
     } finally {
         if (client) client.release();
     }
