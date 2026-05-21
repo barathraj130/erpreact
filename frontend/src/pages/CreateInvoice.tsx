@@ -507,11 +507,10 @@ const CreateInvoice: React.FC = () => {
                   minHeight: "42px",
                   gap: "8px",
                 }}>
-                  <span style={{ fontSize: "11px", color: "#16a34a" }}>📄</span>
-                  <span style={{ fontWeight: 700, fontSize: "14px", color: "#15803d", letterSpacing: "0.5px" }}>
-                    {nextInvoiceNo || "Auto-generating…"}
+                  <span style={{ fontWeight: 700, fontSize: "18px", color: "#15803d", letterSpacing: "0.5px" }}>
+                    {nextInvoiceNo || "…"}
                   </span>
-                  <span style={{ fontSize: "10px", color: "#86efac", marginLeft: "auto" }}>Auto</span>
+                  <span style={{ fontSize: "10px", color: "#4ade80", marginLeft: "auto", fontWeight: 600 }}>AUTO</span>
                 </div>
               </div>
               <div className="ci-field">

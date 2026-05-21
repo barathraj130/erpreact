@@ -36,11 +36,10 @@ function resolveBillType(invoiceType, billPurpose) {
     }
 }
 
-// Format as PREFIX/YYYY/MM/NNN
-function formatInvoiceNumber(prefix, year, month, num) {
-    const mm  = String(month).padStart(2, '0');
-    const nnn = String(num).padStart(3, '0');
-    return `${prefix}/${year}/${mm}/${nnn}`;
+// Format as simple sequential number: 1, 2, 3…
+// Each bill type has its OWN independent counter so TAX:1 and RET:1 coexist.
+function formatInvoiceNumber(_prefix, _year, _month, num) {
+    return String(num);
 }
 
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {

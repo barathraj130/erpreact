@@ -714,13 +714,14 @@ export const runSchemaUpdates = async () => {
             )
         `).catch((e) => { console.warn('[schemaUpdates] invoice_number_series create skipped:', e.message); });
 
-        // ── Invoice table: drop all old invoice_number unique constraints ─────
-        // New format (TAX/2026/05/001) makes numbers globally unique anyway,
-        // so we just need a partial unique index per company (WHERE not deleted).
+        // ── Invoice table: unique constraint scoped to (company, type, number) ─
+        // Invoice numbers are simple integers (1, 2, 3…) per bill type.
+        // TAX invoice "1" must NOT conflict with RETAIL SALE "1" — they are different types.
+        // So uniqueness is (company_id, invoice_type, invoice_number).
         await db.query(`
             DO $$
             BEGIN
-                -- Drop every old unique constraint on invoice_number (any name)
+                -- Drop every old invoice_number unique constraint (any name)
                 IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_invoice_number_key') THEN
                     ALTER TABLE invoices DROP CONSTRAINT invoices_invoice_number_key;
                 END IF;
@@ -732,12 +733,14 @@ export const runSchemaUpdates = async () => {
                 END IF;
             END $$;
         `).catch((e) => { console.warn('[schemaUpdates] old invoice_number constraint drop skipped:', e.message); });
-        // Create a partial unique index: same company cannot have two active invoices with same number
+        // Drop old partial index if it exists from a previous migration attempt
+        await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
+        // Add the correct constraint: unique per (company, invoice_type, invoice_number) for active invoices
         await db.query(`
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_company_number_active
-              ON invoices (company_id, invoice_number)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_company_type_number
+              ON invoices (company_id, invoice_type, invoice_number)
               WHERE (is_deleted = false OR is_deleted IS NULL)
-        `).catch((e) => { console.warn('[schemaUpdates] invoice partial unique index skipped:', e.message); });
+        `).catch((e) => { console.warn('[schemaUpdates] invoice type+number unique index skipped:', e.message); });
 
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
