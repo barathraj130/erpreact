@@ -97,7 +97,13 @@ function buildPrintHTML(p: {
       ${Array(16).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
     </tr>`).join("");
 
-  const invoiceTypeLabel = "INVOICE";
+  const invoiceTypeLabel =
+    data.invoice_type === "TAX_INVOICE"         ? "TAX INVOICE" :
+    data.invoice_type === "NOMINAL_TAX_INVOICE" ? "NOMINAL TAX INVOICE" :
+    data.invoice_type === "NON_TAX_INVOICE"     ? "INVOICE" :
+    data.invoice_type === "RETAIL_SALE"         ? "RETAIL SALE" :
+    data.invoice_type === "GIFTED_ITEM"         ? "GIFT VOUCHER" :
+    "INVOICE";
 
   return `<!DOCTYPE html>
 <html>
@@ -368,7 +374,8 @@ const InvoiceDetails: React.FC = () => {
   );
 
   // ── compute ──────────────────────────────────────────────────────────────────
-  const isNonTax = data.invoice_type === "NON_TAX_INVOICE" || data.invoice_type === "NON-TAX";
+  // NON_TAX, RETAIL_SALE and GIFTED_ITEM all use the simple bill format — no GST breakdown
+  const isNonTax = ["NON_TAX_INVOICE", "NON-TAX", "RETAIL_SALE", "GIFTED_ITEM"].includes(data.invoice_type);
   const isSameState = (data.company_state_code || "33") === (data.customer_state_code || data.state_code || "33");
   const items = Array.isArray(data.items) ? data.items : [];
 
@@ -622,7 +629,7 @@ const InvoiceDetails: React.FC = () => {
           <button onClick={() => navigate("/invoices")} className="btn-secondary" style={{ padding: "8px 12px", gap: "6px", height: "38px" }}><FaArrowLeft /> Back</button>
           <div>
             <h1 style={{ fontSize: "1.1rem", fontWeight: 600, margin: 0 }}>Invoice #{data.invoice_number}</h1>
-            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{new Date(data.invoice_date).toLocaleDateString()} · {isNonTax ? "Non-Tax" : "Tax Invoice"}</span>
+            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{new Date(data.invoice_date).toLocaleDateString()} · {invoiceTypeLabel}</span>
           </div>
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -674,7 +681,7 @@ const InvoiceDetails: React.FC = () => {
           <div style={{ background: "linear-gradient(135deg,#1e293b,#334155)", color: "white", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
             <div>
               <div style={{ fontSize: "18px", fontWeight: 700 }}>Invoice #{data.invoice_number}</div>
-              <div style={{ opacity: 0.7, fontSize: "12px", marginTop: "3px" }}>{isNonTax ? "Non-Tax Invoice" : "Tax Invoice"} · {new Date(data.invoice_date).toLocaleDateString("en-GB")}</div>
+              <div style={{ opacity: 0.7, fontSize: "12px", marginTop: "3px" }}>{invoiceTypeLabel} · {new Date(data.invoice_date).toLocaleDateString("en-GB")}</div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: "22px", fontWeight: 800 }}>₹{fmtInt(grandTotal)}</div>

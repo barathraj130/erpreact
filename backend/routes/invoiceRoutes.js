@@ -339,7 +339,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let totalSGST = 0;
         let totalIGST = 0;
 
-        const isNonTax = invoice_type === 'NON_TAX_INVOICE';
+        // NON_TAX, RETAIL_SALE and GIFTED_ITEM are all non-GST bill types — no tax calculation
+        const isNonTax = ['NON_TAX_INVOICE', 'RETAIL_SALE', 'GIFTED_ITEM'].includes(invoice_type);
 
         // Invoice-level GST rate sent from frontend (e.g. 18 for 18% GST).
         // Used as fallback when a line item has no product-level GST rate (0 or null).
@@ -940,7 +941,8 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         const editCompanyCode = editCompany.rows[0]?.state_code;
         const editCustomerCode = editCustomer?.rows[0]?.state_code;
         const editIsInterState = editCompanyCode && editCustomerCode && editCompanyCode !== editCustomerCode;
-        const editIsNonTax = (editInvoiceType || '').toUpperCase() === 'NON_TAX_INVOICE';
+        const editIsNonTax = ['NON_TAX_INVOICE', 'RETAIL_SALE', 'GIFTED_ITEM'].includes((editInvoiceType || '').toUpperCase())
+            || ['NON_TAX_INVOICE', 'RETAIL_SALE', 'GIFTED_ITEM'].includes(editInvoiceType || '');
 
         // Invoice-level GST rate fallback (from the GST selector in EditInvoice UI)
         const editInvoiceLevelGst = (tax_details && !isNaN(Number(tax_details.totalRate)) && Number(tax_details.totalRate) > 0)
