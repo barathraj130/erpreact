@@ -99,6 +99,27 @@ export const runSchemaUpdates = async () => {
     await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(() => {});
     await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
     await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
+
+    // ── invoice_number_series: ensure company_id column exists ────────────────
+    // The original table was created without company_id. The DROP+recreate inside
+    // the try block may have been skipped. Guarantee the column exists here.
+    await db.query(`ALTER TABLE invoice_number_series ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
+    // Drop the old (bill_type, year, month) unique constraint — company_id must be included.
+    await db.query(`ALTER TABLE invoice_number_series DROP CONSTRAINT IF EXISTS invoice_number_series_bill_type_year_month_key`).catch(() => {});
+    // Add the correct unique constraint if it doesn't exist yet.
+    await db.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'inv_series_company_type_year_month_key'
+            ) THEN
+                ALTER TABLE invoice_number_series
+                ADD CONSTRAINT inv_series_company_type_year_month_key
+                UNIQUE (company_id, bill_type, year, month);
+            END IF;
+        END $$;
+    `).catch(() => {});
     // ─────────────────────────────────────────────────────────────────────────
 
     try {
