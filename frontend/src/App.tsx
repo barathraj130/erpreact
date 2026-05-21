@@ -233,6 +233,7 @@ const App: React.FC = () => {
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
           <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/host-login" element={<HostLogin />} />
+          <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
           <Route path="/mark-attendance" element={<MobileAttendance />} />
 
           <Route element={<HostRoute />}>

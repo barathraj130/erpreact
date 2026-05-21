@@ -11,7 +11,7 @@ import {
   FaTimesCircle,
   FaUserClock,
 } from "react-icons/fa";
-import { useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 interface AttendanceResponse {
   success?: boolean;
@@ -22,8 +22,11 @@ interface AttendanceResponse {
 }
 
 const MobileAttendance: React.FC = () => {
+  // Support both /mark-attendance/:token (path param) and ?token= (query param)
+  // Path param is preferred — query params get stripped by some redirects.
+  const { token: pathToken } = useParams<{ token?: string }>();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
+  const token = pathToken || searchParams.get("token");
 
   // States
   const [step, setStep] = useState<

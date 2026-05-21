@@ -18,7 +18,9 @@ interface Props {
 const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
   const baseUrl = window.location.origin;
   const qrToken = `EMP_${employee.id}_SECRET`;
-  const attendanceUrl = `${baseUrl}/mark-attendance?token=${qrToken}`;
+  // Use path param (/mark-attendance/TOKEN) — more reliable than query string
+  // which gets stripped by some hosting redirects.
+  const attendanceUrl = `${baseUrl}/mark-attendance/${qrToken}`;
 
   const handlePrint = () => {
     const printWindow = window.open("", "", "width=500,height=800");
