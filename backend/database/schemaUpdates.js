@@ -733,14 +733,18 @@ export const runSchemaUpdates = async () => {
                 END IF;
             END $$;
         `).catch((e) => { console.warn('[schemaUpdates] old invoice_number constraint drop skipped:', e.message); });
-        // Drop old partial index if it exists from a previous migration attempt
+        // Drop all old invoice_number unique indexes (any name from previous attempts)
         await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
-        // Add the correct constraint: unique per (company, invoice_type, invoice_number) for active invoices
+        await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
+        // Unique index on series_number (not invoice_number).
+        // series_number is only > 0 on invoices from the new auto-generate system.
+        // Old invoices have series_number = 0/NULL and are excluded → no conflicts with history.
         await db.query(`
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_company_type_number
-              ON invoices (company_id, invoice_type, invoice_number)
-              WHERE (is_deleted = false OR is_deleted IS NULL)
-        `).catch((e) => { console.warn('[schemaUpdates] invoice type+number unique index skipped:', e.message); });
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_company_type_series_num
+              ON invoices (company_id, invoice_type, series_number)
+              WHERE COALESCE(series_number, 0) > 0
+                AND (is_deleted = false OR is_deleted IS NULL)
+        `).catch((e) => { console.warn('[schemaUpdates] series_number unique index skipped:', e.message); });
 
         console.log("✅ Schema Updates Completed.");
     } catch (err) {

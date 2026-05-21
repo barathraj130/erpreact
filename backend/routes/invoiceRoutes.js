@@ -69,21 +69,16 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
     // Format: TAX/2026/05/001, INV/2026/05/001, NSB/2026/05/001 — fully independent.
     const prefix = resolveBillType(type, billPurpose);
 
-    // Derive the next number directly from the invoices table.
-    // This is the source of truth — always correct regardless of the series table state.
-    // "1" for a type that has never had an invoice, "max+1" for all others.
-    // The unique index (company_id, invoice_type, invoice_number) on the invoices table
-    // guarantees no duplicates; concurrent conflicts are handled by the SAVEPOINT retry
-    // in the calling route.
+    // Use series_number column (NOT invoice_number) as the counter.
+    // series_number is only set on invoices created by the new auto-generate system.
+    // Old/bad invoices have series_number = 0 or NULL → excluded by "series_number > 0".
+    // This means every bill type starts cleanly from 1 ignoring all historical data.
     const maxRes = await client.query(
-        `SELECT COALESCE(MAX(
-             CASE WHEN invoice_number ~ '^[0-9]+$'
-                  THEN CAST(invoice_number AS INTEGER)
-                  ELSE 0 END
-         ), 0) + 1 AS next_num
+        `SELECT COALESCE(MAX(series_number), 0) + 1 AS next_num
          FROM invoices
          WHERE company_id = $1
            AND invoice_type = $2
+           AND COALESCE(series_number, 0) > 0
            AND COALESCE(is_deleted, false) = false`,
         [companyId, type]
     );
