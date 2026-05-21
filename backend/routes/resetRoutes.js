@@ -154,18 +154,54 @@ router.post("/full", authMiddleware, async (req, res) => {
         await safeDel(client, 'invoice_sequences',
             `DELETE FROM invoice_sequences WHERE company_id = $1`, [cid]);
         await safeDel(client, 'invoice_number_series',
-            `DELETE FROM invoice_number_series`, []);
+            `DELETE FROM invoice_number_series WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'customer_ledger',
+            `DELETE FROM customer_ledger WHERE company_id = $1`, [cid]);
+        await safeDel(client, 'customer_points',
+            `DELETE FROM customer_points WHERE customer_id IN (SELECT id FROM users WHERE company_id = $1)`, [cid]);
 
-        // ── 12. CLEAR USER META (customer ledger pointers on staff) ────────────
+        // ── 12. CLEAR USER META ─────────────────────────────────────────────────
         await safeDel(client, 'user_meta',
-            `UPDATE users SET meta = NULL WHERE company_id = $1 AND role IN ('admin', 'staff', 'manager')`,
-            [cid]);
+            `UPDATE users SET meta = NULL WHERE company_id = $1`,  [cid]);
+
+        // ── 13. DROP OLD BROKEN UNIQUE CONSTRAINTS on invoice_number ───────────
+        // These block creating invoice #1 after a reset.
+        // Use separate queries — DROP CONSTRAINT IF EXISTS never errors.
+        await safeDel(client, 'drop_inv_num_key',
+            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`, []);
+        await safeDel(client, 'drop_inv_company_key',
+            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`, []);
+        await safeDel(client, 'drop_inv_type_key',
+            `ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`, []);
+        await safeDel(client, 'drop_idx_active',
+            `DROP INDEX IF EXISTS idx_invoices_company_number_active`, []);
+        await safeDel(client, 'drop_idx_type_num',
+            `DROP INDEX IF EXISTS idx_invoices_company_type_number`, []);
+
+        // ── 14. RESET ALL TABLE ID SEQUENCES to 1 ──────────────────────────────
+        const sequences = [
+            'invoices_id_seq', 'invoice_line_items_id_seq', 'invoice_payments_id_seq',
+            'purchase_bills_id_seq', 'purchase_bill_items_id_seq',
+            'products_id_seq', 'inventory_id_seq', 'inventory_movements_id_seq',
+            'branch_inventory_id_seq', 'employees_id_seq', 'payroll_runs_id_seq',
+            'attendance_id_seq', 'loans_id_seq', 'loan_payments_id_seq',
+            'transactions_id_seq', 'transaction_lines_id_seq', 'ledger_entries_id_seq',
+            'cash_ledger_id_seq', 'bank_ledger_id_seq',
+            'customer_ledger_id_seq', 'customer_points_id_seq',
+            'invoice_number_series_id_seq', 'invoice_sequences_id_seq',
+            'brokers_id_seq', 'suppliers_id_seq', 'lenders_id_seq',
+            'stock_requests_id_seq', 'stock_transfers_id_seq',
+        ];
+        for (const seq of sequences) {
+            await safeDel(client, `seq_${seq}`,
+                `ALTER SEQUENCE IF EXISTS ${seq} RESTART WITH 1`, []);
+        }
 
         await client.query("COMMIT");
 
         res.json({
             success: true,
-            message: "ERP fully reset. Preserved: company setup, admin/staff users, branches, roles, permissions, bill format, and chart of accounts."
+            message: "✅ Entire ERP data wiped. All IDs reset to 1. Invoice series reset. Start fresh!"
         });
     } catch (err) {
         if (client) await client.query("ROLLBACK");
