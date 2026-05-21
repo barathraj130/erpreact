@@ -644,11 +644,13 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             });
         }
 
-        // Payments
+        // Payments — sum here so WhatsApp uses the actual saved total, not amount_paid from body
+        let totalPaidFromPayments = 0;
         if (Array.isArray(payments) && payments.length > 0) {
             for (const p of payments) {
                 const pAmt = Number(p.amount) || 0;
                 if (pAmt > 0) {
+                    totalPaidFromPayments += pAmt;
                     const pDate = p.payment_date || new Date();
                     const paymentRecord = await client.query(
                         `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no)
@@ -890,9 +892,13 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         });
 
         // ── Non-blocking post-commit notifications ─────────────────────────
+        // Use totalPaidFromPayments (sum of payments[] actually saved) — NOT finalAmountPaid
+        // from the request body, which can be 0 even when payments exist.
         const custPhone  = customer.rows[0]?.phone || '';
         const custName   = customer.rows[0]?.username || 'Customer';
-        const balAmt     = Math.max(0, netInvoiceAmount - finalAmountPaid);
+        const waActualPaid = totalPaidFromPayments;
+        const waBalance    = Math.max(0, netInvoiceAmount - waActualPaid);
+        const waStatus     = getStatus(waActualPaid, netInvoiceAmount);
 
         // 1. N8N webhook
         triggerN8N('invoice-created', {
@@ -900,27 +906,32 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             customer_phone: custPhone,
             invoice_number: finalInvoiceNumber,
             total_amount:   netInvoiceAmount,
-            paid_amount:    finalAmountPaid,
-            balance_amount: balAmt,
+            paid_amount:    waActualPaid,
+            balance_amount: waBalance,
             points_earned:  ptsEarned,
         });
 
         // 2. WhatsApp to customer
-        const { sendWhatsApp } = await import('../utils/whatsapp.js');
-        if (custPhone) {
-            const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-            await sendWhatsApp(custPhone,
+        try {
+            const { sendWhatsApp } = await import('../utils/whatsapp.js');
+            if (custPhone) {
+                const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                await sendWhatsApp(custPhone,
 `Dear ${custName},
 
 ✅ Invoice ${finalInvoiceNumber} created!
 
 💰 Total:   ₹${fmt(netInvoiceAmount)}
-✅ Paid:    ₹${fmt(finalAmountPaid)}
-⏳ Balance: ₹${fmt(balAmt)}${ptsEarned > 0 ? '\n\n💎 Points Earned: +' + ptsEarned + ' pts' : ''}
+✅ Paid:    ₹${fmt(waActualPaid)}
+⏳ Balance: ₹${fmt(waBalance)}
+Status: ${waStatus}${ptsEarned > 0 ? '\n\n💎 Points Earned: +' + ptsEarned + ' pts' : ''}
 
 Thank you for your business!
 JBS Knit Wear, Tiruppur
 📞 8148232205`);
+            }
+        } catch (waErr) {
+            console.log('[WhatsApp/invoice-create] silent fail:', waErr.message);
         }
     } catch (err) {
         if (client) await client.query("ROLLBACK");
@@ -1393,46 +1404,59 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         }
 
         await client.query("COMMIT");
-        res.json({ success: true, message: "Payment recorded", newPaid, status });
+
+        // Capture final values after commit for WhatsApp (newPaid and status are already correct)
+        const waInvNumber  = inv.invoice_number;
+        const waTotal      = parseFloat(inv.total_amount);
+        const waNewPaid    = newPaid;
+        const waNewBalance = Math.max(0, waTotal - waNewPaid);
+        const waStatus     = status;
+        const waMode       = mode || 'CASH';
+
+        res.json({ success: true, message: "Payment recorded", newPaid: waNewPaid, status: waStatus });
 
         // ── Post-commit: WhatsApp receipt to customer + owner alert (non-blocking) ──
         try {
             const { sendWhatsApp, notifyOwner } = await import('../utils/whatsapp.js');
             const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
-            // Fetch customer details
+            // Fetch customer name + phone after commit (non-blocking read)
             const custRow = inv.customer_id
-                ? (await db.pgGet(
-                    `SELECT username, phone FROM users WHERE id = $1`,
-                    [inv.customer_id]
-                  ))
+                ? (await db.pgGet(`SELECT username, phone FROM users WHERE id = $1`, [inv.customer_id]))
                 : null;
 
-            const balance = parseFloat(inv.total_amount) - newPaid;
+            const custName  = custRow?.username || 'Customer';
+            const custPhone = custRow?.phone || '';
 
             // Customer receipt
-            if (custRow?.phone) {
-                const custMsg =
-                    `✅ *Payment Received — FLUXORA ERP*\n\n` +
-                    `Invoice: *${inv.invoice_number}*\n` +
-                    `Customer: ${custRow.username || 'Customer'}\n` +
-                    `Payment: ₹${fmt(amount)} (${mode || 'CASH'})\n` +
-                    `Total Paid: ₹${fmt(newPaid)}\n` +
-                    `Balance Due: ₹${fmt(Math.max(0, balance))}\n` +
-                    `Status: *${status}*\n\n` +
-                    `Thank you for your payment! 🙏`;
-                await sendWhatsApp(custRow.phone, custMsg);
+            if (custPhone) {
+                await sendWhatsApp(custPhone,
+`Dear ${custName},
+
+💰 Payment Received!
+
+Invoice: ${waInvNumber}
+Amount Paid Now: ₹${fmt(amount)}
+Total Paid: ₹${fmt(waNewPaid)}
+Balance: ₹${fmt(waNewBalance)}
+Status: ${waNewBalance <= 0 ? '✅ FULLY PAID' : '⏳ Partially Paid'}
+
+Thank you!
+JBS Knit Wear, Tiruppur
+📞 8148232205`);
             }
 
             // Owner alert
-            const ownerMsg =
-                `💰 *Payment Collected*\n\n` +
-                `Invoice: ${inv.invoice_number}\n` +
-                `Customer: ${custRow?.username || 'Walk-in'}\n` +
-                `Paid: ₹${fmt(amount)} via ${mode || 'CASH'}\n` +
-                `Total Paid: ₹${fmt(newPaid)} / ₹${fmt(inv.total_amount)}\n` +
-                `Status: ${status}`;
-            await notifyOwner(ownerMsg);
+            await notifyOwner(
+`✅ Payment Collected!
+
+Customer: ${custName}
+Invoice: ${waInvNumber}
+Amount: ₹${fmt(amount)} via ${waMode}
+Total Paid: ₹${fmt(waNewPaid)} / ₹${fmt(waTotal)}
+Balance: ₹${fmt(waNewBalance)}
+Status: ${waStatus}`);
+
         } catch (waErr) {
             console.log('[WhatsApp/payment] silent fail:', waErr.message);
         }
