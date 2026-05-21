@@ -18,9 +18,12 @@ import { triggerN8N } from "../utils/triggerN8N.js";
 const router = express.Router();
 
 /* ============================================================
-   HELPER: Generate Smart Invoice Number
+   HELPER: Invoice Number Series
+   Format: PREFIX/YEAR/MM/NNN  e.g. TAX/2026/05/001
+   Each bill type has its own independent counter, resets each month.
 ============================================================ */
-// Each invoice type has its own bill_type key for the series counter
+
+// Map invoice_type → series prefix
 function resolveBillType(invoiceType, billPurpose) {
     if (billPurpose === 'name_only') return 'NSB';
     switch ((invoiceType || '').toUpperCase()) {
@@ -33,19 +36,18 @@ function resolveBillType(invoiceType, billPurpose) {
     }
 }
 
-// Indian financial year: April 1 – March 31.
-// Returns e.g. 2025 for both May-2025 and Jan-2026.
-function getFinancialYear() {
-    const now = new Date();
-    const m = now.getMonth() + 1; // 1-12
-    const y = now.getFullYear();
-    return m >= 4 ? y : y - 1;
+// Format as PREFIX/YYYY/MM/NNN
+function formatInvoiceNumber(prefix, year, month, num) {
+    const mm  = String(month).padStart(2, '0');
+    const nnn = String(num).padStart(3, '0');
+    return `${prefix}/${year}/${mm}/${nnn}`;
 }
 
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
-    const monthStr = new Date().toLocaleString("default", { month: "short" }).toUpperCase();
-    const financial_year = getFinancialYear();
-    const financial_month = `${new Date().getFullYear()}-${monthStr}`;
+    const now = new Date();
+    const year  = now.getFullYear();
+    const month = now.getMonth() + 1; // 1-12
+    const financial_month = `${year}-${String(month).padStart(2, '0')}`;
 
     if (branchId) {
         // Branch-specific sequence (stored on the branches row)
@@ -57,65 +59,49 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
         const { bill_sequence, bill_prefix } = branchResult.rows[0];
         const prefix = bill_prefix || `B${branchId}`;
         return {
-            number: String(bill_sequence),
+            number: formatInvoiceNumber(prefix, year, month, bill_sequence),
             financial_month,
             series_prefix: prefix,
             series_number: bill_sequence
         };
     }
 
-    // Main branch:
-    // Each invoice TYPE gets its own independent counter (TAX: 1,2,3 | RET: 1,2,3 | etc.)
-    // Counter resets every financial year (April 1).
-    // CRITICAL: We ALWAYS sync the series counter with the max existing invoice number
-    // for this type so manually created or legacy invoices don't cause duplicates.
-    const billType = resolveBillType(type, billPurpose);
+    // Main branch — each invoice TYPE has its own counter, resets each calendar month.
+    // Format: TAX/2026/05/001, INV/2026/05/001, NSB/2026/05/001 — fully independent.
+    const prefix = resolveBillType(type, billPurpose);
 
-    // Step 1: Find the highest existing numeric invoice number for this (company, type).
-    // This handles legacy invoices created before the series table existed, or manually entered numbers.
-    const maxResult = await client.query(
-        `SELECT COALESCE(MAX(
-            CASE WHEN invoice_number ~ '^[0-9]+$'
-                 THEN CAST(invoice_number AS INTEGER)
-                 ELSE 0 END
-         ), 0) AS existing_max
-         FROM invoices
-         WHERE company_id = $1
-           AND invoice_type = $2
-           AND COALESCE(is_deleted, false) = false`,
-        [companyId, type]
-    );
-    const existingMax = Number(maxResult.rows[0].existing_max) || 0;
-    // The next safe number is at least existingMax + 1
-    const safeNext = existingMax + 1;
-
-    // Step 2: Atomically upsert the series counter so it is always ≥ safeNext.
-    // GREATEST ensures we never go backwards even under concurrent requests.
+    // Atomically increment the counter for (company, prefix, year, month).
+    // ON CONFLICT ensures concurrent requests never get the same number.
     let num;
     try {
         const seqResult = await client.query(
             `INSERT INTO invoice_number_series
                  (company_id, bill_type, prefix, year, month, last_number)
-             VALUES ($1, $2, $3, $4, 0, $5)
+             VALUES ($1, $2, $3, $4, $5, 1)
              ON CONFLICT (company_id, bill_type, year, month)
-             DO UPDATE SET last_number = GREATEST(
-                 invoice_number_series.last_number + 1,
-                 EXCLUDED.last_number
-             )
+             DO UPDATE SET last_number = invoice_number_series.last_number + 1
              RETURNING last_number`,
-            [companyId, billType, billType, financial_year, safeNext]
+            [companyId, prefix, prefix, year, month]
         );
         num = Number(seqResult.rows[0].last_number);
-    } catch (_) {
-        // Fallback: constraint might not exist yet on this DB instance.
-        // Use the max-existing approach directly — safe and simple.
-        num = safeNext;
+    } catch (_err) {
+        // Fallback if DB migration hasn't run yet: read current max + 1
+        const maxRes = await client.query(
+            `SELECT COALESCE(MAX(series_number), 0) + 1 AS next_num
+             FROM invoices
+             WHERE company_id = $1 AND invoice_type = $2
+               AND EXTRACT(YEAR  FROM created_at) = $3
+               AND EXTRACT(MONTH FROM created_at) = $4
+               AND COALESCE(is_deleted, false) = false`,
+            [companyId, type, year, month]
+        ).catch(() => ({ rows: [{ next_num: 1 }] }));
+        num = Number(maxRes.rows[0].next_num) || 1;
     }
 
     return {
-        number: String(num),   // Simple: 1, 2, 3 …
+        number: formatInvoiceNumber(prefix, year, month, num),
         financial_month,
-        series_prefix: billType,
+        series_prefix: prefix,
         series_number: num,
     };
 }
@@ -202,6 +188,36 @@ router.post("/repair-stock", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
+   0b. PREVIEW NEXT INVOICE NUMBER  (read-only, no side effects)
+   GET /invoice/preview-number?type=TAX_INVOICE
+============================================================ */
+router.get("/preview-number", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const invoiceType = req.query.type || 'TAX_INVOICE';
+    const billPurpose  = req.query.purpose || 'real';
+    const prefix = resolveBillType(invoiceType, billPurpose);
+    const now   = new Date();
+    const year  = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    try {
+        const result = await db.pgAll(
+            `SELECT COALESCE(last_number, 0) + 1 AS next_num
+             FROM invoice_number_series
+             WHERE company_id = $1 AND bill_type = $2
+               AND year = $3 AND month = $4
+             LIMIT 1`,
+            [companyId, prefix, year, month]
+        );
+        const nextNum = result[0] ? Number(result[0].next_num) : 1;
+        res.json({ next_number: formatInvoiceNumber(prefix, year, month, nextNum) });
+    } catch (err) {
+        // If series table not ready yet, just show "001"
+        res.json({ next_number: formatInvoiceNumber(prefix, year, month, 1) });
+    }
+});
+
+/* ============================================================
    1. GET ALL INVOICES
 ============================================================ */
 router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (req, res) => {
@@ -251,14 +267,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             return isNaN(p) ? null : p;
         };
 
-        // Track whether the user manually typed an invoice number or left it to auto-generate.
-        // This controls retry behaviour: manual numbers get a clear error on conflict;
-        // auto-generated numbers are silently retried.
-        const userProvidedNumber = !!(invoice_number && String(invoice_number).trim());
-        let finalInvoiceNumber = userProvidedNumber ? String(invoice_number).trim().toUpperCase() : null;
-        let financial_month;
-        let seriesPrefix = null;
-        let seriesNumber = null;
+        // Invoice numbers are ALWAYS auto-generated by the backend.
+        // Format: PREFIX/YEAR/MM/NNN  (e.g. TAX/2026/05/001)
+        // Each bill type has its own independent counter — never conflict.
         const headerBranchId = req.headers['x-branch-id'] !== 'all' ? req.headers['x-branch-id'] : null;
         const rawBranchId = req.body.branch_id || req.user.branch_id || headerBranchId;
         const branchId = sanitizeInt(rawBranchId);
@@ -266,40 +277,12 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const safeBrokerId = sanitizeInt(broker_id);
         const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
 
-        if (!finalInvoiceNumber) {
-            // Auto-generate invoice number
-            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
-            finalInvoiceNumber = gen.number;
-            financial_month = gen.financial_month;
-            seriesPrefix = gen.series_prefix;
-            seriesNumber = gen.series_number;
-        } else {
-            // User provided a number — validate it's not already taken FOR THIS invoice type.
-            // Each type (TAX_INVOICE, RETAIL_SALE, etc.) has its own independent counter,
-            // so "1" in TAX_INVOICE is allowed even if "1" in RETAIL_SALE already exists.
-            const exists = await client.query(
-                `SELECT i.id, i.invoice_date, u.username AS customer_name
-                 FROM invoices i
-                 LEFT JOIN users u ON i.customer_id = u.id
-                 WHERE i.invoice_number = $1 AND i.company_id = $2
-                   AND i.invoice_type = $3 AND i.is_deleted IS NOT TRUE
-                 LIMIT 1`,
-                [finalInvoiceNumber, companyId, invoice_type || 'TAX_INVOICE']
-            );
-            if (exists.rows.length > 0) {
-                const ex = exists.rows[0];
-                const dateStr = ex.invoice_date
-                    ? new Date(ex.invoice_date).toLocaleDateString('en-GB')
-                    : 'unknown date';
-                const custStr = ex.customer_name || 'unknown customer';
-                await client.query('ROLLBACK');
-                client.release();
-                return res.status(409).json({
-                    error: `Invoice number "${finalInvoiceNumber}" is already used by invoice #${ex.id} (${custStr}, ${dateStr}). Leave the number blank for auto-generation, or use a different number.`
-                });
-            }
-            financial_month = `${new Date().getFullYear()}-${new Date().toLocaleString("default", { month: "short" }).toUpperCase()}`;
-        }
+        const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
+        let finalInvoiceNumber = gen.number;
+        let financial_month   = gen.financial_month;
+        let seriesPrefix      = gen.series_prefix;
+        let seriesNumber      = gen.series_number;
+        const userProvidedNumber = false; // always auto-generated now
 
         // 1. Get Company/Branch and Customer State for GST Detection
         const company = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);

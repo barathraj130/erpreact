@@ -696,58 +696,48 @@ export const runSchemaUpdates = async () => {
         // 5. Ensure last_updated column exists on branch_inventory (older DBs may lack it)
         await db.query(`ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()`).catch(() => {});
 
-        // ── Per-company, per-type invoice number uniqueness ───────────────────
-        // Each invoice TYPE now has its own independent counter starting at 1.
-        // "1" in TAX_INVOICE must NOT conflict with "1" in RETAIL_SALE.
-        // So the unique constraint must be (company_id, invoice_type, invoice_number).
+        // ── Invoice number series — clean rebuild ────────────────────────────
+        // Format: PREFIX/YEAR/MM/NNN (e.g. TAX/2026/05/001)
+        // Each (company, bill_type, year, month) = one row = independent counter.
+        // Drop the old table entirely and recreate with the correct schema.
+        await db.query(`DROP TABLE IF EXISTS invoice_number_series`).catch(() => {});
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS invoice_number_series (
+                id          SERIAL PRIMARY KEY,
+                company_id  INTEGER NOT NULL,
+                bill_type   VARCHAR(20) NOT NULL,
+                prefix      VARCHAR(10) NOT NULL,
+                year        INTEGER NOT NULL,
+                month       INTEGER NOT NULL,
+                last_number INTEGER DEFAULT 0,
+                UNIQUE (company_id, bill_type, year, month)
+            )
+        `).catch((e) => { console.warn('[schemaUpdates] invoice_number_series create skipped:', e.message); });
+
+        // ── Invoice table: drop all old invoice_number unique constraints ─────
+        // New format (TAX/2026/05/001) makes numbers globally unique anyway,
+        // so we just need a partial unique index per company (WHERE not deleted).
         await db.query(`
             DO $$
             BEGIN
-                -- Drop old global unique index if it still exists
-                IF EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'invoices_invoice_number_key'
-                ) THEN
+                -- Drop every old unique constraint on invoice_number (any name)
+                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_invoice_number_key') THEN
                     ALTER TABLE invoices DROP CONSTRAINT invoices_invoice_number_key;
                 END IF;
-                -- Drop old per-company (without type) constraint if it exists
-                IF EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'invoices_company_invoice_number_key'
-                ) THEN
+                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_company_invoice_number_key') THEN
                     ALTER TABLE invoices DROP CONSTRAINT invoices_company_invoice_number_key;
                 END IF;
-                -- Add per-company-per-type unique constraint
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'invoices_company_type_invoice_number_key'
-                ) THEN
-                    ALTER TABLE invoices ADD CONSTRAINT invoices_company_type_invoice_number_key
-                        UNIQUE (company_id, invoice_type, invoice_number);
+                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_company_type_invoice_number_key') THEN
+                    ALTER TABLE invoices DROP CONSTRAINT invoices_company_type_invoice_number_key;
                 END IF;
             END $$;
-        `).catch((e) => { console.warn('[schemaUpdates] invoice unique constraint migration skipped:', e.message); });
-
-        // ── invoice_number_series: add company_id column so each company has its own counters ──
-        await db.query(`ALTER TABLE invoice_number_series ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
-        // Drop old constraint and add company-scoped one
+        `).catch((e) => { console.warn('[schemaUpdates] old invoice_number constraint drop skipped:', e.message); });
+        // Create a partial unique index: same company cannot have two active invoices with same number
         await db.query(`
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'invoice_number_series_company_bill_type_year_month_key'
-                ) THEN
-                    -- Old constraint was (bill_type, year, month) — drop it first
-                    BEGIN
-                        ALTER TABLE invoice_number_series DROP CONSTRAINT IF EXISTS invoice_number_series_bill_type_year_month_key;
-                    EXCEPTION WHEN OTHERS THEN NULL;
-                    END;
-                    ALTER TABLE invoice_number_series ADD CONSTRAINT invoice_number_series_company_bill_type_year_month_key
-                        UNIQUE (company_id, bill_type, year, month);
-                END IF;
-            END $$;
-        `).catch((e) => { console.warn('[schemaUpdates] invoice_number_series constraint migration skipped:', e.message); });
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_company_number_active
+              ON invoices (company_id, invoice_number)
+              WHERE (is_deleted = false OR is_deleted IS NULL)
+        `).catch((e) => { console.warn('[schemaUpdates] invoice partial unique index skipped:', e.message); });
 
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
