@@ -70,8 +70,10 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
     const prefix = resolveBillType(type, billPurpose);
 
     // Atomically increment the counter for (company, prefix, year, month).
-    // ON CONFLICT ensures concurrent requests never get the same number.
+    // SAVEPOINT is critical: if the INSERT fails (e.g. constraint not yet migrated),
+    // we roll back to the savepoint so the outer transaction stays healthy.
     let num;
+    await client.query('SAVEPOINT sp_series');
     try {
         const seqResult = await client.query(
             `INSERT INTO invoice_number_series
@@ -82,15 +84,24 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
              RETURNING last_number`,
             [companyId, prefix, prefix, year, month]
         );
+        await client.query('RELEASE SAVEPOINT sp_series');
         num = Number(seqResult.rows[0].last_number);
     } catch (_err) {
-        // Fallback if DB migration hasn't run yet: read current max + 1
+        // Roll back to savepoint — transaction is now healthy again
+        await client.query('ROLLBACK TO SAVEPOINT sp_series');
+        await client.query('RELEASE SAVEPOINT sp_series');
+
+        // Fallback: derive next number from existing invoices for this type/month
         const maxRes = await client.query(
-            `SELECT COALESCE(MAX(series_number), 0) + 1 AS next_num
+            `SELECT COALESCE(MAX(
+                 CASE WHEN invoice_number ~ '^[0-9]+$'
+                      THEN CAST(invoice_number AS INTEGER)
+                      ELSE 0 END
+             ), 0) + 1 AS next_num
              FROM invoices
              WHERE company_id = $1 AND invoice_type = $2
-               AND EXTRACT(YEAR  FROM created_at) = $3
-               AND EXTRACT(MONTH FROM created_at) = $4
+               AND EXTRACT(YEAR  FROM COALESCE(created_at, NOW())) = $3
+               AND EXTRACT(MONTH FROM COALESCE(created_at, NOW())) = $4
                AND COALESCE(is_deleted, false) = false`,
             [companyId, type, year, month]
         ).catch(() => ({ rows: [{ next_num: 1 }] }));
