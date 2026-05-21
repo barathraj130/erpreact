@@ -100,6 +100,28 @@ export const runSchemaUpdates = async () => {
     await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
     await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
 
+    // ── attendance_logs: ensure all columns exist ────────────────────────────
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS attendance_logs (
+            id            SERIAL PRIMARY KEY,
+            company_id    INTEGER NOT NULL,
+            employee_id   INTEGER NOT NULL,
+            date          DATE NOT NULL,
+            check_in_time VARCHAR(20),
+            check_out_time VARCHAR(20),
+            status        VARCHAR(20) DEFAULT 'PRESENT',
+            work_assigned TEXT,
+            method        VARCHAR(30) DEFAULT 'MANUAL',
+            latitude      NUMERIC(10,6),
+            longitude     NUMERIC(10,6),
+            created_at    TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS method VARCHAR(30) DEFAULT 'MANUAL'`).catch(() => {});
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,6)`).catch(() => {});
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,6)`).catch(() => {});
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS work_assigned TEXT`).catch(() => {});
+
     // ── invoice_number_series: ensure company_id column exists ────────────────
     // The original table was created without company_id. The DROP+recreate inside
     // the try block may have been skipped. Guarantee the column exists here.

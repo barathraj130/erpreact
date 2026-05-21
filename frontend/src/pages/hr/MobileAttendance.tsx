@@ -37,9 +37,12 @@ const MobileAttendance: React.FC = () => {
   );
   const [currentTime] = useState(new Date());
 
-  // API Base URL - Use the same host that served this page
-  // This ensures the API call goes to your Mac, not localhost on the phone
-  const API_BASE = window.location.origin;
+  // Use the same backend URL as the rest of the app (VITE_API_URL env var).
+  // Fallback: same-origin at port 3000, matching the pattern in utils/api.ts.
+  // Do NOT use window.location.origin — the frontend and backend may be on different URLs.
+  const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)
+    ? (import.meta.env.VITE_API_URL as string).replace(/\/api$/, '')
+    : `http://${window.location.hostname}:3000`;
 
   // Get user location on mount
   useEffect(() => {
