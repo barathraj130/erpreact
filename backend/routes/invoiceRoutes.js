@@ -69,44 +69,25 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
     // Format: TAX/2026/05/001, INV/2026/05/001, NSB/2026/05/001 — fully independent.
     const prefix = resolveBillType(type, billPurpose);
 
-    // Atomically increment the counter for (company, prefix, year, month).
-    // SAVEPOINT is critical: if the INSERT fails (e.g. constraint not yet migrated),
-    // we roll back to the savepoint so the outer transaction stays healthy.
-    let num;
-    await client.query('SAVEPOINT sp_series');
-    try {
-        const seqResult = await client.query(
-            `INSERT INTO invoice_number_series
-                 (company_id, bill_type, prefix, year, month, last_number)
-             VALUES ($1, $2, $3, $4, $5, 1)
-             ON CONFLICT (company_id, bill_type, year, month)
-             DO UPDATE SET last_number = invoice_number_series.last_number + 1
-             RETURNING last_number`,
-            [companyId, prefix, prefix, year, month]
-        );
-        await client.query('RELEASE SAVEPOINT sp_series');
-        num = Number(seqResult.rows[0].last_number);
-    } catch (_err) {
-        // Roll back to savepoint — transaction is now healthy again
-        await client.query('ROLLBACK TO SAVEPOINT sp_series');
-        await client.query('RELEASE SAVEPOINT sp_series');
-
-        // Fallback: derive next number from existing invoices for this type/month
-        const maxRes = await client.query(
-            `SELECT COALESCE(MAX(
-                 CASE WHEN invoice_number ~ '^[0-9]+$'
-                      THEN CAST(invoice_number AS INTEGER)
-                      ELSE 0 END
-             ), 0) + 1 AS next_num
-             FROM invoices
-             WHERE company_id = $1 AND invoice_type = $2
-               AND EXTRACT(YEAR  FROM COALESCE(created_at, NOW())) = $3
-               AND EXTRACT(MONTH FROM COALESCE(created_at, NOW())) = $4
-               AND COALESCE(is_deleted, false) = false`,
-            [companyId, type, year, month]
-        ).catch(() => ({ rows: [{ next_num: 1 }] }));
-        num = Number(maxRes.rows[0].next_num) || 1;
-    }
+    // Derive the next number directly from the invoices table.
+    // This is the source of truth — always correct regardless of the series table state.
+    // "1" for a type that has never had an invoice, "max+1" for all others.
+    // The unique index (company_id, invoice_type, invoice_number) on the invoices table
+    // guarantees no duplicates; concurrent conflicts are handled by the SAVEPOINT retry
+    // in the calling route.
+    const maxRes = await client.query(
+        `SELECT COALESCE(MAX(
+             CASE WHEN invoice_number ~ '^[0-9]+$'
+                  THEN CAST(invoice_number AS INTEGER)
+                  ELSE 0 END
+         ), 0) + 1 AS next_num
+         FROM invoices
+         WHERE company_id = $1
+           AND invoice_type = $2
+           AND COALESCE(is_deleted, false) = false`,
+        [companyId, type]
+    );
+    const num = Number(maxRes.rows[0].next_num) || 1;
 
     return {
         number: formatInvoiceNumber(prefix, year, month, num),
@@ -505,8 +486,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             await client.query('ROLLBACK TO SAVEPOINT sp_invoice_hdr');
             await client.query('RELEASE SAVEPOINT sp_invoice_hdr');
 
-            // 23505 = unique_violation on invoice_number
-            if (insertErr.code === '23505' && (insertErr.constraint || '').includes('invoice_number')) {
+            // 23505 = unique_violation — could be invoice_number or any unique index
+            if (insertErr.code === '23505') {
                 if (userProvidedNumber) {
                     // User manually typed this number — give a clear error, don't silently change it
                     throw new Error(`Invoice number "${finalInvoiceNumber}" already exists. Please use a different number.`);
