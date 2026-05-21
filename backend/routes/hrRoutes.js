@@ -3,6 +3,7 @@ import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
+import { checkSufficientBalance } from "../utils/balanceCheck.js";
 
 const router = express.Router();
 
@@ -28,7 +29,20 @@ router.post("/advance", authMiddleware, async (req, res) => {
 
     let client;
     try {
+        // ── Balance pre-check (before opening transaction) ──────────────────
         client = await db.getClient();
+        const balCheck = await checkSufficientBalance(client, companyId, pMethod, advanceAmt);
+        if (!balCheck.sufficient) {
+            client.release();
+            client = null;
+            return res.status(422).json({
+                error: balCheck.message,
+                currentBalance: balCheck.currentBalance,
+                shortfall: balCheck.shortfall,
+                accountName: balCheck.accountName,
+            });
+        }
+
         await client.query('BEGIN');
 
         // 1. Insert salary advance record
@@ -80,11 +94,11 @@ router.post("/advance", authMiddleware, async (req, res) => {
         await client.query('COMMIT');
         res.json({ success: true, message: "Advance recorded and ledger updated" });
     } catch (err) {
-        if (client) await client.query('ROLLBACK');
+        if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
         console.error('[advance]', err.message);
         res.status(500).json({ error: "Failed to record advance: " + err.message });
     } finally {
-        if (client) client.release();
+        if (client) { try { client.release(); } catch (_) {} }
     }
 });
 

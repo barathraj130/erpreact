@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FaTimes } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
 import CustomSelect from "../../components/CustomSelect";
@@ -9,6 +9,9 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
 }
+
+const fmt = (n: number) =>
+  Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 });
 
 const AdvanceSalaryModal: React.FC<Props> = ({
   employeeId,
@@ -25,36 +28,73 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   const [bankName, setBankName]       = useState("");
   const [refNo, setRefNo]             = useState("");
   const [loading, setLoading]         = useState(false);
+  const [errorMsg, setErrorMsg]       = useState("");
+
+  // Live balance state
+  const [cashBal, setCashBal]   = useState<number | null>(null);
+  const [bankBal, setBankBal]   = useState<number | null>(null);
+  const [balLoading, setBalLoading] = useState(true);
 
   const isBank = paymentMethod === "BANK" || paymentMethod === "UPI";
 
+  // Fetch live balances on mount
+  useEffect(() => {
+    setBalLoading(true);
+    apiFetch("/ledgers/balance/current")
+      .then((r) => r.json())
+      .then((d) => {
+        setCashBal(Number(d.cash ?? 0));
+        setBankBal(Number(d.bank ?? 0));
+      })
+      .catch(() => {
+        setCashBal(null);
+        setBankBal(null);
+      })
+      .finally(() => setBalLoading(false));
+  }, []);
+
+  // Which balance applies to the selected payment method
+  const activeBalance = paymentMethod === "CASH" ? cashBal : bankBal;
+  const amountNum = Number(amount) || 0;
+  const insufficient =
+    activeBalance !== null && amountNum > 0 && amountNum > activeBalance;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || Number(amount) <= 0) return alert("Enter a valid amount");
+    setErrorMsg("");
+    if (!amount || amountNum <= 0) return alert("Enter a valid amount");
+    if (insufficient) {
+      setErrorMsg(
+        `Insufficient ${paymentMethod === "CASH" ? "Cash" : "Bank"} balance! ` +
+        `Available: ₹${fmt(activeBalance ?? 0)}, Required: ₹${fmt(amountNum)}`
+      );
+      return;
+    }
     setLoading(true);
     try {
       const res = await apiFetch("/hr/advance", {
         method: "POST",
         body: {
-          employee_id:      employeeId,
-          amount:           Number(amount),
+          employee_id:        employeeId,
+          amount:             amountNum,
           date,
           reason,
-          repayment_type:   type,
+          repayment_type:     type,
           installment_amount: type === "ONE_TIME" || type === "MANUAL" ? 0 : Number(installment),
-          payment_method:   paymentMethod,
-          bank_name:        isBank ? (bankName || paymentMethod) : null,
-          reference_no:     refNo || null,
+          payment_method:     paymentMethod,
+          bank_name:          isBank ? (bankName || paymentMethod) : null,
+          reference_no:       refNo || null,
         },
       });
+      const data = await res.json();
       if (!res.ok) {
-        const err = await res.json();
-        return alert("Failed: " + (err.error || "Unknown error"));
+        setErrorMsg(data.error || "Failed to record advance");
+        return;
       }
       onSuccess();
       onClose();
-    } catch (err) {
-      alert("Failed to record advance");
+    } catch {
+      setErrorMsg("Network error — please try again");
     } finally {
       setLoading(false);
     }
@@ -68,7 +108,6 @@ const AdvanceSalaryModal: React.FC<Props> = ({
     borderRadius: "6px", boxSizing: "border-box",
   };
 
-  // Payment method button styles
   const pmBtn = (active: boolean, color: string): React.CSSProperties => ({
     flex: 1,
     padding: "10px 0",
@@ -81,6 +120,21 @@ const AdvanceSalaryModal: React.FC<Props> = ({
     cursor: "pointer",
     transition: "all 0.15s",
   });
+
+  // Balance chip colours
+  const balChip = (bal: number | null, isActive: boolean): React.CSSProperties => {
+    if (bal === null) return {};
+    const ok = amountNum <= 0 || amountNum <= bal;
+    return {
+      fontSize: "0.78rem",
+      fontWeight: 700,
+      padding: "2px 8px",
+      borderRadius: "20px",
+      marginLeft: "8px",
+      background: isActive ? (ok ? "#dcfce7" : "#fee2e2") : "#f1f5f9",
+      color: isActive ? (ok ? "#166534" : "#dc2626") : "#64748b",
+    };
+  };
 
   return (
     <div style={{
@@ -104,14 +158,56 @@ const AdvanceSalaryModal: React.FC<Props> = ({
           </button>
         </div>
 
+        {/* Live Balance Banner */}
+        <div style={{
+          display: "flex", gap: "10px", marginBottom: "18px",
+          padding: "10px 14px", background: "#f8fafc",
+          borderRadius: "10px", border: "1px solid #e2e8f0",
+          fontSize: "0.85rem", alignItems: "center",
+        }}>
+          <span style={{ color: "#64748b", fontWeight: 600 }}>Available:</span>
+          {balLoading ? (
+            <span style={{ color: "#94a3b8" }}>Loading balances...</span>
+          ) : (
+            <>
+              <span>
+                💵 Cash
+                <span style={balChip(cashBal, paymentMethod === "CASH")}>
+                  ₹{cashBal !== null ? fmt(cashBal) : "—"}
+                </span>
+              </span>
+              <span style={{ color: "#cbd5e1" }}>|</span>
+              <span>
+                🏦 Bank
+                <span style={balChip(bankBal, isBank)}>
+                  ₹{bankBal !== null ? fmt(bankBal) : "—"}
+                </span>
+              </span>
+            </>
+          )}
+        </div>
+
         <form onSubmit={handleSubmit}>
 
           {/* Amount + Date */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
             <div>
               <label style={label}>Amount (₹) *</label>
-              <input type="number" required min="1" value={amount}
-                onChange={(e) => setAmount(e.target.value)} style={input} placeholder="0.00" />
+              <input
+                type="number" required min="1" value={amount}
+                onChange={(e) => { setAmount(e.target.value); setErrorMsg(""); }}
+                style={{
+                  ...input,
+                  borderColor: insufficient ? "#fca5a5" : "#cbd5e1",
+                  background: insufficient ? "#fff5f5" : "white",
+                }}
+                placeholder="0.00"
+              />
+              {insufficient && (
+                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#dc2626" }}>
+                  Shortfall: ₹{fmt(amountNum - (activeBalance ?? 0))}
+                </p>
+              )}
             </div>
             <div>
               <label style={label}>Date *</label>
@@ -125,11 +221,32 @@ const AdvanceSalaryModal: React.FC<Props> = ({
             <label style={label}>Paid Via *</label>
             <div style={{ display: "flex", gap: "10px" }}>
               <button type="button" style={pmBtn(paymentMethod === "CASH", "#16a34a")}
-                onClick={() => setPaymentMethod("CASH")}>💵 Cash</button>
+                onClick={() => { setPaymentMethod("CASH"); setErrorMsg(""); }}>
+                💵 Cash
+                {cashBal !== null && !balLoading && (
+                  <div style={{ fontSize: "0.72rem", marginTop: "2px", opacity: 0.85 }}>
+                    ₹{fmt(cashBal)}
+                  </div>
+                )}
+              </button>
               <button type="button" style={pmBtn(paymentMethod === "BANK", "#2563eb")}
-                onClick={() => setPaymentMethod("BANK")}>🏦 Bank</button>
+                onClick={() => { setPaymentMethod("BANK"); setErrorMsg(""); }}>
+                🏦 Bank
+                {bankBal !== null && !balLoading && (
+                  <div style={{ fontSize: "0.72rem", marginTop: "2px", opacity: 0.85 }}>
+                    ₹{fmt(bankBal)}
+                  </div>
+                )}
+              </button>
               <button type="button" style={pmBtn(paymentMethod === "UPI", "#7c3aed")}
-                onClick={() => setPaymentMethod("UPI")}>📲 UPI</button>
+                onClick={() => { setPaymentMethod("UPI"); setErrorMsg(""); }}>
+                📲 UPI
+                {bankBal !== null && !balLoading && (
+                  <div style={{ fontSize: "0.72rem", marginTop: "2px", opacity: 0.85 }}>
+                    ₹{fmt(bankBal)}
+                  </div>
+                )}
+              </button>
             </div>
           </div>
 
@@ -171,7 +288,7 @@ const AdvanceSalaryModal: React.FC<Props> = ({
 
           {(type === "INSTALLMENT" || type === "DAILY") && (
             <div style={{ marginBottom: "16px", background: "#eff6ff", padding: "10px", borderRadius: "6px" }}>
-              <label style={{ ...label }}>
+              <label style={label}>
                 {type === "DAILY" ? "Daily Deduction Amount" : "Monthly Installment Amount"}
               </label>
               <input type="number" required value={installment}
@@ -195,14 +312,16 @@ const AdvanceSalaryModal: React.FC<Props> = ({
           </div>
 
           {/* Summary box */}
-          {amount && Number(amount) > 0 && (
+          {amountNum > 0 && (
             <div style={{
               marginBottom: "16px", padding: "12px 16px",
-              background: "#f8fafc", borderRadius: "10px",
-              border: "1px solid #e2e8f0", fontSize: "0.88rem", color: "#334155",
+              background: insufficient ? "#fff5f5" : "#f8fafc",
+              borderRadius: "10px",
+              border: `1px solid ${insufficient ? "#fca5a5" : "#e2e8f0"}`,
+              fontSize: "0.88rem", color: "#334155",
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <span>Amount</span><strong>₹{Number(amount).toLocaleString("en-IN")}</strong>
+                <span>Amount</span><strong>₹{fmt(amountNum)}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                 <span>Payment Mode</span>
@@ -210,21 +329,57 @@ const AdvanceSalaryModal: React.FC<Props> = ({
                   {paymentMethod}{isBank && bankName ? ` — ${bankName}` : ""}
                 </strong>
               </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                <span>Available Balance</span>
+                <span style={{ color: insufficient ? "#dc2626" : "#16a34a", fontWeight: 600 }}>
+                  ₹{activeBalance !== null ? fmt(activeBalance) : "—"}
+                </span>
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Ledger Impact</span>
                 <span style={{ color: "#ef4444" }}>
                   {paymentMethod === "CASH" ? "Cash Out (−)" : "Bank Out (−)"}
                 </span>
               </div>
+              {insufficient && (
+                <div style={{
+                  marginTop: "8px", padding: "6px 10px",
+                  background: "#fee2e2", borderRadius: "6px",
+                  color: "#dc2626", fontWeight: 700, fontSize: "0.82rem",
+                }}>
+                  ❌ Shortfall: ₹{fmt(amountNum - (activeBalance ?? 0))} — top up {paymentMethod === "CASH" ? "cash" : "bank"} before granting advance
+                </div>
+              )}
             </div>
           )}
 
-          <button type="submit" disabled={loading} style={{
-            width: "100%", padding: "13px", background: loading ? "#94a3b8" : "#2563eb",
-            color: "white", border: "none", borderRadius: "10px",
-            cursor: loading ? "not-allowed" : "pointer", fontWeight: 700, fontSize: "1rem",
-          }}>
-            {loading ? "Processing..." : `Grant Advance — ₹${Number(amount || 0).toLocaleString("en-IN")}`}
+          {/* Error message from backend */}
+          {errorMsg && (
+            <div style={{
+              marginBottom: "12px", padding: "10px 14px",
+              background: "#fee2e2", borderRadius: "8px",
+              color: "#dc2626", fontSize: "0.88rem", fontWeight: 600,
+            }}>
+              ❌ {errorMsg}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || insufficient}
+            style={{
+              width: "100%", padding: "13px",
+              background: loading ? "#94a3b8" : insufficient ? "#fca5a5" : "#2563eb",
+              color: "white", border: "none", borderRadius: "10px",
+              cursor: loading || insufficient ? "not-allowed" : "pointer",
+              fontWeight: 700, fontSize: "1rem",
+            }}
+          >
+            {loading
+              ? "Processing..."
+              : insufficient
+              ? `❌ Insufficient Balance`
+              : `Grant Advance — ₹${fmt(amountNum)}`}
           </button>
         </form>
       </div>

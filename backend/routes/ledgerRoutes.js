@@ -53,6 +53,32 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 });
 
+// ── Live Cash & Bank balances (used by payment forms) ─────────────────────
+router.get('/balance/current', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const [cashRow, bankRow] = await Promise.all([
+            db.pgGet(
+                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+                 FROM cash_ledger WHERE company_id = $1`,
+                [companyId]
+            ),
+            db.pgGet(
+                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+                 FROM bank_ledger WHERE company_id = $1`,
+                [companyId]
+            ),
+        ]);
+        res.json({
+            cash:  Number(cashRow?.balance  || 0),
+            bank:  Number(bankRow?.balance  || 0),
+        });
+    } catch (err) {
+        console.error('[balance/current]', err.message);
+        res.status(500).json({ error: 'Failed to fetch balances' });
+    }
+});
+
 router.get('/groups', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
