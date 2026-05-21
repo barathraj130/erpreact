@@ -415,6 +415,28 @@ const EmployeeLedgerModal: React.FC<Props> = ({ employee, onClose }) => {
                         >
                           {row.description || "No remarks provided"}
                         </div>
+                        {/* Payment method badge — shown for advance entries */}
+                        {isAdvance && row.payment_method && (
+                          <div style={{ marginTop: "4px" }}>
+                            <span style={{
+                              display: "inline-block",
+                              padding: "2px 8px",
+                              borderRadius: "100px",
+                              fontSize: "0.72rem",
+                              fontWeight: 700,
+                              background:
+                                row.payment_method === "CASH" ? "#dcfce7" :
+                                row.payment_method === "UPI"  ? "#ede9fe" : "#dbeafe",
+                              color:
+                                row.payment_method === "CASH" ? "#15803d" :
+                                row.payment_method === "UPI"  ? "#6d28d9" : "#1d4ed8",
+                            }}>
+                              {row.payment_method === "CASH" ? "💵" : row.payment_method === "UPI" ? "📲" : "🏦"}{" "}
+                              {row.payment_method}
+                              {row.bank_name ? ` — ${row.bank_name}` : ""}
+                            </span>
+                          </div>
+                        )}
                         {isMobile && (
                           <div
                             style={{

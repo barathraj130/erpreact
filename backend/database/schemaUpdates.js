@@ -100,6 +100,11 @@ export const runSchemaUpdates = async () => {
     await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
     await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
 
+    // ── salary_advances: payment method columns ───────────────────────────────
+    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'CASH'`).catch(() => {});
+    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100)`).catch(() => {});
+    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100)`).catch(() => {});
+
     // ── attendance_logs: ensure all columns exist ────────────────────────────
     await db.query(`
         CREATE TABLE IF NOT EXISTS attendance_logs (
