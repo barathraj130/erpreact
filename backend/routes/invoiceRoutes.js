@@ -24,11 +24,13 @@ const router = express.Router();
 ============================================================ */
 
 // Map invoice_type → series prefix
+// TAX_INVOICE → TAX | NOMINAL_TAX_INVOICE → NSB | NON_TAX_INVOICE → INV
+// RETAIL_SALE → RET | GIFTED_ITEM → GFT
 function resolveBillType(invoiceType, billPurpose) {
     if (billPurpose === 'name_only') return 'NSB';
     switch ((invoiceType || '').toUpperCase()) {
         case 'TAX_INVOICE':         return 'TAX';
-        case 'NOMINAL_TAX_INVOICE': return 'NTX';
+        case 'NOMINAL_TAX_INVOICE': return 'NSB';
         case 'NON_TAX_INVOICE':     return 'INV';
         case 'RETAIL_SALE':         return 'RET';
         case 'GIFTED_ITEM':         return 'GFT';
@@ -36,10 +38,9 @@ function resolveBillType(invoiceType, billPurpose) {
     }
 }
 
-// Format as simple sequential number: 1, 2, 3…
-// Each bill type has its OWN independent counter so TAX:1 and RET:1 coexist.
-function formatInvoiceNumber(_prefix, _year, _month, num) {
-    return String(num);
+// Format: PREFIX/YEAR/MM/NNN  e.g. TAX/2026/05/001
+function formatInvoiceNumber(prefix, year, month, num) {
+    return `${prefix}/${year}/${String(month).padStart(2, '0')}/${String(num).padStart(3, '0')}`;
 }
 
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
@@ -65,24 +66,20 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
         };
     }
 
-    // Main branch — each invoice TYPE has its own counter, resets each calendar month.
-    // Format: TAX/2026/05/001, INV/2026/05/001, NSB/2026/05/001 — fully independent.
+    // Main branch — atomic counter per (company, bill_type, year, month).
+    // Uses invoice_number_series table: INSERT on first bill of month, UPDATE on subsequent.
+    // Fully independent per bill type — TAX:1, RET:1, INV:1 never clash.
     const prefix = resolveBillType(type, billPurpose);
 
-    // Use series_number column (NOT invoice_number) as the counter.
-    // series_number is only set on invoices created by the new auto-generate system.
-    // Old/bad invoices have series_number = 0 or NULL → excluded by "series_number > 0".
-    // This means every bill type starts cleanly from 1 ignoring all historical data.
-    const maxRes = await client.query(
-        `SELECT COALESCE(MAX(series_number), 0) + 1 AS next_num
-         FROM invoices
-         WHERE company_id = $1
-           AND invoice_type = $2
-           AND COALESCE(series_number, 0) > 0
-           AND COALESCE(is_deleted, false) = false`,
-        [companyId, type]
+    const { rows } = await client.query(
+        `INSERT INTO invoice_number_series (company_id, bill_type, prefix, year, month, last_number)
+         VALUES ($1, $2, $3, $4, $5, 1)
+         ON CONFLICT (company_id, bill_type, year, month)
+         DO UPDATE SET last_number = invoice_number_series.last_number + 1
+         RETURNING last_number`,
+        [companyId, prefix, prefix, year, month]
     );
-    const num = Number(maxRes.rows[0].next_num) || 1;
+    const num = rows[0].last_number;
 
     return {
         number: formatInvoiceNumber(prefix, year, month, num),
@@ -374,8 +371,16 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let totalSGST = 0;
         let totalIGST = 0;
 
-        // NON_TAX, RETAIL_SALE and GIFTED_ITEM are all non-GST bill types — no tax calculation
-        const isNonTax = ['NON_TAX_INVOICE', 'RETAIL_SALE', 'GIFTED_ITEM'].includes(invoice_type);
+        // Bill type GST rules per spec:
+        // NON_TAX_INVOICE  → NO GST at all
+        // TAX_INVOICE      → GST always (CGST+SGST or IGST)
+        // NOMINAL_TAX      → GST calculated (name-sake bill, no real cash movement)
+        // RETAIL_SALE      → GST optional — per product's gst_rate (0 if product has none)
+        // GIFTED_ITEM      → GST always (business pays deemed supply GST)
+        const isNonTax  = invoice_type === 'NON_TAX_INVOICE';
+        const isRetail  = invoice_type === 'RETAIL_SALE';
+        const isGift    = invoice_type === 'GIFTED_ITEM';
+        const isNameOnly = bill_purpose === 'name_only' || invoice_type === 'NOMINAL_TAX_INVOICE';
 
         // Invoice-level GST rate sent from frontend (e.g. 18 for 18% GST).
         // Used as fallback when a line item has no product-level GST rate (0 or null).
@@ -390,9 +395,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             // Use per-item gst_rate if it's a positive number; otherwise fall back to the
             // invoice-level GST rate chosen by the user (tax_details.totalRate).
             const itemGstRate = parseFloat(i.gst_rate);
-            const taxRate = isNonTax ? 0 : (
-                (!isNaN(itemGstRate) && itemGstRate > 0) ? itemGstRate : invoiceLevelGstRate
-            );
+            const hasItemRate = !isNaN(itemGstRate) && itemGstRate > 0;
+            const taxRate = isNonTax ? 0
+                : isRetail ? (hasItemRate ? itemGstRate : 0)           // Retail: product-rate or zero
+                : (hasItemRate ? itemGstRate : invoiceLevelGstRate);   // Others: fall back to invoice level
             
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;
@@ -435,7 +441,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             const amount = qty * rate;
             // Same fix as processedItems: use per-item rate if > 0, else fall back to invoice-level rate
             const retItemRate = parseFloat(i.gst_rate);
-            const taxRate = isNonTax ? 0 : ((!isNaN(retItemRate) && retItemRate > 0) ? retItemRate : invoiceLevelGstRate);
+            const hasRetRate = !isNaN(retItemRate) && retItemRate > 0;
+            const taxRate = isNonTax ? 0
+                : isRetail ? (hasRetRate ? retItemRate : 0)
+                : (hasRetRate ? retItemRate : invoiceLevelGstRate);
 
             let cgstR = 0, sgstR = 0, igstR = 0;
             let cgstA = 0, sgstA = 0, igstA = 0;
@@ -562,8 +571,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         const invoiceId = result.rows[0].id;
 
-        // Process All Items (Sale + Return)
-        const isNameOnly = (bill_purpose === 'name_only');
+        // isNameOnly already set above from bill_purpose / invoice_type
 
         // ── Resolve invoice-level branch via centralized engine ──
         // Priority: body.branch_id → JWT branch → x-branch-id header → product's branch → main hub
@@ -711,69 +719,131 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
 
-        // --- INTEGRATE WITH ACCOUNTING ENGINE ---
-        
-        const arAccount = await getAccountByCode(companyId, '1100'); // Accounts Receivable
-        const salesAccount = await getAccountByCode(companyId, '4000'); // Sales Revenue
-        const taxAccount = await getAccountByCode(companyId, '2100'); // GST Payable
-        const salesReturnAccount = await getAccountByCode(companyId, '4200') || salesAccount; // Fallback to Sales if no Return acct
+        // ─────────────────────────────────────────────────────────────────
+        // ACCOUNTING ENGINE — per-bill-type ledger entries (spec-compliant)
+        //
+        // TAX_INVOICE:       DR AR  | CR Sales | CR GST
+        // NOMINAL_TAX (NSB): (no AR, no Sales) | CR GST only — name-sake bill
+        // NON_TAX_INVOICE:   DR AR  | CR Sales (no GST)
+        // RETAIL_SALE:       DR Cash/UPI | CR Sales | CR GST (if any)
+        // GIFTED_ITEM:       DR GiftExpense | DR GSTExpense | CR Inventory (no AR/Sales)
+        // ─────────────────────────────────────────────────────────────────
+        const arAccount        = await getAccountByCode(companyId, '1100'); // Accounts Receivable
+        const salesAccount     = await getAccountByCode(companyId, '4000'); // Sales Revenue
+        const taxAccount       = await getAccountByCode(companyId, '2100'); // GST Payable / Output GST
+        const salesReturnAccount = await getAccountByCode(companyId, '4200') || salesAccount;
+        const cashAccount      = await getAccountByCode(companyId, '1000'); // Cash
+        const bankAccount      = await getAccountByCode(companyId, '1200'); // Bank
+        const giftExpAccount   = await getAccountByCode(companyId, '5500') || await getAccountByCode(companyId, '5000'); // Gift/Promo Expense
+        const inventoryAccount = await getAccountByCode(companyId, '1300') || await getAccountByCode(companyId, '1400'); // Inventory/Stock
 
-        if (arAccount && salesAccount) {
+        const netGST = totalGST - totalReturnGST;
+
+        if (salesAccount || taxAccount) {
             let txLines = [];
 
-            // Debit AR for Net Amount (same for all invoice types including NOMINAL_TAX_INVOICE)
-            txLines.push({ account_id: arAccount.id, debit_amount: effectiveTotal > 0 ? effectiveTotal : 0, credit_amount: effectiveTotal < 0 ? Math.abs(effectiveTotal) : 0, description: `Sales to Customer #${customer_id}` });
-
-            // Credit Sales Revenue
-            txLines.push({ account_id: salesAccount.id, debit_amount: 0, credit_amount: totalTaxable, description: `Sales Revenue from Inv #${finalInvoiceNumber}` });
-
-            // Debit Sales Returns if any
-            if (totalReturnTaxable > 0) {
-                txLines.push({ account_id: salesReturnAccount.id, debit_amount: totalReturnTaxable, credit_amount: 0, description: `Sales Returns on Inv #${finalInvoiceNumber}` });
-            }
-
-            // Credit GST Payable for Net GST
-            const netGST = totalGST - totalReturnGST;
-            if (netGST !== 0 && taxAccount) {
-                txLines.push({ account_id: taxAccount.id, debit_amount: netGST < 0 ? Math.abs(netGST) : 0, credit_amount: netGST > 0 ? netGST : 0, description: `GST on Inv #${finalInvoiceNumber}` });
-            }
-
-            // Handle Discount as an Expense
-            if (discountAmt > 0) {
-                const discountAccount = await getAccountByCode(companyId, '5100'); // Discount Allowed
-                if (discountAccount) {
-                    txLines.push({ account_id: discountAccount.id, debit_amount: discountAmt, credit_amount: 0, description: `Discount on Inv #${finalInvoiceNumber}` });
+            if (isGift) {
+                // GIFTED ITEM: Expense + GST Expense, credit Inventory — NO AR, NO Sales Revenue
+                if (giftExpAccount) {
+                    txLines.push({ account_id: giftExpAccount.id, debit_amount: totalTaxable, credit_amount: 0,
+                        description: `Gift/Promo Expense — Inv #${finalInvoiceNumber}` });
                 }
-            }
+                if (netGST > 0 && taxAccount) {
+                    txLines.push({ account_id: taxAccount.id, debit_amount: netGST, credit_amount: 0,
+                        description: `GST on gifted goods (deemed supply) — Inv #${finalInvoiceNumber}` });
+                }
+                if (inventoryAccount) {
+                    txLines.push({ account_id: inventoryAccount.id, debit_amount: 0, credit_amount: totalTaxable,
+                        description: `Stock gifted — Inv #${finalInvoiceNumber}` });
+                }
+            } else if (isNameOnly) {
+                // NOMINAL TAX INVOICE: GST liability only — NO AR, NO Sales Revenue, NO customer balance change
+                if (netGST > 0 && taxAccount) {
+                    txLines.push({ account_id: taxAccount.id, debit_amount: 0, credit_amount: netGST,
+                        description: `Output GST — NSB Inv #${finalInvoiceNumber}` });
+                    // Suspense debit to keep double-entry balanced
+                    const suspenseAccount = arAccount; // AR used as nominal suspense for name-only
+                    if (suspenseAccount) {
+                        txLines.push({ account_id: suspenseAccount.id, debit_amount: netGST, credit_amount: 0,
+                            description: `GST nominal entry — NSB Inv #${finalInvoiceNumber}` });
+                    }
+                }
+            } else {
+                // TAX, NON-TAX, RETAIL — standard sales entries
+                if (invoice_type === 'RETAIL_SALE') {
+                    // Retail: debit Cash/UPI immediately (no outstanding)
+                    const primaryPayMethod = payments && payments[0] ? (payments[0].payment_method || 'CASH').toUpperCase() : 'CASH';
+                    const cashOrBank = (primaryPayMethod === 'BANK' || primaryPayMethod === 'UPI') ? bankAccount : cashAccount;
+                    if (cashOrBank) {
+                        txLines.push({ account_id: cashOrBank.id, debit_amount: effectiveTotal > 0 ? effectiveTotal : 0, credit_amount: 0,
+                            description: `Retail cash/UPI received — Inv #${finalInvoiceNumber}` });
+                    }
+                } else {
+                    // TAX / NON-TAX: debit Accounts Receivable
+                    if (arAccount) {
+                        txLines.push({ account_id: arAccount.id,
+                            debit_amount:  effectiveTotal > 0 ? effectiveTotal : 0,
+                            credit_amount: effectiveTotal < 0 ? Math.abs(effectiveTotal) : 0,
+                            description: `Sales to Customer #${customer_id}` });
+                    }
+                }
 
-            // Handle Payments in the same transaction
-            if (Array.isArray(payments) && payments.length > 0) {
-                const cashAccount = await getAccountByCode(companyId, '1000');
-                const bankAccount = await getAccountByCode(companyId, '1200');
+                // Credit Sales Revenue
+                if (salesAccount) {
+                    txLines.push({ account_id: salesAccount.id, debit_amount: 0, credit_amount: totalTaxable,
+                        description: `Sales Revenue — Inv #${finalInvoiceNumber}` });
+                }
 
-                for (const p of payments) {
-                    const pAmt = parseFloat(p.amount || 0);
-                    if (pAmt <= 0) continue;
-                    
-                    const pMethod = (p.payment_method || 'CASH').toUpperCase();
-                    const isBank = pMethod === 'BANK' || pMethod === 'UPI';
-                    const pAcc = isBank ? bankAccount : cashAccount;
-                    
-                    if (pAcc && arAccount) {
-                        txLines.push({ account_id: pAcc.id, debit_amount: pAmt, credit_amount: 0, description: `Payment received via ${pMethod}` });
-                        txLines.push({ account_id: arAccount.id, debit_amount: 0, credit_amount: pAmt, description: `Customer payment reduction - Inv #${finalInvoiceNumber}` });
+                // Debit Sales Returns
+                if (totalReturnTaxable > 0 && salesReturnAccount) {
+                    txLines.push({ account_id: salesReturnAccount.id, debit_amount: totalReturnTaxable, credit_amount: 0,
+                        description: `Sales Returns — Inv #${finalInvoiceNumber}` });
+                }
+
+                // Credit GST Payable (only for GST bill types)
+                if (netGST !== 0 && !isNonTax && taxAccount) {
+                    txLines.push({ account_id: taxAccount.id,
+                        debit_amount:  netGST < 0 ? Math.abs(netGST) : 0,
+                        credit_amount: netGST > 0 ? netGST : 0,
+                        description: `Output GST — Inv #${finalInvoiceNumber}` });
+                }
+
+                // Discount expense
+                if (discountAmt > 0) {
+                    const discountAccount = await getAccountByCode(companyId, '5100');
+                    if (discountAccount) {
+                        txLines.push({ account_id: discountAccount.id, debit_amount: discountAmt, credit_amount: 0,
+                            description: `Discount — Inv #${finalInvoiceNumber}` });
+                    }
+                }
+
+                // Payment receipts (non-retail only — retail already debited Cash above)
+                if (invoice_type !== 'RETAIL_SALE' && Array.isArray(payments) && payments.length > 0) {
+                    for (const p of payments) {
+                        const pAmt = parseFloat(p.amount || 0);
+                        if (pAmt <= 0) continue;
+                        const pMethod = (p.payment_method || 'CASH').toUpperCase();
+                        const isBank = pMethod === 'BANK' || pMethod === 'UPI';
+                        const pAcc = isBank ? bankAccount : cashAccount;
+                        if (pAcc && arAccount) {
+                            txLines.push({ account_id: pAcc.id, debit_amount: pAmt, credit_amount: 0,
+                                description: `Payment via ${pMethod}` });
+                            txLines.push({ account_id: arAccount.id, debit_amount: 0, credit_amount: pAmt,
+                                description: `Payment offset — Inv #${finalInvoiceNumber}` });
+                        }
                     }
                 }
             }
 
             if (txLines.length > 0) {
-                // Balance the transaction if needed due to precision
+                // Balance the transaction if precision causes tiny drift
                 const totalD = txLines.reduce((s, l) => s + (l.debit_amount || 0), 0);
                 const totalC = txLines.reduce((s, l) => s + (l.credit_amount || 0), 0);
                 if (Math.abs(totalD - totalC) > 0.01) {
-                    // Add small adjustment to Sales Revenue
                     const diff = totalD - totalC;
-                    txLines[1].credit_amount += diff; 
+                    // Add diff to first credit line
+                    const firstCredit = txLines.find(l => l.credit_amount > 0);
+                    if (firstCredit) firstCredit.credit_amount += diff;
                 }
 
                 await createTransactionInternal(client, {
@@ -789,7 +859,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             }
         }
 
-        if (customer_id) {
+        // Recompute customer balance only for bill types that create real outstanding
+        // NOMINAL_TAX and GIFTED_ITEM do not affect customer balance per spec
+        if (customer_id && !isNameOnly && !isGift) {
             await recomputeCustomerBalance(client, Number(customer_id), companyId);
         }
 
@@ -807,9 +879,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             });
         }
 
-        // === EARN POINTS FOR NON-TAX INVOICES AFTER PAYMENT ===
+        // === EARN POINTS — NON-TAX and RETAIL SALE (₹100 paid = 1 point) ===
         let ptsEarned = 0;
-        if (invoice_type === 'NON_TAX_INVOICE' && safeCustomerId && finalAmountPaid > 0 && bill_purpose !== 'name_only') {
+        const pointsEligible = ['NON_TAX_INVOICE', 'RETAIL_SALE'].includes(invoice_type);
+        if (pointsEligible && safeCustomerId && finalAmountPaid > 0 && bill_purpose !== 'name_only') {
             ptsEarned = await pointsService.earnPoints(
                 client,
                 safeCustomerId,

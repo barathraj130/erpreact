@@ -137,6 +137,67 @@ function resolveCode(stateName?: string | null, existingCode?: string | null): s
   return STATE_CODES[stateName.toUpperCase().trim()] || "";
 }
 
+/* ── Bill type master config ─────────────────────────────── */
+const BILL_TYPES = [
+  {
+    value: 'TAX_INVOICE',
+    label: 'Tax Invoice (GST)',
+    prefix: 'TAX',
+    color: '#3B82F6',
+    description: 'B2B with GST · GSTIN required · GSTR-1 · Customer ITC ✅',
+    requiresCustomer: true,
+    requiresGSTIN: true,
+    hasGST: true,
+    loyaltyPoints: false,
+  },
+  {
+    value: 'NOMINAL_TAX_INVOICE',
+    label: 'Nominal Tax Invoice (NSB)',
+    prefix: 'NSB',
+    color: '#8B5CF6',
+    description: 'Name-sake bill · GST liability only · No P&L · No cash movement',
+    requiresCustomer: true,
+    requiresGSTIN: true,
+    hasGST: true,
+    loyaltyPoints: false,
+  },
+  {
+    value: 'NON_TAX_INVOICE',
+    label: 'Non-Tax Invoice',
+    prefix: 'INV',
+    color: '#10B981',
+    description: 'No GST · Unregistered buyer · Points eligible ✅',
+    requiresCustomer: true,
+    requiresGSTIN: false,
+    hasGST: false,
+    loyaltyPoints: true,
+  },
+  {
+    value: 'RETAIL_SALE',
+    label: 'Retail Sale',
+    prefix: 'RET',
+    color: '#F59E0B',
+    description: 'Walk-in cash customer · No account needed · Paid immediately · Points eligible ✅',
+    requiresCustomer: false,
+    requiresGSTIN: false,
+    hasGST: true,
+    loyaltyPoints: true,
+  },
+  {
+    value: 'GIFTED_ITEM',
+    label: 'Gifted Item',
+    prefix: 'GFT',
+    color: '#EF4444',
+    description: 'Free goods / samples · Recorded as expense · Business pays GST · No payment',
+    requiresCustomer: false,
+    requiresGSTIN: false,
+    hasGST: true,
+    loyaltyPoints: false,
+  },
+] as const;
+
+type BillTypeValue = typeof BILL_TYPES[number]['value'];
+
 const CreateInvoice: React.FC = () => {
   const navigate = useNavigate();
   const { customers } = useUsers();
@@ -169,7 +230,7 @@ const CreateInvoice: React.FC = () => {
     placeOfSupply: "TAMILNADU",
     placeOfSupplyCode: "33",
   });
-  const [invoiceType, setInvoiceType] = useState<"TAX_INVOICE" | "NON_TAX_INVOICE" | "RETAIL_SALE" | "GIFTED_ITEM" | "NOMINAL_TAX_INVOICE">("TAX_INVOICE");
+  const [invoiceType, setInvoiceType] = useState<BillTypeValue>("TAX_INVOICE");
   const [paymentsList, setPaymentsList] = useState<{ amount: number; method: string; reference?: string }[]>([{ amount: 0, method: "CASH", reference: "" }]);
   const amountPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [paymentsList]);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
@@ -331,17 +392,21 @@ const CreateInvoice: React.FC = () => {
     const taxable = items.reduce((s, i) => s + i.qty * i.rate, 0);
     const returnTaxable = returnItems.reduce((s, i) => s + i.qty * i.rate, 0);
 
-    // Tax Invoice and Nominal Tax Invoice calculate GST
-    const isTax = invoiceType === "TAX_INVOICE" || invoiceType === "NOMINAL_TAX_INVOICE";
-    
-    const cgstAmt = isTax ? taxable * (gstState.cgst * 0.01) : 0;
-    const sgstAmt = isTax ? taxable * (gstState.sgst * 0.01) : 0;
-    const igstAmt = isTax ? taxable * (gstState.igst * 0.01) : 0;
+    // GST rules per bill type:
+    // NON_TAX_INVOICE → no GST (isNoGST)
+    // RETAIL_SALE     → GST from product rates (use invoice-level rate for preview)
+    // Others          → GST always applies using invoice-level gstState
+    const isNoGST = invoiceType === "NON_TAX_INVOICE";
+    const selectedBillType = BILL_TYPES.find(b => b.value === invoiceType);
+
+    const cgstAmt = isNoGST ? 0 : taxable * (gstState.cgst * 0.01);
+    const sgstAmt = isNoGST ? 0 : taxable * (gstState.sgst * 0.01);
+    const igstAmt = isNoGST ? 0 : taxable * (gstState.igst * 0.01);
     const totalGst = cgstAmt + sgstAmt + igstAmt;
 
-    const rcgstAmt = isTax ? returnTaxable * (gstState.cgst * 0.01) : 0;
-    const rsgstAmt = isTax ? returnTaxable * (gstState.sgst * 0.01) : 0;
-    const rigstAmt = isTax ? returnTaxable * (gstState.igst * 0.01) : 0;
+    const rcgstAmt = isNoGST ? 0 : returnTaxable * (gstState.cgst * 0.01);
+    const rsgstAmt = isNoGST ? 0 : returnTaxable * (gstState.sgst * 0.01);
+    const rigstAmt = isNoGST ? 0 : returnTaxable * (gstState.igst * 0.01);
     const totalReturnGst = rcgstAmt + rsgstAmt + rigstAmt;
     
     const saleTotal = taxable + totalGst;
@@ -387,8 +452,9 @@ const CreateInvoice: React.FC = () => {
 
   const saveInvoice = async () => {
     if (isSaving) return; // prevent double-submit
-    if (invoiceType !== "RETAIL_SALE" && !customerId) {
-        return alert("Please select a customer for this invoice type. Retail Sale allows anonymous customers.");
+    const billTypeCfg = BILL_TYPES.find(b => b.value === invoiceType);
+    if (billTypeCfg?.requiresCustomer && !customerId) {
+        return alert(`Please select a customer — ${billTypeCfg.label} requires a customer.`);
     }
 
     if (invoiceType !== "GIFTED_ITEM" && (amountPaid + discount) > totals.grandTotal) {
@@ -560,16 +626,40 @@ const CreateInvoice: React.FC = () => {
                 <div style={{ marginTop: '8px' }}>
                   <CustomSelect
                     value={invoiceType}
-                    onChange={(e: any) => setInvoiceType(e.target.value as any)}
+                    onChange={(e: any) => setInvoiceType(e.target.value as BillTypeValue)}
                     disableSearch
                   >
-                    <option value="TAX_INVOICE">TAX INVOICE (GST)</option>
-                    <option value="NOMINAL_TAX_INVOICE">NOMINAL TAX INVOICE</option>
-                    <option value="NON_TAX_INVOICE">NON-TAX INVOICE</option>
-                    <option value="RETAIL_SALE">RETAIL SALE (No Customer Req.)</option>
-                    <option value="GIFTED_ITEM">GIFTED ITEM</option>
+                    {BILL_TYPES.map(bt => (
+                      <option key={bt.value} value={bt.value}>{bt.label}</option>
+                    ))}
                   </CustomSelect>
                 </div>
+                {/* Description chip below selector */}
+                {selectedBillType && (
+                  <div style={{
+                    marginTop: '6px',
+                    padding: '7px 12px',
+                    background: `${selectedBillType.color}12`,
+                    border: `1px solid ${selectedBillType.color}40`,
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    color: selectedBillType.color,
+                    fontWeight: 600,
+                    lineHeight: 1.5,
+                  }}>
+                    <span style={{
+                      display: 'inline-block',
+                      background: selectedBillType.color,
+                      color: '#fff',
+                      borderRadius: '4px',
+                      padding: '1px 6px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      marginRight: '6px',
+                    }}>{selectedBillType.prefix}</span>
+                    {selectedBillType.description}
+                  </div>
+                )}
               </div>
               
               <div className="ci-field">
@@ -628,7 +718,9 @@ const CreateInvoice: React.FC = () => {
 
           {/* Customer */}
           <div className="ci-card">
-            <div className="ci-card-title">Customer {invoiceType === "RETAIL_SALE" ? "(Optional)" : "*"}</div>
+            <div className="ci-card-title">
+              Customer {(BILL_TYPES.find(b => b.value === invoiceType)?.requiresCustomer) ? "*" : "(Optional)"}
+            </div>
             <div className="ci-field">
               <div style={{ marginTop: "8px" }}>
                 <CustomSelect

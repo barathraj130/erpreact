@@ -374,8 +374,12 @@ const InvoiceDetails: React.FC = () => {
   );
 
   // ── compute ──────────────────────────────────────────────────────────────────
-  // NON_TAX, RETAIL_SALE and GIFTED_ITEM all use the simple bill format — no GST breakdown
-  const isNonTax = ["NON_TAX_INVOICE", "NON-TAX", "RETAIL_SALE", "GIFTED_ITEM"].includes(data.invoice_type);
+  // Per spec:
+  //   NON_TAX_INVOICE  → isNonTax=true  (no GST columns)
+  //   RETAIL_SALE      → isNonTax=false (show GST if any, optional per product)
+  //   GIFTED_ITEM      → isNonTax=false (business pays deemed supply GST)
+  //   TAX / NOMINAL    → isNonTax=false (always show GST)
+  const isNonTax = ["NON_TAX_INVOICE", "NON-TAX"].includes(data.invoice_type);
 
   const invoiceTypeLabel =
     data.invoice_type === "TAX_INVOICE"         ? "TAX INVOICE" :
