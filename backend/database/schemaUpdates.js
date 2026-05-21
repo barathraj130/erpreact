@@ -714,31 +714,17 @@ export const runSchemaUpdates = async () => {
             )
         `).catch((e) => { console.warn('[schemaUpdates] invoice_number_series create skipped:', e.message); });
 
-        // ── Invoice table: unique constraint scoped to (company, type, number) ─
-        // Invoice numbers are simple integers (1, 2, 3…) per bill type.
-        // TAX invoice "1" must NOT conflict with RETAIL SALE "1" — they are different types.
-        // So uniqueness is (company_id, invoice_type, invoice_number).
-        await db.query(`
-            DO $$
-            BEGIN
-                -- Drop every old invoice_number unique constraint (any name)
-                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_invoice_number_key') THEN
-                    ALTER TABLE invoices DROP CONSTRAINT invoices_invoice_number_key;
-                END IF;
-                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_company_invoice_number_key') THEN
-                    ALTER TABLE invoices DROP CONSTRAINT invoices_company_invoice_number_key;
-                END IF;
-                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'invoices_company_type_invoice_number_key') THEN
-                    ALTER TABLE invoices DROP CONSTRAINT invoices_company_type_invoice_number_key;
-                END IF;
-            END $$;
-        `).catch((e) => { console.warn('[schemaUpdates] old invoice_number constraint drop skipped:', e.message); });
-        // Drop all old invoice_number unique indexes (any name from previous attempts)
+        // ── Drop ALL old unique constraints on invoice_number (any name) ─────────
+        // These block creating invoice #1 if any other invoice ever had number "1".
+        // Use DROP CONSTRAINT IF EXISTS (each in its own query so one failure doesn't block others).
+        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(() => {});
+        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(() => {});
+        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(() => {});
         await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
         await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
         // Unique index on series_number (not invoice_number).
-        // series_number is only > 0 on invoices from the new auto-generate system.
-        // Old invoices have series_number = 0/NULL and are excluded → no conflicts with history.
+        // series_number is only > 0 on invoices from the NEW auto-generate system.
+        // Old invoices have series_number = 0/NULL → excluded → no conflicts with old data.
         await db.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_company_type_series_num
               ON invoices (company_id, invoice_type, series_number)

@@ -122,7 +122,16 @@ router.post("/full-reset", authMiddleware, async (req, res) => {
         await client.query(`UPDATE branch_inventory SET current_stock = 0 WHERE company_id = $1`, [companyId]).catch(() => {});
         await client.query(`UPDATE products SET current_stock = 0 WHERE company_id = $1`, [companyId]).catch(() => {});
 
-        // 4. Reset the invoices table sequence so new IDs start from 1
+        // 4. Drop the old global unique constraint on invoice_number — this is the
+        //    root cause of "duplicate key violates unique constraint" errors.
+        //    Each statement is separate so one failure doesn't abort the others.
+        await client.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(() => {});
+        await client.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(() => {});
+        await client.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(() => {});
+        await client.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
+        await client.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
+
+        // 5. Reset the invoices table sequence so new IDs start from 1
         //    (only if this company was the only one using the table — safe for single-tenant)
         const remaining = await client.query(`SELECT COUNT(*) AS cnt FROM invoices`);
         if (Number(remaining.rows[0].cnt) === 0) {
