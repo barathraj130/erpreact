@@ -260,35 +260,47 @@ export const recordLoanRepayment = async (user, paymentData) => {
             }
         }
 
-        // 3. Double-Entry
-        const cashAcc = await getAccountByCode(companyId, '1000');
-        const loanAcc = await getAccountByCode(companyId, '2000');
-        const interestAcc = await getAccountByCode(companyId, '5000');
+        // 3. Double-Entry (best-effort — SAVEPOINT so ledger insert doesn't block repayment)
+        await client.query(`SAVEPOINT sp_loan_accounting`);
+        try {
+            const cashAcc = await getAccountByCode(companyId, '1000');
+            const loanAcc = await getAccountByCode(companyId, '2000');
+            const interestAcc = await getAccountByCode(companyId, '5000');
 
-        if (cashAcc && loanAcc) {
-            const remainder = Math.max(0, total - interestComp - principalComp);
-            const txLines = [];
-            if (interestComp > 0 && interestAcc) {
-                txLines.push({ account_id: interestAcc.id, debit_amount: interestComp, credit_amount: 0, description: 'Interest expense' });
-            }
-            if (principalComp > 0) {
-                txLines.push({ account_id: loanAcc.id, debit_amount: principalComp, credit_amount: 0, description: 'Principal repayment' });
-            }
-            if (remainder > 0) {
-                txLines.push({ account_id: loanAcc.id, debit_amount: remainder, credit_amount: 0, description: 'Loan payment (other)' });
-            }
-            txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: total, description: 'Payment from bank/cash' });
+            if (cashAcc && loanAcc) {
+                const remainder = Math.max(0, total - interestComp - principalComp);
+                const txLines = [];
 
-            await createTransactionInternal(client, {
-                company_id: companyId,
-                branch_id: branchId,
-                transaction_date: paymentData.payment_date || new Date(),
-                reference_type: 'LOAN_REPAYMENT',
-                reference_id: payment.id,
-                description: `Loan repayment for loan ID: ${paymentData.loan_id}`,
-                created_by: user.id,
-                amount: total
-            }, txLines);
+                if (interestComp > 0) {
+                    // Use interest expense account if exists, otherwise debit loan account
+                    const intAccId = interestAcc ? interestAcc.id : loanAcc.id;
+                    txLines.push({ account_id: intAccId, debit_amount: interestComp, credit_amount: 0, description: 'Interest expense' });
+                }
+                if (principalComp > 0) {
+                    txLines.push({ account_id: loanAcc.id, debit_amount: principalComp, credit_amount: 0, description: 'Principal repayment' });
+                }
+                if (remainder > 0) {
+                    txLines.push({ account_id: loanAcc.id, debit_amount: remainder, credit_amount: 0, description: 'Loan payment (other)' });
+                }
+                // Credit side: cash/bank paid out
+                txLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: total, description: 'Payment from bank/cash' });
+
+                await createTransactionInternal(client, {
+                    company_id: companyId,
+                    branch_id: branchId,
+                    transaction_date: paymentData.payment_date || new Date(),
+                    reference_type: 'LOAN_REPAYMENT',
+                    reference_id: payment.id,
+                    description: `Loan repayment for loan ID: ${paymentData.loan_id}`,
+                    created_by: user.id,
+                    amount: total
+                }, txLines);
+            }
+            await client.query(`RELEASE SAVEPOINT sp_loan_accounting`);
+        } catch (accErr) {
+            console.warn('[loan repayment] accounting entry skipped:', accErr.message);
+            await client.query(`ROLLBACK TO SAVEPOINT sp_loan_accounting`);
+            await client.query(`RELEASE SAVEPOINT sp_loan_accounting`);
         }
 
         // 3. Update cash/bank ledger — supports split (cash_amount + bank_amount) or single mode
