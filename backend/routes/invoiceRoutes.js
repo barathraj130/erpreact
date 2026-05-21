@@ -93,6 +93,56 @@ async function generateInvoiceNumber(client, type, companyId, branchId, billPurp
 }
 
 /* ============================================================
+   0a. FULL RESET — delete ALL invoices & related data, reset sequences
+   POST /invoice/full-reset   (admin/superadmin only)
+============================================================ */
+router.post("/full-reset", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const role = req.user.role;
+    if (role !== 'admin' && role !== 'superadmin') {
+        return res.status(403).json({ error: "Admin only." });
+    }
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        // 1. Delete all invoice-related data for this company
+        await client.query(`DELETE FROM invoice_payments    WHERE invoice_id IN (SELECT id FROM invoices WHERE company_id = $1)`, [companyId]);
+        await client.query(`DELETE FROM invoice_line_items  WHERE invoice_id IN (SELECT id FROM invoices WHERE company_id = $1)`, [companyId]);
+        await client.query(`DELETE FROM customer_ledger     WHERE company_id = $1`, [companyId]);
+        await client.query(`DELETE FROM customer_points     WHERE customer_id IN (SELECT id FROM users WHERE active_company_id = $1)`, [companyId]).catch(() => {});
+        await client.query(`DELETE FROM inventory_movements WHERE company_id = $1 AND reference_type = 'INVOICE'`, [companyId]).catch(() => {});
+        await client.query(`DELETE FROM invoices            WHERE company_id = $1`, [companyId]);
+
+        // 2. Reset invoice_number_series for this company
+        await client.query(`DELETE FROM invoice_number_series WHERE company_id = $1`, [companyId]).catch(() => {});
+
+        // 3. Restore stock to 0 for all products (since we wiped all invoice movements)
+        await client.query(`UPDATE branch_inventory SET current_stock = 0 WHERE company_id = $1`, [companyId]).catch(() => {});
+        await client.query(`UPDATE products SET current_stock = 0 WHERE company_id = $1`, [companyId]).catch(() => {});
+
+        // 4. Reset the invoices table sequence so new IDs start from 1
+        //    (only if this company was the only one using the table — safe for single-tenant)
+        const remaining = await client.query(`SELECT COUNT(*) AS cnt FROM invoices`);
+        if (Number(remaining.rows[0].cnt) === 0) {
+            await client.query(`ALTER SEQUENCE invoices_id_seq RESTART WITH 1`).catch(() => {});
+            await client.query(`ALTER SEQUENCE invoice_line_items_id_seq RESTART WITH 1`).catch(() => {});
+            await client.query(`ALTER SEQUENCE invoice_payments_id_seq RESTART WITH 1`).catch(() => {});
+        }
+
+        await client.query("COMMIT");
+        res.json({ success: true, message: "All invoice data deleted. IDs and series reset to 1. Start creating fresh invoices." });
+    } catch (err) {
+        if (client) await client.query("ROLLBACK");
+        console.error("[full-reset] Error:", err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+/* ============================================================
    0. STOCK REPAIR — re-run deductions for invoices missing movements
    POST /invoice/repair-stock   (admin only, idempotent)
 ============================================================ */
