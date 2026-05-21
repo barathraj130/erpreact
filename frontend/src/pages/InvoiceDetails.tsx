@@ -63,6 +63,14 @@ function buildPrintHTML(p: {
   const sgstRate = totalTaxable > 0 ? ((totalSGST / totalTaxable) * 100).toFixed(2) : "0.00";
   const igstRate = totalTaxable > 0 ? ((totalIGST / totalTaxable) * 100).toFixed(2) : "0.00";
 
+  const invoiceTypeLabel =
+    data.invoice_type === "TAX_INVOICE"         ? "TAX INVOICE" :
+    data.invoice_type === "NOMINAL_TAX_INVOICE" ? "NOMINAL TAX INVOICE" :
+    data.invoice_type === "NON_TAX_INVOICE"     ? "INVOICE" :
+    data.invoice_type === "RETAIL_SALE"         ? "RETAIL SALE" :
+    data.invoice_type === "GIFTED_ITEM"         ? "GIFT VOUCHER" :
+    "INVOICE";
+
   const EMPTY_ROWS = 15;
   const emptyCount = Math.max(0, EMPTY_ROWS - rows.length);
 
@@ -96,14 +104,6 @@ function buildPrintHTML(p: {
     <tr style="height:18px">
       ${Array(16).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
     </tr>`).join("");
-
-  const invoiceTypeLabel =
-    data.invoice_type === "TAX_INVOICE"         ? "TAX INVOICE" :
-    data.invoice_type === "NOMINAL_TAX_INVOICE" ? "NOMINAL TAX INVOICE" :
-    data.invoice_type === "NON_TAX_INVOICE"     ? "INVOICE" :
-    data.invoice_type === "RETAIL_SALE"         ? "RETAIL SALE" :
-    data.invoice_type === "GIFTED_ITEM"         ? "GIFT VOUCHER" :
-    "INVOICE";
 
   return `<!DOCTYPE html>
 <html>
@@ -376,6 +376,14 @@ const InvoiceDetails: React.FC = () => {
   // ── compute ──────────────────────────────────────────────────────────────────
   // NON_TAX, RETAIL_SALE and GIFTED_ITEM all use the simple bill format — no GST breakdown
   const isNonTax = ["NON_TAX_INVOICE", "NON-TAX", "RETAIL_SALE", "GIFTED_ITEM"].includes(data.invoice_type);
+
+  const invoiceTypeLabel =
+    data.invoice_type === "TAX_INVOICE"         ? "TAX INVOICE" :
+    data.invoice_type === "NOMINAL_TAX_INVOICE" ? "NOMINAL TAX INVOICE" :
+    data.invoice_type === "NON_TAX_INVOICE"     ? "INVOICE" :
+    data.invoice_type === "RETAIL_SALE"         ? "RETAIL SALE" :
+    data.invoice_type === "GIFTED_ITEM"         ? "GIFT VOUCHER" :
+    "INVOICE";
   const isSameState = (data.company_state_code || "33") === (data.customer_state_code || data.state_code || "33");
   const items = Array.isArray(data.items) ? data.items : [];
 
