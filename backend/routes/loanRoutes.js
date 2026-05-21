@@ -140,7 +140,7 @@ router.post('/repayment', authMiddleware, async (req, res) => {
         const repayment = await financeService.recordLoanRepayment(req.user, req.body);
         res.status(201).json(repayment);
 
-        // Fire n8n webhook (non-blocking, after response sent)
+        // ── Non-blocking post-response notifications ────────────────────────
         try {
             const companyId = req.user.active_company_id;
             const loanInfo = await db.pgGet(
@@ -161,8 +161,22 @@ router.post('/repayment', authMiddleware, async (req, res) => {
                 due_date:     req.body.payment_date,
                 outstanding:  loanInfo?.outstanding ?? 0,
             });
+
+            // WhatsApp to owner
+            const { notifyOwner } = await import('../utils/whatsapp.js');
+            const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+            const pType = (req.body.payment_type || 'EMI').toUpperCase();
+            await notifyOwner(
+`🏦 Loan Payment Done!
+
+Lender:      ${loanInfo?.lender_name || 'Unknown'}
+Amount:      ₹${fmt(req.body.total_amount)}
+Type:        ${pType}
+Outstanding: ₹${fmt(loanInfo?.outstanding ?? 0)}
+Date:        ${req.body.payment_date || new Date().toLocaleDateString('en-IN')}`);
+
         } catch (e) {
-            console.log('N8N loan trigger failed silently:', e.message);
+            console.log('Post-loan notification failed silently:', e.message);
         }
     } catch (err) {
         res.status(500).json({ error: err.message });

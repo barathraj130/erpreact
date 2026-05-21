@@ -173,13 +173,22 @@ router.get('/:id', authMiddleware, async (req, res) => {
  * ✏️ UPDATE SUPPLIER
  */
 router.put('/:id', authMiddleware, async (req, res) => {
-    const { name, phone, email, address, state } = req.body;
+    const { name, phone, email, address, state, gstin } = req.body;
     try {
-        const sql = `UPDATE suppliers SET name=$1, phone=$2, email=$3, address=$4, state=$5, updated_at=NOW() WHERE id=$6 AND company_id=$7 RETURNING *`;
-        const updated = await db.pgGet(sql, [name, phone, email, address, state, req.params.id, req.user.active_company_id]);
+        const sql = `
+            UPDATE suppliers
+            SET name=$1, phone=$2, email=$3, address=$4, state=$5, gstin=$6, updated_at=NOW()
+            WHERE id=$7 AND company_id=$8
+            RETURNING *`;
+        const updated = await db.pgGet(sql, [
+            name, phone, email, address, state, gstin || null,
+            req.params.id, req.user.active_company_id
+        ]);
+        if (!updated) return res.status(404).json({ error: 'Supplier not found' });
         res.json(updated);
     } catch (err) {
-        res.status(500).json({ error: "Update failed" });
+        console.error('[supplier PUT]', err.message);
+        res.status(500).json({ error: 'Update failed: ' + err.message });
     }
 });
 

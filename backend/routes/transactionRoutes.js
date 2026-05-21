@@ -43,10 +43,11 @@ router.get('/', authMiddleware, async (req, res) => {
     const blFilter  = applyAlias(rawFilter, 'bl');
 
     try {
-        // ── Read cash_ledger + bank_ledger using ONLY base-schema columns ─────
-        // We deliberately avoid reference_id (added via schemaUpdates, may not
-        // exist in production) and any JOIN to other tables, so this query
-        // works on every deployment regardless of migration state.
+        // ── Cash + bank ledger enriched with party names ──────────────────
+        // reference_id column exists on both tables (added via schemaUpdates).
+        // invoice_id column also exists on both tables.
+        // We LEFT JOIN to party tables so display_party is populated for
+        // invoice payments, purchase payments, salary advances and loan repayments.
         const sql = `
             SELECT
                 ('CL-' || cl.id::text)  AS id,
@@ -56,12 +57,35 @@ router.get('/', authMiddleware, async (req, res) => {
                 cl.amount,
                 'CASH'                  AS mode,
                 cl.source               AS description,
-                'in'                    AS ledger_direction,
-                NULL                    AS display_party,
-                NULL                    AS party_name,
+                cl.direction            AS ledger_direction,
+                COALESCE(
+                    u.username,
+                    s.name,
+                    emp.name,
+                    ln.lender_name
+                )                       AS display_party,
+                COALESCE(
+                    u.username,
+                    s.name,
+                    emp.name,
+                    ln.lender_name
+                )                       AS party_name,
                 NULL                    AS proof_url,
                 cl.created_at
             FROM cash_ledger cl
+            -- invoice payment → customer
+            LEFT JOIN invoices      inv ON cl.invoice_id  = inv.id
+            LEFT JOIN users         u   ON inv.customer_id = u.id
+            -- purchase bill payment → supplier
+            LEFT JOIN purchase_bills pb  ON cl.source ILIKE '%purchase%' AND cl.reference_id = pb.id
+            LEFT JOIN suppliers     s    ON pb.supplier_id = s.id
+            -- salary advance → employee
+            LEFT JOIN salary_advances sa  ON cl.source = 'salary_advance' AND cl.reference_id = sa.id
+            LEFT JOIN employees     emp   ON sa.employee_id = emp.id
+            -- loan repayment → lender
+            LEFT JOIN loan_payments lp    ON cl.source ILIKE '%loan%' AND cl.reference_id = lp.id
+            LEFT JOIN loans         lo    ON lp.loan_id = lo.id
+            LEFT JOIN lenders       ln    ON lo.lender_id = ln.id
             WHERE cl.company_id = $1 AND ${clFilter}
 
             UNION ALL
@@ -75,11 +99,32 @@ router.get('/', authMiddleware, async (req, res) => {
                 'BANK'                               AS mode,
                 COALESCE(bl.bank_name, bl.source)    AS description,
                 bl.direction                         AS ledger_direction,
-                NULL                                 AS display_party,
-                NULL                                 AS party_name,
+                COALESCE(
+                    u2.username,
+                    s2.name,
+                    emp2.name,
+                    ln2.lender_name,
+                    bl.bank_name
+                )                                    AS display_party,
+                COALESCE(
+                    u2.username,
+                    s2.name,
+                    emp2.name,
+                    ln2.lender_name,
+                    bl.bank_name
+                )                                    AS party_name,
                 NULL                                 AS proof_url,
                 bl.created_at
             FROM bank_ledger bl
+            LEFT JOIN invoices      inv2 ON bl.invoice_id   = inv2.id
+            LEFT JOIN users         u2   ON inv2.customer_id = u2.id
+            LEFT JOIN purchase_bills pb2  ON bl.source ILIKE '%purchase%' AND bl.reference_id = pb2.id
+            LEFT JOIN suppliers     s2    ON pb2.supplier_id = s2.id
+            LEFT JOIN salary_advances sa2  ON bl.source = 'salary_advance' AND bl.reference_id = sa2.id
+            LEFT JOIN employees     emp2   ON sa2.employee_id = emp2.id
+            LEFT JOIN loan_payments lp2    ON bl.source ILIKE '%loan%' AND bl.reference_id = lp2.id
+            LEFT JOIN loans         lo2    ON lp2.loan_id = lo2.id
+            LEFT JOIN lenders       ln2    ON lo2.lender_id = ln2.id
             WHERE bl.company_id = $1 AND ${blFilter}
 
             ORDER BY date DESC, created_at DESC

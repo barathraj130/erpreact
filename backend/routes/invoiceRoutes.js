@@ -910,16 +910,39 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             points_redeemed: pointsRedeemed
         });
 
-        // Fire n8n webhook (non-blocking, after response sent)
+        // ── Non-blocking post-commit notifications ─────────────────────────
+        const custPhone  = customer.rows[0]?.phone || '';
+        const custName   = customer.rows[0]?.username || 'Customer';
+        const balAmt     = Math.max(0, netInvoiceAmount - finalAmountPaid);
+
+        // 1. N8N webhook
         triggerN8N('invoice-created', {
-            customer_name:  customer.rows[0]?.username || 'Unknown',
-            customer_phone: customer.rows[0]?.phone || '',
+            customer_name:  custName,
+            customer_phone: custPhone,
             invoice_number: finalInvoiceNumber,
             total_amount:   netInvoiceAmount,
             paid_amount:    finalAmountPaid,
-            balance_amount: Math.max(0, netInvoiceAmount - finalAmountPaid),
+            balance_amount: balAmt,
             points_earned:  ptsEarned,
         });
+
+        // 2. WhatsApp to customer
+        const { sendWhatsApp } = await import('../utils/whatsapp.js');
+        if (custPhone) {
+            const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+            await sendWhatsApp(custPhone,
+`Dear ${custName},
+
+✅ Invoice ${finalInvoiceNumber} created!
+
+💰 Total:   ₹${fmt(netInvoiceAmount)}
+✅ Paid:    ₹${fmt(finalAmountPaid)}
+⏳ Balance: ₹${fmt(balAmt)}${ptsEarned > 0 ? '\n\n💎 Points Earned: +' + ptsEarned + ' pts' : ''}
+
+Thank you for your business!
+JBS Knit Wear, Tiruppur
+📞 8148232205`);
+        }
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("❌ Critical Invoice Error:", err.message);

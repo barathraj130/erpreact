@@ -635,14 +635,56 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             inventory_updated: inventoryUpdated
         });
 
-        // Fire n8n webhook (non-blocking, after response sent)
+        // ── Non-blocking post-commit notifications ─────────────────────────
+        const sName = supplierRes.rows[0]?.name || supplier_name || 'Unknown';
+
+        // 1. N8N webhook
         triggerN8N('erp-alert', {
-            event_type:     'purchase_received',
-            supplier_name:  supplierRes.rows[0]?.name || supplier_name || 'Unknown',
-            amount:         netAmount,
-            bill_number:    purchaseNumber,
-            items_count:    Array.isArray(items) ? items.length : 0,
+            event_type:    'purchase_received',
+            supplier_name: sName,
+            amount:        netAmount,
+            bill_number:   purchaseNumber,
+            items_count:   Array.isArray(items) ? items.length : 0,
         });
+
+        // 2. WhatsApp to owner
+        const { notifyOwner, sendWhatsApp: _wa } = await import('../utils/whatsapp.js');
+        await notifyOwner(
+`🛒 Purchase Received!
+
+Supplier: ${sName}
+Bill No:  ${purchaseNumber}
+Amount:   ₹${Number(netAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+Items:    ${Array.isArray(items) ? items.length : 0} products
+Date:     ${new Date().toLocaleDateString('en-IN')}`);
+
+        // 3. Low-stock alerts (check after every purchase)
+        try {
+            const lowStock = await db.pgAll(`
+                SELECT p.name, i.quantity, p.min_stock_level,
+                       b.name as branch_name
+                FROM inventory i
+                JOIN products  p ON p.id = i.product_id
+                JOIN branches  b ON b.id = i.branch_id
+                WHERE i.company_id = $1
+                  AND p.min_stock_level > 0
+                  AND i.quantity <= p.min_stock_level
+            `, [companyId]);
+
+            for (const item of lowStock) {
+                await notifyOwner(
+`⚠️ LOW STOCK ALERT!
+
+Product: ${item.name}
+Current: ${item.quantity} units
+Minimum: ${item.min_stock_level} units
+Branch:  ${item.branch_name}
+
+Please restock immediately!`);
+            }
+        } catch (lsErr) {
+            console.warn('[low-stock check]', lsErr.message);
+        }
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Purchase creation error:", err);

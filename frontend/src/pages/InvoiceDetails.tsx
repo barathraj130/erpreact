@@ -63,12 +63,11 @@ function buildPrintHTML(p: {
   const sgstRate = totalTaxable > 0 ? ((totalSGST / totalTaxable) * 100).toFixed(2) : "0.00";
   const igstRate = totalTaxable > 0 ? ((totalIGST / totalTaxable) * 100).toFixed(2) : "0.00";
 
+  // Print label: only TAX_INVOICE shows "TAX INVOICE" (GST compliance).
+  // All others print as plain "INVOICE" — no type label on print.
   const invoiceTypeLabel =
     data.invoice_type === "TAX_INVOICE"         ? "TAX INVOICE" :
-    data.invoice_type === "NOMINAL_TAX_INVOICE" ? "NOMINAL TAX INVOICE" :
-    data.invoice_type === "NON_TAX_INVOICE"     ? "INVOICE" :
-    data.invoice_type === "RETAIL_SALE"         ? "RETAIL SALE" :
-    data.invoice_type === "GIFTED_ITEM"         ? "GIFT VOUCHER" :
+    data.invoice_type === "NOMINAL_TAX_INVOICE" ? "TAX INVOICE" :
     "INVOICE";
 
   const EMPTY_ROWS = 15;
@@ -79,6 +78,19 @@ function buildPrintHTML(p: {
     const itemCGSTRate = (!isNonTax && isSameState) ? (r.gstRate / 2) : 0;
     const itemSGSTRate = (!isNonTax && isSameState) ? (r.gstRate / 2) : 0;
     const itemIGSTRate = (!isNonTax && !isSameState) ? r.gstRate : 0;
+    if (isNonTax) {
+      return `
+        <tr style="font-size:10px">
+          <td style="text-align:center;border:1px solid #000;padding:2px 3px">${i + 1}</td>
+          <td style="text-align:left;border:1px solid #000;padding:2px 4px;font-weight:500">${r.name}</td>
+          <td style="text-align:center;border:1px solid #000;padding:2px 3px">${r.hsn}</td>
+          <td style="text-align:center;border:1px solid #000;padding:2px 3px">${r.uom || "Pcs"}</td>
+          <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.qty)}</td>
+          <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.rate)}</td>
+          <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.taxable)}</td>
+          <td style="text-align:right;border:1px solid #000;padding:2px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
+        </tr>`;
+    }
     return `
       <tr style="font-size:10px">
         <td style="text-align:center;border:1px solid #000;padding:2px 3px">${i + 1}</td>
@@ -91,18 +103,19 @@ function buildPrintHTML(p: {
         <td style="text-align:right;border:1px solid #000;padding:2px 4px">${discount || ""}</td>
         <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.taxable)}</td>
         <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemCGSTRate || 0}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(isNonTax ? 0 : r.cgst)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.cgst)}</td>
         <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemSGSTRate || 0}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(isNonTax ? 0 : r.sgst)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.sgst)}</td>
         <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemIGSTRate || 0}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(isNonTax ? 0 : r.igst)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.igst)}</td>
         <td style="text-align:right;border:1px solid #000;padding:2px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
       </tr>`;
   }).join("");
 
+  const colCount = isNonTax ? 8 : 16;
   const emptyRowsHTML = Array(emptyCount).fill(`
     <tr style="height:18px">
-      ${Array(16).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
+      ${Array(colCount).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
     </tr>`).join("");
 
   return `<!DOCTYPE html>
@@ -183,6 +196,17 @@ function buildPrintHTML(p: {
   <!-- ══ ITEMS TABLE ══ -->
   <table style="width:100%;border-collapse:collapse;font-size:10px">
     <thead>
+      ${isNonTax ? `
+      <tr style="background:#f0f0f0">
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:28px;font-size:9px">Sr.<br>No</th>
+        <th style="border:1px solid #000;padding:3px 4px;text-align:center;font-size:9px">Name of Product / Service</th>
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:52px;font-size:9px">HSN ACS</th>
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:28px;font-size:9px">Uom</th>
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:50px;font-size:9px">Qty</th>
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:60px;font-size:9px">Rate</th>
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:70px;font-size:9px">Amount</th>
+        <th style="border:1px solid #000;padding:3px 2px;text-align:center;width:80px;font-size:9px">Total</th>
+      </tr>` : `
       <tr style="background:#f0f0f0">
         <th rowspan="2" style="border:1px solid #000;padding:3px 2px;text-align:center;width:28px;font-size:9px">Sr.<br>No</th>
         <th rowspan="2" style="border:1px solid #000;padding:3px 4px;text-align:center;font-size:9px">Name of Product / Service</th>
@@ -205,11 +229,19 @@ function buildPrintHTML(p: {
         <th style="border:1px solid #000;padding:2px;text-align:center;width:48px;font-size:9px">Amount</th>
         <th style="border:1px solid #000;padding:2px;text-align:center;width:34px;font-size:9px">Rate</th>
         <th style="border:1px solid #000;padding:2px;text-align:center;width:48px;font-size:9px">Amount</th>
-      </tr>
+      </tr>`}
     </thead>
     <tbody>
       ${itemRowsHTML}
       ${emptyRowsHTML}
+      ${isNonTax ? `
+      <tr style="font-weight:700;background:#f5f5f5;font-size:10px">
+        <td colspan="4" style="border:1px solid #000;padding:3px 4px;text-align:center">Total</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalQty)}</td>
+        <td style="border:1px solid #000;padding:3px 4px"></td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalTaxable)}</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right;font-weight:700">${fmtInt(grandTotal)}</td>
+      </tr>` : `
       <tr style="font-weight:700;background:#f5f5f5;font-size:10px">
         <td colspan="4" style="border:1px solid #000;padding:3px 4px;text-align:center">Total</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalQty)}</td>
@@ -217,14 +249,14 @@ function buildPrintHTML(p: {
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalTaxable)}</td>
         <td style="border:1px solid #000;padding:3px 4px"></td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalTaxable)}</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : 0}</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : fmtInt(totalCGST)}</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : 0}</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : fmtInt(totalSGST)}</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">0</td>
-        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${isNonTax ? 0 : fmtInt(totalIGST)}</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">—</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalCGST)}</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">—</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalSGST)}</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">—</td>
+        <td style="border:1px solid #000;padding:3px 4px;text-align:right">${fmtInt(totalIGST)}</td>
         <td style="border:1px solid #000;padding:3px 4px;text-align:right;font-weight:700">${fmtInt(grandTotal)}</td>
-      </tr>
+      </tr>`}
     </tbody>
   </table>
 

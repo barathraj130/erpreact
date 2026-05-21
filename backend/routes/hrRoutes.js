@@ -93,6 +93,25 @@ router.post("/advance", authMiddleware, async (req, res) => {
 
         await client.query('COMMIT');
         res.json({ success: true, message: "Advance recorded and ledger updated" });
+
+        // WhatsApp alert to owner (non-blocking)
+        try {
+            const { notifyOwner } = await import('../utils/whatsapp.js');
+            const emp = await db.pgGet(`SELECT name FROM employees WHERE id = $1`, [employee_id]);
+            const pendingRow = await db.pgGet(
+                `SELECT COALESCE(SUM(current_balance), 0) AS total FROM salary_advances WHERE employee_id = $1 AND status = 'ACTIVE'`,
+                [employee_id]
+            );
+            await notifyOwner(
+`💸 Advance Given!
+
+Employee: ${emp?.name || employee_id}
+Amount:   ₹${advanceAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+Purpose:  ${reason || 'Not specified'}
+Mode:     ${pMethod}
+Pending:  ₹${Number(pendingRow?.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+        } catch (_) {}
+
     } catch (err) {
         if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
         console.error('[advance]', err.message);
@@ -376,7 +395,8 @@ router.post("/payroll/finalize", authMiddleware, async (req, res) => {
         await client.query('COMMIT');
         res.json({ success: true, message: `Payroll finalized` });
 
-        // Fire n8n webhook per employee (non-blocking, after response sent)
+        // Fire n8n webhook + WhatsApp per employee (non-blocking)
+        const { notifyOwner } = await import('../utils/whatsapp.js').catch(() => ({ notifyOwner: async () => {} }));
         for (const item of payroll_data) {
             triggerN8N('erp-alert', {
                 event_type:    'salary_processed',
@@ -386,6 +406,18 @@ router.post("/payroll/finalize", authMiddleware, async (req, res) => {
                 payment_mode:  item.payment_mode || 'CASH',
             });
         }
+        // Single summary WhatsApp to owner
+        try {
+            const totalNet = payroll_data.reduce((s, i) => s + (Number(i.net_pay) || 0), 0);
+            const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+            await notifyOwner(
+`💰 Payroll Processed!
+
+Month:     ${month_year}
+Employees: ${payroll_data.length}
+Total Net: ₹${fmt(totalNet)}
+Status:    PAID ✅`);
+        } catch (_) {}
     } catch (err) {
         if (client) await client.query('ROLLBACK');
         console.error(err);
