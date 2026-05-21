@@ -91,6 +91,14 @@ export const runSchemaUpdates = async () => {
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_discount  NUMERIC(10,2)  DEFAULT 0`).catch(() => {});
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix    VARCHAR(10)`).catch(() => {});
     await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_number    INTEGER        DEFAULT 0`).catch(() => {});
+
+    // ── Drop ALL old unique constraints on invoice_number — runs on EVERY startup ──
+    // Must live OUTSIDE the big try/catch so an earlier failure cannot skip these.
+    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(() => {});
+    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(() => {});
+    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(() => {});
+    await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
+    await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
     // ─────────────────────────────────────────────────────────────────────────
 
     try {
