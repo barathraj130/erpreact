@@ -26,6 +26,16 @@ const router = express.Router();
 // Map invoice_type → series prefix
 // TAX_INVOICE → TAX | NOMINAL_TAX_INVOICE → NSB | NON_TAX_INVOICE → INV
 // RETAIL_SALE → RET | GIFTED_ITEM → GFT
+// Canonical status names: PAID | PARTIAL | PENDING
+// Use this everywhere instead of hardcoded strings.
+function getStatus(paid, total) {
+    const p = parseFloat(paid) || 0;
+    const t = parseFloat(total) || 0;
+    if (p <= 0) return 'PENDING';
+    if (p >= t) return 'PAID';
+    return 'PARTIAL';
+}
+
 function resolveBillType(invoiceType, billPurpose) {
     if (billPurpose === 'name_only') return 'NSB';
     switch ((invoiceType || '').toUpperCase()) {
@@ -38,10 +48,10 @@ function resolveBillType(invoiceType, billPurpose) {
     }
 }
 
-// Format: plain sequential number — 1, 2, 3…
-// Each bill type has its own independent counter so TAX:1 and RET:1 coexist.
-function formatInvoiceNumber(_prefix, _year, _month, num) {
-    return String(num);
+// Format: PREFIX/YEAR/MM/NNN  e.g. TAX/2026/05/001
+// Each bill type has its own independent counter so TAX:001 and RET:001 coexist.
+function formatInvoiceNumber(prefix, year, month, num) {
+    return `${prefix}/${year}/${String(month).padStart(2, '0')}/${String(num).padStart(3, '0')}`;
 }
 
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
@@ -317,41 +327,14 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const safeBrokerId = sanitizeInt(broker_id);
         const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
 
-        const manualNumber = invoice_number ? String(invoice_number).trim() : '';
-        const userProvidedNumber = manualNumber.length > 0;
-
+        // Always auto-generate — frontend invoice_number field is intentionally ignored.
+        // Each bill type (TAX/NSB/INV/RET/GFT) has its own independent counter per month.
         let finalInvoiceNumber, financial_month, seriesPrefix, seriesNumber;
-
-        if (userProvidedNumber) {
-            // Manual number — check it's not already used for this invoice type
-            const exists = await client.query(
-                `SELECT id FROM invoices
-                 WHERE company_id = $1 AND invoice_type = $2
-                   AND invoice_number = $3
-                   AND (is_deleted = false OR is_deleted IS NULL)
-                 LIMIT 1`,
-                [companyId, invoice_type || 'TAX_INVOICE', manualNumber]
-            );
-            if (exists.rows.length > 0) {
-                await client.query('ROLLBACK');
-                client.release();
-                return res.status(409).json({
-                    error: `Invoice number "${manualNumber}" is already used in ${invoice_type}. Please use a different number.`
-                });
-            }
-            finalInvoiceNumber = manualNumber;
-            seriesPrefix = null;
-            seriesNumber = null;
-            const now = new Date();
-            financial_month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        } else {
-            // Auto-generate — each type has its own independent counter
-            const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
-            finalInvoiceNumber = gen.number;
-            financial_month   = gen.financial_month;
-            seriesPrefix      = gen.series_prefix;
-            seriesNumber      = gen.series_number;
-        }
+        const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
+        finalInvoiceNumber = gen.number;
+        financial_month   = gen.financial_month;
+        seriesPrefix      = gen.series_prefix;
+        seriesNumber      = gen.series_number;
 
         // 1. Get Company/Branch and Customer State for GST Detection
         const company = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);
@@ -528,7 +511,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let result;
         const buildParams = (invNum) => [
             companyId, safeCustomerId, invNum, invoice_type || 'TAX_INVOICE',
-            financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(), payment_status || 'UNPAID',
+            financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(), payment_status || 'PENDING',
             totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, netInvoiceAmount,
             gstType, finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
             transport_details?.vehicle_number || '', transport_details?.mode || '', transport_details?.supply_date || null, transport_details?.reverse_charge || 'No',
@@ -550,12 +533,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             await client.query('ROLLBACK TO SAVEPOINT sp_invoice_hdr');
             await client.query('RELEASE SAVEPOINT sp_invoice_hdr');
 
-            // 23505 = unique_violation — could be invoice_number or any unique index
+            // 23505 = unique_violation — auto-generated number went stale, regenerate and retry silently
             if (insertErr.code === '23505') {
-                if (userProvidedNumber) {
-                    // User manually typed this number — give a clear error, don't silently change it
-                    throw new Error(`Invoice number "${finalInvoiceNumber}" already exists. Please use a different number.`);
-                }
                 // Auto-generated number went stale — regenerate and retry silently
                 console.warn(`[invoice] Duplicate auto-number "${finalInvoiceNumber}", regenerating…`);
                 const gen = await generateInvoiceNumber(client, invoice_type || 'TAX_INVOICE', companyId, branchId, bill_purpose);
@@ -1144,7 +1123,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 notes || null,
                 totalAmount,
                 amount_paid || 0,
-                payment_status || 'UNPAID',
+                payment_status || 'PENDING',
                 newInvoiceDate || null,
                 transport_details?.vehicle || null,
                 transport_details?.mode   || null,
@@ -1385,7 +1364,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 
         const inv = invoice.rows[0];
         const newPaid = parseFloat(inv.paid_amount) + parseFloat(amount);
-        const status = newPaid >= parseFloat(inv.total_amount) ? "PAID" : "PARTIAL";
+        const status = getStatus(newPaid, inv.total_amount);
 
         await client.query("UPDATE invoices SET paid_amount = $1, status = $2 WHERE id = $3", [newPaid, status, id]);
 
@@ -1415,6 +1394,49 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 
         await client.query("COMMIT");
         res.json({ success: true, message: "Payment recorded", newPaid, status });
+
+        // ── Post-commit: WhatsApp receipt to customer + owner alert (non-blocking) ──
+        try {
+            const { sendWhatsApp, notifyOwner } = await import('../utils/whatsapp.js');
+            const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+            // Fetch customer details
+            const custRow = inv.customer_id
+                ? (await db.pgGet(
+                    `SELECT username, phone FROM users WHERE id = $1`,
+                    [inv.customer_id]
+                  ))
+                : null;
+
+            const balance = parseFloat(inv.total_amount) - newPaid;
+
+            // Customer receipt
+            if (custRow?.phone) {
+                const custMsg =
+                    `✅ *Payment Received — FLUXORA ERP*\n\n` +
+                    `Invoice: *${inv.invoice_number}*\n` +
+                    `Customer: ${custRow.username || 'Customer'}\n` +
+                    `Payment: ₹${fmt(amount)} (${mode || 'CASH'})\n` +
+                    `Total Paid: ₹${fmt(newPaid)}\n` +
+                    `Balance Due: ₹${fmt(Math.max(0, balance))}\n` +
+                    `Status: *${status}*\n\n` +
+                    `Thank you for your payment! 🙏`;
+                await sendWhatsApp(custRow.phone, custMsg);
+            }
+
+            // Owner alert
+            const ownerMsg =
+                `💰 *Payment Collected*\n\n` +
+                `Invoice: ${inv.invoice_number}\n` +
+                `Customer: ${custRow?.username || 'Walk-in'}\n` +
+                `Paid: ₹${fmt(amount)} via ${mode || 'CASH'}\n` +
+                `Total Paid: ₹${fmt(newPaid)} / ₹${fmt(inv.total_amount)}\n` +
+                `Status: ${status}`;
+            await notifyOwner(ownerMsg);
+        } catch (waErr) {
+            console.log('[WhatsApp/payment] silent fail:', waErr.message);
+        }
+
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("❌ Invoice Payment Accounting Error:", err.message);

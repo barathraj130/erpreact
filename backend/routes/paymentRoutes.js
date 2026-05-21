@@ -103,7 +103,7 @@ router.get("/invoice/:invoiceId", authMiddleware, checkAccess('Sales', 'view_inv
             balance_due: invoiceTotal - totalPaid,
             payment_count: payments.length,
             payments: payments,
-            status: totalPaid >= invoiceTotal ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID'
+            status: totalPaid >= invoiceTotal ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'PENDING'
         });
 
     } catch (err) {
@@ -185,7 +185,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const newPayment = insertResult.rows[0];
 
         const newTotalPaid = currentPaid + Number(amount);
-        let newStatus = 'UNPAID';
+        let newStatus = 'PENDING';
         
         if (newTotalPaid >= invoiceTotal) {
             newStatus = 'PAID';
@@ -328,7 +328,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             );
             const newTotalPaid = Number(paidResult.rows[0].total_paid);
 
-            let newStatus = 'UNPAID';
+            let newStatus = 'PENDING';
             if (newTotalPaid >= invoiceTotal) {
                 newStatus = 'PAID';
             } else if (newTotalPaid > 0) {
@@ -416,7 +416,7 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
         );
         const newTotalPaid = Number(paidResult.rows[0].total_paid);
 
-        let newStatus = 'UNPAID';
+        let newStatus = 'PENDING';
         if (newTotalPaid >= invoiceTotal) {
             newStatus = 'PAID';
         } else if (newTotalPaid > 0) {

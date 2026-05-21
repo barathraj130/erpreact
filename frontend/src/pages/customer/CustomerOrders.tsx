@@ -25,7 +25,7 @@ const CustomerOrders: React.FC = () => {
     const filteredInvoices = invoices.filter(inv => {
         const isPaid = Number(inv.paid_amount) >= Number(inv.total_amount);
         if (filter === "PAID" && !isPaid) return false;
-        if (filter === "UNPAID" && isPaid) return false;
+        if (filter === "PENDING" && isPaid) return false;
         
         return inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase());
     });
@@ -85,7 +85,7 @@ const CustomerOrders: React.FC = () => {
                     />
                 </div>
                 <div style={{ display: "flex", gap: "10px", background: "#f1f5f9", padding: "5px", borderRadius: "12px" }}>
-                    {["ALL", "PAID", "UNPAID"].map(f => (
+                    {["ALL", "PAID", "PENDING"].map(f => (
                         <button 
                             key={f} 
                             onClick={() => setFilter(f)}

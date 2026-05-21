@@ -187,7 +187,7 @@ export const schemaDefinition = {
         deductions: "NUMERIC(12,2) DEFAULT 0",
         advance_deducted: "NUMERIC(12,2) DEFAULT 0",
         final_salary: "NUMERIC(12,2)",
-        status: "VARCHAR(20) DEFAULT 'UNPAID'",
+        status: "VARCHAR(20) DEFAULT 'PENDING'",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 

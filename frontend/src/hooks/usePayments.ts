@@ -144,7 +144,7 @@ export const usePayments = (options: UsePaymentsOptions = {}) => {
     removePayment,
     totalPaid: invoicePayments?.total_paid || 0,
     balanceDue: invoicePayments?.balance_due || 0,
-    paymentStatus: invoicePayments?.status || "UNPAID",
+    paymentStatus: invoicePayments?.status || "PENDING",
   };
 };
 

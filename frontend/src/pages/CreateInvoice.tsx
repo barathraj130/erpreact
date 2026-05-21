@@ -424,9 +424,9 @@ const CreateInvoice: React.FC = () => {
     
     // Auto-calculate pending and status
     const pendingAmount = invoiceType === "GIFTED_ITEM" ? 0 : Math.max(0, effectiveTotal - amountPaid);
-    let paymentStatus = "UNPAID";
+    let paymentStatus = "PENDING";
     if (amountPaid > 0 || discount > 0) {
-      paymentStatus = (amountPaid + discount) >= grandTotal ? "PAID" : "PARTIALLY_PAID";
+      paymentStatus = (amountPaid + discount) >= grandTotal ? "PAID" : "PARTIAL";
     }
 
     return {
@@ -1391,7 +1391,7 @@ const CreateInvoice: React.FC = () => {
                    <span style={{ fontSize: '1rem', fontWeight: 900, color: totals.pendingAmount > 0 ? '#ef4444' : '#16a34a' }}>₹{fmt(totals.pendingAmount)}</span>
                </div>
                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                   <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: totals.paymentStatus === 'PAID' ? '#dcfce7' : totals.paymentStatus === 'UNPAID' ? '#fee2e2' : '#fef9c3', color: totals.paymentStatus === 'PAID' ? '#166534' : totals.paymentStatus === 'UNPAID' ? '#991b1b' : '#854d0e', borderRadius: '4px', fontWeight: 700 }}>
+                   <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: totals.paymentStatus === 'PAID' ? '#dcfce7' : totals.paymentStatus === 'PENDING' ? '#fee2e2' : '#fef9c3', color: totals.paymentStatus === 'PAID' ? '#166534' : totals.paymentStatus === 'PENDING' ? '#991b1b' : '#854d0e', borderRadius: '4px', fontWeight: 700 }}>
                      {totals.paymentStatus}
                    </span>
                    <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 700 }}>

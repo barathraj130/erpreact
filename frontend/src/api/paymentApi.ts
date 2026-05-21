@@ -23,7 +23,7 @@ export interface PaymentSummary {
   balance_due: number;
   payment_count: number;
   payments: Payment[];
-  status: "PAID" | "PARTIAL" | "UNPAID";
+  status: "PAID" | "PARTIAL" | "PENDING";
 }
 
 export interface CreatePaymentData {

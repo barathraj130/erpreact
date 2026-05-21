@@ -361,7 +361,7 @@ const EditInvoice: React.FC = () => {
       return { label: "PAID", color: "#10b981", bg: "#dcfce7" };
     if (totalPaid > 0)
       return { label: "PARTIAL", color: "#f59e0b", bg: "#fef3c7" };
-    return { label: "UNPAID", color: "#ef4444", bg: "#fee2e2" };
+    return { label: "PENDING", color: "#ef4444", bg: "#fee2e2" };
   };
   const status = getPaymentStatus();
 
