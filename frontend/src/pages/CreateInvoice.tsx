@@ -388,6 +388,9 @@ const CreateInvoice: React.FC = () => {
     }
   };
 
+  // selectedBillType used both inside totals and in JSX — define at component scope
+  const selectedBillType = BILL_TYPES.find(b => b.value === invoiceType);
+
   const totals = useMemo(() => {
     const taxable = items.reduce((s, i) => s + i.qty * i.rate, 0);
     const returnTaxable = returnItems.reduce((s, i) => s + i.qty * i.rate, 0);
@@ -397,7 +400,6 @@ const CreateInvoice: React.FC = () => {
     // RETAIL_SALE     → GST from product rates (use invoice-level rate for preview)
     // Others          → GST always applies using invoice-level gstState
     const isNoGST = invoiceType === "NON_TAX_INVOICE";
-    const selectedBillType = BILL_TYPES.find(b => b.value === invoiceType);
 
     const cgstAmt = isNoGST ? 0 : taxable * (gstState.cgst * 0.01);
     const sgstAmt = isNoGST ? 0 : taxable * (gstState.sgst * 0.01);
