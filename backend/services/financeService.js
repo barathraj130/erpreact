@@ -229,19 +229,38 @@ export const recordLoanRepayment = async (user, paymentData) => {
             interestComp = 0;
         }
 
-        // 1. Insert into loan_payments
-        const paymentSql = `
-            INSERT INTO loan_payments (
-                company_id, loan_id, payment_date, total_amount,
-                interest_component, principal_component, payment_mode, notes, payment_type
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING *
-        `;
-        const paymentRes = await client.query(paymentSql, [
-            companyId, paymentData.loan_id, paymentData.payment_date, total,
-            interestComp, principalComp, paymentData.payment_mode || 'CASH', paymentData.notes, paymentType
-        ]);
-        const payment = paymentRes.rows[0];
+        // 1. Insert into loan_payments (SAVEPOINT guards against missing payment_type column)
+        let payment;
+        await client.query(`SAVEPOINT sp_loan_payment_insert`);
+        try {
+            const paymentRes = await client.query(`
+                INSERT INTO loan_payments (
+                    company_id, loan_id, payment_date, total_amount,
+                    interest_component, principal_component, payment_mode, notes, payment_type
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING *
+            `, [
+                companyId, paymentData.loan_id, paymentData.payment_date, total,
+                interestComp, principalComp, paymentData.payment_mode || 'CASH', paymentData.notes, paymentType
+            ]);
+            payment = paymentRes.rows[0];
+            await client.query(`RELEASE SAVEPOINT sp_loan_payment_insert`);
+        } catch (e) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_loan_payment_insert`);
+            await client.query(`RELEASE SAVEPOINT sp_loan_payment_insert`);
+            // Retry without payment_type column (older schema)
+            const paymentRes = await client.query(`
+                INSERT INTO loan_payments (
+                    company_id, loan_id, payment_date, total_amount,
+                    interest_component, principal_component, payment_mode, notes
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING *
+            `, [
+                companyId, paymentData.loan_id, paymentData.payment_date, total,
+                interestComp, principalComp, paymentData.payment_mode || 'CASH', paymentData.notes
+            ]);
+            payment = paymentRes.rows[0];
+        }
 
         // 2. Reduce principal_outstanding for principal payments (best-effort — column may not exist yet)
         if (principalComp > 0) {
@@ -303,39 +322,47 @@ export const recordLoanRepayment = async (user, paymentData) => {
             await client.query(`RELEASE SAVEPOINT sp_loan_accounting`);
         }
 
-        // 3. Update cash/bank ledger — supports split (cash_amount + bank_amount) or single mode
-        const payMode = (paymentData.payment_mode || 'CASH').toUpperCase();
-        const cashAmt = parseFloat(paymentData.cash_amount || 0);
-        const bankAmt = parseFloat(paymentData.bank_amount || 0);
+        // 4. Update cash/bank ledger (best-effort — SAVEPOINT so schema mismatch doesn't block repayment)
+        await client.query(`SAVEPOINT sp_loan_ledger`);
+        try {
+            const payMode = (paymentData.payment_mode || 'CASH').toUpperCase();
+            const cashAmt = parseFloat(paymentData.cash_amount || 0);
+            const bankAmt = parseFloat(paymentData.bank_amount || 0);
 
-        if (cashAmt > 0 || bankAmt > 0) {
-            // Split payment
-            if (cashAmt > 0) {
-                await client.query(
-                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
-                    [companyId, branchId, cashAmt, paymentData.payment_date]
-                );
-            }
-            if (bankAmt > 0) {
+            if (cashAmt > 0 || bankAmt > 0) {
+                // Split payment
+                if (cashAmt > 0) {
+                    await client.query(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                         VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
+                        [companyId, branchId, cashAmt, paymentData.payment_date]
+                    );
+                }
+                if (bankAmt > 0) {
+                    await client.query(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                         VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
+                        [companyId, branchId, bankAmt, paymentData.payment_date]
+                    );
+                }
+            } else if (payMode === 'BANK' || payMode === 'UPI') {
                 await client.query(
                     `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
                      VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
-                    [companyId, branchId, bankAmt, paymentData.payment_date]
+                    [companyId, branchId, total, paymentData.payment_date]
+                );
+            } else {
+                await client.query(
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
+                    [companyId, branchId, total, paymentData.payment_date]
                 );
             }
-        } else if (payMode === 'BANK' || payMode === 'UPI') {
-            await client.query(
-                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                 VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
-                [companyId, branchId, total, paymentData.payment_date]
-            );
-        } else {
-            await client.query(
-                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                 VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
-                [companyId, branchId, total, paymentData.payment_date]
-            );
+            await client.query(`RELEASE SAVEPOINT sp_loan_ledger`);
+        } catch (ledgerErr) {
+            console.warn('[loan repayment] cash/bank ledger update skipped:', ledgerErr.message);
+            await client.query(`ROLLBACK TO SAVEPOINT sp_loan_ledger`);
+            await client.query(`RELEASE SAVEPOINT sp_loan_ledger`);
         }
 
         // FIX 6: Sync lender outstanding balance after every repayment
