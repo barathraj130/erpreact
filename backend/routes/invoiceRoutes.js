@@ -14,6 +14,14 @@ import { deductStock, addStock, resolveStockBranch, restoreStockForInvoice } fro
 import * as brokerService from "../services/brokerService.js";
 import * as pointsService from "../services/pointsService.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
+import { generateInvoicePdf } from "../utils/invoicePdf.js";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 3000}`;
+const INVOICES_DIR = path.join(__dirname, '../uploads/invoices');
 
 const router = express.Router();
 
@@ -918,24 +926,65 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             points_earned:  ptsEarned,
         });
 
-        // 2. WhatsApp to customer
+        // 2. WhatsApp to customer — text summary + PDF attachment
         try {
-            const { sendWhatsApp } = await import('../utils/whatsapp.js');
+            const { sendWhatsApp, sendWhatsAppFile } = await import('../utils/whatsapp.js');
+            const fmtN = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
             if (custPhone) {
-                const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-                await sendWhatsApp(custPhone,
+                const textMsg =
 `Dear ${custName},
 
 ✅ Invoice ${finalInvoiceNumber} created!
 
-💰 Total:   ₹${fmt(effectiveTotal)}
-✅ Paid:    ₹${fmt(waActualPaid)}
-⏳ Balance: ₹${fmt(waBalance)}
+💰 Total:   ₹${fmtN(effectiveTotal)}
+✅ Paid:    ₹${fmtN(waActualPaid)}
+⏳ Balance: ₹${fmtN(waBalance)}
 Status: ${waStatus}${ptsEarned > 0 ? '\n\n💎 Points Earned: +' + ptsEarned + ' pts' : ''}
 
 Thank you for your business!
 JBS Knit Wear, Tiruppur
-📞 8148232205`);
+📞 8148232205`;
+
+                // Send text first
+                await sendWhatsApp(custPhone, textMsg);
+
+                // Generate PDF and send as file
+                try {
+                    // Fetch the full invoice data (with line_items) for PDF generation
+                    const invForPdf = await db.pgGet(`
+                        SELECT i.*,
+                               u.username as customer_name, u.address_line1, u.city_pincode,
+                               u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
+                               u.phone as customer_phone,
+                               c.company_name, c.address_line1 as c_address, c.city_pincode as c_city,
+                               c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
+                               c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.phone as c_phone,
+                               COALESCE(json_agg(li.* ORDER BY li.id) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
+                        FROM invoices i
+                        LEFT JOIN users     u  ON i.customer_id = u.id
+                        LEFT JOIN companies c  ON i.company_id  = c.id
+                        LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
+                        WHERE i.id = $1
+                        GROUP BY i.id, u.username, u.address_line1, u.city_pincode, u.state,
+                                 u.gstin, u.state_code, u.phone,
+                                 c.company_name, c.address_line1, c.city_pincode, c.state,
+                                 c.gstin, c.state_code, c.bank_name, c.bank_account_no,
+                                 c.bank_ifsc_code, c.phone
+                    `, [invoiceId]);
+
+                    if (invForPdf) {
+                        const pdfBuffer  = await generateInvoicePdf(invForPdf);
+                        const filename   = `Invoice_${finalInvoiceNumber}.pdf`;
+                        const filePath   = path.join(INVOICES_DIR, filename);
+                        fs.writeFileSync(filePath, pdfBuffer);
+                        const publicUrl  = `${BACKEND_URL}/uploads/invoices/${filename}`;
+                        await sendWhatsAppFile(custPhone, publicUrl, filename, `Invoice ${finalInvoiceNumber} — JBS Knit Wear`);
+                        console.log(`[PDF] sent to ${custPhone}: ${publicUrl}`);
+                    }
+                } catch (pdfErr) {
+                    console.log('[PDF/WhatsApp] silent fail:', pdfErr.message);
+                }
             }
         } catch (waErr) {
             console.log('[WhatsApp/invoice-create] silent fail:', waErr.message);
@@ -946,6 +995,49 @@ JBS Knit Wear, Tiruppur
         res.status(500).json({ error: "Failed to create invoice: " + err.message });
     } finally {
         if (client) client.release();
+    }
+});
+
+/* ============================================================
+   2b. GET /invoice/:id/pdf  — generate & download PDF
+============================================================ */
+router.get("/:id/pdf", authMiddleware, async (req, res) => {
+    const id        = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+    try {
+        const invoiceData = await db.pgGet(`
+            SELECT i.*,
+                   u.username as customer_name, u.address_line1, u.city_pincode,
+                   u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
+                   u.phone as customer_phone,
+                   c.company_name, c.address_line1 as c_address, c.city_pincode as c_city,
+                   c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
+                   c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.phone as c_phone,
+                   COALESCE(json_agg(li.* ORDER BY li.id) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
+            FROM invoices i
+            LEFT JOIN users     u  ON i.customer_id = u.id
+            LEFT JOIN companies c  ON i.company_id  = c.id
+            LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
+            WHERE i.id = $1 AND i.company_id = $2
+            GROUP BY i.id, u.username, u.address_line1, u.city_pincode, u.state,
+                     u.gstin, u.state_code, u.phone,
+                     c.company_name, c.address_line1, c.city_pincode, c.state,
+                     c.gstin, c.state_code, c.bank_name, c.bank_account_no,
+                     c.bank_ifsc_code, c.phone
+        `, [id, companyId]);
+
+        if (!invoiceData) return res.status(404).json({ error: 'Invoice not found' });
+
+        const pdfBuffer = await generateInvoicePdf(invoiceData);
+        res.set({
+            'Content-Type':        'application/pdf',
+            'Content-Disposition': `attachment; filename="Invoice_${invoiceData.invoice_number || id}.pdf"`,
+            'Content-Length':      pdfBuffer.length,
+        });
+        res.end(pdfBuffer);
+    } catch (err) {
+        console.error('[PDF] generation error:', err.message);
+        res.status(500).json({ error: 'PDF generation failed: ' + err.message });
     }
 });
 
