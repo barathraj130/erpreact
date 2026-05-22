@@ -464,7 +464,11 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         // Final Invoice Amount after Returns and Discount
         let netInvoiceAmount = totalSaleAmount - totalReturnAmount;
         const effectiveTotal = Math.max(0, netInvoiceAmount - discountAmt);
-        let finalAmountPaid = Number(amount_paid) || 0;
+        // Use amount_paid from body; fall back to summing payments[] array if body value is 0
+        const paymentsArrayTotal = Array.isArray(payments)
+            ? payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+            : 0;
+        let finalAmountPaid = Number(amount_paid) > 0 ? Number(amount_paid) : paymentsArrayTotal;
         
         // === POINTS REDEMPTION FOR NON-TAX INVOICES ===
         let pointsRedeemed = 0;
@@ -892,11 +896,12 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         });
 
         // ── Non-blocking post-commit notifications ─────────────────────────
-        // Use totalPaidFromPayments (sum of payments[] actually saved) — NOT finalAmountPaid
-        // from the request body, which can be 0 even when payments exist.
+        // Use finalAmountPaid — this is exactly what is stored in invoices.paid_amount.
+        // totalPaidFromPayments only covers the payments[] array; if the frontend sends
+        // amount_paid without a corresponding payments[] entry, it would show 0.
         const custPhone  = customer.rows[0]?.phone || '';
         const custName   = customer.rows[0]?.username || 'Customer';
-        const waActualPaid = totalPaidFromPayments;
+        const waActualPaid = finalAmountPaid;
         const waBalance    = Math.max(0, netInvoiceAmount - waActualPaid);
         const waStatus     = getStatus(waActualPaid, netInvoiceAmount);
 
