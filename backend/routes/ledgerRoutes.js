@@ -1,8 +1,16 @@
 // backend/routes/ledgerRoutes.js
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as supplierLedgerService from '../services/supplierLedgerService.js';
+import { generateLedgerPdf } from '../utils/generateLedgerPDF.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_URL   = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 3000}`;
+const LEDGERS_DIR   = path.join(__dirname, '../uploads/ledgers');
 
 const router = express.Router();
 
@@ -397,6 +405,151 @@ router.patch('/:id/archive', authMiddleware, async (req, res) => {
         res.json({ message: "Archived successfully" });
     } catch (err) {
         res.status(500).json({ error: "Archive failed" });
+    }
+});
+
+// ── helper: fetch ledger data for any party type ─────────────────────────────
+async function fetchPartyLedgerData(companyId, type, id) {
+    let partyName = '', phone = '';
+
+    if (type === 'customer') {
+        const r = await db.pgGet('SELECT username AS name, phone FROM users WHERE id=$1 AND company_id=$2', [id, companyId]);
+        partyName = r?.name || ''; phone = r?.phone || '';
+    } else if (type === 'supplier') {
+        const r = await db.pgGet('SELECT name, phone FROM suppliers WHERE id=$1 AND company_id=$2', [id, companyId]);
+        partyName = r?.name || ''; phone = r?.phone || '';
+    } else if (type === 'lender') {
+        const r = await db.pgGet('SELECT name, phone FROM lenders WHERE id=$1 AND company_id=$2', [id, companyId]);
+        partyName = r?.name || ''; phone = r?.phone || '';
+    } else if (type === 'employee') {
+        const r = await db.pgGet('SELECT name, phone FROM employees WHERE id=$1 AND company_id=$2', [id, companyId]);
+        partyName = r?.name || ''; phone = r?.phone || '';
+    } else if (type === 'broker') {
+        const r = await db.pgGet('SELECT name, phone FROM brokers WHERE id=$1 AND company_id=$2', [id, companyId]);
+        partyName = r?.name || ''; phone = r?.phone || '';
+    }
+
+    if (!partyName) return null;
+
+    // Fetch from COA-based ledger_entries
+    const account = await db.pgGet(
+        'SELECT id, name, account_type, opening_balance FROM chart_of_accounts WHERE company_id=$1 AND name ILIKE $2 LIMIT 1',
+        [companyId, `%${partyName}%`]
+    );
+
+    let entries = [], summary = { opening_balance: 0, total_debit: 0, total_credit: 0, balance: 0 };
+
+    if (account) {
+        entries = await db.pgAll(
+            `SELECT l.entry_date, t.description as tx_desc, t.reference_type, l.debit, l.credit, l.running_balance
+             FROM ledger_entries l
+             LEFT JOIN transactions t ON l.transaction_id = t.id
+             WHERE l.account_id=$1 AND l.company_id=$2
+             ORDER BY l.entry_date ASC, l.id ASC`,
+            [account.id, companyId]
+        );
+        const totalDebit  = entries.reduce((s, e) => s + parseFloat(e.debit  || 0), 0);
+        const totalCredit = entries.reduce((s, e) => s + parseFloat(e.credit || 0), 0);
+        const isLiability = ['LIABILITY','EQUITY'].includes((account.account_type || '').toUpperCase());
+        const opening     = parseFloat(account.opening_balance || 0);
+        summary = {
+            opening_balance: opening,
+            total_debit:  totalDebit,
+            total_credit: totalCredit,
+            balance: isLiability ? (opening + totalCredit - totalDebit) : (opening + totalDebit - totalCredit),
+        };
+    }
+
+    return { partyName, phone, entries, summary };
+}
+
+/* ============================================================
+   GET /ledgers/party/:type/:id/pdf — download ledger PDF
+============================================================ */
+router.get('/party/:type/:id/pdf', authMiddleware, async (req, res) => {
+    const { type, id } = req.params;
+    const companyId = parseInt(req.user?.active_company_id || req.user?.company_id);
+    try {
+        const data = await fetchPartyLedgerData(companyId, type, id);
+        if (!data) return res.status(404).json({ error: 'Party not found' });
+
+        const pdfBuffer = await generateLedgerPdf({
+            partyName: data.partyName,
+            partyType: type.charAt(0).toUpperCase() + type.slice(1),
+            entries:   data.entries,
+            summary:   data.summary,
+            phone:     data.phone,
+        });
+
+        res.set({
+            'Content-Type':        'application/pdf',
+            'Content-Disposition': `attachment; filename="${type}_Ledger_${data.partyName.replace(/\s+/g,'_')}.pdf"`,
+            'Content-Length':      pdfBuffer.length,
+        });
+        res.end(pdfBuffer);
+    } catch (err) {
+        console.error('[Ledger PDF]', err.message);
+        res.status(500).json({ error: 'PDF generation failed: ' + err.message });
+    }
+});
+
+/* ============================================================
+   POST /ledgers/party/:type/:id/send-whatsapp — send via WA
+============================================================ */
+router.post('/party/:type/:id/send-whatsapp', authMiddleware, async (req, res) => {
+    const { type, id } = req.params;
+    const companyId = parseInt(req.user?.active_company_id || req.user?.company_id);
+    try {
+        const data = await fetchPartyLedgerData(companyId, type, id);
+        if (!data) return res.status(404).json({ error: 'Party not found' });
+        if (!data.phone) return res.status(400).json({ error: `No phone number found for this ${type}` });
+
+        const pdfBuffer = await generateLedgerPdf({
+            partyName: data.partyName,
+            partyType: type.charAt(0).toUpperCase() + type.slice(1),
+            entries:   data.entries,
+            summary:   data.summary,
+            phone:     data.phone,
+        });
+
+        // Save to uploads/ledgers/ and serve via public URL
+        if (!fs.existsSync(LEDGERS_DIR)) fs.mkdirSync(LEDGERS_DIR, { recursive: true });
+        const filename  = `${type}_Ledger_${data.partyName.replace(/\s+/g,'_')}_${Date.now()}.pdf`;
+        const filePath  = path.join(LEDGERS_DIR, filename);
+        fs.writeFileSync(filePath, pdfBuffer);
+        const publicUrl = `${BACKEND_URL}/uploads/ledgers/${filename}`;
+
+        // Send via WhatsApp (non-blocking after response)
+        res.json({ success: true, message: `Ledger sent to ${data.partyName} (${data.phone}) on WhatsApp` });
+
+        try {
+            const { sendWhatsApp, sendWhatsAppFile } = await import('../utils/whatsapp.js');
+            const dateStr = new Date().toLocaleDateString('en-IN');
+            await sendWhatsApp(data.phone,
+`Dear ${data.partyName},
+
+📊 Please find your ledger statement attached.
+
+Period: ${dateStr}
+Total Debit:  ₹${(data.summary.total_debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+Total Credit: ₹${(data.summary.total_credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+Balance:      ₹${Math.abs(data.summary.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+
+For any queries contact:
+JBS Knit Wear, Tiruppur
+📞 8148232205`);
+            await sendWhatsAppFile(data.phone, publicUrl,
+                `${type}_Ledger_${data.partyName.replace(/\s+/g,'_')}_${dateStr.replace(/\//g,'-')}.pdf`,
+                `Ledger Statement — ${data.partyName}`
+            );
+            console.log(`[Ledger PDF] sent to ${data.phone}: ${publicUrl}`);
+        } catch (waErr) {
+            console.log('[Ledger WhatsApp] silent fail:', waErr.message);
+        }
+
+    } catch (err) {
+        console.error('[Ledger WhatsApp]', err.message);
+        res.status(500).json({ error: 'Failed: ' + err.message });
     }
 });
 

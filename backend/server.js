@@ -110,6 +110,7 @@ ensureDir("./uploads/signatures");
 ensureDir("./uploads/products");
 ensureDir("./uploads/reports");
 ensureDir("./uploads/invoices");
+ensureDir("./uploads/ledgers");
 ensureDir("./backups");
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));

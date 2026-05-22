@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
-import { FaFileInvoice, FaArrowLeft, FaPrint, FaFileExcel } from 'react-icons/fa';
+import { FaFileInvoice, FaArrowLeft, FaPrint, FaFileExcel, FaFilePdf, FaWhatsapp } from 'react-icons/fa';
 import './LedgerViewer.css';
 
 interface LedgerEntry {
@@ -21,10 +21,45 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [waLoading, setWaLoading] = useState(false);
+  const [waStatus, setWaStatus] = useState<'idle'|'sent'|'error'>('idle');
+  const [waMsg, setWaMsg] = useState('');
 
   useEffect(() => {
     fetchLedger();
   }, [id, type]);
+
+  const handleDownloadPDF = async () => {
+    setPdfLoading(true);
+    try {
+      const res = await apiFetch(`/ledgers/party/${type}/${id}/pdf`);
+      if (!res.ok) throw new Error('PDF generation failed');
+      const blob = await res.blob();
+      const url  = window.URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `${type}_Ledger_${data?.party_name || id}.pdf`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); window.URL.revokeObjectURL(url);
+    } catch (e: any) { alert('PDF download failed: ' + e.message); }
+    finally { setPdfLoading(false); }
+  };
+
+  const handleSendWhatsApp = async () => {
+    setWaLoading(true); setWaStatus('idle'); setWaMsg('');
+    try {
+      const res  = await apiFetch(`/ledgers/party/${type}/${id}/send-whatsapp`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setWaStatus('sent'); setWaMsg(json.message || 'Sent!');
+        setTimeout(() => setWaStatus('idle'), 5000);
+      } else {
+        setWaStatus('error'); setWaMsg(json.error || 'Failed to send');
+      }
+    } catch (e: any) { setWaStatus('error'); setWaMsg('Network error'); }
+    finally { setWaLoading(false); }
+  };
 
   const fetchLedger = async () => {
     try {
@@ -78,11 +113,41 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
             <p className="subtitle">{type.toUpperCase()} LEDGER | {data.account_name}</p>
           </div>
         </div>
-        <div className="header-actions">
-          <button className="action-btn secondary"><FaPrint /> Print</button>
-          <button className="action-btn primary"><FaFileExcel /> Export</button>
+        <div className="header-actions" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="action-btn secondary"
+            onClick={handleDownloadPDF}
+            disabled={pdfLoading}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', opacity: pdfLoading ? 0.7 : 1 }}
+          >
+            <FaFilePdf /> {pdfLoading ? 'Generating...' : 'Download PDF'}
+          </button>
+          <button
+            onClick={handleSendWhatsApp}
+            disabled={waLoading}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: waStatus === 'sent' ? '#16a34a' : '#25D366',
+              color: '#fff', border: 'none', borderRadius: '8px',
+              padding: '8px 16px', fontWeight: 600, cursor: waLoading ? 'not-allowed' : 'pointer',
+              fontSize: '13px', opacity: waLoading ? 0.7 : 1
+            }}
+          >
+            <FaWhatsapp /> {waLoading ? 'Sending...' : waStatus === 'sent' ? '✅ Sent!' : '📱 Send Ledger'}
+          </button>
         </div>
       </div>
+
+      {waStatus !== 'idle' && (
+        <div style={{
+          margin: '0 0 12px 0', padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+          background: waStatus === 'sent' ? '#f0fdf4' : '#fff1f2',
+          border: `1px solid ${waStatus === 'sent' ? '#bbf7d0' : '#fecdd3'}`,
+          color: waStatus === 'sent' ? '#15803d' : '#ef4444'
+        }}>
+          {waStatus === 'sent' ? '✅ ' : '❌ '}{waMsg}
+        </div>
+      )}
 
       <div className="ledger-summary-cards">
         <div className="summary-card">
