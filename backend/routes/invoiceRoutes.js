@@ -901,16 +901,18 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         // amount_paid without a corresponding payments[] entry, it would show 0.
         const custPhone  = customer.rows[0]?.phone || '';
         const custName   = customer.rows[0]?.username || 'Customer';
+        // effectiveTotal = netInvoiceAmount - discount (what customer actually owes)
+        // Using netInvoiceAmount would show wrong balance when a discount/waiver exists.
         const waActualPaid = finalAmountPaid;
-        const waBalance    = Math.max(0, netInvoiceAmount - waActualPaid);
-        const waStatus     = getStatus(waActualPaid, netInvoiceAmount);
+        const waBalance    = Math.max(0, effectiveTotal - waActualPaid);
+        const waStatus     = getStatus(waActualPaid, effectiveTotal);
 
         // 1. N8N webhook
         triggerN8N('invoice-created', {
             customer_name:  custName,
             customer_phone: custPhone,
             invoice_number: finalInvoiceNumber,
-            total_amount:   netInvoiceAmount,
+            total_amount:   effectiveTotal,
             paid_amount:    waActualPaid,
             balance_amount: waBalance,
             points_earned:  ptsEarned,
@@ -926,7 +928,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
 ✅ Invoice ${finalInvoiceNumber} created!
 
-💰 Total:   ₹${fmt(netInvoiceAmount)}
+💰 Total:   ₹${fmt(effectiveTotal)}
 ✅ Paid:    ₹${fmt(waActualPaid)}
 ⏳ Balance: ₹${fmt(waBalance)}
 Status: ${waStatus}${ptsEarned > 0 ? '\n\n💎 Points Earned: +' + ptsEarned + ' pts' : ''}
