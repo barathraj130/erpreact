@@ -974,13 +974,15 @@ JBS Knit Wear, Tiruppur
                     `, [invoiceId]);
 
                     if (invForPdf) {
-                        const pdfBuffer  = await generateInvoicePdf(invForPdf);
-                        const filename   = `Invoice_${finalInvoiceNumber}.pdf`;
-                        const filePath   = path.join(INVOICES_DIR, filename);
-                        fs.writeFileSync(filePath, pdfBuffer);
-                        const publicUrl  = `${BACKEND_URL}/uploads/invoices/${filename}`;
-                        await sendWhatsAppFile(custPhone, publicUrl, filename, `Invoice ${finalInvoiceNumber} — JBS Knit Wear`);
-                        console.log(`[PDF] sent to ${custPhone}: ${publicUrl}`);
+                        const pdfBuffer = await generateInvoicePdf(invForPdf);
+                        const filename  = `Invoice_${finalInvoiceNumber}.pdf`;
+                        // Also save to disk for the download endpoint
+                        try {
+                            fs.writeFileSync(path.join(INVOICES_DIR, filename), pdfBuffer);
+                        } catch (_) { /* disk write optional */ }
+                        // Send buffer as base64 — no public URL dependency
+                        await sendWhatsAppFile(custPhone, pdfBuffer, filename, `Invoice ${finalInvoiceNumber} — JBS Knit Wear`);
+                        console.log(`[PDF] sent to ${custPhone}: ${filename}`);
                     }
                 } catch (pdfErr) {
                     console.log('[PDF/WhatsApp] silent fail:', pdfErr.message);

@@ -355,8 +355,16 @@ let _browser = null;
 async function getBrowser() {
     if (_browser && _browser.connected) return _browser;
     _browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+        headless: 'new',
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-gpu',
+            '--disable-dev-shm-usage',
+            '--disable-extensions',
+            '--no-zygote',
+            '--single-process',
+        ],
     });
     return _browser;
 }

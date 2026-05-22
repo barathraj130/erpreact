@@ -512,12 +512,12 @@ router.post('/party/:type/:id/send-whatsapp', authMiddleware, async (req, res) =
             phone:     data.phone,
         });
 
-        // Save to uploads/ledgers/ and serve via public URL
-        if (!fs.existsSync(LEDGERS_DIR)) fs.mkdirSync(LEDGERS_DIR, { recursive: true });
-        const filename  = `${type}_Ledger_${data.partyName.replace(/\s+/g,'_')}_${Date.now()}.pdf`;
-        const filePath  = path.join(LEDGERS_DIR, filename);
-        fs.writeFileSync(filePath, pdfBuffer);
-        const publicUrl = `${BACKEND_URL}/uploads/ledgers/${filename}`;
+        const filename = `${type}_Ledger_${data.partyName.replace(/\s+/g,'_')}_${Date.now()}.pdf`;
+        // Also save to disk for the download endpoint (best-effort)
+        try {
+            if (!fs.existsSync(LEDGERS_DIR)) fs.mkdirSync(LEDGERS_DIR, { recursive: true });
+            fs.writeFileSync(path.join(LEDGERS_DIR, filename), pdfBuffer);
+        } catch (_) { /* disk write optional on Railway */ }
 
         // Send via WhatsApp (non-blocking after response)
         res.json({ success: true, message: `Ledger sent to ${data.partyName} (${data.phone}) on WhatsApp` });
@@ -538,11 +538,12 @@ Balance:      ₹${Math.abs(data.summary.balance || 0).toLocaleString('en-IN', {
 For any queries contact:
 JBS Knit Wear, Tiruppur
 📞 8148232205`);
-            await sendWhatsAppFile(data.phone, publicUrl,
+            // Send buffer as base64 — no public URL dependency
+            await sendWhatsAppFile(data.phone, pdfBuffer,
                 `${type}_Ledger_${data.partyName.replace(/\s+/g,'_')}_${dateStr.replace(/\//g,'-')}.pdf`,
                 `Ledger Statement — ${data.partyName}`
             );
-            console.log(`[Ledger PDF] sent to ${data.phone}: ${publicUrl}`);
+            console.log(`[Ledger PDF] sent to ${data.phone}: ${filename}`);
         } catch (waErr) {
             console.log('[Ledger WhatsApp] silent fail:', waErr.message);
         }
