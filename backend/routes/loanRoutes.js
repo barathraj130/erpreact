@@ -166,13 +166,26 @@ router.post('/repayment', authMiddleware, async (req, res) => {
             const { notifyOwner } = await import('../utils/whatsapp.js');
             const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
             const pType = (req.body.payment_type || 'EMI').toUpperCase();
+            const interestComp  = parseFloat(req.body.interest_component  || (pType === 'INTEREST'  ? req.body.total_amount : 0));
+            const principalComp = parseFloat(req.body.principal_component || (pType === 'PRINCIPAL' ? req.body.total_amount : 0));
+
+            // Choose emoji and title based on what was actually paid
+            const emoji = pType === 'INTEREST' ? '💸' : pType === 'PRINCIPAL' ? '🏦' : '🏦';
+            const title = pType === 'INTEREST'  ? 'Interest Payment Recorded'
+                        : pType === 'PRINCIPAL' ? 'Principal Repayment Done'
+                        : 'Loan EMI Recorded';
+
+            // Build breakdown line only when both components are non-zero
+            const breakdown = (interestComp > 0 && principalComp > 0)
+                ? `\nInterest:    ₹${fmt(interestComp)}\nPrincipal:   ₹${fmt(principalComp)}`
+                : '';
+
             await notifyOwner(
-`🏦 Loan Payment Done!
+`${emoji} ${title}
 
 Lender:      ${loanInfo?.lender_name || 'Unknown'}
-Amount:      ₹${fmt(req.body.total_amount)}
-Type:        ${pType}
-Outstanding: ₹${fmt(loanInfo?.outstanding ?? 0)}
+Amount:      ₹${fmt(req.body.total_amount)}${breakdown}
+Principal Outstanding: ₹${fmt(loanInfo?.outstanding ?? 0)}
 Date:        ${req.body.payment_date || new Date().toLocaleDateString('en-IN')}`);
 
         } catch (e) {
