@@ -312,4 +312,52 @@ router.post("/opening-balance", authMiddleware, async (req, res) => {
     }
 });
 
+// ── POST /reset/nuclear ─────────────────────────────────────────────────────
+// COMPLETE wipe — truncates EVERY table and restarts ALL sequences to 1.
+// After this the DB is empty; the user must re-register from scratch.
+// Confirm phrase: "DELETE EVERYTHING"
+router.post("/nuclear", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Admin access required" });
+    }
+    const { confirm_text } = req.body || {};
+    if (confirm_text !== "DELETE EVERYTHING") {
+        return res.status(400).json({ error: 'Type exactly "DELETE EVERYTHING" to confirm' });
+    }
+
+    let client;
+    try {
+        client = await db.getClient();
+
+        // Get all user-created tables in the public schema
+        const tablesResult = await client.query(`
+            SELECT tablename FROM pg_tables
+            WHERE schemaname = 'public'
+            ORDER BY tablename
+        `);
+        const tables = tablesResult.rows.map(r => r.tablename);
+
+        if (tables.length === 0) {
+            return res.json({ success: true, message: "Database already empty." });
+        }
+
+        // TRUNCATE all tables at once with CASCADE + RESTART IDENTITY
+        const quotedTables = tables.map(t => `"${t}"`).join(', ');
+        await client.query(`TRUNCATE TABLE ${quotedTables} RESTART IDENTITY CASCADE`);
+
+        console.log(`[nuclear-reset] Wiped ${tables.length} tables: ${tables.join(', ')}`);
+
+        res.json({
+            success: true,
+            tables_wiped: tables.length,
+            message: `✅ Nuclear wipe complete — ${tables.length} tables truncated, all IDs reset to 1. Re-register to start fresh.`,
+        });
+    } catch (err) {
+        console.error("[nuclear-reset] Error:", err.message);
+        res.status(500).json({ error: "Nuclear reset failed: " + err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 export default router;

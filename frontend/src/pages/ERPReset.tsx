@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { apiFetch } from '../utils/api';
 import {
   FaExclamationTriangle, FaTrash, FaCheckCircle,
-  FaDatabase, FaRupeeSign, FaArrowRight, FaShieldAlt,
+  FaDatabase, FaRupeeSign, FaArrowRight, FaShieldAlt, FaBomb,
 } from 'react-icons/fa';
 
 const CONFIRM_PHRASE = 'RESET FLUXORA';
+const NUCLEAR_PHRASE = 'DELETE EVERYTHING';
 
-type Phase = 'idle' | 'confirm' | 'running' | 'opening' | 'done' | 'error';
+type Phase = 'idle' | 'confirm' | 'running' | 'opening' | 'done' | 'error'
+           | 'nuclear_confirm' | 'nuclear_running' | 'nuclear_done';
 
 const fmt = (n: number) =>
   Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -16,6 +18,31 @@ const ERPReset: React.FC = () => {
   const [phase, setPhase]     = useState<Phase>('idle');
   const [typed, setTyped]     = useState('');
   const [message, setMessage] = useState('');
+
+  // Nuclear wipe state
+  const [nuclearTyped, setNuclearTyped] = useState('');
+  const [nuclearMsg,   setNuclearMsg]   = useState('');
+
+  const handleNuclear = async () => {
+    setPhase('nuclear_running');
+    try {
+      const res  = await apiFetch('/reset/nuclear', {
+        method: 'POST',
+        body: { confirm_text: NUCLEAR_PHRASE },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNuclearMsg(data.message);
+        setPhase('nuclear_done');
+      } else {
+        setNuclearMsg(data.error || 'Nuclear reset failed');
+        setPhase('error');
+      }
+    } catch {
+      setNuclearMsg('Network error during nuclear reset.');
+      setPhase('error');
+    }
+  };
 
   // Opening balance form
   const [cashAmt,  setCashAmt]  = useState('');
@@ -167,10 +194,28 @@ const ERPReset: React.FC = () => {
               width: '100%', padding: 14, background: '#dc2626', color: '#fff',
               border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              marginBottom: 10,
             }}
           >
             <FaTrash /> Begin Market Launch Reset
           </button>
+
+          {/* Nuclear wipe — separate, more destructive */}
+          <button
+            onClick={() => setPhase('nuclear_confirm')}
+            style={{
+              width: '100%', padding: 14,
+              background: '#18181b', color: '#fff',
+              border: '2px solid #ef4444',
+              borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            <FaBomb color="#ef4444" /> NUCLEAR WIPE — Delete Absolutely Everything
+          </button>
+          <p style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+            Wipes ALL tables including company &amp; admin. You must re-register after.
+          </p>
         </>
       )}
 
@@ -459,6 +504,116 @@ const ERPReset: React.FC = () => {
           >
             Go to Dashboard →
           </button>
+        </div>
+      )}
+
+      {/* ══ NUCLEAR CONFIRM ══ */}
+      {phase === 'nuclear_confirm' && (
+        <div style={{ background: '#0f0f0f', border: '2px solid #ef4444', borderRadius: 12, padding: 24 }}>
+          <div style={{ textAlign: 'center', marginBottom: 18 }}>
+            <FaBomb size={36} color="#ef4444" />
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#ef4444', margin: '12px 0 4px' }}>
+              NUCLEAR WIPE
+            </h2>
+            <p style={{ fontSize: 13, color: '#fca5a5', margin: 0 }}>
+              This deletes <strong style={{ color: '#fff' }}>every single table</strong> — companies, users, invoices,
+              products, everything. The database will be completely empty.
+              You must re-register as a new company after this.
+            </p>
+          </div>
+
+          <p style={{ fontSize: 14, color: '#fca5a5', fontWeight: 600, margin: '0 0 10px' }}>
+            Type <code style={{ background: '#1f1f1f', color: '#ef4444', padding: '2px 8px', borderRadius: 4, letterSpacing: 2 }}>{NUCLEAR_PHRASE}</code> to proceed:
+          </p>
+          <input
+            value={nuclearTyped}
+            onChange={e => setNuclearTyped(e.target.value.toUpperCase())}
+            placeholder={NUCLEAR_PHRASE}
+            autoFocus
+            style={{
+              width: '100%', padding: '12px 14px',
+              border: `2px solid ${nuclearTyped === NUCLEAR_PHRASE ? '#ef4444' : '#374151'}`,
+              borderRadius: 8, fontSize: 16, fontWeight: 700, letterSpacing: 2,
+              boxSizing: 'border-box', marginBottom: 16,
+              fontFamily: 'monospace', textAlign: 'center',
+              background: '#1f1f1f',
+              color: nuclearTyped === NUCLEAR_PHRASE ? '#ef4444' : '#d1d5db',
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => { setPhase('idle'); setNuclearTyped(''); }}
+              style={{
+                flex: 1, padding: 12, border: '1px solid #374151',
+                borderRadius: 8, background: '#1f1f1f', cursor: 'pointer',
+                fontWeight: 600, fontSize: 14, color: '#9ca3af',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              disabled={nuclearTyped !== NUCLEAR_PHRASE}
+              onClick={handleNuclear}
+              style={{
+                flex: 2, padding: 12, borderRadius: 8, border: 'none',
+                background: nuclearTyped === NUCLEAR_PHRASE ? '#ef4444' : '#374151',
+                color: '#fff',
+                cursor: nuclearTyped === NUCLEAR_PHRASE ? 'pointer' : 'not-allowed',
+                fontWeight: 800, fontSize: 14,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <FaBomb /> {nuclearTyped === NUCLEAR_PHRASE ? 'WIPE EVERYTHING NOW' : 'Type the phrase above'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ NUCLEAR RUNNING ══ */}
+      {phase === 'nuclear_running' && (
+        <div style={{ textAlign: 'center', padding: '48px 0', background: '#0f0f0f', borderRadius: 12 }}>
+          <div style={{
+            width: 52, height: 52, border: '4px solid #ef4444',
+            borderTopColor: 'transparent', borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite', margin: '0 auto 20px',
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: '#ef4444', margin: '0 0 8px' }}>
+            💣 Wiping everything…
+          </h2>
+          <p style={{ color: '#9ca3af', fontSize: 14 }}>Truncating all tables. Do not close this tab.</p>
+        </div>
+      )}
+
+      {/* ══ NUCLEAR DONE ══ */}
+      {phase === 'nuclear_done' && (
+        <div>
+          <div style={{
+            background: '#0f0f0f', border: '2px solid #ef4444',
+            borderRadius: 12, padding: '28px', textAlign: 'center', marginBottom: 20,
+          }}>
+            <FaBomb size={40} color="#ef4444" style={{ marginBottom: 12 }} />
+            <h2 style={{ color: '#ef4444', fontSize: 20, margin: '0 0 10px', fontWeight: 800 }}>
+              Database Wiped — Completely Empty
+            </h2>
+            <p style={{ color: '#9ca3af', fontSize: 14, margin: '0 0 18px' }}>
+              {nuclearMsg}
+            </p>
+            <p style={{ color: '#fca5a5', fontSize: 13, fontWeight: 600, margin: 0 }}>
+              ⚠️ You are now logged out. You must re-register to use the system.
+            </p>
+          </div>
+          <a
+            href="/register"
+            style={{
+              display: 'block', width: '100%', padding: 14, boxSizing: 'border-box',
+              background: '#2563eb', color: '#fff', textAlign: 'center',
+              borderRadius: 8, fontWeight: 800, fontSize: 16, textDecoration: 'none',
+            }}
+          >
+            → Register Fresh Company &amp; Admin
+          </a>
         </div>
       )}
 
