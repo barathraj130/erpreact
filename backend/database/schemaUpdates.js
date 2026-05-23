@@ -788,6 +788,16 @@ export const runSchemaUpdates = async () => {
                 AND (is_deleted = false OR is_deleted IS NULL)
         `).catch((e) => { console.warn('[schemaUpdates] series_number unique index skipped:', e.message); });
 
+        // ── GST: state_code on users table (needed for IGST / CGST+SGST detection) ──
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS state_code VARCHAR(5) DEFAULT '33'`).catch(() => {});
+        // Backfill state_code from GSTIN (first 2 digits) where not already set
+        await db.query(`
+            UPDATE users
+            SET state_code = SUBSTRING(gstin, 1, 2)
+            WHERE (state_code IS NULL OR state_code = '' OR state_code = '33')
+              AND gstin IS NOT NULL AND LENGTH(TRIM(gstin)) >= 2
+        `).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

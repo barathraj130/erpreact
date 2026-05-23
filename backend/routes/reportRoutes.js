@@ -333,4 +333,79 @@ router.get('/gst/itc', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 🧾 GSTR-1 SUMMARY — Intra-state (CGST+SGST) vs Inter-state (IGST)
+ */
+router.get('/gst/gstr1-summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) {
+            dateFilter = `AND invoice_date BETWEEN $2::date AND $3::date`;
+            params.push(startDate, endDate);
+        }
+
+        const sql = `
+            SELECT
+                supply_type,
+                COUNT(*)                         AS invoice_count,
+                COALESCE(SUM(sub_total), 0)      AS taxable_value,
+                COALESCE(SUM(cgst_total), 0)     AS cgst,
+                COALESCE(SUM(sgst_total), 0)     AS sgst,
+                COALESCE(SUM(igst_total), 0)     AS igst,
+                COALESCE(SUM(tax_total), 0)      AS total_gst,
+                COALESCE(SUM(total_amount), 0)   AS total_value
+            FROM (
+                SELECT *,
+                    CASE
+                        WHEN UPPER(COALESCE(gst_type,'')) IN ('INTER_STATE','IGST') THEN 'Inter-state (IGST)'
+                        ELSE 'Intra-state (CGST+SGST)'
+                    END AS supply_type
+                FROM invoices
+                WHERE company_id = $1
+                  AND COALESCE(invoice_type,'') = 'TAX_INVOICE'
+                  AND COALESCE(is_deleted, false) = false
+                  AND COALESCE(bill_purpose, '') != 'name_only'
+                  ${dateFilter}
+            ) sub
+            GROUP BY supply_type
+            ORDER BY supply_type
+        `;
+        const rows = await db.pgAll(sql, params);
+
+        // Also fetch line-item level breakdown grouped by HSN + GST rate
+        const hsnSql = `
+            SELECT
+                COALESCE(li.hsn_code, 'N/A')        AS hsn_code,
+                li.gst_rate,
+                CASE
+                    WHEN UPPER(COALESCE(i.gst_type,'')) IN ('INTER_STATE','IGST') THEN 'IGST'
+                    ELSE 'CGST+SGST'
+                END                                  AS gst_category,
+                COUNT(DISTINCT i.id)                 AS invoice_count,
+                COALESCE(SUM(li.taxable_amount), 0)  AS taxable_value,
+                COALESCE(SUM(li.cgst_amount), 0)     AS cgst,
+                COALESCE(SUM(li.sgst_amount), 0)     AS sgst,
+                COALESCE(SUM(li.igst_amount), 0)     AS igst
+            FROM invoice_line_items li
+            JOIN invoices i ON li.invoice_id = i.id
+            WHERE i.company_id = $1
+              AND COALESCE(i.invoice_type,'') = 'TAX_INVOICE'
+              AND COALESCE(i.is_deleted, false) = false
+              AND COALESCE(i.bill_purpose, '') != 'name_only'
+              ${dateFilter}
+            GROUP BY li.hsn_code, li.gst_rate, gst_category
+            ORDER BY taxable_value DESC
+        `;
+        const hsnRows = await db.pgAll(hsnSql, params).catch(() => []);
+
+        res.json({ success: true, data: { summary: rows || [], hsn_breakdown: hsnRows || [] } });
+    } catch (err) {
+        console.error("GSTR-1 summary error:", err);
+        res.json({ success: true, data: { summary: [], hsn_breakdown: [] } });
+    }
+});
+
 export default router;

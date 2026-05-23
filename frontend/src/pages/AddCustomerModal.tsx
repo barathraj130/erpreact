@@ -409,10 +409,32 @@ const AddCustomerModal: React.FC<Props> = ({
                 label="GSTIN"
                 icon={FaIdCard}
                 value={formData.gstin}
-                onChange={(e: any) =>
-                  setFormData({ ...formData, gstin: e.target.value })
-                }
-                placeholder="33ABC..."
+                onChange={(e: any) => {
+                  const gstin = e.target.value.toUpperCase();
+                  const update: any = { gstin };
+                  // Auto-detect state code from first 2 digits of GSTIN
+                  if (gstin.length >= 2) {
+                    const prefix = gstin.substring(0, 2);
+                    if (/^\d{2}$/.test(prefix)) {
+                      update.state_code = prefix;
+                      const stateNames: Record<string, string> = {
+                        '01':'Jammu & Kashmir','02':'Himachal Pradesh','03':'Punjab','04':'Chandigarh',
+                        '05':'Uttarakhand','06':'Haryana','07':'Delhi','08':'Rajasthan',
+                        '09':'Uttar Pradesh','10':'Bihar','11':'Sikkim','12':'Arunachal Pradesh',
+                        '13':'Nagaland','14':'Manipur','15':'Mizoram','16':'Tripura',
+                        '17':'Meghalaya','18':'Assam','19':'West Bengal','20':'Jharkhand',
+                        '21':'Odisha','22':'Chhattisgarh','23':'Madhya Pradesh','24':'Gujarat',
+                        '25':'Daman & Diu','26':'Dadra & Nagar Haveli','27':'Maharashtra',
+                        '28':'Andhra Pradesh','29':'Karnataka','30':'Goa','31':'Lakshadweep',
+                        '32':'Kerala','33':'Tamil Nadu','34':'Puducherry','35':'Andaman & Nicobar',
+                        '36':'Telangana','37':'Andhra Pradesh (New)','38':'Ladakh',
+                      };
+                      if (stateNames[prefix]) update.state = stateNames[prefix];
+                    }
+                  }
+                  setFormData({ ...formData, ...update });
+                }}
+                placeholder="33ABC... (state auto-detected)"
               />
               <InputField
                 label="Email"
@@ -478,15 +500,59 @@ const AddCustomerModal: React.FC<Props> = ({
                 }
                 placeholder="Chennai - 600001"
               />
-              <InputField
-                label="State"
-                icon={FaMapMarkerAlt}
-                value={formData.state}
-                onChange={(e: any) =>
-                  setFormData({ ...formData, state: e.target.value })
-                }
-                placeholder="State Name"
-              />
+              {/* State dropdown — sets both state name and state_code for GST detection */}
+              <div style={{ flex: 1 }}>
+                <label style={{ ...styles.label, display: 'block', marginBottom: 6 }}>State (for GST)</label>
+                <select
+                  value={formData.state_code || '33'}
+                  onChange={(e: any) => {
+                    const stateNames: Record<string, string> = {
+                      '01':'Jammu & Kashmir','02':'Himachal Pradesh','03':'Punjab','04':'Chandigarh',
+                      '05':'Uttarakhand','06':'Haryana','07':'Delhi','08':'Rajasthan',
+                      '09':'Uttar Pradesh','10':'Bihar','11':'Sikkim','12':'Arunachal Pradesh',
+                      '13':'Nagaland','14':'Manipur','15':'Mizoram','16':'Tripura',
+                      '17':'Meghalaya','18':'Assam','19':'West Bengal','20':'Jharkhand',
+                      '21':'Odisha','22':'Chhattisgarh','23':'Madhya Pradesh','24':'Gujarat',
+                      '25':'Daman & Diu','26':'Dadra & Nagar Haveli','27':'Maharashtra',
+                      '28':'Andhra Pradesh','29':'Karnataka','30':'Goa','31':'Lakshadweep',
+                      '32':'Kerala','33':'Tamil Nadu','34':'Puducherry','35':'Andaman & Nicobar',
+                      '36':'Telangana','37':'Andhra Pradesh (New)','38':'Ladakh',
+                    };
+                    const code = e.target.value;
+                    setFormData({ ...formData, state_code: code, state: stateNames[code] || formData.state });
+                  }}
+                  style={{
+                    width: '100%', padding: '10px 12px', border: '1.5px solid #e2e8f0',
+                    borderRadius: '10px', fontSize: '13px', background: '#f8fafc', color: '#0f172a',
+                    outline: 'none', cursor: 'pointer'
+                  }}
+                >
+                  {[
+                    ['01','Jammu & Kashmir'],['02','Himachal Pradesh'],['03','Punjab'],['04','Chandigarh'],
+                    ['05','Uttarakhand'],['06','Haryana'],['07','Delhi'],['08','Rajasthan'],
+                    ['09','Uttar Pradesh'],['10','Bihar'],['11','Sikkim'],['12','Arunachal Pradesh'],
+                    ['13','Nagaland'],['14','Manipur'],['15','Mizoram'],['16','Tripura'],
+                    ['17','Meghalaya'],['18','Assam'],['19','West Bengal'],['20','Jharkhand'],
+                    ['21','Odisha'],['22','Chhattisgarh'],['23','Madhya Pradesh'],['24','Gujarat'],
+                    ['25','Daman & Diu'],['26','Dadra & Nagar Haveli'],['27','Maharashtra'],
+                    ['28','Andhra Pradesh'],['29','Karnataka'],['30','Goa'],['31','Lakshadweep'],
+                    ['32','Kerala'],['33','Tamil Nadu'],['34','Puducherry'],['35','Andaman & Nicobar'],
+                    ['36','Telangana'],['37','Andhra Pradesh (New)'],['38','Ladakh'],
+                  ].map(([code, name]) => (
+                    <option key={code} value={code}>{code} — {name}{code === '33' ? ' ✓' : ''}</option>
+                  ))}
+                </select>
+                {formData.state_code && formData.state_code !== '33' && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: '#2563eb', fontWeight: 600 }}>
+                    🔵 Inter-state — IGST will apply
+                  </div>
+                )}
+                {(!formData.state_code || formData.state_code === '33') && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: '#16a34a', fontWeight: 600 }}>
+                    🟢 Intra-state — CGST + SGST will apply
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 6. OPENING BALANCE */}

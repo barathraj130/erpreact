@@ -15,6 +15,7 @@ import * as brokerService from "../services/brokerService.js";
 import * as pointsService from "../services/pointsService.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
 import { generateInvoicePdf } from "../utils/invoicePdf.js";
+import { determineGstType } from "../utils/gstCalculator.js";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -345,16 +346,12 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         seriesNumber      = gen.series_number;
 
         // 1. Get Company/Branch and Customer State for GST Detection
-        const company = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);
-        const customer = await client.query(`SELECT state, state_code, username, phone FROM users WHERE id = $1`, [safeCustomerId]);
-        
-        const companyStateCode = company.rows[0]?.state_code;
-        const customerStateCode = customer.rows[0]?.state_code;
-        
-        let gstType = "INTRA_STATE";
-        if (companyStateCode && customerStateCode && companyStateCode !== customerStateCode) {
-            gstType = "INTER_STATE";
-        }
+        const company  = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);
+        const customer = await client.query(`SELECT state, state_code, gstin, username, phone FROM users WHERE id = $1`, [safeCustomerId]);
+
+        const custRow = customer.rows[0] || {};
+        // Use utility — checks state_code, falls back to state name, then GSTIN prefix
+        const gstType = determineGstType(custRow.state_code, custRow.state, custRow.gstin);
 
         // Process Sale Items
         let totalTaxable = 0;
