@@ -386,4 +386,159 @@ router.get('/:id/pdf', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * POST /api/transactions/:id/send-whatsapp
+ * id format: BL-18 (bank_ledger) or CL-18 (cash_ledger)
+ * Generates a TRANSACTION VOUCHER PDF and sends it via WhatsApp.
+ */
+router.post('/:id/send-whatsapp', authMiddleware, async (req, res) => {
+    const txId      = req.params.id;                         // e.g. "BL-18"
+    const companyId = req.user.active_company_id;
+
+    // --- Parse ID ---
+    const match = txId.match(/^(BL|CL)-(\d+)$/i);
+    if (!match) return res.status(400).json({ success: false, error: 'Invalid transaction ID format' });
+
+    const [, ledgerType, ledgerId] = match;
+    const table = ledgerType.toUpperCase() === 'BL' ? 'bank_ledger' : 'cash_ledger';
+
+    try {
+        // --- Fetch ledger row ---
+        const ledger = await db.pgGet(
+            `SELECT * FROM ${table} WHERE id = $1 AND company_id = $2`,
+            [ledgerId, companyId]
+        );
+        if (!ledger) return res.status(404).json({ success: false, error: 'Transaction not found' });
+
+        // --- Resolve party name and phone ---
+        let partyName = ledger.bank_name || ledger.source || '-';
+        let phone     = null;
+
+        // invoice → customer phone
+        if (ledger.invoice_id) {
+            const inv = await db.pgGet(
+                `SELECT u.username, u.phone FROM invoices i JOIN users u ON i.customer_id = u.id WHERE i.id = $1`,
+                [ledger.invoice_id]
+            ).catch(() => null);
+            if (inv) { partyName = inv.username || partyName; phone = inv.phone; }
+        }
+
+        // loan → lender phone
+        if (!phone && ledger.reference_id && (ledger.source || '').toUpperCase().includes('LOAN')) {
+            const lender = await db.pgGet(
+                `SELECT l.lender_name, l.phone FROM loan_payments lp JOIN loans lo ON lp.loan_id = lo.id JOIN lenders l ON lo.lender_id = l.id WHERE lp.id = $1`,
+                [ledger.reference_id]
+            ).catch(() => null);
+            if (lender) { partyName = lender.lender_name || partyName; phone = lender.phone; }
+        }
+
+        // fallback to owner
+        if (!phone) phone = '8148232205';
+
+        // --- Build voucher data ---
+        const dateStr   = new Date(ledger.date || ledger.created_at).toLocaleDateString('en-IN');
+        const category  = (ledger.source || 'GENERAL').replace(/_/g, ' ');
+        const isInflow  = ledger.direction === 'in';
+        const flowLabel = isInflow ? 'Inflow (Credit)' : 'Outflow (Debit)';
+        const modeLabel = ledgerType.toUpperCase() === 'BL' ? 'Bank Transfer' : 'Cash';
+        const amountStr = 'Rs.' + Number(ledger.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+        const voucherId = `TXN-${txId}`;
+
+        // Acknowledge immediately so UI doesn't hang
+        res.json({ success: true, message: `Voucher sending to ${phone}` });
+
+        // --- Generate PDF ---
+        try {
+            const { generateLedgerPdf } = await import('../utils/generateLedgerPDF.js');
+
+            // Build simple HTML matching the jsPDF layout
+            const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    @page { size: A4; margin: 15mm; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #111; background: white; }
+    .header { text-align: center; margin-bottom: 12px; }
+    .header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+    .header p { font-size: 11px; color: #444; margin-top: 3px; }
+    hr { border: none; border-top: 1px solid #444; margin: 10px 0; }
+    .title { text-align: center; font-size: 14px; font-weight: 700; letter-spacing: 1px; margin: 10px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    td { padding: 10px 14px; font-size: 12px; }
+    td:first-child { font-weight: 700; width: 45%; }
+    tr:nth-child(odd) { background: #f9f9f9; }
+    .footer { text-align: center; margin-top: 30px; font-size: 10px; color: #888; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>JBS KNIT WEAR</h1>
+    <p>3/2B Nesavalar Colony, TNK Puram, Tiruppur 641602</p>
+    <p>Ph: 8148232205</p>
+  </div>
+  <hr/>
+  <div class="title">TRANSACTION VOUCHER</div>
+  <hr/>
+  <table>
+    <tr><td>Transaction ID:</td><td>${voucherId}</td></tr>
+    <tr><td>Date:</td><td>${dateStr}</td></tr>
+    <tr><td>Category:</td><td>${category}</td></tr>
+    <tr><td>Party:</td><td>${partyName}</td></tr>
+    <tr><td>Description:</td><td>${ledger.bank_name || ledger.source || '-'}</td></tr>
+    <tr><td>Mode:</td><td>${modeLabel}</td></tr>
+    <tr><td>Type:</td><td>${flowLabel}</td></tr>
+    <tr><td>Amount:</td><td>${amountStr}</td></tr>
+  </table>
+  <hr style="margin-top:30px"/>
+  <div class="footer">
+    System generated voucher - Fluxora ERP<br/>
+    Generated: ${new Date().toLocaleString('en-IN')}
+  </div>
+</body>
+</html>`;
+
+            // Use same Puppeteer helper
+            const puppeteerMod = await import('puppeteer');
+            const browser = await puppeteerMod.default.launch({
+                headless: 'new',
+                args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-zygote','--single-process'],
+            });
+            const page = await browser.newPage();
+            await page.setContent(html, { waitUntil: 'networkidle0' });
+            const pdfBuf = await page.pdf({ format: 'A4', printBackground: true });
+            await page.close();
+            await browser.close();
+
+            // Send via WhatsApp as base64
+            const { sendWhatsApp, sendWhatsAppFile } = await import('../utils/whatsapp.js');
+            const filename = `Voucher_${voucherId}.pdf`;
+
+            // Text summary first
+            await sendWhatsApp(phone,
+`Transaction Voucher: ${voucherId}
+
+Date:     ${dateStr}
+Type:     ${category}
+Party:    ${partyName}
+Amount:   ${amountStr}
+Flow:     ${flowLabel}
+
+JBS Knit Wear, Tiruppur
+Ph: 8148232205`);
+
+            // Then PDF
+            await sendWhatsAppFile(phone, Buffer.from(pdfBuf), filename, `Voucher ${voucherId} — JBS Knit Wear`);
+            console.log(`[TXN Voucher] sent to ${phone}: ${voucherId}`);
+        } catch (pdfErr) {
+            console.log('[TXN WhatsApp] silent fail:', pdfErr.message);
+        }
+
+    } catch (err) {
+        console.error('[TXN send-whatsapp]', err.message);
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 export default router;

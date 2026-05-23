@@ -10,7 +10,8 @@ import {
   FaCloudUploadAlt,
   FaCheck,
   FaHistory,
-  FaMoneyBillWave
+  FaMoneyBillWave,
+  FaWhatsapp
 } from "react-icons/fa";
 import jsPDF from "jspdf";
 import { apiFetch } from "../utils/api";
@@ -58,6 +59,8 @@ const Transactions: React.FC = () => {
   const [customers, setCustomers] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  // WhatsApp send state per transaction id
+  const [waSending, setWaSending] = useState<Record<string, 'idle'|'sending'|'sent'|'error'>>({});
 
   useEffect(() => {
     fetchData();
@@ -211,6 +214,25 @@ const Transactions: React.FC = () => {
     doc.text('Generated: ' + new Date().toLocaleString('en-IN'), 105, y + 18, { align: 'center' });
 
     doc.save('TXN_' + tx.id + '.pdf');
+  };
+
+  const handleSendWhatsApp = async (tx: Transaction) => {
+    const id = String(tx.id);
+    setWaSending(prev => ({ ...prev, [id]: 'sending' }));
+    try {
+      const res = await apiFetch(`/transactions/${id}/send-whatsapp`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setWaSending(prev => ({ ...prev, [id]: 'sent' }));
+        setTimeout(() => setWaSending(prev => ({ ...prev, [id]: 'idle' })), 5000);
+      } else {
+        setWaSending(prev => ({ ...prev, [id]: 'error' }));
+        setTimeout(() => setWaSending(prev => ({ ...prev, [id]: 'idle' })), 4000);
+      }
+    } catch {
+      setWaSending(prev => ({ ...prev, [id]: 'error' }));
+      setTimeout(() => setWaSending(prev => ({ ...prev, [id]: 'idle' })), 4000);
+    }
   };
 
   return (
@@ -385,6 +407,20 @@ const Transactions: React.FC = () => {
                         <td className="text-center">
                           <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} title="Download Voucher" onClick={() => downloadTransactionPDF(tx)}><FaFileDownload /></button>
+                            <button
+                              title="Send Voucher via WhatsApp"
+                              disabled={waSending[String(tx.id)] === 'sending'}
+                              onClick={() => handleSendWhatsApp(tx)}
+                              style={{
+                                padding: "6px 10px", border: "none", borderRadius: "6px", cursor: waSending[String(tx.id)] === 'sending' ? 'not-allowed' : 'pointer',
+                                background: waSending[String(tx.id)] === 'sent' ? '#16a34a' : waSending[String(tx.id)] === 'error' ? '#dc2626' : '#25D366',
+                                color: '#fff', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px',
+                                opacity: waSending[String(tx.id)] === 'sending' ? 0.6 : 1
+                              }}
+                            >
+                              <FaWhatsapp />
+                              {waSending[String(tx.id)] === 'sending' ? '' : waSending[String(tx.id)] === 'sent' ? '✓' : waSending[String(tx.id)] === 'error' ? '✗' : ''}
+                            </button>
                             {tx.proof_url && (
                               <button className="btn btn-secondary" style={{ padding: "6px" }} title="Evidence"
                                 onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}${tx.proof_url}`, '_blank')}>
