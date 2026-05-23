@@ -24,6 +24,28 @@ function resolveStateCode(stateName, existingCode) {
     return STATE_CODES[String(stateName).toUpperCase().trim()] || '';
 }
 
+/** Extract 2-digit GST state code from a GSTIN string (most reliable source) */
+function extractGstinCode(gstin) {
+    if (!gstin) return null;
+    const s = String(gstin).trim();
+    return /^\d{2}/.test(s) ? s.substring(0, 2) : null;
+}
+
+/**
+ * Resolve the customer's GST state code with priority:
+ * 1. GSTIN prefix (government-issued, most authoritative)
+ * 2. Explicitly stored state_code
+ * 3. State name lookup
+ * 4. Default '33' (Tamil Nadu)
+ */
+function resolveCustomerStateCode(data) {
+    return (
+        extractGstinCode(data.customer_gstin) ||
+        resolveStateCode(data.state || data.customer_state, data.customer_state_code || data.state_code) ||
+        '33'
+    );
+}
+
 const val   = (n) => Number(n) || 0;
 const fmt   = (n) => val(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt = (n) => val(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -49,8 +71,11 @@ function toWords(num) {
 // ── compute rows + totals from raw invoice data ───────────────────────────────
 function computeInvoiceRows(data) {
     const isNonTax = ['NON_TAX_INVOICE', 'NON-TAX'].includes(data.invoice_type);
-    const companyStateCode   = resolveStateCode(data.c_state, data.company_state_code) || '33';
-    const customerStateCode  = resolveStateCode(data.state || data.customer_state, data.customer_state_code || data.state_code) || '33';
+    const companyStateCode  = resolveStateCode(data.c_state, data.company_state_code) || '33';
+    // GSTIN prefix has highest priority — it's government-issued and most reliable.
+    // This ensures inter-state customers (e.g. Karnataka GSTIN 29xxx) are never
+    // misclassified as intra-state due to a missing / default state_code in DB.
+    const customerStateCode = resolveCustomerStateCode(data);
     const isSameState = companyStateCode === customerStateCode;
 
     const items = Array.isArray(data.line_items || data.items) ? (data.line_items || data.items) : [];
@@ -70,9 +95,13 @@ function computeInvoiceRows(data) {
         const gstRate = isNonTax ? 0 : storedLineRate;
         const gstAmt  = (taxable * gstRate) / 100;
 
-        const cgst = val(item.cgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
-        const sgst = val(item.sgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
-        const igst = val(item.igst_amount) || (!isSameState && !isNonTax ? gstAmt : 0);
+        // Always re-derive CGST/SGST/IGST split from the correct isSameState.
+        // Do NOT use stored cgst_amount/sgst_amount/igst_amount because they may
+        // have been saved with the wrong split (e.g. CGST+SGST for a Karnataka customer).
+        // The total GST amount stays identical — only the classification changes.
+        const cgst = isSameState && !isNonTax ? gstAmt / 2 : 0;
+        const sgst = isSameState && !isNonTax ? gstAmt / 2 : 0;
+        const igst = !isSameState && !isNonTax ? gstAmt : 0;
 
         if (!isReturn) {
             totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst;
@@ -90,12 +119,12 @@ function computeInvoiceRows(data) {
     const totalGST  = totalCGST + totalSGST + totalIGST;
     const grandTotal = totalTaxable + totalGST;
 
-    return { rows, isNonTax, isSameState, totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty };
+    return { rows, isNonTax, isSameState, customerStateCode, totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty };
 }
 
 // ── HTML builder (mirrors frontend buildPrintHTML exactly) ────────────────────
 export function buildInvoiceHtml(data) {
-    const { rows, isNonTax, isSameState, totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty }
+    const { rows, isNonTax, isSameState, customerStateCode, totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty }
         = computeInvoiceRows(data);
 
     const cgstRate = totalTaxable > 0 ? ((totalCGST / totalTaxable) * 100).toFixed(2) : '0.00';
@@ -260,7 +289,7 @@ export function buildInvoiceHtml(data) {
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Transportation Mode</span><span>: ${data.transportation_mode || data.transport_mode || ''}</span></div>
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Vehicle Number</span><span>: ${data.vehicle_number || ''}</span></div>
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Date of Supply</span><span>: ${supplyDate}</span></div>
-      <div style="display:grid;grid-template-columns:130px 1fr"><span><b>Place of Supply</b></span><span>: ${data.state || data.customer_state || ''} &nbsp; <b>Code:</b> ${resolveStateCode(data.state || data.customer_state, data.customer_state_code || data.state_code) || '33'}</span></div>
+      <div style="display:grid;grid-template-columns:130px 1fr"><span><b>Place of Supply</b></span><span>: ${data.state || data.customer_state || ''} &nbsp; <b>Code:</b> ${customerStateCode}</span></div>
     </div>
   </div>
 
@@ -273,7 +302,7 @@ export function buildInvoiceHtml(data) {
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>Address</span><span>: ${data.address_line1 || ''}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span></span><span>: ${data.city_pincode || ''}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>GSTIN</span><span>: <b>${data.customer_gstin || ''}</b></span></div>
-        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ''} &nbsp; <b>Code:</b> ${resolveStateCode(data.state, data.customer_state_code || data.state_code)}</span></div>
+        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ''} &nbsp; <b>Code:</b> ${customerStateCode}</span></div>
       </div>
     </div>
     <div>

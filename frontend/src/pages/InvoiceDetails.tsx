@@ -27,6 +27,28 @@ function resolveStateCode(stateName: any, existingCode: any): string {
   return STATE_CODES[String(stateName).toUpperCase().trim()] || "";
 }
 
+/** Extract 2-digit GST state code from GSTIN (most reliable — government-issued) */
+function extractGstinCode(gstin: any): string | null {
+  if (!gstin) return null;
+  const s = String(gstin).trim();
+  return /^\d{2}/.test(s) ? s.substring(0, 2) : null;
+}
+
+/**
+ * Resolve customer's GST state code with priority:
+ * 1. GSTIN prefix (most authoritative)
+ * 2. Stored state_code
+ * 3. State name lookup
+ * 4. Default '33'
+ */
+function resolveCustomerStateCode(data: any): string {
+  return (
+    extractGstinCode(data.customer_gstin) ||
+    resolveStateCode(data.state || data.customer_state, data.customer_state_code || data.state_code) ||
+    "33"
+  );
+}
+
 const val = (n: any) => Number(n) || 0;
 const fmt = (n: any) =>
   val(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -53,11 +75,13 @@ function toWords(num: number): string {
 // ─── print HTML — exact PDF replica ──────────────────────────────────────────
 function buildPrintHTML(p: {
   data: any; rows: any[]; isNonTax: boolean; isSameState: boolean;
+  resolvedCustomerStateCode?: string;
   totalTaxable: number; totalCGST: number; totalSGST: number; totalIGST: number;
   totalGST: number; grandTotal: number; totalQty: number;
 }): string {
   const { data, rows, isNonTax, isSameState,
     totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty } = p;
+  const custStateCode = p.resolvedCustomerStateCode || resolveCustomerStateCode(data);
 
   const cgstRate = totalTaxable > 0 ? ((totalCGST / totalTaxable) * 100).toFixed(2) : "0.00";
   const sgstRate = totalTaxable > 0 ? ((totalSGST / totalTaxable) * 100).toFixed(2) : "0.00";
@@ -164,7 +188,7 @@ function buildPrintHTML(p: {
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Transportation Mode</span><span>: ${data.transport_mode || ""}</span></div>
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Vehicle Number</span><span>: ${data.vehicle_number || ""}</span></div>
       <div style="display:grid;grid-template-columns:130px 1fr;margin-bottom:2px"><span>Date of Supply</span><span>: ${data.date_of_supply ? new Date(data.date_of_supply).toLocaleDateString("en-GB") : ""}</span></div>
-      <div style="display:grid;grid-template-columns:130px 1fr"><span><b>Place of Supply</b></span><span>: ${data.customer_state || data.state || ""} &nbsp;&nbsp; <b>State Code:</b> ${resolveStateCode(data.customer_state || data.state, data.customer_state_code || data.state_code) || "33"}</span></div>
+      <div style="display:grid;grid-template-columns:130px 1fr"><span><b>Place of Supply</b></span><span>: ${data.customer_state || data.state || ""} &nbsp;&nbsp; <b>State Code:</b> ${custStateCode}</span></div>
     </div>
   </div>
 
@@ -177,7 +201,7 @@ function buildPrintHTML(p: {
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>Address</span><span>: ${data.address_line1 || ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span></span><span>: ${data.city_pincode || ""}</span></div>
         <div style="display:grid;grid-template-columns:50px 1fr;margin-bottom:2px"><span>GSTIN</span><span>: <b>${data.customer_gstin || ""}</b></span></div>
-        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ""} &nbsp; <b>State Code:</b> ${resolveStateCode(data.state, data.customer_state_code || data.state_code)}</span></div>
+        <div style="display:grid;grid-template-columns:50px 1fr"><span>State</span><span>: ${data.state || ""} &nbsp; <b>State Code:</b> ${custStateCode}</span></div>
       </div>
     </div>
     <div>
@@ -420,7 +444,11 @@ const InvoiceDetails: React.FC = () => {
     data.invoice_type === "RETAIL_SALE"         ? "RETAIL SALE" :
     data.invoice_type === "GIFTED_ITEM"         ? "GIFT VOUCHER" :
     "INVOICE";
-  const isSameState = (data.company_state_code || "33") === (data.customer_state_code || data.state_code || "33");
+  // GSTIN prefix is most reliable — a Karnataka customer (GSTIN 29xxx) must never
+  // be classified as intra-state just because state_code defaulted to '33' in DB.
+  const resolvedCustomerStateCode = resolveCustomerStateCode(data);
+  const companyStateCode = data.company_state_code || "33";
+  const isSameState = companyStateCode === resolvedCustomerStateCode;
   const items = Array.isArray(data.items) ? data.items : [];
 
   // Sale totals (for Before/After Tax box — returns excluded)
@@ -438,10 +466,13 @@ const InvoiceDetails: React.FC = () => {
     // Fall back to the user's override rate when nothing is stored (old invoices with 0 GST)
     const gstRate = isNonTax ? 0 : (storedLineRate > 0 ? storedLineRate : gstOverrideRate);
     const gstAmt = (taxable * gstRate) / 100;
-    // Use stored amounts if non-zero; otherwise re-derive from gstRate
-    const cgst = val(item.cgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
-    const sgst = val(item.sgst_amount) || (isSameState && !isNonTax ? gstAmt / 2 : 0);
-    const igst = val(item.igst_amount) || (!isSameState && !isNonTax ? gstAmt : 0);
+    // Always re-derive CGST/SGST/IGST split from the correct isSameState.
+    // Do NOT use stored cgst_amount/sgst_amount/igst_amount — they may have been
+    // saved with the wrong split (e.g. CGST+SGST for a non-TN customer before fix).
+    // The total GST amount is preserved; only the classification changes.
+    const cgst = isSameState && !isNonTax ? gstAmt / 2 : 0;
+    const sgst = isSameState && !isNonTax ? gstAmt / 2 : 0;
+    const igst = !isSameState && !isNonTax ? gstAmt : 0;
     // Only add SALE items to the tax totals (not returns)
     if (!isReturn) {
       totalTaxable += taxable; totalCGST += cgst; totalSGST += sgst; totalIGST += igst; totalQty += Math.abs(qty);
@@ -466,7 +497,7 @@ const InvoiceDetails: React.FC = () => {
   const emptyCount = Math.max(0, EMPTY_ROWS - rows.length);
 
   const doPrint = () => {
-    const html = buildPrintHTML({ data, rows, isNonTax, isSameState, totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty });
+    const html = buildPrintHTML({ data, rows, isNonTax, isSameState, resolvedCustomerStateCode, totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, grandTotal, totalQty });
     const w = window.open("", "_blank", "width=900,height=700");
     if (!w) { alert("Please allow popups to print."); return; }
     w.document.write(html);
@@ -509,7 +540,7 @@ const InvoiceDetails: React.FC = () => {
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", marginBottom: "2px" }}><span>Transportation Mode</span><span>: {data.transport_mode || ""}</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", marginBottom: "2px" }}><span>Vehicle Number</span><span>: {data.vehicle_number || ""}</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", marginBottom: "2px" }}><span>Date of Supply</span><span>: {data.date_of_supply ? new Date(data.date_of_supply).toLocaleDateString("en-GB") : ""}</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "130px 1fr" }}><b>Place of Supply</b><span>: {data.customer_state || data.state} &nbsp; <b>State Code:</b> {resolveStateCode(data.customer_state || data.state, data.customer_state_code || data.state_code) || "33"}</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "130px 1fr" }}><b>Place of Supply</b><span>: {data.customer_state || data.state} &nbsp; <b>State Code:</b> {resolvedCustomerStateCode}</span></div>
         </div>
       </div>
 
@@ -522,7 +553,7 @@ const InvoiceDetails: React.FC = () => {
             <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>Address</span><span>: {data.address_line1}</span></div>
             {data.city_pincode && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span></span><span>: {data.city_pincode}</span></div>}
             {data.customer_gstin && <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", marginBottom: "2px" }}><span>GSTIN</span><span>: <b>{data.customer_gstin}</b></span></div>}
-            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.state} &nbsp; <b>State Code:</b> {resolveStateCode(data.state, data.customer_state_code || data.state_code)}</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "50px 1fr" }}><span>State</span><span>: {data.state} &nbsp; <b>State Code:</b> {resolvedCustomerStateCode}</span></div>
           </div>
         </div>
         <div>
