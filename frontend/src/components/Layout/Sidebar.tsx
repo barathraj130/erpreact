@@ -176,9 +176,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
 
   useEffect(() => {
     // Load company name from billing config (reflects Bill Format Settings)
-    fetch(`${import.meta.env.VITE_API_URL || ''}/api/billing-config/format`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("erp-token")}` }
-    }).then(r => r.ok ? r.json() : null)
+    apiFetch("/billing-config/format")
+      .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.business_name) setCompanyName(d.business_name); })
       .catch(() => {});
   }, []);

@@ -46,7 +46,15 @@ router.get("/format", authMiddleware, async (req, res) => {
         };
         res.json(merged);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        // bill_format_settings table may not exist yet — return empty defaults
+        console.log('[billing-config] GET error (safe):', err.message);
+        res.json({
+            business_name: '', address: '', gstin: '', phone: '', email: '',
+            state: '', state_code: '', bank_name: '', bank_account_no: '', bank_ifsc_code: '',
+            bill_title: 'INVOICE', bill_type: 'INVOICE',
+            show_hsn: true, show_gst_breakup: true, show_barcode: true, show_branch_name: true,
+            footer_message: 'Thank you for your business!', paper_size: 'A4'
+        });
     }
 });
 

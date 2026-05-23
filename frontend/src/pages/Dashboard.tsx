@@ -180,7 +180,7 @@ const Dashboard: React.FC = () => {
           <div className="db-card">
             <div className="db-card-header"><span className="db-card-title">Monthly Revenue Trend</span></div>
             <div className="db-card-body" style={{ height: '300px' }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" debounce={200}>
                 <AreaChart data={monthlyTrend}>
                   <defs>
                     <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -201,7 +201,7 @@ const Dashboard: React.FC = () => {
           <div className="db-card">
             <div className="db-card-header"><span className="db-card-title">Sales Breakdown</span></div>
             <div className="db-card-body" style={{ height: '300px' }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" debounce={200}>
                 <PieChart>
                   <Pie data={salesBreakdownData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
                     {salesBreakdownData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
@@ -220,7 +220,7 @@ const Dashboard: React.FC = () => {
             <div className="db-card-header"><span className="db-card-title">Expense Breakdown</span></div>
             <div className="db-card-body" style={{ height: '250px' }}>
               {expenseData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" debounce={200}>
                   <BarChart data={expenseData} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" hide />
@@ -239,7 +239,7 @@ const Dashboard: React.FC = () => {
             <div className="db-card-header"><span className="db-card-title">Top Outstanding by Customer</span></div>
             <div className="db-card-body" style={{ height: '250px' }}>
               {outstandingCustomers.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" debounce={200}>
                   <BarChart data={outstandingCustomers} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" hide />
