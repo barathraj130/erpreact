@@ -32,6 +32,9 @@ interface Employee {
   email?: string;
   salary: number;
   salary_type: "Monthly" | "Weekly" | "Daily";
+  daily_rate?: number;
+  weekly_rate?: number;
+  working_days_per_week?: number;
   status: string;
   portal_username?: string;
   advance_balance?: number;
@@ -792,22 +795,28 @@ const AddEmployeeModalInline: React.FC<{
     phone: employee?.phone || "",
     salary: employee?.salary || 0,
     salary_type: employee?.salary_type || "Monthly",
+    daily_rate: employee?.daily_rate || 0,
+    weekly_rate: employee?.weekly_rate || 0,
+    working_days_per_week: employee?.working_days_per_week || 6,
     status: employee?.status || "Active",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload = {
+        ...formData,
+        salary_type: formData.salary_type.toLowerCase(),
+      };
       const res = await apiFetch(
         employee ? `/employees/${employee.id}` : "/employees",
         {
           method: employee ? "PUT" : "POST",
-          body: formData,
+          body: payload,
         },
       );
       if (res.ok) {
         if (!employee) {
-          // New employee — parse the ID and pass a full Employee object back
           const data = await res.json();
           const newEmp: Employee = {
             id: data.id,
@@ -816,6 +825,9 @@ const AddEmployeeModalInline: React.FC<{
             phone: formData.phone,
             salary: Number(formData.salary),
             salary_type: formData.salary_type as "Monthly" | "Weekly" | "Daily",
+            daily_rate: Number(formData.daily_rate),
+            weekly_rate: Number(formData.weekly_rate),
+            working_days_per_week: Number(formData.working_days_per_week),
             status: formData.status,
           };
           onSuccess(newEmp);
@@ -893,45 +905,70 @@ const AddEmployeeModalInline: React.FC<{
               className="premium-input"
             />
           </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "20px",
-              marginBottom: "32px"
-            }}
-          >
-            <div className="input-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", marginBottom: "8px", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Salary</label>
-              <input
-                type="number"
-                value={formData.salary}
-                onChange={(e) =>
-                  setFormData({ ...formData, salary: Number(e.target.value) })
-                }
-                className="form-input"
-                style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1.5px solid #e2e8f0", fontSize: "1rem", outline: "none", transition: "border-color 0.2s" }}
-              />
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
             <div className="input-group" style={{ marginBottom: 0 }}>
               <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", marginBottom: "8px", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Pay Type</label>
               <CustomSelect
                 value={formData.salary_type}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    salary_type: e.target.value as any,
-                  })
-                }
+                onChange={(e) => setFormData({ ...formData, salary_type: e.target.value as any })}
                 style={{ width: "100%" }}
               >
-                <option value="Monthly">Monthly</option>
+                <option value="Monthly">Monthly Fixed</option>
                 <option value="Weekly">Weekly</option>
                 <option value="Daily">Daily Payout</option>
               </CustomSelect>
             </div>
+            {formData.salary_type === "Monthly" && (
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", marginBottom: "8px", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Monthly Salary (₹)</label>
+                <input
+                  type="number"
+                  value={formData.salary}
+                  onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) })}
+                  className="form-input"
+                  style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1.5px solid #e2e8f0", fontSize: "1rem", outline: "none" }}
+                />
+              </div>
+            )}
+            {formData.salary_type === "Weekly" && (
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", marginBottom: "8px", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Weekly Rate (₹ / week)</label>
+                <input
+                  type="number"
+                  value={formData.weekly_rate}
+                  onChange={(e) => setFormData({ ...formData, weekly_rate: Number(e.target.value) })}
+                  className="form-input"
+                  style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1.5px solid #e2e8f0", fontSize: "1rem", outline: "none" }}
+                />
+              </div>
+            )}
+            {formData.salary_type === "Daily" && (
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", marginBottom: "8px", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Daily Rate (₹ / day)</label>
+                <input
+                  type="number"
+                  value={formData.daily_rate}
+                  onChange={(e) => setFormData({ ...formData, daily_rate: Number(e.target.value) })}
+                  className="form-input"
+                  style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1.5px solid #e2e8f0", fontSize: "1rem", outline: "none" }}
+                />
+              </div>
+            )}
           </div>
-          <div style={{ height: "20px" }}></div> {/* Space for custom select dropdown */}
+          {(formData.salary_type === "Weekly" || formData.salary_type === "Daily") && (
+            <div className="input-group" style={{ marginBottom: "20px" }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", marginBottom: "8px", display: "block", textTransform: "uppercase", letterSpacing: "0.05em" }}>Working Days / Week</label>
+              <input
+                type="number"
+                min={1} max={7}
+                value={formData.working_days_per_week}
+                onChange={(e) => setFormData({ ...formData, working_days_per_week: Number(e.target.value) })}
+                className="form-input"
+                style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1.5px solid #e2e8f0", fontSize: "1rem", outline: "none" }}
+              />
+            </div>
+          )}
+          <div style={{ height: "8px" }}></div>
           <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
             <button
               type="button"

@@ -130,7 +130,9 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
           section: "Human Resources",
           subItems: [
               { name: "Employee List", path: "/employees" },
-              { name: "Attendance", path: "/attendance" }
+              { name: "Attendance", path: "/attendance" },
+              { name: "Daily Wage", path: "/hr/daily-salary" },
+              { name: "Weekly Salary", path: "/hr/weekly-salary" }
           ] 
       });
   }

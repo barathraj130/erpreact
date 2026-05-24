@@ -30,6 +30,8 @@ import FileManager from "./pages/FileManager";
 import HostLogin from "./pages/HostLogin";
 import Attendance from "./pages/hr/Attendance";
 import MobileAttendance from "./pages/hr/MobileAttendance";
+import WeeklySalary from "./pages/hr/WeeklySalary";
+import DailySalary from "./pages/hr/DailySalary";
 import Inventory from "./pages/Inventory";
 import Invoices from "./pages/Invoices";
 import InvoiceDetails from "./pages/InvoiceDetails";
@@ -287,6 +289,8 @@ const App: React.FC = () => {
             <Route path="/branch/billing" element={<BranchBilling />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/employees" element={<Employees />} />
+            <Route path="/hr/weekly-salary" element={<WeeklySalary />} />
+            <Route path="/hr/daily-salary" element={<DailySalary />} />
             
             <Route path="/suppliers/:id/ledger" element={<LedgerViewer type="supplier" />} />
             <Route path="/customers/:id/ledger" element={<LedgerViewer type="customer" />} />
