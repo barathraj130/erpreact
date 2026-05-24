@@ -49,7 +49,22 @@ const DailySalary: React.FC = () => {
       const res = await apiFetch(`/hr/salary/daily/summary?date=${date}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load");
-      setRows(Array.isArray(data) ? data : []);
+      // Backend returns { date, employees: [...], total_daily_wage } or plain array
+      const list = Array.isArray(data) ? data : (data.employees || []);
+      // Map backend column names to frontend interface
+      setRows(list.map((e: any) => ({
+        employee_id: e.id || e.employee_id,
+        employee_name: e.name || e.employee_name,
+        designation: e.designation,
+        salary_type: e.salary_type || 'monthly',
+        daily_rate: Number(e.daily_rate || 0),
+        weekly_rate: Number(e.weekly_rate || 0),
+        salary: Number(e.monthly_salary || e.salary || 0),
+        working_days_per_week: Number(e.working_days_per_week || 6),
+        status: (e.status === 'not_marked' ? 'absent' : e.status) || 'absent',
+        working_hours: Number(e.working_hours || 0),
+        daily_wage: Number(e.daily_wage || 0),
+      })));
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -70,7 +85,7 @@ const DailySalary: React.FC = () => {
     try {
       const res = await apiFetch("/hr/attendance/daily", {
         method: "POST",
-        body: { employee_id: employeeId, date, status, working_hours: hours },
+        body: { employee_id: employeeId, attendance_date: date, status, working_hours: hours },
       });
       if (!res.ok) {
         const d = await res.json();

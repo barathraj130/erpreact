@@ -501,6 +501,52 @@ router.delete("/attendance/:id", authMiddleware, async (req, res) => {
 // 6. DAILY ATTENDANCE WITH WAGE CALCULATION
 // ==========================================
 
+// Ensure daily_attendance and weekly_salary tables exist (lazy-create in case migration hasn't run)
+const ensureWeeklyTables = async () => {
+    await db.pgRun(`
+        CREATE TABLE IF NOT EXISTS daily_attendance (
+            id               SERIAL PRIMARY KEY,
+            company_id       INTEGER NOT NULL,
+            employee_id      INTEGER REFERENCES employees(id),
+            attendance_date  DATE NOT NULL,
+            status           VARCHAR(20) DEFAULT 'present',
+            working_hours    NUMERIC(4,2) DEFAULT 8,
+            daily_wage       NUMERIC(12,2) DEFAULT 0,
+            overtime_hours   NUMERIC(4,2) DEFAULT 0,
+            overtime_amount  NUMERIC(12,2) DEFAULT 0,
+            notes            TEXT,
+            branch_id        INTEGER,
+            created_at       TIMESTAMP DEFAULT NOW(),
+            UNIQUE(employee_id, attendance_date)
+        )
+    `).catch(() => {});
+    await db.pgRun(`
+        CREATE TABLE IF NOT EXISTS weekly_salary (
+            id               SERIAL PRIMARY KEY,
+            company_id       INTEGER NOT NULL,
+            employee_id      INTEGER REFERENCES employees(id),
+            week_start       DATE NOT NULL,
+            week_end         DATE NOT NULL,
+            total_days       INTEGER DEFAULT 0,
+            present_days     INTEGER DEFAULT 0,
+            absent_days      INTEGER DEFAULT 0,
+            half_days        INTEGER DEFAULT 0,
+            gross_salary     NUMERIC(12,2) DEFAULT 0,
+            advance_deducted NUMERIC(12,2) DEFAULT 0,
+            net_salary       NUMERIC(12,2) DEFAULT 0,
+            payment_mode     VARCHAR(20) DEFAULT 'cash',
+            status           VARCHAR(20) DEFAULT 'pending',
+            paid_at          TIMESTAMP,
+            notes            TEXT,
+            created_at       TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type VARCHAR(20) DEFAULT 'monthly'`).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS daily_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS weekly_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 6`).catch(() => {});
+};
+
 // POST /hr/attendance/daily — mark and calculate daily wage
 router.post("/attendance/daily", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
@@ -508,6 +554,7 @@ router.post("/attendance/daily", authMiddleware, async (req, res) => {
     if (!employee_id || !attendance_date) return res.status(400).json({ error: "employee_id and attendance_date required" });
 
     try {
+        await ensureWeeklyTables();
         const emp = await db.pgGet(`SELECT * FROM employees WHERE id = $1 AND company_id = $2`, [employee_id, companyId]);
         if (!emp) return res.status(404).json({ error: "Employee not found" });
 
@@ -549,6 +596,7 @@ router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const date = req.query.date || new Date().toISOString().split('T')[0];
     try {
+        await ensureWeeklyTables();
         const rows = await db.pgAll(`
             SELECT e.id, e.name, e.designation,
                    COALESCE(e.salary_type, 'monthly') as salary_type,
@@ -591,25 +639,32 @@ router.post("/salary/weekly/calculate", authMiddleware, async (req, res) => {
     const weStr = weekEnd.toISOString().split('T')[0];
 
     try {
+        await ensureWeeklyTables();
+
+        // Include both weekly AND daily employees — both get Saturday payout
         const employees = await db.pgAll(`
             SELECT * FROM employees
             WHERE company_id = $1
               AND COALESCE(status, 'Active') = 'Active'
-              AND LOWER(COALESCE(salary_type,'monthly')) = 'weekly'
+              AND LOWER(COALESCE(salary_type,'monthly')) IN ('weekly','daily')
         `, [companyId]);
 
         const results = [];
         for (const emp of employees) {
-            const att = await db.pgGet(`
-                SELECT
-                  COUNT(*) FILTER (WHERE status = 'present')  as present_days,
-                  COUNT(*) FILTER (WHERE status = 'absent')   as absent_days,
-                  COUNT(*) FILTER (WHERE status = 'half_day') as half_days,
-                  COALESCE(SUM(daily_wage), 0)                as gross_salary
-                FROM daily_attendance
-                WHERE employee_id = $1
-                  AND attendance_date BETWEEN $2 AND $3
-            `, [emp.id, wsStr, weStr]);
+            // Try attendance from daily_attendance table first
+            let att = null;
+            try {
+                att = await db.pgGet(`
+                    SELECT
+                      COUNT(*) FILTER (WHERE status = 'present')  as present_days,
+                      COUNT(*) FILTER (WHERE status = 'absent')   as absent_days,
+                      COUNT(*) FILTER (WHERE status = 'half_day') as half_days,
+                      COALESCE(SUM(daily_wage), 0)                as gross_salary
+                    FROM daily_attendance
+                    WHERE employee_id = $1
+                      AND attendance_date BETWEEN $2 AND $3
+                `, [emp.id, wsStr, weStr]);
+            } catch (_) { att = null; }
 
             const adv = await db.pgGet(`
                 SELECT COALESCE(SUM(current_balance), 0) as total_advance
@@ -617,30 +672,38 @@ router.post("/salary/weekly/calculate", authMiddleware, async (req, res) => {
                 WHERE employee_id = $1
                   AND status = 'ACTIVE'
                   AND current_balance > 0
-            `, [emp.id]);
+            `, [emp.id]).catch(() => null);
 
-            const grossSalary    = Number(att?.gross_salary)    || 0;
-            const pendingAdvance = Number(adv?.total_advance)   || 0;
+            const presentDays    = Number(att?.present_days)  || 0;
+            const absentDays     = Number(att?.absent_days)   || 0;
+            const halfDays       = Number(att?.half_days)     || 0;
+            const grossSalary    = Number(att?.gross_salary)  || 0;
+            const advanceBalance = Number(adv?.total_advance) || 0;
+            const salaryType     = (emp.salary_type || 'monthly').toLowerCase();
+            const workingDays    = Number(emp.working_days_per_week) || 6;
 
             results.push({
-                employee_id:        emp.id,
-                employee_name:      emp.name,
-                phone:              emp.phone,
-                designation:        emp.designation,
-                weekly_rate:        Number(emp.weekly_rate) || 0,
-                week_start:         wsStr,
-                week_end:           weStr,
-                present_days:       Number(att?.present_days)  || 0,
-                absent_days:        Number(att?.absent_days)   || 0,
-                half_days:          Number(att?.half_days)     || 0,
-                gross_salary:       grossSalary,
-                pending_advance:    pendingAdvance,
-                suggested_deduction: pendingAdvance,
-                net_salary:         Math.max(0, grossSalary - pendingAdvance),
+                employee_id:          emp.id,
+                employee_name:        emp.name,
+                phone:                emp.phone,
+                designation:          emp.designation,
+                salary_type:          salaryType,
+                weekly_rate:          Number(emp.weekly_rate) || 0,
+                daily_rate:           Number(emp.daily_rate)  || 0,
+                salary:               Number(emp.salary)      || 0,
+                working_days_per_week: workingDays,
+                week_start:           wsStr,
+                week_end:             weStr,
+                present_days:         presentDays,
+                absent_days:          absentDays,
+                half_days:            halfDays,
+                gross_salary:         grossSalary,
+                advance_balance:      advanceBalance,   // ← field name frontend uses
+                net_salary:           Math.max(0, grossSalary - advanceBalance),
             });
         }
 
-        res.json({ success: true, week_start: wsStr, week_end: weStr, data: results });
+        res.json({ success: true, week_start: wsStr, week_end: weStr, employees: results });
     } catch (err) {
         console.error('[weekly-calculate]', err.message);
         res.status(500).json({ error: err.message });
@@ -651,21 +714,57 @@ router.post("/salary/weekly/calculate", authMiddleware, async (req, res) => {
 router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id || 1;
-    const { week_end, payments } = req.body;
-    if (!payments?.length) return res.status(400).json({ error: "No payments provided" });
+    const { week_end, employees: empDecisions, payments: legacyPayments } = req.body;
+    // Accept either 'employees' (new) or 'payments' (old field name)
+    const decisions = empDecisions || legacyPayments || [];
+    if (!decisions.length) return res.status(400).json({ error: "No employees provided" });
+    if (!week_end) return res.status(400).json({ error: "week_end required" });
+
+    const weekEnd   = new Date(week_end);
+    const weekStart = new Date(weekEnd);
+    weekStart.setDate(weekStart.getDate() - 5);
+    const wsStr = weekStart.toISOString().split('T')[0];
+    const weStr = weekEnd.toISOString().split('T')[0];
 
     let client;
     try {
         client = await db.getClient();
         await client.query('BEGIN');
 
+        await ensureWeeklyTables();
         const results = [];
-        for (const p of payments) {
-            const emp = await db.pgGet(`SELECT * FROM employees WHERE id = $1`, [p.employee_id]);
+        for (const p of decisions) {
+            const emp = await db.pgGet(`SELECT * FROM employees WHERE id = $1 AND company_id = $2`, [p.employee_id, companyId]);
             if (!emp) continue;
 
-            const netSalary = Number(p.net_salary) || 0;
-            const pMode     = (p.payment_mode || 'cash').toUpperCase();
+            const pMode = (p.payment_mode || 'cash').toUpperCase();
+
+            // Re-fetch attendance for this employee for the week
+            let att = null;
+            try {
+                att = await db.pgGet(`
+                    SELECT
+                      COUNT(*) FILTER (WHERE status = 'present')  as present_days,
+                      COUNT(*) FILTER (WHERE status = 'absent')   as absent_days,
+                      COUNT(*) FILTER (WHERE status = 'half_day') as half_days,
+                      COALESCE(SUM(daily_wage), 0)                as gross_salary
+                    FROM daily_attendance
+                    WHERE employee_id = $1 AND attendance_date BETWEEN $2 AND $3
+                `, [emp.id, wsStr, weStr]);
+            } catch (_) { att = null; }
+
+            const grossSalary = Number(att?.gross_salary) || 0;
+
+            // Advance balance from salary_advances
+            const advRow = await db.pgGet(`
+                SELECT COALESCE(SUM(current_balance), 0) as total
+                FROM salary_advances
+                WHERE employee_id = $1 AND status = 'ACTIVE' AND current_balance > 0
+            `, [emp.id]).catch(() => null);
+            const advanceBalance = Number(advRow?.total) || 0;
+
+            const advDeducted = p.deduct_advance ? Math.min(advanceBalance, grossSalary) : 0;
+            const netSalary   = Math.max(0, grossSalary - advDeducted);
 
             // Balance check
             if (netSalary > 0) {
@@ -678,8 +777,6 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
                 }
             }
 
-            const advDeducted = p.deduct_advance ? (Number(p.advance_deduction) || 0) : 0;
-
             // Insert weekly_salary record
             const wkRow = await client.query(`
                 INSERT INTO weekly_salary
@@ -689,10 +786,10 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
                    payment_mode, status, paid_at)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'paid',NOW())
                 RETURNING id
-            `, [companyId, p.employee_id, p.week_start, p.week_end,
-                (Number(p.present_days) + Number(p.absent_days) + Number(p.half_days)) || 6,
-                Number(p.present_days) || 0, Number(p.absent_days) || 0, Number(p.half_days) || 0,
-                Number(p.gross_salary) || 0, advDeducted, netSalary, pMode.toLowerCase()]);
+            `, [companyId, p.employee_id, wsStr, weStr,
+                (Number(att?.present_days) + Number(att?.absent_days) + Number(att?.half_days)) || 6,
+                Number(att?.present_days) || 0, Number(att?.absent_days) || 0, Number(att?.half_days) || 0,
+                grossSalary, advDeducted, netSalary, pMode.toLowerCase()]);
 
             const wkId = wkRow.rows[0].id;
 
@@ -707,7 +804,7 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
                     await client.query(
                         `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date, reference_id)
                          VALUES ($1,$2,'weekly_salary',$3,'out',$4,CURRENT_DATE,$5)`,
-                        [companyId, branchId, netSalary, p.bank_name || pMode, wkId]);
+                        [companyId, branchId, netSalary, 'Main Account', wkId]);
                 }
             }
 
@@ -730,9 +827,9 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
 
 💰 Weekly Salary Credited!
 
-Period: ${p.week_start} to ${p.week_end}
-Days Present: ${p.present_days} days
-Gross Salary: ₹${Number(p.gross_salary).toLocaleString('en-IN')}${advDeducted > 0 ? `\nAdvance Deducted: −₹${advDeducted.toLocaleString('en-IN')}` : ''}
+Period: ${wsStr} to ${weStr}
+Days Present: ${Number(att?.present_days) || 0} days
+Gross Salary: ₹${grossSalary.toLocaleString('en-IN')}${advDeducted > 0 ? `\nAdvance Deducted: −₹${advDeducted.toLocaleString('en-IN')}` : ''}
 Net Paid: ₹${netSalary.toLocaleString('en-IN')}
 Mode: ${pMode}
 
@@ -745,7 +842,7 @@ JBS Knit Wear
 
         await client.query('COMMIT');
 
-        const totalNet = payments.reduce((s, p) => s + (Number(p.net_salary) || 0), 0);
+        const totalNet = results.reduce((s, r) => s + (Number(r.net_salary) || 0), 0);
 
         // Owner summary WhatsApp
         notifyOwner(
@@ -756,7 +853,7 @@ Employees Paid: ${results.length}
 Total Amount: ₹${totalNet.toLocaleString('en-IN')}`
         ).catch(() => {});
 
-        res.json({ success: true, message: `Processed ${results.length} weekly salaries`, results });
+        res.json({ success: true, processed: results.length, total_paid: totalNet, message: `Processed ${results.length} weekly salaries`, results });
     } catch (err) {
         if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
         console.error('[weekly-process]', err.message);
@@ -771,6 +868,7 @@ router.get("/salary/weekly/history", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const { employee_id } = req.query;
     try {
+        await ensureWeeklyTables();
         const rows = await db.pgAll(`
             SELECT ws.*, e.name as employee_name
             FROM weekly_salary ws
