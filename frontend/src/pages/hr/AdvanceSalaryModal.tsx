@@ -29,6 +29,7 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   const [refNo, setRefNo]             = useState("");
   const [loading, setLoading]         = useState(false);
   const [errorMsg, setErrorMsg]       = useState("");
+  const [isOpening, setIsOpening]     = useState(false); // existing advance, no ledger
 
   // Live balance state
   const [cashBal, setCashBal]   = useState<number | null>(null);
@@ -56,8 +57,9 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   // Which balance applies to the selected payment method
   const activeBalance = paymentMethod === "CASH" ? cashBal : bankBal;
   const amountNum = Number(amount) || 0;
+  // No insufficient-balance block for opening advances — cash was already given
   const insufficient =
-    activeBalance !== null && amountNum > 0 && amountNum > activeBalance;
+    !isOpening && activeBalance !== null && amountNum > 0 && amountNum > activeBalance;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,9 +83,10 @@ const AdvanceSalaryModal: React.FC<Props> = ({
           reason,
           repayment_type:     type,
           installment_amount: type === "ONE_TIME" || type === "MANUAL" ? 0 : Number(installment),
-          payment_method:     paymentMethod,
-          bank_name:          isBank ? (bankName || paymentMethod) : null,
+          payment_method:     isOpening ? "CASH" : paymentMethod,
+          bank_name:          !isOpening && isBank ? (bankName || paymentMethod) : null,
           reference_no:       refNo || null,
+          is_opening_balance: isOpening,
         },
       });
       const data = await res.json();
@@ -158,8 +161,44 @@ const AdvanceSalaryModal: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Live Balance Banner */}
-        <div style={{
+        {/* Opening / Existing Advance Toggle */}
+        <div
+          onClick={() => setIsOpening(v => !v)}
+          style={{
+            display: "flex", alignItems: "center", gap: "10px",
+            marginBottom: "14px", padding: "12px 16px",
+            background: isOpening ? "#fef9c3" : "#f8fafc",
+            border: `1.5px solid ${isOpening ? "#facc15" : "#e2e8f0"}`,
+            borderRadius: "10px", cursor: "pointer", userSelect: "none",
+          }}
+        >
+          {/* Toggle pill */}
+          <div style={{
+            width: 40, height: 22, borderRadius: 11, flexShrink: 0,
+            background: isOpening ? "#eab308" : "#cbd5e1",
+            position: "relative", transition: "background 0.2s",
+          }}>
+            <div style={{
+              position: "absolute", top: 3, width: 16, height: 16,
+              borderRadius: "50%", background: "#fff",
+              left: isOpening ? 21 : 3, transition: "left 0.2s",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            }} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "0.88rem", color: isOpening ? "#854d0e" : "#374151" }}>
+              {isOpening ? "📋 Recording Existing / Old Advance" : "Record Existing / Old Advance"}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: isOpening ? "#a16207" : "#94a3b8", marginTop: 1 }}>
+              {isOpening
+                ? "Cash already given before system setup — no ledger deduction"
+                : "Turn ON if this advance was given before the ERP was set up"}
+            </div>
+          </div>
+        </div>
+
+        {/* Live Balance Banner — hidden for opening advances */}
+        {!isOpening && <div style={{
           display: "flex", gap: "10px", marginBottom: "18px",
           padding: "10px 14px", background: "#f8fafc",
           borderRadius: "10px", border: "1px solid #e2e8f0",
@@ -185,7 +224,7 @@ const AdvanceSalaryModal: React.FC<Props> = ({
               </span>
             </>
           )}
-        </div>
+        </div>}
 
         <form onSubmit={handleSubmit}>
 
@@ -216,8 +255,8 @@ const AdvanceSalaryModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Payment Method */}
-          <div style={{ marginBottom: "16px" }}>
+          {/* Payment Method — hidden for opening/existing advances */}
+          {!isOpening && <div style={{ marginBottom: "16px" }}>
             <label style={label}>Paid Via *</label>
             <div style={{ display: "flex", gap: "10px" }}>
               <button type="button" style={pmBtn(paymentMethod === "CASH", "#16a34a")}
@@ -248,10 +287,10 @@ const AdvanceSalaryModal: React.FC<Props> = ({
                 )}
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Bank/UPI details */}
-          {isBank && (
+          {!isOpening && isBank && (
             <div style={{
               marginBottom: "16px", background: "#eff6ff",
               padding: "12px", borderRadius: "8px",
@@ -369,7 +408,10 @@ const AdvanceSalaryModal: React.FC<Props> = ({
             disabled={loading || insufficient}
             style={{
               width: "100%", padding: "13px",
-              background: loading ? "#94a3b8" : insufficient ? "#fca5a5" : "#2563eb",
+              background: loading ? "#94a3b8"
+                : insufficient ? "#fca5a5"
+                : isOpening ? "#d97706"
+                : "#2563eb",
               color: "white", border: "none", borderRadius: "10px",
               cursor: loading || insufficient ? "not-allowed" : "pointer",
               fontWeight: 700, fontSize: "1rem",
@@ -379,6 +421,8 @@ const AdvanceSalaryModal: React.FC<Props> = ({
               ? "Processing..."
               : insufficient
               ? `❌ Insufficient Balance`
+              : isOpening
+              ? `📋 Record Existing Advance — ₹${fmt(amountNum)}`
               : `Grant Advance — ₹${fmt(amountNum)}`}
           </button>
         </form>

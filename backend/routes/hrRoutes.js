@@ -20,27 +20,32 @@ router.post("/advance", authMiddleware, async (req, res) => {
         payment_method = 'CASH',   // CASH | BANK | UPI
         bank_name      = null,
         reference_no   = null,
+        is_opening_balance = false, // true = existing advance, skip ledger/balance check
     } = body;
     const companyId  = req.user.active_company_id;
     const branchId   = req.user.branch_id || 1;
     const advanceAmt = Number(amount) || 0;
     const advanceDate = date || new Date().toISOString().split('T')[0];
     const pMethod    = (payment_method || 'CASH').toUpperCase();
+    const isOpening  = Boolean(is_opening_balance);
 
     let client;
     try {
-        // ── Balance pre-check (before opening transaction) ──────────────────
         client = await db.getClient();
-        const balCheck = await checkSufficientBalance(client, companyId, pMethod, advanceAmt);
-        if (!balCheck.sufficient) {
-            client.release();
-            client = null;
-            return res.status(422).json({
-                error: balCheck.message,
-                currentBalance: balCheck.currentBalance,
-                shortfall: balCheck.shortfall,
-                accountName: balCheck.accountName,
-            });
+
+        // ── Balance pre-check — skipped for opening/existing advances ────────
+        if (!isOpening) {
+            const balCheck = await checkSufficientBalance(client, companyId, pMethod, advanceAmt);
+            if (!balCheck.sufficient) {
+                client.release();
+                client = null;
+                return res.status(422).json({
+                    error: balCheck.message,
+                    currentBalance: balCheck.currentBalance,
+                    shortfall: balCheck.shortfall,
+                    accountName: balCheck.accountName,
+                });
+            }
         }
 
         await client.query('BEGIN');
@@ -53,31 +58,36 @@ router.post("/advance", authMiddleware, async (req, res) => {
               payment_method, bank_name, reference_no)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$3,$8,$9,$10)
              RETURNING id`,
-            [companyId, employee_id, advanceAmt, advanceDate, reason || '',
+            [companyId, employee_id, advanceAmt, advanceDate,
+             (isOpening ? '[Opening] ' : '') + (reason || ''),
              repayment_type, installment_amount || 0,
-             pMethod, bank_name || null, reference_no || null]
+             isOpening ? 'OPENING' : pMethod,
+             bank_name || null, reference_no || null]
         );
         const advanceId = advResult.rows[0].id;
 
-        // 2. Record cash/bank ledger outflow
-        if (pMethod === 'CASH') {
-            await client.query(
-                `INSERT INTO cash_ledger
-                 (company_id, branch_id, source, amount, direction, date, reference_id)
-                 VALUES ($1,$2,'salary_advance',$3,'out',$4,$5)`,
-                [companyId, branchId, advanceAmt, advanceDate, advanceId]
-            );
-        } else {
-            // BANK or UPI
-            await client.query(
-                `INSERT INTO bank_ledger
-                 (company_id, branch_id, source, amount, direction,
-                  bank_name, transaction_id, date, reference_id)
-                 VALUES ($1,$2,'salary_advance',$3,'out',$4,$5,$6,$7)`,
-                [companyId, branchId, advanceAmt,
-                 bank_name || pMethod, reference_no || `ADV-${advanceId}`,
-                 advanceDate, advanceId]
-            );
+        // 2. Record cash/bank ledger outflow — SKIPPED for opening balances
+        //    (the cash was given before the system was set up; no ledger impact)
+        if (!isOpening) {
+            if (pMethod === 'CASH') {
+                await client.query(
+                    `INSERT INTO cash_ledger
+                     (company_id, branch_id, source, amount, direction, date, reference_id)
+                     VALUES ($1,$2,'salary_advance',$3,'out',$4,$5)`,
+                    [companyId, branchId, advanceAmt, advanceDate, advanceId]
+                );
+            } else {
+                // BANK or UPI
+                await client.query(
+                    `INSERT INTO bank_ledger
+                     (company_id, branch_id, source, amount, direction,
+                      bank_name, transaction_id, date, reference_id)
+                     VALUES ($1,$2,'salary_advance',$3,'out',$4,$5,$6,$7)`,
+                    [companyId, branchId, advanceAmt,
+                     bank_name || pMethod, reference_no || `ADV-${advanceId}`,
+                     advanceDate, advanceId]
+                );
+            }
         }
 
         // 3. Record in transactions table for audit trail
@@ -87,12 +97,19 @@ router.post("/advance", authMiddleware, async (req, res) => {
               description, reference_type, reference_id, created_by, status)
              VALUES ($1,$2,'SALARY_ADVANCE',$3,$4,$5,'SALARY_ADVANCE',$6,$7,'success')`,
             [companyId, branchId, advanceAmt, advanceDate,
-             `Salary Advance — ${reason || 'No reason'} [${pMethod}]`,
+             isOpening
+                ? `Existing Advance (Opening) — ${reason || 'No reason'}`
+                : `Salary Advance — ${reason || 'No reason'} [${pMethod}]`,
              advanceId, req.user.id]
         ).catch(() => {}); // non-fatal if transactions table schema differs
 
         await client.query('COMMIT');
-        res.json({ success: true, message: "Advance recorded and ledger updated" });
+        res.json({
+            success: true,
+            message: isOpening
+                ? "Existing advance recorded (no ledger entry — cash already given)"
+                : "Advance recorded and ledger updated",
+        });
 
         // WhatsApp alert to owner (non-blocking)
         try {
