@@ -4,6 +4,8 @@ import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
+import { sendWelcomeWhatsApp } from "../utils/sendWelcomeWhatsApp.js";
+import { sendWhatsApp, notifyOwner } from "../utils/whatsapp.js";
 
 const router = express.Router();
 
@@ -493,6 +495,294 @@ router.delete("/attendance/:id", authMiddleware, async (req, res) => {
         await db.pgRun(`DELETE FROM attendance_logs WHERE id = $1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: "Error" }); }
+});
+
+// ==========================================
+// 6. DAILY ATTENDANCE WITH WAGE CALCULATION
+// ==========================================
+
+// POST /hr/attendance/daily — mark and calculate daily wage
+router.post("/attendance/daily", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { employee_id, attendance_date, status = 'present', working_hours = 8, notes } = req.body;
+    if (!employee_id || !attendance_date) return res.status(400).json({ error: "employee_id and attendance_date required" });
+
+    try {
+        const emp = await db.pgGet(`SELECT * FROM employees WHERE id = $1 AND company_id = $2`, [employee_id, companyId]);
+        if (!emp) return res.status(404).json({ error: "Employee not found" });
+
+        const s = (status || 'present').toLowerCase();
+        let dailyWage = 0;
+        const salaryType = (emp.salary_type || 'monthly').toLowerCase();
+
+        if (salaryType === 'daily') {
+            const rate = Number(emp.daily_rate) || 0;
+            dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
+        } else if (salaryType === 'weekly') {
+            const weeklyDays = Number(emp.working_days_per_week) || 6;
+            const rate = (Number(emp.weekly_rate) || 0) / weeklyDays;
+            dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
+        } else {
+            // monthly — divide by 26 standard working days
+            const rate = (Number(emp.salary) || 0) / 26;
+            dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
+        }
+
+        await db.pgRun(`
+            INSERT INTO daily_attendance
+              (company_id, employee_id, attendance_date, status, working_hours, daily_wage, notes)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            ON CONFLICT (employee_id, attendance_date)
+            DO UPDATE SET status=$4, working_hours=$5, daily_wage=$6, notes=$7
+        `, [companyId, employee_id, attendance_date, s, working_hours, dailyWage, notes || null]);
+
+        res.json({ success: true, daily_wage: dailyWage,
+            message: `${emp.name} marked ${s} — ₹${dailyWage.toFixed(2)}` });
+    } catch (err) {
+        console.error('[daily-attendance]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /hr/salary/daily/summary?date=2026-05-22
+router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    try {
+        const rows = await db.pgAll(`
+            SELECT e.id, e.name, e.designation,
+                   COALESCE(e.salary_type, 'monthly') as salary_type,
+                   COALESCE(e.salary, 0)       as monthly_salary,
+                   COALESCE(e.weekly_rate, 0)  as weekly_rate,
+                   COALESCE(e.daily_rate, 0)   as daily_rate,
+                   COALESCE(da.status, 'not_marked') as status,
+                   COALESCE(da.daily_wage, 0)  as daily_wage,
+                   COALESCE(da.working_hours, 0) as working_hours
+            FROM employees e
+            LEFT JOIN daily_attendance da
+              ON da.employee_id = e.id AND da.attendance_date = $2
+            WHERE e.company_id = $1
+              AND COALESCE(e.status, 'Active') = 'Active'
+            ORDER BY e.name ASC
+        `, [companyId, date]);
+
+        const totalWage = rows.reduce((s, r) => s + Number(r.daily_wage), 0);
+        res.json({ date, employees: rows, total_daily_wage: totalWage });
+    } catch (err) {
+        console.error('[daily-summary]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
+// 7. WEEKLY SALARY (SATURDAY PAYROLL)
+// ==========================================
+
+// POST /hr/salary/weekly/calculate — preview, no payment yet
+router.post("/salary/weekly/calculate", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { week_end } = req.body; // Saturday date e.g. "2026-05-24"
+    if (!week_end) return res.status(400).json({ error: "week_end (Saturday date) required" });
+
+    const weekEnd   = new Date(week_end);
+    const weekStart = new Date(weekEnd);
+    weekStart.setDate(weekStart.getDate() - 5); // Mon to Sat = 6 days
+    const wsStr = weekStart.toISOString().split('T')[0];
+    const weStr = weekEnd.toISOString().split('T')[0];
+
+    try {
+        const employees = await db.pgAll(`
+            SELECT * FROM employees
+            WHERE company_id = $1
+              AND COALESCE(status, 'Active') = 'Active'
+              AND LOWER(COALESCE(salary_type,'monthly')) = 'weekly'
+        `, [companyId]);
+
+        const results = [];
+        for (const emp of employees) {
+            const att = await db.pgGet(`
+                SELECT
+                  COUNT(*) FILTER (WHERE status = 'present')  as present_days,
+                  COUNT(*) FILTER (WHERE status = 'absent')   as absent_days,
+                  COUNT(*) FILTER (WHERE status = 'half_day') as half_days,
+                  COALESCE(SUM(daily_wage), 0)                as gross_salary
+                FROM daily_attendance
+                WHERE employee_id = $1
+                  AND attendance_date BETWEEN $2 AND $3
+            `, [emp.id, wsStr, weStr]);
+
+            const adv = await db.pgGet(`
+                SELECT COALESCE(SUM(current_balance), 0) as total_advance
+                FROM salary_advances
+                WHERE employee_id = $1
+                  AND status = 'ACTIVE'
+                  AND current_balance > 0
+            `, [emp.id]);
+
+            const grossSalary    = Number(att?.gross_salary)    || 0;
+            const pendingAdvance = Number(adv?.total_advance)   || 0;
+
+            results.push({
+                employee_id:        emp.id,
+                employee_name:      emp.name,
+                phone:              emp.phone,
+                designation:        emp.designation,
+                weekly_rate:        Number(emp.weekly_rate) || 0,
+                week_start:         wsStr,
+                week_end:           weStr,
+                present_days:       Number(att?.present_days)  || 0,
+                absent_days:        Number(att?.absent_days)   || 0,
+                half_days:          Number(att?.half_days)     || 0,
+                gross_salary:       grossSalary,
+                pending_advance:    pendingAdvance,
+                suggested_deduction: pendingAdvance,
+                net_salary:         Math.max(0, grossSalary - pendingAdvance),
+            });
+        }
+
+        res.json({ success: true, week_start: wsStr, week_end: weStr, data: results });
+    } catch (err) {
+        console.error('[weekly-calculate]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /hr/salary/weekly/process — finalise and pay
+router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const { week_end, payments } = req.body;
+    if (!payments?.length) return res.status(400).json({ error: "No payments provided" });
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const results = [];
+        for (const p of payments) {
+            const emp = await db.pgGet(`SELECT * FROM employees WHERE id = $1`, [p.employee_id]);
+            if (!emp) continue;
+
+            const netSalary = Number(p.net_salary) || 0;
+            const pMode     = (p.payment_mode || 'cash').toUpperCase();
+
+            // Balance check
+            if (netSalary > 0) {
+                const balCheck = await checkSufficientBalance(client, companyId, pMode, netSalary);
+                if (!balCheck.sufficient) {
+                    await client.query('ROLLBACK');
+                    client.release(); client = null;
+                    return res.status(422).json({
+                        error: `Insufficient ${pMode} balance for ${emp.name}. Available: ₹${balCheck.currentBalance}` });
+                }
+            }
+
+            const advDeducted = p.deduct_advance ? (Number(p.advance_deduction) || 0) : 0;
+
+            // Insert weekly_salary record
+            const wkRow = await client.query(`
+                INSERT INTO weekly_salary
+                  (company_id, employee_id, week_start, week_end,
+                   total_days, present_days, absent_days, half_days,
+                   gross_salary, advance_deducted, net_salary,
+                   payment_mode, status, paid_at)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'paid',NOW())
+                RETURNING id
+            `, [companyId, p.employee_id, p.week_start, p.week_end,
+                (Number(p.present_days) + Number(p.absent_days) + Number(p.half_days)) || 6,
+                Number(p.present_days) || 0, Number(p.absent_days) || 0, Number(p.half_days) || 0,
+                Number(p.gross_salary) || 0, advDeducted, netSalary, pMode.toLowerCase()]);
+
+            const wkId = wkRow.rows[0].id;
+
+            // Ledger: cash or bank out
+            if (netSalary > 0) {
+                if (pMode === 'CASH') {
+                    await client.query(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+                         VALUES ($1,$2,'weekly_salary',$3,'out',CURRENT_DATE,$4)`,
+                        [companyId, branchId, netSalary, wkId]);
+                } else {
+                    await client.query(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date, reference_id)
+                         VALUES ($1,$2,'weekly_salary',$3,'out',$4,CURRENT_DATE,$5)`,
+                        [companyId, branchId, netSalary, p.bank_name || pMode, wkId]);
+                }
+            }
+
+            // Update advance balance if deducted
+            if (advDeducted > 0) {
+                await client.query(`
+                    UPDATE salary_advances
+                    SET current_balance = GREATEST(0, current_balance - $1),
+                        status = CASE WHEN (current_balance - $1) <= 0 THEN 'RECOVERED' ELSE status END
+                    WHERE employee_id = $2 AND status = 'ACTIVE' AND current_balance > 0
+                `, [advDeducted, p.employee_id]);
+            }
+
+            results.push({ employee_id: p.employee_id, name: emp.name, net_salary: netSalary });
+
+            // WhatsApp to employee
+            if (emp.phone) {
+                const msg =
+`Dear ${emp.name},
+
+💰 Weekly Salary Credited!
+
+Period: ${p.week_start} to ${p.week_end}
+Days Present: ${p.present_days} days
+Gross Salary: ₹${Number(p.gross_salary).toLocaleString('en-IN')}${advDeducted > 0 ? `\nAdvance Deducted: −₹${advDeducted.toLocaleString('en-IN')}` : ''}
+Net Paid: ₹${netSalary.toLocaleString('en-IN')}
+Mode: ${pMode}
+
+Thank you! 🙏
+JBS Knit Wear
+📞 8148232205`;
+                sendWhatsApp(emp.phone, msg).catch(() => {});
+            }
+        }
+
+        await client.query('COMMIT');
+
+        const totalNet = payments.reduce((s, p) => s + (Number(p.net_salary) || 0), 0);
+
+        // Owner summary WhatsApp
+        notifyOwner(
+`💰 Weekly Salaries Processed!
+
+Week: ${week_end}
+Employees Paid: ${results.length}
+Total Amount: ₹${totalNet.toLocaleString('en-IN')}`
+        ).catch(() => {});
+
+        res.json({ success: true, message: `Processed ${results.length} weekly salaries`, results });
+    } catch (err) {
+        if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+        console.error('[weekly-process]', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) { try { client.release(); } catch (_) {} }
+    }
+});
+
+// GET /hr/salary/weekly/history?employee_id=1
+router.get("/salary/weekly/history", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { employee_id } = req.query;
+    try {
+        const rows = await db.pgAll(`
+            SELECT ws.*, e.name as employee_name
+            FROM weekly_salary ws
+            JOIN employees e ON e.id = ws.employee_id
+            WHERE ws.company_id = $1
+              ${employee_id ? 'AND ws.employee_id = $2' : ''}
+            ORDER BY ws.week_end DESC LIMIT 100
+        `, employee_id ? [companyId, employee_id] : [companyId]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 export default router;

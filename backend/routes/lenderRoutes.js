@@ -2,6 +2,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { sendWelcomeWhatsApp } from '../utils/sendWelcomeWhatsApp.js';
 
 const router = express.Router();
 
@@ -118,6 +119,10 @@ router.post('/', authMiddleware, async (req, res) => {
         const result = await createLenderAndLedgerPG(client, companyId, req.body);
         await client.query('COMMIT');
         res.status(201).json({ id: result.id, message: "Lender created." });
+        // Welcome WhatsApp (non-blocking, after response sent)
+        if (req.body.phone) {
+            sendWelcomeWhatsApp('lender', { ...req.body, id: result.id }).catch(() => {});
+        }
     } catch (err) {
         if (client) await client.query('ROLLBACK');
         console.error("Create lender error:", err);

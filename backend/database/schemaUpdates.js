@@ -798,6 +798,66 @@ export const runSchemaUpdates = async () => {
               AND gstin IS NOT NULL AND LENGTH(TRIM(gstin)) >= 2
         `).catch(() => {});
 
+        // ── Weekly / Daily salary columns on employees ────────────────────────
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type VARCHAR(20) DEFAULT 'monthly'`).catch(() => {});
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS daily_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS weekly_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 6`).catch(() => {});
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_start_day VARCHAR(10) DEFAULT 'monday'`).catch(() => {});
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_end_day VARCHAR(10) DEFAULT 'saturday'`).catch(() => {});
+
+        // ── daily_attendance — per-employee per-date wage record ─────────────
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS daily_attendance (
+                id               SERIAL PRIMARY KEY,
+                company_id       INTEGER NOT NULL,
+                employee_id      INTEGER REFERENCES employees(id),
+                attendance_date  DATE NOT NULL,
+                status           VARCHAR(20) DEFAULT 'present',
+                working_hours    NUMERIC(4,2) DEFAULT 8,
+                daily_wage       NUMERIC(12,2) DEFAULT 0,
+                overtime_hours   NUMERIC(4,2) DEFAULT 0,
+                overtime_amount  NUMERIC(12,2) DEFAULT 0,
+                notes            TEXT,
+                branch_id        INTEGER,
+                created_at       TIMESTAMP DEFAULT NOW(),
+                UNIQUE(employee_id, attendance_date)
+            )
+        `).catch(() => {});
+
+        // ── weekly_salary — Saturday payout records ──────────────────────────
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS weekly_salary (
+                id               SERIAL PRIMARY KEY,
+                company_id       INTEGER NOT NULL,
+                employee_id      INTEGER REFERENCES employees(id),
+                week_start       DATE NOT NULL,
+                week_end         DATE NOT NULL,
+                total_days       INTEGER DEFAULT 0,
+                present_days     INTEGER DEFAULT 0,
+                absent_days      INTEGER DEFAULT 0,
+                half_days        INTEGER DEFAULT 0,
+                gross_salary     NUMERIC(12,2) DEFAULT 0,
+                advance_deducted NUMERIC(12,2) DEFAULT 0,
+                net_salary       NUMERIC(12,2) DEFAULT 0,
+                payment_mode     VARCHAR(20) DEFAULT 'cash',
+                status           VARCHAR(20) DEFAULT 'pending',
+                paid_at          TIMESTAMP,
+                notes            TEXT,
+                created_at       TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        // ── employee_advances — weekly advance columns ────────────────────────
+        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS advance_week_start DATE`).catch(() => {});
+        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS advance_week_end DATE`).catch(() => {});
+        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS deduct_from_weekly BOOLEAN DEFAULT true`).catch(() => {});
+
+        // ── salary_advances: pending_amount column ────────────────────────────
+        await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS pending_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        // Backfill: pending_amount = current_balance for old records
+        await db.query(`UPDATE salary_advances SET pending_amount = current_balance WHERE pending_amount IS NULL OR pending_amount = 0`).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

@@ -2,6 +2,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { sendWelcomeWhatsApp } from '../utils/sendWelcomeWhatsApp.js';
 
 const router = express.Router();
 
@@ -55,23 +56,41 @@ router.get('/', authMiddleware, async (req, res) => {
  */
 router.post('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { name, designation, salary, phone, joining_date } = req.body;
+    const {
+        name, designation, salary, phone, joining_date, department,
+        salary_type = 'monthly',   // 'monthly' | 'weekly' | 'daily'
+        daily_rate  = 0,
+        weekly_rate = 0,
+        working_days_per_week = 6,
+    } = req.body;
 
-    if (!name || !salary) return res.status(400).json({ error: "Name and Salary are required" });
+    if (!name) return res.status(400).json({ error: "Employee name is required" });
 
     try {
         const sql = `
-            INSERT INTO employees (company_id, name, designation, salary, phone, joining_date)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO employees
+              (company_id, name, designation, salary, phone, joining_date,
+               salary_type, daily_rate, weekly_rate, working_days_per_week)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
             RETURNING *
         `;
-        const emp = await db.pgGet(sql, [companyId, name, designation, salary, phone, joining_date]);
-        
-        // Placeholder for QR code generation
+        const emp = await db.pgGet(sql, [
+            companyId, name, designation,
+            salary_type === 'monthly' ? (Number(salary) || 0) : 0,
+            phone, joining_date,
+            salary_type, Number(daily_rate) || 0,
+            Number(weekly_rate) || 0, Number(working_days_per_week) || 6,
+        ]);
+
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=EMP_${emp.id}`;
+
+        // Welcome WhatsApp (non-blocking)
+        sendWelcomeWhatsApp('employee', { ...emp, department }).catch(() => {});
+
         res.status(201).json({ ...emp, qr_code_url: qrUrl });
     } catch (err) {
-        res.status(500).json({ error: "Failed to create employee" });
+        console.error('[employee create]', err.message);
+        res.status(500).json({ error: "Failed to create employee: " + err.message });
     }
 });
 

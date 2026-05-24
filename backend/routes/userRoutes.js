@@ -247,6 +247,14 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
 
         await client.query("COMMIT");
         res.status(201).json({ success: true, id: insertedId, username: usedUsername });
+
+        // Welcome WhatsApp (non-blocking, after response sent)
+        if (phone) {
+            try {
+                const { sendWelcomeWhatsApp } = await import('../utils/sendWelcomeWhatsApp.js');
+                sendWelcomeWhatsApp('customer', { name: nickname || username, phone }).catch(() => {});
+            } catch (_) {}
+        }
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Create customer error:", err);

@@ -1,4 +1,5 @@
 import * as db from '../database/pg.js';
+import { sendWelcomeWhatsApp } from '../utils/sendWelcomeWhatsApp.js';
 
 /**
  * BROKER MASTER SERVICE
@@ -45,6 +46,10 @@ export const createBroker = async (user, brokerData) => {
         }
 
         await client.query('COMMIT');
+        // Welcome WhatsApp (non-blocking)
+        if (broker.phone) {
+            sendWelcomeWhatsApp('broker', broker).catch(() => {});
+        }
         return broker;
     } catch (err) {
         await client.query('ROLLBACK');
