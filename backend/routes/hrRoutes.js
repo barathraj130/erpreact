@@ -166,16 +166,21 @@ router.get("/ledger/:employeeId", authMiddleware, async (req, res) => {
     try {
         const advances = await db.pgAll(
             `SELECT id, advance_date as date, amount, reason as description, 'ADVANCE' as type,
-                    payment_method, bank_name, reference_no
+                    payment_method, bank_name, reference_no, current_balance, status
              FROM salary_advances
-             WHERE employee_id=$1 AND company_id=$2`,
+             WHERE employee_id=$1 AND company_id=$2
+             ORDER BY advance_date ASC`,
             [employeeId, companyId]
         );
 
+        // Add type + notes columns if missing (safe guard)
+        await db.pgRun(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS type VARCHAR(40) DEFAULT 'DEDUCTION'`).catch(() => {});
+        await db.pgRun(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
+
         const repayments = await db.pgAll(
             `SELECT ar.id, ar.transaction_date as date, ar.amount_deducted as amount,
-                    CASE ar.type
-                        WHEN 'DAILY_DEDUCTION' THEN 'Daily Wage Deduction'
+                    CASE COALESCE(ar.type,'DEDUCTION')
+                        WHEN 'DAILY_DEDUCTION'  THEN 'Daily Wage Deduction'
                         WHEN 'WEEKLY_DEDUCTION' THEN 'Weekly Salary Deduction'
                         ELSE 'Payroll Deduction'
                     END as description,
@@ -183,7 +188,8 @@ router.get("/ledger/:employeeId", authMiddleware, async (req, res) => {
                     ar.notes
              FROM advance_repayments ar
              JOIN salary_advances sa ON ar.advance_id = sa.id
-             WHERE sa.employee_id = $1`,
+             WHERE sa.employee_id = $1
+             ORDER BY ar.transaction_date ASC`,
             [employeeId]
         );
 
@@ -774,27 +780,35 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             // If deduction > 0, record it as advance repayment in the employee ledger
             if (deduction > 0) {
-                // Find the oldest active advance for this employee
+                // Ensure advance_repayments has type + notes columns
+                await client.query(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS type VARCHAR(40) DEFAULT 'DEDUCTION'`).catch(() => {});
+                await client.query(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
+
+                // Find the advance with remaining balance (any status — opening advances may have NULL status)
                 const advRow = await client.query(
                     `SELECT id, current_balance FROM salary_advances
-                     WHERE employee_id=$1 AND status='ACTIVE' AND current_balance > 0
+                     WHERE employee_id=$1 AND COALESCE(current_balance,0) > 0
+                       AND COALESCE(status,'ACTIVE') != 'RECOVERED'
                      ORDER BY advance_date ASC LIMIT 1`,
                     [p.employee_id]
                 );
                 if (advRow.rows[0]) {
-                    const advId      = advRow.rows[0].id;
+                    const advId       = advRow.rows[0].id;
                     const actualDeduct = Math.min(deduction, Number(advRow.rows[0].current_balance));
-                    // Insert repayment record (shows in employee ledger)
+                    const noteText    = `Daily wage deduction on ${date}`;
+
+                    // Insert repayment record — shows in employee ledger
                     await client.query(
                         `INSERT INTO advance_repayments (advance_id, amount_deducted, transaction_date, type, notes)
-                         VALUES ($1,$2,$3,'DAILY_DEDUCTION','Daily wage deduction on ${date}')`,
-                        [advId, actualDeduct, date]
+                         VALUES ($1,$2,$3,'DAILY_DEDUCTION',$4)`,
+                        [advId, actualDeduct, date, noteText]
                     );
-                    // Reduce advance balance
+
+                    // Reduce advance current_balance
                     await client.query(
                         `UPDATE salary_advances
                          SET current_balance = GREATEST(0, current_balance - $1),
-                             status = CASE WHEN (current_balance - $1) <= 0 THEN 'RECOVERED' ELSE status END
+                             status = CASE WHEN (current_balance - $1) <= 0 THEN 'RECOVERED' ELSE COALESCE(status,'ACTIVE') END
                          WHERE id = $2`,
                         [actualDeduct, advId]
                     );
