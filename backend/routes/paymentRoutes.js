@@ -22,7 +22,7 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
         SELECT p.*, 
                i.invoice_number,
                i.invoice_category as invoice_type,
-               u.username as customer_name
+               COALESCE(u.nickname, u.username) as customer_name
         FROM invoice_payments p
         LEFT JOIN invoices i ON p.invoice_id = i.id
         LEFT JOIN users u ON i.customer_id = u.id
@@ -76,8 +76,8 @@ router.get("/invoice/:invoiceId", authMiddleware, checkAccess('Sales', 'view_inv
 
     try {
         const invoice = await db.pgGet(
-            `SELECT i.*, u.username as customer_name 
-             FROM invoices i 
+            `SELECT i.*, COALESCE(u.nickname, u.username) as customer_name
+             FROM invoices i
              LEFT JOIN users u ON i.customer_id = u.id
              WHERE i.id = $1 AND i.company_id = $2`,
             [invoiceId, companyId]

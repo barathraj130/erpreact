@@ -285,13 +285,13 @@ router.get("/preview-number", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (req, res) => {
     const companyId = req.user.active_company_id;
     const sql = `
-        SELECT i.*, u.username as customer_name,
+        SELECT i.*, COALESCE(u.nickname, u.username) as customer_name,
         COALESCE(json_agg(li.*) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
         FROM invoices i
         LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
         LEFT JOIN users u ON i.customer_id = u.id
         WHERE i.company_id = $1 AND COALESCE(i.is_deleted, false) = false
-        GROUP BY i.id, u.username
+        GROUP BY i.id, u.nickname, u.username
         ORDER BY i.created_at DESC
     `;
     try {
@@ -347,7 +347,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         // 1. Get Company/Branch and Customer State for GST Detection
         const company  = await client.query(`SELECT state, state_code FROM companies WHERE id = $1`, [companyId]);
-        const customer = await client.query(`SELECT state, state_code, gstin, username, phone FROM users WHERE id = $1`, [safeCustomerId]);
+        const customer = await client.query(`SELECT state, state_code, gstin, username, nickname, phone FROM users WHERE id = $1`, [safeCustomerId]);
 
         const custRow = customer.rows[0] || {};
         // Use utility — checks state_code, falls back to state name, then GSTIN prefix
@@ -905,7 +905,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         // totalPaidFromPayments only covers the payments[] array; if the frontend sends
         // amount_paid without a corresponding payments[] entry, it would show 0.
         const custPhone  = customer.rows[0]?.phone || '';
-        const custName   = customer.rows[0]?.username || 'Customer';
+        const custName   = customer.rows[0]?.nickname || customer.rows[0]?.username || 'Customer';
         // effectiveTotal = netInvoiceAmount - discount (what customer actually owes)
         // Using netInvoiceAmount would show wrong balance when a discount/waiver exists.
         const waActualPaid = finalAmountPaid;
@@ -951,7 +951,7 @@ JBS Knit Wear, Tiruppur
                     // Fetch the full invoice data (with line_items) for PDF generation
                     const invForPdf = await db.pgGet(`
                         SELECT i.*,
-                               u.username as customer_name, u.address_line1, u.city_pincode,
+                               COALESCE(u.nickname, u.username) as customer_name, u.address_line1, u.city_pincode,
                                u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
                                u.phone as customer_phone,
                                c.company_name, c.address_line1 as c_address, c.city_pincode as c_city,
@@ -963,7 +963,7 @@ JBS Knit Wear, Tiruppur
                         LEFT JOIN companies c  ON i.company_id  = c.id
                         LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
                         WHERE i.id = $1
-                        GROUP BY i.id, u.username, u.address_line1, u.city_pincode, u.state,
+                        GROUP BY i.id, u.nickname, u.username, u.address_line1, u.city_pincode, u.state,
                                  u.gstin, u.state_code, u.phone,
                                  c.company_name, c.address_line1, c.city_pincode, c.state,
                                  c.gstin, c.state_code, c.bank_name, c.bank_account_no,
@@ -1006,7 +1006,7 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
     try {
         const invoiceData = await db.pgGet(`
             SELECT i.*,
-                   u.username as customer_name, u.address_line1, u.city_pincode,
+                   COALESCE(u.nickname, u.username) as customer_name, u.address_line1, u.city_pincode,
                    u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
                    u.phone as customer_phone,
                    c.company_name, c.address_line1 as c_address, c.city_pincode as c_city,
@@ -1018,7 +1018,7 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
             LEFT JOIN companies c  ON i.company_id  = c.id
             LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
             WHERE i.id = $1 AND i.company_id = $2
-            GROUP BY i.id, u.username, u.address_line1, u.city_pincode, u.state,
+            GROUP BY i.id, u.nickname, u.username, u.address_line1, u.city_pincode, u.state,
                      u.gstin, u.state_code, u.phone,
                      c.company_name, c.address_line1, c.city_pincode, c.state,
                      c.gstin, c.state_code, c.bank_name, c.bank_account_no,
@@ -1049,7 +1049,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
     const sql = `
         SELECT i.*,
-               u.username as customer_name, u.address_line1, u.city_pincode, u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
+               COALESCE(u.nickname, u.username) as customer_name, u.address_line1, u.city_pincode, u.state, u.gstin as customer_gstin, u.state_code as customer_state_code,
                c.company_name, c.address_line1 as c_address, c.city_pincode as c_city, c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
                c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.signature_url, c.phone as c_phone
         FROM invoices i
@@ -1132,7 +1132,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
 
         if (finalInvoiceNumber !== oldInvoiceNumber) {
             const dup = await client.query(
-                `SELECT i.id, i.invoice_date, u.username AS customer_name
+                `SELECT i.id, i.invoice_date, COALESCE(u.nickname, u.username) AS customer_name
                  FROM invoices i
                  LEFT JOIN users u ON i.customer_id = u.id
                  WHERE i.invoice_number = $1 AND i.company_id = $2
@@ -1520,10 +1520,10 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 
             // Fetch customer name + phone after commit (non-blocking read)
             const custRow = inv.customer_id
-                ? (await db.pgGet(`SELECT username, phone FROM users WHERE id = $1`, [inv.customer_id]))
+                ? (await db.pgGet(`SELECT username, nickname, phone FROM users WHERE id = $1`, [inv.customer_id]))
                 : null;
 
-            const custName  = custRow?.username || 'Customer';
+            const custName  = custRow?.nickname || custRow?.username || 'Customer';
             const custPhone = custRow?.phone || '';
 
             // Customer receipt

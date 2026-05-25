@@ -9,7 +9,7 @@ router.get("/", authMiddleware, async (req, res) => {
     try {
         const companyId = req.user.active_company_id;
         const sql = `
-            SELECT cn.*, u.username as customer_name, u.email as customer_email, u.phone as customer_phone
+            SELECT cn.*, COALESCE(u.nickname, u.username) as customer_name, u.email as customer_email, u.phone as customer_phone
             FROM customer_notifications cn
             LEFT JOIN users u ON cn.customer_id = u.id
             WHERE cn.company_id = $1
