@@ -575,6 +575,7 @@ router.post("/attendance/daily", authMiddleware, async (req, res) => {
             dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
         }
 
+        // Write to daily_attendance (wages table)
         await db.pgRun(`
             INSERT INTO daily_attendance
               (company_id, employee_id, attendance_date, status, working_hours, daily_wage, notes)
@@ -582,6 +583,20 @@ router.post("/attendance/daily", authMiddleware, async (req, res) => {
             ON CONFLICT (employee_id, attendance_date)
             DO UPDATE SET status=$4, working_hours=$5, daily_wage=$6, notes=$7
         `, [companyId, employee_id, attendance_date, s, working_hours, dailyWage, notes || null]);
+
+        // Also sync to attendance_logs so the Attendance page stays in sync
+        const alStatus = s === 'present' ? 'Present' : s === 'half_day' ? 'HALF_DAY' : 'Absent';
+        const alHours = Number(working_hours) || (s === 'present' ? 8 : s === 'half_day' ? 4 : 0);
+        const existingLog = await db.pgGet(`SELECT id FROM attendance_logs WHERE employee_id=$1 AND date=$2`, [employee_id, attendance_date]);
+        if (existingLog) {
+            await db.pgRun(`UPDATE attendance_logs SET status=$1, working_hours=$2, method='DAILY_WAGE' WHERE id=$3`,
+                [alStatus, alHours, existingLog.id]).catch(() => {});
+        } else {
+            await db.pgRun(
+                `INSERT INTO attendance_logs (company_id, employee_id, date, status, working_hours, method)
+                 VALUES ($1,$2,$3,$4,$5,'DAILY_WAGE')`,
+                [companyId, employee_id, attendance_date, alStatus, alHours]).catch(() => {});
+        }
 
         res.json({ success: true, daily_wage: dailyWage,
             message: `${emp.name} marked ${s} — ₹${dailyWage.toFixed(2)}` });
@@ -597,24 +612,77 @@ router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
     const date = req.query.date || new Date().toISOString().split('T')[0];
     try {
         await ensureWeeklyTables();
+
+        // Read from BOTH tables:
+        // - attendance_logs  (used by Attendance page — PRESENT, ABSENT, OD, LEAVE, HALF_DAY)
+        // - daily_attendance (used by Daily Wage mark buttons — present, absent, half_day)
+        // Prefer daily_attendance if it exists, fall back to attendance_logs
         const rows = await db.pgAll(`
-            SELECT e.id, e.name, e.designation,
-                   COALESCE(e.salary_type, 'monthly') as salary_type,
-                   COALESCE(e.salary, 0)       as monthly_salary,
-                   COALESCE(e.weekly_rate, 0)  as weekly_rate,
-                   COALESCE(e.daily_rate, 0)   as daily_rate,
-                   COALESCE(da.status, 'not_marked') as status,
-                   COALESCE(da.daily_wage, 0)  as daily_wage,
-                   COALESCE(da.working_hours, 0) as working_hours
+            SELECT
+                e.id,
+                e.name,
+                e.designation,
+                COALESCE(e.salary_type, 'monthly')  AS salary_type,
+                COALESCE(e.salary, 0)               AS monthly_salary,
+                COALESCE(e.weekly_rate, 0)          AS weekly_rate,
+                COALESCE(e.daily_rate, 0)           AS daily_rate,
+                COALESCE(e.working_days_per_week, 6) AS working_days_per_week,
+
+                -- Status: prefer daily_attendance, else normalise attendance_logs
+                COALESCE(
+                    da.status,
+                    CASE LOWER(al.status)
+                        WHEN 'present'  THEN 'present'
+                        WHEN 'half_day' THEN 'half_day'
+                        WHEN 'od'       THEN 'present'
+                        WHEN 'leave'    THEN 'absent'
+                        ELSE NULL
+                    END
+                ) AS status,
+
+                -- Working hours: prefer daily_attendance
+                COALESCE(da.working_hours,
+                    CASE LOWER(al.status) WHEN 'half_day' THEN 4 WHEN 'present' THEN 8 WHEN 'od' THEN 8 ELSE 0 END
+                ) AS working_hours,
+
+                -- Daily wage: prefer daily_attendance stored value,
+                -- else compute from salary_type and attendance_logs status
+                COALESCE(
+                    da.daily_wage,
+                    CASE
+                        WHEN al.status IS NULL THEN 0
+                        WHEN LOWER(e.salary_type) = 'daily'
+                             THEN CASE LOWER(al.status)
+                                    WHEN 'present'  THEN COALESCE(e.daily_rate, 0)
+                                    WHEN 'od'       THEN COALESCE(e.daily_rate, 0)
+                                    WHEN 'half_day' THEN COALESCE(e.daily_rate, 0) / 2
+                                    ELSE 0 END
+                        WHEN LOWER(e.salary_type) = 'weekly'
+                             THEN CASE LOWER(al.status)
+                                    WHEN 'present'  THEN COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)
+                                    WHEN 'od'       THEN COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)
+                                    WHEN 'half_day' THEN (COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)) / 2
+                                    ELSE 0 END
+                        ELSE -- monthly: salary / 26
+                            CASE LOWER(al.status)
+                                WHEN 'present'  THEN COALESCE(e.salary, 0) / 26
+                                WHEN 'od'       THEN COALESCE(e.salary, 0) / 26
+                                WHEN 'half_day' THEN COALESCE(e.salary, 0) / 52
+                                ELSE 0 END
+                    END
+                ) AS daily_wage
+
             FROM employees e
             LEFT JOIN daily_attendance da
               ON da.employee_id = e.id AND da.attendance_date = $2
+            LEFT JOIN attendance_logs al
+              ON al.employee_id = e.id AND al.date = $2
             WHERE e.company_id = $1
               AND COALESCE(e.status, 'Active') = 'Active'
             ORDER BY e.name ASC
         `, [companyId, date]);
 
-        const totalWage = rows.reduce((s, r) => s + Number(r.daily_wage), 0);
+        const totalWage = rows.reduce((s, r) => s + Number(r.daily_wage || 0), 0);
         res.json({ date, employees: rows, total_daily_wage: totalWage });
     } catch (err) {
         console.error('[daily-summary]', err.message);

@@ -95,6 +95,69 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 /**
+ * ✏️ UPDATE EMPLOYEE
+ */
+router.put('/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const companyId = req.user.active_company_id;
+    const {
+        name, designation, salary, phone, joining_date,
+        salary_type = 'monthly',
+        daily_rate  = 0,
+        weekly_rate = 0,
+        working_days_per_week = 6,
+        status = 'Active',
+    } = req.body;
+
+    try {
+        const emp = await db.pgGet(
+            `UPDATE employees
+             SET name=$1, designation=$2, phone=$3, joining_date=$4,
+                 salary_type=$5,
+                 salary = CASE WHEN $5='monthly' THEN $6 ELSE salary END,
+                 daily_rate=$7, weekly_rate=$8, working_days_per_week=$9,
+                 status=$10
+             WHERE id=$11 AND company_id=$12
+             RETURNING *`,
+            [name, designation, phone, joining_date,
+             (salary_type || 'monthly').toLowerCase(),
+             Number(salary) || 0, Number(daily_rate) || 0,
+             Number(weekly_rate) || 0, Number(working_days_per_week) || 6,
+             status, id, companyId]
+        );
+        if (!emp) return res.status(404).json({ error: "Employee not found" });
+        res.json(emp);
+    } catch (err) {
+        console.error('[employee update]', err.message);
+        res.status(500).json({ error: "Failed to update employee: " + err.message });
+    }
+});
+
+/**
+ * 🗑️ DELETE EMPLOYEE
+ */
+router.delete('/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const companyId = req.user.active_company_id;
+    try {
+        const emp = await db.pgGet('SELECT id FROM employees WHERE id = $1 AND company_id = $2', [id, companyId]);
+        if (!emp) return res.status(404).json({ error: "Employee not found" });
+
+        // Delete dependent records first
+        await db.pgRun('DELETE FROM attendance_logs WHERE employee_id = $1', [id]).catch(() => {});
+        await db.pgRun('DELETE FROM daily_attendance WHERE employee_id = $1', [id]).catch(() => {});
+        await db.pgRun('DELETE FROM payroll_runs WHERE employee_id = $1', [id]).catch(() => {});
+        await db.pgRun('DELETE FROM salary_advances WHERE employee_id = $1', [id]).catch(() => {});
+        await db.pgRun('DELETE FROM employees WHERE id = $1 AND company_id = $2', [id, companyId]);
+
+        res.json({ success: true, message: "Employee deleted" });
+    } catch (err) {
+        console.error('[employee delete]', err.message);
+        res.status(500).json({ error: "Failed to delete employee: " + err.message });
+    }
+});
+
+/**
  * 💰 PROCESS SALARY
  */
 router.put('/:id/salary', authMiddleware, async (req, res) => {
