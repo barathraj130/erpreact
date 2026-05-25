@@ -733,6 +733,11 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
         await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS gross_wage NUMERIC(12,2) DEFAULT 0`).catch(() => {});
         await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS deduction NUMERIC(12,2) DEFAULT 0`).catch(() => {});
 
+        // Ensure advance_repayments has type + notes columns — must run BEFORE the transaction
+        // so PostgreSQL DDL errors don't abort the payment transaction block
+        await db.pgRun(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS type VARCHAR(40) DEFAULT 'DEDUCTION'`).catch(() => {});
+        await db.pgRun(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
+
         client = await db.getClient();
         await client.query('BEGIN');
 
@@ -780,10 +785,6 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             // If deduction > 0, record it as advance repayment in the employee ledger
             if (deduction > 0) {
-                // Ensure advance_repayments has type + notes columns
-                await client.query(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS type VARCHAR(40) DEFAULT 'DEDUCTION'`).catch(() => {});
-                await client.query(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
-
                 // Find the advance with remaining balance (any status — opening advances may have NULL status)
                 const advRow = await client.query(
                     `SELECT id, current_balance FROM salary_advances
