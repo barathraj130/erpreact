@@ -118,7 +118,7 @@ router.post("/advance", authMiddleware, async (req, res) => {
             const { notifyOwner } = await import('../utils/whatsapp.js');
             const emp = await db.pgGet(`SELECT name FROM employees WHERE id = $1`, [employee_id]);
             const pendingRow = await db.pgGet(
-                `SELECT COALESCE(SUM(current_balance), 0) AS total FROM salary_advances WHERE employee_id = $1 AND status = 'ACTIVE'`,
+                `SELECT COALESCE(SUM(COALESCE(current_balance, amount)), 0) AS total FROM salary_advances WHERE employee_id = $1 AND COALESCE(status,'ACTIVE') != 'RECOVERED'`,
                 [employee_id]
             );
             await notifyOwner(
@@ -148,7 +148,7 @@ router.get("/advances/active", authMiddleware, async (req, res) => {
             SELECT sa.*, e.name as employee_name, e.salary as base_salary
             FROM salary_advances sa
             JOIN employees e ON sa.employee_id = e.id
-            WHERE sa.company_id = $1 AND sa.status = 'ACTIVE' AND sa.current_balance > 0
+            WHERE sa.company_id = $1 AND COALESCE(sa.current_balance, sa.amount, 0) > 0 AND COALESCE(sa.status,'ACTIVE') != 'RECOVERED'
         `;
         const data = await db.pgAll(sql, [companyId]);
         res.json(data);
@@ -363,7 +363,7 @@ router.post("/payroll/preview", authMiddleware, async (req, res) => {
             let advanceDeduction = 0;
             let advanceId = null;
             const activeAdvance = await db.pgGet(
-                `SELECT * FROM salary_advances WHERE employee_id=$1 AND status='ACTIVE' AND current_balance > 0 LIMIT 1`,
+                `SELECT *, COALESCE(current_balance, amount) AS current_balance FROM salary_advances WHERE employee_id=$1 AND COALESCE(current_balance, amount, 0) > 0 AND COALESCE(status,'ACTIVE') != 'RECOVERED' ORDER BY advance_date ASC LIMIT 1`,
                 [emp.id]
             );
 
@@ -415,9 +415,9 @@ router.post("/payroll/finalize", authMiddleware, async (req, res) => {
                 );
 
                 await client.query(
-                    `UPDATE salary_advances 
-                     SET current_balance = current_balance - $1,
-                         status = CASE WHEN current_balance - $1 <= 0 THEN 'CLOSED' ELSE status END
+                    `UPDATE salary_advances
+                     SET current_balance = GREATEST(0, COALESCE(current_balance, amount) - $1),
+                         status = CASE WHEN COALESCE(current_balance, amount) - $1 <= 0 THEN 'CLOSED' ELSE COALESCE(status,'ACTIVE') END
                      WHERE id = $2`,
                     [item.deduction, item.advance_id]
                 );
@@ -785,16 +785,20 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             // If deduction > 0, record it as advance repayment in the employee ledger
             if (deduction > 0) {
-                // Find the advance with remaining balance (any status — opening advances may have NULL status)
+                // Find the advance with remaining balance.
+                // Opening advances may have NULL current_balance (inserted before that column existed),
+                // so fall back to amount column. NULL status = treat as ACTIVE.
                 const advRow = await client.query(
-                    `SELECT id, current_balance FROM salary_advances
-                     WHERE employee_id=$1 AND COALESCE(current_balance,0) > 0
+                    `SELECT id, COALESCE(current_balance, amount) AS current_balance
+                     FROM salary_advances
+                     WHERE employee_id=$1
+                       AND COALESCE(current_balance, amount, 0) > 0
                        AND COALESCE(status,'ACTIVE') != 'RECOVERED'
                      ORDER BY advance_date ASC LIMIT 1`,
                     [p.employee_id]
                 );
                 if (advRow.rows[0]) {
-                    const advId       = advRow.rows[0].id;
+                    const advId        = advRow.rows[0].id;
                     const actualDeduct = Math.min(deduction, Number(advRow.rows[0].current_balance));
                     const noteText    = `Daily wage deduction on ${date}`;
 
@@ -805,11 +809,12 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                         [advId, actualDeduct, date, noteText]
                     );
 
-                    // Reduce advance current_balance
+                    // Reduce advance current_balance.
+                    // Use COALESCE(current_balance, amount) so NULL-balance opening advances work correctly.
                     await client.query(
                         `UPDATE salary_advances
-                         SET current_balance = GREATEST(0, current_balance - $1),
-                             status = CASE WHEN (current_balance - $1) <= 0 THEN 'RECOVERED' ELSE COALESCE(status,'ACTIVE') END
+                         SET current_balance = GREATEST(0, COALESCE(current_balance, amount) - $1),
+                             status = CASE WHEN (COALESCE(current_balance, amount) - $1) <= 0 THEN 'RECOVERED' ELSE COALESCE(status,'ACTIVE') END
                          WHERE id = $2`,
                         [actualDeduct, advId]
                     );
