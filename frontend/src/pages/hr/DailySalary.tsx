@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   FaCalendarDay, FaCheck, FaTimes, FaClock, FaSync,
   FaUser, FaRupeeSign, FaUniversity, FaWallet,
-  FaMoneyBillWave, FaExclamationTriangle, FaScissors,
+  FaMoneyBillWave, FaExclamationTriangle, FaCut,
 } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
 
@@ -350,7 +350,7 @@ const DailySalary: React.FC = () => {
             <div style={{ padding: "22px 28px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "linear-gradient(135deg,#10b981,#059669)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
-                  <FaScissors />
+                  <FaCut />
                 </div>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#1e293b" }}>Confirm Payment</div>
