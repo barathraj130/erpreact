@@ -801,8 +801,13 @@ const AddEmployeeModalInline: React.FC<{
     status: employee?.status || "Active",
   });
 
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
     try {
       const payload = {
         ...formData,
@@ -815,28 +820,32 @@ const AddEmployeeModalInline: React.FC<{
           body: payload,
         },
       );
-      if (res.ok) {
-        if (!employee) {
-          const data = await res.json();
-          const newEmp: Employee = {
-            id: data.id,
-            name: formData.name,
-            designation: formData.designation,
-            phone: formData.phone,
-            salary: Number(formData.salary),
-            salary_type: formData.salary_type as "Monthly" | "Weekly" | "Daily",
-            daily_rate: Number(formData.daily_rate),
-            weekly_rate: Number(formData.weekly_rate),
-            working_days_per_week: Number(formData.working_days_per_week),
-            status: formData.status,
-          };
-          onSuccess(newEmp);
-        } else {
-          onSuccess();
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error || "Failed to save employee");
+        return;
       }
-    } catch (err) {
-      alert("Failed to save employee.");
+      if (!employee) {
+        const newEmp: Employee = {
+          id: data.id,
+          name: formData.name,
+          designation: formData.designation,
+          phone: formData.phone,
+          salary: Number(formData.salary),
+          salary_type: formData.salary_type as "Monthly" | "Weekly" | "Daily",
+          daily_rate: Number(formData.daily_rate),
+          weekly_rate: Number(formData.weekly_rate),
+          working_days_per_week: Number(formData.working_days_per_week),
+          status: formData.status,
+        };
+        onSuccess(newEmp);
+      } else {
+        onSuccess();
+      }
+    } catch (err: any) {
+      setSaveError(err.message || "Network error — please try again");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -968,7 +977,11 @@ const AddEmployeeModalInline: React.FC<{
               />
             </div>
           )}
-          <div style={{ height: "8px" }}></div>
+          {saveError && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", color: "#dc2626", fontSize: "0.88rem", fontWeight: 500 }}>
+              ⚠️ {saveError}
+            </div>
+          )}
           <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
             <button
               type="button"
@@ -988,19 +1001,21 @@ const AddEmployeeModalInline: React.FC<{
             </button>
             <button
               type="submit"
+              disabled={saving}
               className="btn btn-primary"
               style={{
                 padding: "10px 32px",
                 borderRadius: "12px",
-                background: "var(--erp-primary, #4f46e5)",
+                background: saving ? "#94a3b8" : "var(--erp-primary, #4f46e5)",
                 color: "#fff",
                 border: "none",
                 fontWeight: 600,
-                cursor: "pointer",
-                boxShadow: "0 4px 12px rgba(79, 70, 229, 0.2)"
+                cursor: saving ? "not-allowed" : "pointer",
+                boxShadow: saving ? "none" : "0 4px 12px rgba(79, 70, 229, 0.2)",
+                minWidth: "140px",
               }}
             >
-              {employee ? "Update Employee" : "Save Employee"}
+              {saving ? "Saving…" : employee ? "Update Employee" : "Save Employee"}
             </button>
           </div>
         </form>

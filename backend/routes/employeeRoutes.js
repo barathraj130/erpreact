@@ -67,6 +67,7 @@ router.post('/', authMiddleware, async (req, res) => {
     if (!name) return res.status(400).json({ error: "Employee name is required" });
 
     try {
+        await ensureEmployeeColumns();
         const sql = `
             INSERT INTO employees
               (company_id, name, designation, salary, phone, joining_date,
@@ -94,6 +95,14 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 });
 
+// Ensure extra columns exist (lazy migration — safe to run multiple times)
+const ensureEmployeeColumns = async () => {
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type VARCHAR(20) DEFAULT 'monthly'`).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS daily_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS weekly_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 6`).catch(() => {});
+};
+
 /**
  * ✏️ UPDATE EMPLOYEE
  */
@@ -110,6 +119,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
     } = req.body;
 
     try {
+        await ensureEmployeeColumns();
+
+        const sType = (salary_type || 'monthly').toLowerCase();
+
         const emp = await db.pgGet(
             `UPDATE employees
              SET name=$1, designation=$2, phone=$3, joining_date=$4,
@@ -119,11 +132,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
                  status=$10
              WHERE id=$11 AND company_id=$12
              RETURNING *`,
-            [name, designation, phone, joining_date,
-             (salary_type || 'monthly').toLowerCase(),
+            [name, designation, phone || null, joining_date || null,
+             sType,
              Number(salary) || 0, Number(daily_rate) || 0,
              Number(weekly_rate) || 0, Number(working_days_per_week) || 6,
-             status, id, companyId]
+             status || 'Active', id, companyId]
         );
         if (!emp) return res.status(404).json({ error: "Employee not found" });
         res.json(emp);
