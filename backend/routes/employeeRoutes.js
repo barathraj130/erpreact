@@ -121,21 +121,22 @@ router.put('/:id', authMiddleware, async (req, res) => {
     try {
         await ensureEmployeeColumns();
 
-        const sType = (salary_type || 'monthly').toLowerCase();
+        const sType      = (salary_type || 'monthly').toLowerCase();
+        // Compute correct salary value per type in JS — avoids CASE ambiguity in PG
+        const salaryVal  = sType === 'monthly'  ? (Number(salary)      || 0) : 0;
+        const dailyVal   = sType === 'daily'    ? (Number(daily_rate)  || 0) : 0;
+        const weeklyVal  = sType === 'weekly'   ? (Number(weekly_rate) || 0) : 0;
 
         const emp = await db.pgGet(
             `UPDATE employees
              SET name=$1, designation=$2, phone=$3, joining_date=$4,
-                 salary_type=$5,
-                 salary = CASE WHEN $5='monthly' THEN $6 ELSE salary END,
-                 daily_rate=$7, weekly_rate=$8, working_days_per_week=$9,
-                 status=$10
+                 salary_type=$5, salary=$6, daily_rate=$7, weekly_rate=$8,
+                 working_days_per_week=$9, status=$10
              WHERE id=$11 AND company_id=$12
              RETURNING *`,
             [name, designation, phone || null, joining_date || null,
-             sType,
-             Number(salary) || 0, Number(daily_rate) || 0,
-             Number(weekly_rate) || 0, Number(working_days_per_week) || 6,
+             sType, salaryVal, dailyVal, weeklyVal,
+             Number(working_days_per_week) || 6,
              status || 'Active', id, companyId]
         );
         if (!emp) return res.status(404).json({ error: "Employee not found" });
