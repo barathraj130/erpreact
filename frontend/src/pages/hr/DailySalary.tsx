@@ -8,6 +8,9 @@ import {
   FaSync,
   FaUser,
   FaRupeeSign,
+  FaUniversity,
+  FaWallet,
+  FaMoneyBillWave,
   FaExclamationTriangle,
 } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
@@ -24,46 +27,51 @@ interface DailyRow {
   status: "present" | "absent" | "half_day";
   working_hours: number;
   daily_wage: number;
+  payment_mode: "cash" | "bank";
+  already_paid?: boolean;
 }
 
 const fmt = (n: number) =>
   "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 const statusColor: Record<string, { bg: string; text: string; label: string }> = {
-  present: { bg: "#dcfce7", text: "#15803d", label: "Present" },
-  absent: { bg: "#fee2e2", text: "#dc2626", label: "Absent" },
+  present:  { bg: "#dcfce7", text: "#15803d", label: "Present"  },
+  absent:   { bg: "#fee2e2", text: "#dc2626", label: "Absent"   },
   half_day: { bg: "#fef9c3", text: "#92400e", label: "Half Day" },
 };
 
 const DailySalary: React.FC = () => {
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [rows, setRows] = useState<DailyRow[]>([]);
+  const [date, setDate]       = useState(new Date().toISOString().split("T")[0]);
+  const [rows, setRows]       = useState<DailyRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [marking, setMarking] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [result, setResult]   = useState<{ processed: number; total_paid: number } | null>(null);
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setResult(null);
     try {
-      const res = await apiFetch(`/hr/salary/daily/summary?date=${date}`);
+      const res  = await apiFetch(`/hr/salary/daily/summary?date=${date}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load");
-      // Backend returns { date, employees: [...], total_daily_wage } or plain array
       const list = Array.isArray(data) ? data : (data.employees || []);
-      // Map backend column names to frontend interface
       setRows(list.map((e: any) => ({
-        employee_id: e.id || e.employee_id,
-        employee_name: e.name || e.employee_name,
-        designation: e.designation,
-        salary_type: e.salary_type || 'monthly',
-        daily_rate: Number(e.daily_rate || 0),
-        weekly_rate: Number(e.weekly_rate || 0),
-        salary: Number(e.monthly_salary || e.salary || 0),
+        employee_id:          e.id || e.employee_id,
+        employee_name:        e.name || e.employee_name,
+        designation:          e.designation,
+        salary_type:          e.salary_type || "monthly",
+        daily_rate:           Number(e.daily_rate  || 0),
+        weekly_rate:          Number(e.weekly_rate || 0),
+        salary:               Number(e.monthly_salary || e.salary || 0),
         working_days_per_week: Number(e.working_days_per_week || 6),
-        status: (e.status === 'not_marked' ? 'absent' : e.status) || 'absent',
-        working_hours: Number(e.working_hours || 0),
-        daily_wage: Number(e.daily_wage || 0),
+        status:               (e.status === "not_marked" ? "absent" : e.status) || "absent",
+        working_hours:        Number(e.working_hours || 0),
+        daily_wage:           Number(e.daily_wage   || 0),
+        payment_mode:         "cash" as const,
+        already_paid:         false,
       })));
     } catch (err: any) {
       setError(err.message);
@@ -72,9 +80,7 @@ const DailySalary: React.FC = () => {
     }
   }, [date]);
 
-  useEffect(() => {
-    loadSummary();
-  }, [loadSummary]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
 
   const markAttendance = async (
     employeeId: number,
@@ -87,10 +93,7 @@ const DailySalary: React.FC = () => {
         method: "POST",
         body: { employee_id: employeeId, attendance_date: date, status, working_hours: hours },
       });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error || "Failed to mark");
-      }
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed"); }
       await loadSummary();
     } catch (err: any) {
       setError(err.message);
@@ -99,12 +102,54 @@ const DailySalary: React.FC = () => {
     }
   };
 
-  const totalPresent = rows.filter(r => r.status === "present").length;
-  const totalWage = rows.reduce((s, r) => s + (r.daily_wage || 0), 0);
-  const totalAbsent = rows.filter(r => r.status === "absent").length;
+  const toggleMode = (idx: number) => {
+    setRows(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], payment_mode: copy[idx].payment_mode === "cash" ? "bank" : "cash" };
+      return copy;
+    });
+  };
+
+  const processPayments = async () => {
+    const presentRows = rows.filter(r => r.status === "present" || r.status === "half_day");
+    if (!presentRows.length) { setError("No present employees to pay."); return; }
+    setProcessing(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/hr/salary/daily/process", {
+        method: "POST",
+        body: {
+          date,
+          employees: presentRows.map(r => ({
+            employee_id:  r.employee_id,
+            daily_wage:   r.daily_wage,
+            payment_mode: r.payment_mode,
+          })),
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to process");
+      setResult({ processed: data.processed, total_paid: data.total_paid });
+      // Mark rows as paid
+      setRows(prev => prev.map(r =>
+        presentRows.find(p => p.employee_id === r.employee_id)
+          ? { ...r, already_paid: true }
+          : r
+      ));
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const totalPresent  = rows.filter(r => r.status === "present").length;
+  const totalAbsent   = rows.filter(r => r.status === "absent").length;
+  const totalWage     = rows.reduce((s, r) => s + (r.daily_wage || 0), 0);
+  const payableRows   = rows.filter(r => (r.status === "present" || r.status === "half_day") && r.daily_wage > 0);
 
   return (
-    <div style={{ padding: "24px", maxWidth: "1000px", margin: "0 auto" }}>
+    <div style={{ padding: "24px", maxWidth: "1100px", margin: "0 auto" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "24px", flexWrap: "wrap" }}>
         <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: "linear-gradient(135deg,#f59e0b,#d97706)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.2rem" }}>
@@ -112,22 +157,13 @@ const DailySalary: React.FC = () => {
         </div>
         <div>
           <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "#1e293b" }}>Daily Wage Summary</h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: "0.85rem" }}>Mark attendance and see daily earnings</p>
+          <p style={{ margin: 0, color: "#64748b", fontSize: "0.85rem" }}>Mark attendance · pay wages · track daily earnings</p>
         </div>
-
-        {/* Date picker */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "10px" }}>
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            style={{ padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #e2e8f0", fontSize: "0.95rem", outline: "none" }}
-          />
-          <button
-            onClick={loadSummary}
-            disabled={loading}
-            style={{ padding: "10px 16px", borderRadius: "10px", background: "#f59e0b", color: "#fff", border: "none", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", opacity: loading ? 0.7 : 1 }}
-          >
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            style={{ padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #e2e8f0", fontSize: "0.95rem", outline: "none" }} />
+          <button onClick={loadSummary} disabled={loading}
+            style={{ padding: "10px 14px", borderRadius: "10px", background: "#f59e0b", color: "#fff", border: "none", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", opacity: loading ? 0.7 : 1 }}>
             <FaSync className={loading ? "spin" : ""} />
           </button>
         </div>
@@ -136,9 +172,9 @@ const DailySalary: React.FC = () => {
       {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "12px", marginBottom: "20px" }}>
         {[
-          { label: "Present", val: totalPresent, color: "#10b981", bg: "#f0fdf4" },
-          { label: "Absent", val: totalAbsent, color: "#ef4444", bg: "#fef2f2" },
-          { label: "Total Wage Today", val: fmt(totalWage), color: "#f59e0b", bg: "#fffbeb" },
+          { label: "Present",          val: totalPresent,    color: "#10b981", bg: "#f0fdf4" },
+          { label: "Absent",           val: totalAbsent,     color: "#ef4444", bg: "#fef2f2" },
+          { label: "Total Wage Today", val: fmt(totalWage),  color: "#f59e0b", bg: "#fffbeb" },
         ].map(c => (
           <div key={c.label} style={{ background: c.bg, borderRadius: "12px", border: `1px solid ${c.color}22`, padding: "16px 20px", textAlign: "center" }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", marginBottom: "4px" }}>{c.label}</div>
@@ -155,6 +191,14 @@ const DailySalary: React.FC = () => {
         </div>
       )}
 
+      {/* Success */}
+      {result && (
+        <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "12px", padding: "16px 20px", marginBottom: "16px", color: "#15803d" }}>
+          <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>✅ Wages Paid Successfully!</div>
+          <div style={{ marginTop: "6px", fontSize: "0.9rem" }}>{result.processed} employees paid · Total: <strong>{fmt(result.total_paid)}</strong></div>
+        </div>
+      )}
+
       {/* Table */}
       <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
         {loading ? (
@@ -168,110 +212,117 @@ const DailySalary: React.FC = () => {
             <div style={{ fontWeight: 600 }}>No employees found.</div>
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  {["Employee", "Type", "Status", "Hours", "Daily Wage", "Mark Present", "Mark Half", "Mark Absent"].map(h => (
-                    <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: "0.72rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", borderBottom: "1px solid #f1f5f9" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(row => {
-                  const sc = statusColor[row.status] || statusColor.absent;
-                  const isMarking = marking === row.employee_id;
-                  return (
-                    <tr key={row.employee_id} style={{ borderBottom: "1px solid #f8fafc" }}>
-                      <td style={{ padding: "14px 16px" }}>
-                        <div style={{ fontWeight: 700, color: "#1e293b" }}>{row.employee_name}</div>
-                        {row.designation && <div style={{ fontSize: "0.78rem", color: "#94a3b8" }}>{row.designation}</div>}
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <span style={{ background: row.salary_type === "daily" ? "#fef3c7" : "#ede9fe", color: row.salary_type === "daily" ? "#92400e" : "#6d28d9", padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, textTransform: "capitalize" }}>
-                          {row.salary_type}
-                        </span>
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <span style={{ background: sc.bg, color: sc.text, padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700 }}>
-                          {sc.label}
-                        </span>
-                      </td>
-                      <td style={{ padding: "14px 16px", color: "#374151" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <FaClock style={{ color: "#94a3b8", fontSize: "0.8rem" }} />
-                          {row.working_hours || 0}h
-                        </div>
-                      </td>
-                      <td style={{ padding: "14px 16px", fontWeight: 800, color: row.daily_wage > 0 ? "#10b981" : "#94a3b8" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                          <FaRupeeSign style={{ fontSize: "0.8rem" }} />
-                          {fmt(row.daily_wage).replace("₹", "")}
-                        </div>
-                      </td>
-                      {/* Mark buttons */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <button
-                          onClick={() => markAttendance(row.employee_id, "present", 8)}
-                          disabled={isMarking}
-                          style={{
-                            display: "flex", alignItems: "center", gap: "5px",
-                            padding: "6px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem",
-                            background: row.status === "present" ? "#10b981" : "#f0fdf4",
-                            color: row.status === "present" ? "#fff" : "#15803d",
-                            opacity: isMarking ? 0.6 : 1,
-                          }}
-                        >
-                          <FaCheck /> Present
-                        </button>
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <button
-                          onClick={() => markAttendance(row.employee_id, "half_day", 4)}
-                          disabled={isMarking}
-                          style={{
-                            display: "flex", alignItems: "center", gap: "5px",
-                            padding: "6px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem",
-                            background: row.status === "half_day" ? "#f59e0b" : "#fffbeb",
-                            color: row.status === "half_day" ? "#fff" : "#92400e",
-                            opacity: isMarking ? 0.6 : 1,
-                          }}
-                        >
-                          ½ Half
-                        </button>
-                      </td>
-                      <td style={{ padding: "14px 16px" }}>
-                        <button
-                          onClick={() => markAttendance(row.employee_id, "absent", 0)}
-                          disabled={isMarking}
-                          style={{
-                            display: "flex", alignItems: "center", gap: "5px",
-                            padding: "6px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem",
-                            background: row.status === "absent" ? "#ef4444" : "#fef2f2",
-                            color: row.status === "absent" ? "#fff" : "#dc2626",
-                            opacity: isMarking ? 0.6 : 1,
-                          }}
-                        >
-                          <FaTimes /> Absent
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
-                  <td colSpan={4} style={{ padding: "14px 16px", fontWeight: 700, color: "#374151" }}>
-                    Total ({rows.length} employees)
-                  </td>
-                  <td style={{ padding: "14px 16px", fontWeight: 800, color: "#10b981", fontSize: "1.05rem" }}>
-                    {fmt(totalWage)}
-                  </td>
-                  <td colSpan={3}></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    {["Employee","Type","Status","Hours","Daily Wage","Pay Mode","Mark Present","Mark Half","Mark Absent"].map(h => (
+                      <th key={h} style={{ padding: "12px 14px", textAlign: "left", fontSize: "0.7rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", borderBottom: "1px solid #f1f5f9" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => {
+                    const sc       = statusColor[row.status] || statusColor.absent;
+                    const isMarking = marking === row.employee_id;
+                    return (
+                      <tr key={row.employee_id} style={{ borderBottom: "1px solid #f8fafc", opacity: row.already_paid ? 0.55 : 1 }}>
+                        <td style={{ padding: "13px 14px" }}>
+                          <div style={{ fontWeight: 700, color: "#1e293b" }}>{row.employee_name}</div>
+                          {row.designation && <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{row.designation}</div>}
+                          {row.already_paid && <div style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: 700 }}>✓ Paid</div>}
+                        </td>
+                        <td style={{ padding: "13px 14px" }}>
+                          <span style={{ background: row.salary_type === "daily" ? "#fef3c7" : "#ede9fe", color: row.salary_type === "daily" ? "#92400e" : "#6d28d9", padding: "3px 10px", borderRadius: "20px", fontSize: "0.73rem", fontWeight: 700, textTransform: "capitalize" }}>
+                            {row.salary_type}
+                          </span>
+                        </td>
+                        <td style={{ padding: "13px 14px" }}>
+                          <span style={{ background: sc.bg, color: sc.text, padding: "4px 12px", borderRadius: "20px", fontSize: "0.76rem", fontWeight: 700 }}>{sc.label}</span>
+                        </td>
+                        <td style={{ padding: "13px 14px", color: "#374151" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                            <FaClock style={{ color: "#94a3b8", fontSize: "0.78rem" }} />{row.working_hours || 0}h
+                          </div>
+                        </td>
+                        <td style={{ padding: "13px 14px", fontWeight: 800, color: row.daily_wage > 0 ? "#10b981" : "#94a3b8", fontSize: "1rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                            <FaRupeeSign style={{ fontSize: "0.78rem" }} />{fmt(row.daily_wage).replace("₹", "")}
+                          </div>
+                        </td>
+                        {/* Pay mode toggle */}
+                        <td style={{ padding: "13px 14px" }}>
+                          {(row.status === "present" || row.status === "half_day") && row.daily_wage > 0 ? (
+                            <button onClick={() => toggleMode(idx)} style={{
+                              display: "flex", alignItems: "center", gap: "5px",
+                              padding: "5px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem",
+                              background: row.payment_mode === "bank" ? "#eff6ff" : "#f0fdf4",
+                              color:      row.payment_mode === "bank" ? "#2563eb" : "#15803d",
+                            }}>
+                              {row.payment_mode === "bank" ? <FaUniversity /> : <FaWallet />}
+                              {row.payment_mode === "bank" ? "Bank" : "Cash"}
+                            </button>
+                          ) : <span style={{ color: "#cbd5e1", fontSize: "0.8rem" }}>—</span>}
+                        </td>
+                        {/* Mark buttons */}
+                        <td style={{ padding: "13px 14px" }}>
+                          <button onClick={() => markAttendance(row.employee_id, "present", 8)} disabled={isMarking}
+                            style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 11px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.76rem", background: row.status === "present" ? "#10b981" : "#f0fdf4", color: row.status === "present" ? "#fff" : "#15803d", opacity: isMarking ? 0.6 : 1 }}>
+                            <FaCheck /> Present
+                          </button>
+                        </td>
+                        <td style={{ padding: "13px 14px" }}>
+                          <button onClick={() => markAttendance(row.employee_id, "half_day", 4)} disabled={isMarking}
+                            style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 11px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.76rem", background: row.status === "half_day" ? "#f59e0b" : "#fffbeb", color: row.status === "half_day" ? "#fff" : "#92400e", opacity: isMarking ? 0.6 : 1 }}>
+                            ½ Half
+                          </button>
+                        </td>
+                        <td style={{ padding: "13px 14px" }}>
+                          <button onClick={() => markAttendance(row.employee_id, "absent", 0)} disabled={isMarking}
+                            style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 11px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.76rem", background: row.status === "absent" ? "#ef4444" : "#fef2f2", color: row.status === "absent" ? "#fff" : "#dc2626", opacity: isMarking ? 0.6 : 1 }}>
+                            <FaTimes /> Absent
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
+                    <td colSpan={4} style={{ padding: "13px 14px", fontWeight: 700, color: "#374151" }}>Total ({rows.length} employees)</td>
+                    <td style={{ padding: "13px 14px", fontWeight: 800, color: "#10b981", fontSize: "1.05rem" }}>{fmt(totalWage)}</td>
+                    <td colSpan={4}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Process Payment footer */}
+            {payableRows.length > 0 && (
+              <div style={{ padding: "20px 24px", borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fafbfc", flexWrap: "wrap", gap: "12px" }}>
+                <div style={{ fontSize: "0.9rem", color: "#64748b" }}>
+                  <strong>{payableRows.length}</strong> present · Total payable: <strong style={{ color: "#10b981" }}>{fmt(payableRows.reduce((s,r) => s + r.daily_wage, 0))}</strong>
+                </div>
+                <button
+                  onClick={processPayments}
+                  disabled={processing}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "13px 32px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: processing ? "#94a3b8" : "linear-gradient(135deg,#10b981,#059669)",
+                    color: "#fff", fontWeight: 700, fontSize: "1rem",
+                    boxShadow: processing ? "none" : "0 4px 16px rgba(16,185,129,0.35)",
+                  }}
+                >
+                  {processing
+                    ? <><FaSync style={{ animation: "spin 1s linear infinite" }} /> Processing…</>
+                    : <><FaMoneyBillWave /> Pay {payableRows.length} Employee{payableRows.length > 1 ? "s" : ""} — {fmt(payableRows.reduce((s,r) => s + r.daily_wage, 0))}</>
+                  }
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -690,6 +690,102 @@ router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
     }
 });
 
+// POST /hr/salary/daily/process — pay all present employees for a given date
+router.post("/salary/daily/process", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const { date, employees: empList } = req.body;
+    if (!date || !empList?.length) return res.status(400).json({ error: "date and employees required" });
+
+    let client;
+    try {
+        await ensureWeeklyTables();
+        // Ensure daily_salary_payments table exists
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS daily_salary_payments (
+                id           SERIAL PRIMARY KEY,
+                company_id   INTEGER NOT NULL,
+                employee_id  INTEGER REFERENCES employees(id),
+                payment_date DATE NOT NULL,
+                daily_wage   NUMERIC(12,2) DEFAULT 0,
+                payment_mode VARCHAR(20) DEFAULT 'cash',
+                status       VARCHAR(20) DEFAULT 'paid',
+                created_at   TIMESTAMP DEFAULT NOW(),
+                UNIQUE(employee_id, payment_date)
+            )
+        `).catch(() => {});
+
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const results = [];
+        for (const p of empList) {
+            const emp = await db.pgGet(`SELECT * FROM employees WHERE id=$1 AND company_id=$2`, [p.employee_id, companyId]);
+            if (!emp) continue;
+
+            const wage     = Number(p.daily_wage) || 0;
+            const pMode    = (p.payment_mode || 'cash').toUpperCase();
+
+            if (wage <= 0) continue; // skip absent / zero-wage
+
+            // Balance check
+            const { checkSufficientBalance } = await import('../utils/balanceCheck.js');
+            const bal = await checkSufficientBalance(client, companyId, pMode, wage);
+            if (!bal.sufficient) {
+                await client.query('ROLLBACK');
+                client.release(); client = null;
+                return res.status(422).json({ error: `Insufficient ${pMode} balance for ${emp.name}. Available: ₹${bal.currentBalance}` });
+            }
+
+            // Record payment
+            await client.query(`
+                INSERT INTO daily_salary_payments (company_id, employee_id, payment_date, daily_wage, payment_mode, status)
+                VALUES ($1,$2,$3,$4,$5,'paid')
+                ON CONFLICT (employee_id, payment_date) DO UPDATE
+                  SET daily_wage=$4, payment_mode=$5, status='paid', created_at=NOW()
+            `, [companyId, p.employee_id, date, wage, pMode.toLowerCase()]);
+
+            // Ledger deduction
+            if (pMode === 'CASH') {
+                await client.query(
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                     VALUES ($1,$2,'daily_wage',$3,'out',$4)`,
+                    [companyId, branchId, wage, date]);
+            } else {
+                await client.query(
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                     VALUES ($1,$2,'daily_wage',$3,'out','Main Account',$4)`,
+                    [companyId, branchId, wage, date]);
+            }
+
+            results.push({ employee_id: p.employee_id, name: emp.name, wage });
+
+            // WhatsApp to employee
+            if (emp.phone) {
+                sendWhatsApp(String(emp.phone),
+`Dear ${emp.name},
+Your daily wage of ₹${wage.toLocaleString('en-IN')} has been paid.
+Date: ${date} | Mode: ${pMode}
+Thank you! 🙏
+JBS Knit Wear`).catch(() => {});
+            }
+        }
+
+        await client.query('COMMIT');
+
+        const totalPaid = results.reduce((s, r) => s + r.wage, 0);
+        notifyOwner(`💰 Daily Wages Paid!\nDate: ${date}\nEmployees: ${results.length}\nTotal: ₹${totalPaid.toLocaleString('en-IN')}`).catch(() => {});
+
+        res.json({ success: true, processed: results.length, total_paid: totalPaid, results });
+    } catch (err) {
+        if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+        console.error('[daily-process]', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) { try { client.release(); } catch (_) {} }
+    }
+});
+
 // ==========================================
 // 7. WEEKLY SALARY (SATURDAY PAYROLL)
 // ==========================================
