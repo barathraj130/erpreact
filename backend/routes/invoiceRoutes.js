@@ -57,10 +57,10 @@ function resolveBillType(invoiceType, billPurpose) {
     }
 }
 
-// Format: plain sequential number — 1, 2, 3…
+// Format: PREFIX/YEAR/MM/NNN  e.g. TAX/2026/05/001
 // Each bill type has its own independent counter so TAX:1 and RET:1 coexist.
-function formatInvoiceNumber(_prefix, _year, _month, num) {
-    return String(num);
+function formatInvoiceNumber(prefix, year, month, num) {
+    return `${prefix}/${year}/${String(month).padStart(2, '0')}/${String(num).padStart(3, '0')}`;
 }
 
 async function generateInvoiceNumber(client, type, companyId, branchId, billPurpose) {
