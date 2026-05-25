@@ -173,7 +173,14 @@ router.get("/ledger/:employeeId", authMiddleware, async (req, res) => {
         );
 
         const repayments = await db.pgAll(
-            `SELECT ar.id, ar.transaction_date as date, ar.amount_deducted as amount, 'Payroll Deduction' as description, 'REPAYMENT' as type
+            `SELECT ar.id, ar.transaction_date as date, ar.amount_deducted as amount,
+                    CASE ar.type
+                        WHEN 'DAILY_DEDUCTION' THEN 'Daily Wage Deduction'
+                        WHEN 'WEEKLY_DEDUCTION' THEN 'Weekly Salary Deduction'
+                        ELSE 'Payroll Deduction'
+                    END as description,
+                    'REPAYMENT' as type,
+                    ar.notes
              FROM advance_repayments ar
              JOIN salary_advances sa ON ar.advance_id = sa.id
              WHERE sa.employee_id = $1`,
@@ -752,7 +759,7 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                   SET gross_wage=$5, deduction=$6, daily_wage=$4, payment_mode=$7, status='paid', created_at=NOW()
             `, [companyId, p.employee_id, date, wage, grossWage, deduction, pMode.toLowerCase()]);
 
-            // Ledger deduction
+            // Ledger deduction (net wage out of cash/bank)
             if (pMode === 'CASH') {
                 await client.query(
                     `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
@@ -765,7 +772,36 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                     [companyId, branchId, wage, date]);
             }
 
-            results.push({ employee_id: p.employee_id, name: emp.name, wage });
+            // If deduction > 0, record it as advance repayment in the employee ledger
+            if (deduction > 0) {
+                // Find the oldest active advance for this employee
+                const advRow = await client.query(
+                    `SELECT id, current_balance FROM salary_advances
+                     WHERE employee_id=$1 AND status='ACTIVE' AND current_balance > 0
+                     ORDER BY advance_date ASC LIMIT 1`,
+                    [p.employee_id]
+                );
+                if (advRow.rows[0]) {
+                    const advId      = advRow.rows[0].id;
+                    const actualDeduct = Math.min(deduction, Number(advRow.rows[0].current_balance));
+                    // Insert repayment record (shows in employee ledger)
+                    await client.query(
+                        `INSERT INTO advance_repayments (advance_id, amount_deducted, transaction_date, type, notes)
+                         VALUES ($1,$2,$3,'DAILY_DEDUCTION','Daily wage deduction on ${date}')`,
+                        [advId, actualDeduct, date]
+                    );
+                    // Reduce advance balance
+                    await client.query(
+                        `UPDATE salary_advances
+                         SET current_balance = GREATEST(0, current_balance - $1),
+                             status = CASE WHEN (current_balance - $1) <= 0 THEN 'RECOVERED' ELSE status END
+                         WHERE id = $2`,
+                        [actualDeduct, advId]
+                    );
+                }
+            }
+
+            results.push({ employee_id: p.employee_id, name: emp.name, wage, deduction });
 
             // WhatsApp to employee
             if (emp.phone) {
