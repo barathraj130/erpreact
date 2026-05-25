@@ -707,6 +707,8 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                 company_id   INTEGER NOT NULL,
                 employee_id  INTEGER REFERENCES employees(id),
                 payment_date DATE NOT NULL,
+                gross_wage   NUMERIC(12,2) DEFAULT 0,
+                deduction    NUMERIC(12,2) DEFAULT 0,
                 daily_wage   NUMERIC(12,2) DEFAULT 0,
                 payment_mode VARCHAR(20) DEFAULT 'cash',
                 status       VARCHAR(20) DEFAULT 'paid',
@@ -714,6 +716,9 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                 UNIQUE(employee_id, payment_date)
             )
         `).catch(() => {});
+        // Add columns if table existed without them
+        await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS gross_wage NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS deduction NUMERIC(12,2) DEFAULT 0`).catch(() => {});
 
         client = await db.getClient();
         await client.query('BEGIN');
@@ -723,8 +728,10 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
             const emp = await db.pgGet(`SELECT * FROM employees WHERE id=$1 AND company_id=$2`, [p.employee_id, companyId]);
             if (!emp) continue;
 
-            const wage     = Number(p.daily_wage) || 0;
-            const pMode    = (p.payment_mode || 'cash').toUpperCase();
+            const grossWage = Number(p.gross_wage || p.daily_wage) || 0;
+            const deduction = Number(p.deduction) || 0;
+            const wage      = Number(p.daily_wage) || 0; // net pay (already reduced by deduction on frontend)
+            const pMode     = (p.payment_mode || 'cash').toUpperCase();
 
             if (wage <= 0) continue; // skip absent / zero-wage
 
@@ -739,11 +746,11 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             // Record payment
             await client.query(`
-                INSERT INTO daily_salary_payments (company_id, employee_id, payment_date, daily_wage, payment_mode, status)
-                VALUES ($1,$2,$3,$4,$5,'paid')
+                INSERT INTO daily_salary_payments (company_id, employee_id, payment_date, daily_wage, gross_wage, deduction, payment_mode, status)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,'paid')
                 ON CONFLICT (employee_id, payment_date) DO UPDATE
-                  SET daily_wage=$4, payment_mode=$5, status='paid', created_at=NOW()
-            `, [companyId, p.employee_id, date, wage, pMode.toLowerCase()]);
+                  SET gross_wage=$5, deduction=$6, daily_wage=$4, payment_mode=$7, status='paid', created_at=NOW()
+            `, [companyId, p.employee_id, date, wage, grossWage, deduction, pMode.toLowerCase()]);
 
             // Ledger deduction
             if (pMode === 'CASH') {
@@ -764,8 +771,10 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
             if (emp.phone) {
                 sendWhatsApp(String(emp.phone),
 `Dear ${emp.name},
-Your daily wage of ₹${wage.toLocaleString('en-IN')} has been paid.
-Date: ${date} | Mode: ${pMode}
+Your daily wage has been paid.
+Date: ${date}
+Gross: ₹${grossWage.toLocaleString('en-IN')}${deduction > 0 ? `\nDeduction: −₹${deduction.toLocaleString('en-IN')}` : ''}
+Net Paid: ₹${wage.toLocaleString('en-IN')} (${pMode})
 Thank you! 🙏
 JBS Knit Wear`).catch(() => {});
             }
