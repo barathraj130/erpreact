@@ -432,7 +432,15 @@ const Employees: React.FC = () => {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", padding: "12px", borderRadius: "12px", marginBottom: "16px" }}>
                     <div>
                       <div style={{ fontSize: "0.7rem", color: "#94a3b8", textTransform: "uppercase", fontWeight: 700 }}>Salary ({emp.salary_type})</div>
-                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1e293b" }}>₹{(emp.salary || 0).toLocaleString()}</div>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1e293b" }}>
+                        ₹{(
+                          (emp.salary_type || "").toLowerCase() === "daily"
+                            ? (emp.daily_rate || 0)
+                            : (emp.salary_type || "").toLowerCase() === "weekly"
+                            ? (emp.weekly_rate || 0)
+                            : (emp.salary || 0)
+                        ).toLocaleString()}
+                      </div>
                     </div>
                     <div className="attendance-pill" style={{ fontSize: "0.8rem" }}>{emp.days_present || 0} Days</div>
                   </div>
@@ -521,7 +529,13 @@ const Employees: React.FC = () => {
                     </td>
                     <td>
                       <div style={{ fontWeight: 700 }}>
-                        ₹{(emp.salary || 0).toLocaleString()}
+                        ₹{(
+                          (emp.salary_type || "").toLowerCase() === "daily"
+                            ? (emp.daily_rate || 0)
+                            : (emp.salary_type || "").toLowerCase() === "weekly"
+                            ? (emp.weekly_rate || 0)
+                            : (emp.salary || 0)
+                        ).toLocaleString()}
                       </div>
                       <div
                         style={{
