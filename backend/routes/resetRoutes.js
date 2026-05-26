@@ -360,4 +360,97 @@ router.post("/nuclear", authMiddleware, async (req, res) => {
     }
 });
 
+// ── POST /reset/bootstrap ────────────────────────────────────────────────────
+// Creates the first company + admin user after a nuclear wipe.
+// Only works when the companies table is EMPTY (no existing data).
+// No authentication required (there are no users to auth with after a wipe).
+router.post("/bootstrap", async (req, res) => {
+    const {
+        company_name, company_code, admin_email, admin_password,
+        secret_key  // must match BOOTSTRAP_SECRET env var or fallback
+    } = req.body || {};
+
+    // Safety gate — must pass a secret key to prevent abuse
+    const EXPECTED = process.env.BOOTSTRAP_SECRET || "FLUXORA_BOOTSTRAP_2026";
+    if (secret_key !== EXPECTED) {
+        return res.status(403).json({ error: "Invalid secret key" });
+    }
+
+    if (!company_name || !company_code || !admin_email || !admin_password) {
+        return res.status(400).json({ error: "company_name, company_code, admin_email, admin_password required" });
+    }
+
+    let client;
+    try {
+        client = await db.getClient();
+
+        // Block if any company already exists
+        const existing = await client.query(`SELECT id FROM companies LIMIT 1`).catch(() => ({ rows: [] }));
+        if (existing.rows.length > 0) {
+            return res.status(409).json({ error: "Database already has companies. Bootstrap only runs on an empty DB." });
+        }
+
+        await client.query('BEGIN');
+
+        // 1. Subscription
+        const subRes = await client.query(
+            `INSERT INTO subscriptions (plan_name, max_branches, max_users, enabled_modules, status)
+             VALUES ('Enterprise', 10, 50, 'sales,finance,hr,inventory,purchases,reports', 'ACTIVE')
+             RETURNING id`
+        );
+        const subId = subRes.rows[0].id;
+
+        // 2. Company
+        const compRes = await client.query(
+            `INSERT INTO companies (company_name, company_code, subscription_id, is_active, financial_year_start_month, default_currency)
+             VALUES ($1, $2, $3, TRUE, 4, 'INR') RETURNING id`,
+            [company_name, company_code.toUpperCase(), subId]
+        );
+        const companyId = compRes.rows[0].id;
+
+        // 3. Default Branch
+        const branchRes = await client.query(
+            `INSERT INTO branches (company_id, branch_name, branch_code, is_active)
+             VALUES ($1, 'Main Branch', 'MAIN-01', TRUE) RETURNING id`,
+            [companyId]
+        );
+        const branchId = branchRes.rows[0].id;
+
+        // 4. System Roles
+        const roles = ['admin','manager','staff','accountant','sales','viewer'];
+        for (const r of roles) {
+            await client.query(
+                `INSERT INTO roles (name, description, is_system_role) VALUES ($1,$2,TRUE) ON CONFLICT (name) DO NOTHING`,
+                [r, `${r.charAt(0).toUpperCase()}${r.slice(1)} Role`]
+            );
+        }
+
+        // 5. Admin User
+        const bcrypt = await import('bcryptjs');
+        const hashed = await bcrypt.default.hash(admin_password, 10);
+        const userRes = await client.query(
+            `INSERT INTO users (company_id, username, email, password_hash, role, active_company_id)
+             VALUES ($1, $2, $3, $4, 'admin', $1) RETURNING id`,
+            [companyId, 'admin', admin_email, hashed]
+        );
+
+        await client.query('COMMIT');
+
+        res.json({
+            success: true,
+            message: `✅ Company "${company_name}" (${company_code.toUpperCase()}) created. Login with ${admin_email}.`,
+            company_id: companyId,
+            company_code: company_code.toUpperCase(),
+            branch_id: branchId,
+            user_id: userRes.rows[0].id
+        });
+    } catch (err) {
+        if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+        console.error("[bootstrap]", err.message);
+        res.status(500).json({ error: "Bootstrap failed: " + err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 export default router;
