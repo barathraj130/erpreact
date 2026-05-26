@@ -1112,4 +1112,106 @@ router.get("/salary/weekly/history", authMiddleware, async (req, res) => {
     }
 });
 
+// POST /hr/advance/repair — one-time fix: backfill advance_repayments from daily_salary_payments
+// and set current_balance for advances that have NULL
+router.post("/advance/repair", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    let client;
+    try {
+        // Ensure columns exist
+        await db.pgRun(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS type VARCHAR(40) DEFAULT 'DEDUCTION'`).catch(() => {});
+        await db.pgRun(`ALTER TABLE advance_repayments ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {});
+        await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS gross_wage NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS deduction NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        // Step 1: Set current_balance = amount for any NULL entries (opening advances)
+        const fixed = await client.query(
+            `UPDATE salary_advances
+             SET current_balance = amount
+             WHERE company_id = $1 AND current_balance IS NULL
+             RETURNING id, employee_id, amount`,
+            [companyId]
+        );
+
+        // Step 2: Find all daily payments with deduction > 0 for this company
+        const payments = await client.query(
+            `SELECT dsp.*
+             FROM daily_salary_payments dsp
+             JOIN employees e ON e.id = dsp.employee_id
+             WHERE e.company_id = $1 AND COALESCE(dsp.deduction, 0) > 0
+             ORDER BY dsp.payment_date ASC`,
+            [companyId]
+        );
+
+        let backfilled = 0;
+        for (const pay of payments.rows) {
+            const deduction = Number(pay.deduction);
+            if (!deduction || deduction <= 0) continue;
+
+            // Find the oldest advance for this employee still with balance
+            const advRow = await client.query(
+                `SELECT id, COALESCE(current_balance, amount) AS current_balance
+                 FROM salary_advances
+                 WHERE employee_id = $1
+                   AND COALESCE(current_balance, amount, 0) > 0
+                   AND COALESCE(status,'ACTIVE') != 'RECOVERED'
+                 ORDER BY advance_date ASC LIMIT 1`,
+                [pay.employee_id]
+            );
+            if (!advRow.rows[0]) continue;
+
+            const advId = advRow.rows[0].id;
+
+            // Check if a repayment already exists for this payment date + employee
+            const exists = await client.query(
+                `SELECT ar.id FROM advance_repayments ar
+                 JOIN salary_advances sa ON ar.advance_id = sa.id
+                 WHERE sa.employee_id = $1
+                   AND ar.transaction_date = $2
+                   AND ar.type = 'DAILY_DEDUCTION'`,
+                [pay.employee_id, pay.payment_date]
+            );
+            if (exists.rows.length > 0) continue; // already recorded, skip
+
+            const actualDeduct = Math.min(deduction, Number(advRow.rows[0].current_balance));
+
+            // Insert missing repayment record
+            await client.query(
+                `INSERT INTO advance_repayments (advance_id, amount_deducted, transaction_date, type, notes)
+                 VALUES ($1,$2,$3,'DAILY_DEDUCTION',$4)`,
+                [advId, actualDeduct, pay.payment_date, `Daily wage deduction on ${pay.payment_date} (backfilled)`]
+            );
+
+            // Reduce current_balance
+            await client.query(
+                `UPDATE salary_advances
+                 SET current_balance = GREATEST(0, COALESCE(current_balance, amount) - $1),
+                     status = CASE WHEN COALESCE(current_balance, amount) - $1 <= 0 THEN 'RECOVERED' ELSE COALESCE(status,'ACTIVE') END
+                 WHERE id = $2`,
+                [actualDeduct, advId]
+            );
+
+            backfilled++;
+        }
+
+        await client.query('COMMIT');
+
+        res.json({
+            success: true,
+            null_balances_fixed: fixed.rows.length,
+            repayments_backfilled: backfilled,
+            message: `Fixed ${fixed.rows.length} advances with NULL balance. Backfilled ${backfilled} missing deduction records.`
+        });
+    } catch (err) {
+        if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+        console.error('[advance-repair]', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) { try { client.release(); } catch (_) {} }
+    }
+});
+
 export default router;

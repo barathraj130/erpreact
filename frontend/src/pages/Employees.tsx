@@ -76,6 +76,8 @@ const Employees: React.FC = () => {
   );
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [repairing, setRepairing] = useState(false);
+  const [repairMsg, setRepairMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -98,6 +100,22 @@ const Employees: React.FC = () => {
       setEmployees([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRepairAdvances = async () => {
+    if (!confirm("This will backfill missing advance deduction records and fix NULL balances. Continue?")) return;
+    setRepairing(true);
+    setRepairMsg(null);
+    try {
+      const res = await apiFetch("/hr/advance/repair", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Repair failed");
+      setRepairMsg(`✅ ${data.message}`);
+    } catch (err: any) {
+      setRepairMsg(`❌ ${err.message}`);
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -275,6 +293,33 @@ const Employees: React.FC = () => {
           >
             <FaPlus /> Add Employee
           </button>
+
+          <button
+            onClick={handleRepairAdvances}
+            disabled={repairing}
+            title="Fix missing advance deduction records"
+            style={{
+              height: "36px",
+              padding: "0 12px",
+              borderRadius: "50px",
+              background: repairing ? "#94a3b8" : "#f59e0b",
+              color: "#fff",
+              border: "none",
+              fontSize: "12px",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              cursor: repairing ? "not-allowed" : "pointer"
+            }}
+          >
+            🔧 {repairing ? "Fixing…" : "Repair Advances"}
+          </button>
+          {repairMsg && (
+            <div style={{ fontSize: "12px", color: repairMsg.startsWith("✅") ? "#10b981" : "#ef4444", fontWeight: 600 }}>
+              {repairMsg}
+            </div>
+          )}
 
           {activeTab === "DAILY" && (
             <button
