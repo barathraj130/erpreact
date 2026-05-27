@@ -1041,6 +1041,73 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
+   2c. POST /invoices/:id/send-pdf — generate PDF & send via WhatsApp
+============================================================ */
+router.post("/:id/send-pdf", authMiddleware, async (req, res) => {
+    const id        = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+    try {
+        // Fetch full invoice data including customer phone
+        const invoiceData = await db.pgGet(`
+            SELECT i.*,
+                   COALESCE(u.nickname, u.username) as customer_name,
+                   u.address_line1, u.city_pincode, u.state,
+                   u.gstin as customer_gstin, u.state_code as customer_state_code,
+                   u.phone as customer_phone,
+                   c.company_name, c.address_line1 as c_address, c.city_pincode as c_city,
+                   c.state as c_state, c.gstin as c_gstin, c.state_code as company_state_code,
+                   c.bank_name, c.bank_account_no, c.bank_ifsc_code, c.phone as c_phone,
+                   COALESCE(json_agg(li.* ORDER BY li.id) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
+            FROM invoices i
+            LEFT JOIN users     u  ON i.customer_id = u.id
+            LEFT JOIN companies c  ON i.company_id  = c.id
+            LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
+            WHERE i.id = $1 AND i.company_id = $2
+            GROUP BY i.id, u.nickname, u.username, u.address_line1, u.city_pincode, u.state,
+                     u.gstin, u.state_code, u.phone,
+                     c.company_name, c.address_line1, c.city_pincode, c.state,
+                     c.gstin, c.state_code, c.bank_name, c.bank_account_no,
+                     c.bank_ifsc_code, c.phone
+        `, [id, companyId]);
+
+        if (!invoiceData) return res.status(404).json({ error: 'Invoice not found' });
+
+        const phone = invoiceData.customer_phone;
+        if (!phone) return res.status(400).json({ error: 'Customer has no phone number saved. Add a phone number first.' });
+
+        // Generate PDF
+        const { generateInvoicePdf } = await import('../utils/invoicePdf.js');
+        const pdfBuffer = await generateInvoicePdf(invoiceData);
+        const filename  = `Invoice_${invoiceData.invoice_number || id}.pdf`;
+
+        // Send via WhatsApp
+        const { sendWhatsAppFile, sendWhatsApp } = await import('../utils/whatsapp.js');
+        const companyName = invoiceData.company_name || 'JBS Knit Wear';
+        const companyPhone = invoiceData.c_phone || '9791902205';
+
+        const caption =
+`Dear ${invoiceData.customer_name},
+
+Please find your invoice attached.
+
+📋 *Invoice: ${invoiceData.invoice_number}*
+💰 *Amount: ₹${Number(invoiceData.total_amount || 0).toLocaleString('en-IN')}*
+📅 Date: ${new Date(invoiceData.invoice_date).toLocaleDateString('en-IN')}
+
+For queries, contact us:
+📞 ${companyPhone}
+*${companyName}*`;
+
+        await sendWhatsAppFile(phone, pdfBuffer, filename, caption);
+
+        res.json({ success: true, message: `Invoice PDF sent to ${phone} via WhatsApp.` });
+    } catch (err) {
+        console.error('[send-pdf]', err.message);
+        res.status(500).json({ error: 'Failed to send PDF: ' + err.message });
+    }
+});
+
+/* ============================================================
    3. GET SINGLE INVOICE (FOR DETAILS & EDIT)
 ============================================================ */
 router.get("/:id", authMiddleware, async (req, res) => {

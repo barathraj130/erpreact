@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { FaArrowLeft, FaEdit, FaFilePdf, FaPrint, FaTimes, FaTrash } from "react-icons/fa";
+import { FaArrowLeft, FaEdit, FaFilePdf, FaPrint, FaTimes, FaTrash, FaWhatsapp } from "react-icons/fa";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 
@@ -382,6 +382,8 @@ const InvoiceDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [sendingPdf, setSendingPdf] = useState(false);
+  const [sendMsg, setSendMsg] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   // Allows user to override GST rate for display when old invoices have 0 GST stored
@@ -404,6 +406,23 @@ const InvoiceDetails: React.FC = () => {
     if (!window.confirm("Delete this invoice permanently?")) return;
     try { await apiFetch(`/invoice/${id}`, { method: "DELETE" }); navigate("/invoices"); }
     catch { alert("Delete failed"); }
+  };
+
+  const handleSendPdf = async () => {
+    setSendingPdf(true);
+    setSendMsg(null);
+    try {
+      const res = await apiFetch(`/invoice/${id}/send-pdf`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to send");
+      setSendMsg(`✅ ${json.message}`);
+      setTimeout(() => setSendMsg(null), 5000);
+    } catch (err: any) {
+      setSendMsg(`❌ ${err.message}`);
+      setTimeout(() => setSendMsg(null), 6000);
+    } finally {
+      setSendingPdf(false);
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -712,8 +731,36 @@ const InvoiceDetails: React.FC = () => {
           <button onClick={handleDelete} className="btn-secondary" style={{ color: "var(--danger)", gap: "6px", padding: "8px 12px", fontSize: "0.82rem" }}><FaTrash /> Delete</button>
           <button onClick={() => setShowModal(true)} className="btn-secondary" style={{ gap: "6px", padding: "8px 12px", fontSize: "0.82rem" }}><FaPrint /> Print</button>
           <button onClick={handleDownloadPDF} disabled={pdfLoading} className="btn-primary" style={{ opacity: pdfLoading ? 0.7 : 1, gap: "6px", padding: "8px 12px", fontSize: "0.82rem" }}><FaFilePdf /> {pdfLoading ? "..." : "PDF"}</button>
+          <button
+            onClick={handleSendPdf}
+            disabled={sendingPdf}
+            title={data?.customer_phone ? `Send PDF to ${data.customer_phone}` : "No phone number — edit customer first"}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 14px", borderRadius: "8px", border: "none",
+              background: sendingPdf ? "#94a3b8" : "#25D366",
+              color: "#fff", fontWeight: 700, fontSize: "0.82rem",
+              cursor: sendingPdf ? "not-allowed" : "pointer",
+              opacity: sendingPdf ? 0.7 : 1,
+            }}
+          >
+            <FaWhatsapp size={14} />
+            {sendingPdf ? "Sending…" : "Send PDF"}
+          </button>
         </div>
       </div>
+
+      {/* Send PDF feedback banner */}
+      {sendMsg && (
+        <div style={{
+          margin: "8px 0 0", padding: "10px 16px", borderRadius: "8px",
+          background: sendMsg.startsWith("✅") ? "#f0fdf4" : "#fef2f2",
+          color: sendMsg.startsWith("✅") ? "#16a34a" : "#dc2626",
+          fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px"
+        }}>
+          {sendMsg}
+        </div>
+      )}
 
       {/* PRINT PREVIEW MODAL */}
       {showModal && (
