@@ -131,7 +131,7 @@ const Dashboard: React.FC = () => {
 
       <div className="db-content">
         <div className="db-page-header">
-          <h1 className="db-page-title">Welcome back, <strong>{user?.name}</strong></h1>
+          <h1 className="db-page-title">Welcome back, <strong>{user?.name || user?.username || 'Admin'}</strong></h1>
           <p className="db-page-sub">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
 
