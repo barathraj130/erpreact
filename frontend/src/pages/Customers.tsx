@@ -4,6 +4,7 @@ import {
   FaEdit,
   FaHistory,
   FaMapMarkerAlt,
+  FaPhone,
   FaPlus,
   FaSearch,
   FaSync,
@@ -12,6 +13,7 @@ import {
   FaUserCircle,
   FaUsers,
   FaWallet,
+  FaWhatsapp,
   FaFileInvoice,
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
@@ -33,6 +35,8 @@ const Customers: React.FC = () => {
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [sending, setSending] = useState(false);
+  const [sendingId, setSendingId] = useState<number | null>(null);
+  const [rowSentIds, setRowSentIds] = useState<Set<number>>(new Set());
   const [reminderMsg, setReminderMsg] = useState<string | null>(null);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderList, setReminderList] = useState<any[]>([]);
@@ -164,6 +168,30 @@ const Customers: React.FC = () => {
       setReminderMsg("❌ " + err.message);
     } finally {
       setSending(false);
+    }
+  };
+
+  // Send WhatsApp reminder directly from the row button
+  const sendRowReminder = async (customer: any) => {
+    if (!customer.phone) {
+      alert(`No phone number saved for ${customer.nickname || customer.username}`);
+      return;
+    }
+    setSendingId(customer.id);
+    try {
+      const res = await apiFetch("/users/send-reminders", {
+        method: "POST",
+        body: JSON.stringify({ customer_ids: [customer.id] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setRowSentIds((prev) => new Set([...prev, customer.id]));
+      // Reset sent badge after 4 seconds
+      setTimeout(() => setRowSentIds((prev) => { const s = new Set(prev); s.delete(customer.id); return s; }), 4000);
+    } catch (err: any) {
+      alert("Failed to send: " + err.message);
+    } finally {
+      setSendingId(null);
     }
   };
 
@@ -315,12 +343,45 @@ const Customers: React.FC = () => {
                     );
                   })()}
                 </div>
-                <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
+                  {/* WhatsApp */}
+                  <button
+                    onClick={() => sendRowReminder(user)}
+                    disabled={sendingId === user.id}
+                    style={{
+                      flex: 1, padding: "7px 10px", borderRadius: "8px", border: "none",
+                      background: rowSentIds.has(user.id) ? "#bbf7d0" : user.phone ? "#25D366" : "#e2e8f0",
+                      color: rowSentIds.has(user.id) ? "#16a34a" : user.phone ? "#fff" : "#94a3b8",
+                      fontWeight: 600, fontSize: "12px", cursor: user.phone ? "pointer" : "not-allowed",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: "5px"
+                    }}
+                  >
+                    {rowSentIds.has(user.id) ? "✅ Sent" : sendingId === user.id ? "⏳" : <><FaWhatsapp size={12} /> Remind</>}
+                  </button>
+                  {/* Call */}
+                  {user.phone ? (
+                    <a
+                      href={`tel:${user.phone}`}
+                      style={{
+                        flex: 1, padding: "7px 10px", borderRadius: "8px",
+                        background: "#eff6ff", color: "#3b82f6",
+                        fontWeight: 600, fontSize: "12px",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                        textDecoration: "none"
+                      }}
+                    >
+                      <FaPhone size={11} /> Call
+                    </a>
+                  ) : (
+                    <span style={{ flex: 1, padding: "7px 10px", borderRadius: "8px", background: "#f1f5f9", color: "#cbd5e1", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px" }}>
+                      <FaPhone size={11} /> No Phone
+                    </span>
+                  )}
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); }}>
                     <FaHistory size={11} /> History
                   </button>
-                  <Link 
-                    className="page-btn-round" 
+                  <Link
+                    className="page-btn-round"
                     style={{ flex: 1, textDecoration: 'none', color: '#6366f1' }}
                     to={`/customers/${user.id}/ledger`}
                   >
@@ -401,7 +462,58 @@ const Customers: React.FC = () => {
                       })()}
                     </td>
                     <td className="text-center">
-                      <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
+                        {/* WhatsApp Reminder */}
+                        <button
+                          onClick={() => sendRowReminder(user)}
+                          disabled={sendingId === user.id}
+                          title={user.phone ? `Send WhatsApp reminder to ${user.phone}` : "No phone number saved"}
+                          style={{
+                            padding: "5px 9px", borderRadius: "7px", border: "none",
+                            background: rowSentIds.has(user.id) ? "#bbf7d0" : user.phone ? "#25D366" : "#e2e8f0",
+                            color: rowSentIds.has(user.id) ? "#16a34a" : user.phone ? "#fff" : "#94a3b8",
+                            cursor: user.phone ? "pointer" : "not-allowed",
+                            fontSize: "11px", fontWeight: 600,
+                            display: "flex", alignItems: "center", gap: "4px",
+                            opacity: sendingId === user.id ? 0.6 : 1,
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          {rowSentIds.has(user.id) ? (
+                            <span>✅</span>
+                          ) : sendingId === user.id ? (
+                            <span>⏳</span>
+                          ) : (
+                            <FaWhatsapp size={12} />
+                          )}
+                        </button>
+                        {/* Call */}
+                        {user.phone ? (
+                          <a
+                            href={`tel:${user.phone}`}
+                            title={`Call ${user.phone}`}
+                            style={{
+                              padding: "5px 9px", borderRadius: "7px",
+                              background: "#eff6ff", color: "#3b82f6",
+                              fontSize: "11px", fontWeight: 600,
+                              display: "flex", alignItems: "center", gap: "4px",
+                              textDecoration: "none"
+                            }}
+                          >
+                            <FaPhone size={11} />
+                          </a>
+                        ) : (
+                          <span
+                            title="No phone number"
+                            style={{
+                              padding: "5px 9px", borderRadius: "7px",
+                              background: "#f1f5f9", color: "#cbd5e1",
+                              fontSize: "11px", display: "flex", alignItems: "center"
+                            }}
+                          >
+                            <FaPhone size={11} />
+                          </span>
+                        )}
                         <button
                           className="page-btn-round-sm"
                           onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); }}
