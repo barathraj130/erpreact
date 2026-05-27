@@ -98,14 +98,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
               AND COALESCE(bill_purpose, '') != 'name_only'
         `;
 
-        // Count customers with positive outstanding balance
+        // Count customers with positive outstanding balance (proper subquery, no HAVING)
         const outstandingCountSql = `
-            SELECT COUNT(*) as cnt
-            FROM (
-                SELECT u.id
-                FROM users u
-                WHERE u.role IN ('user','customer') AND u.company_id = $1
-                HAVING GREATEST(0,
+            SELECT COUNT(*) as cnt FROM (
+                SELECT GREATEST(0,
                     COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
                     + COALESCE((
                         SELECT SUM(CASE WHEN UPPER(COALESCE(i2.invoice_type,'')) != 'SALES_RETURN'
@@ -124,8 +120,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
                         WHERE t.reference_id = u.id AND t.company_id = $1
                           AND t.type = 'CUSTOMER_PAYMENT'
                     ), 0)
-                ) > 0
-            ) sub
+                ) AS bal
+                FROM users u
+                WHERE u.role IN ('user','customer') AND u.company_id = $1
+            ) x WHERE x.bal > 0
         `;
 
         const [cashRes, bankRes, totalRevRes, monthRevRes, outstandingRes, salesRes, outstandingCountRes] = await Promise.all([
@@ -157,12 +155,13 @@ router.get('/summary', authMiddleware, async (req, res) => {
         res.json(response);
 
     } catch (err) {
-        console.error("Dashboard summary error:", err);
-        res.json({
+        console.error("Dashboard summary error:", err.message, err.stack);
+        res.status(500).json({
             available_cash: 0,
             total_revenue: 0,
             total_monthly_sales: 0,
             outstanding_receivables: 0,
+            outstanding_customer_count: 0,
             sales_breakdown: { tax_sales: 0, anon_sales: 0, name_sake_sales: 0 }
         });
     }
@@ -203,53 +202,35 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
         const sql = `
-            SELECT
-                COALESCE(u.nickname, u.username) as name,
-                GREATEST(0,
-                    COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
-                    + COALESCE((
-                        SELECT SUM(CASE WHEN UPPER(COALESCE(i2.invoice_type,'')) != 'SALES_RETURN'
-                                        THEN i2.total_amount ELSE -i2.total_amount END)
-                        FROM invoices i2
-                        WHERE i2.customer_id = u.id AND i2.company_id = $1
-                          AND COALESCE(i2.is_deleted, false) = false
-                    ), 0)
-                    - COALESCE((
-                        SELECT SUM(ip.amount) FROM invoice_payments ip
-                        JOIN invoices i3 ON i3.id = ip.invoice_id
-                        WHERE i3.customer_id = u.id AND i3.company_id = $1
-                          AND COALESCE(i3.is_deleted, false) = false
-                    ), 0)
-                    - COALESCE((
-                        SELECT SUM(t.amount) FROM transactions t
-                        WHERE t.reference_id = u.id AND t.company_id = $1
-                          AND t.type = 'CUSTOMER_PAYMENT'
-                    ), 0)
-                ) as amount
-            FROM users u
-            WHERE u.role IN ('user','customer') AND u.company_id = $1
-            HAVING GREATEST(0,
-                    COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
-                    + COALESCE((
-                        SELECT SUM(CASE WHEN UPPER(COALESCE(i2.invoice_type,'')) != 'SALES_RETURN'
-                                        THEN i2.total_amount ELSE -i2.total_amount END)
-                        FROM invoices i2
-                        WHERE i2.customer_id = u.id AND i2.company_id = $1
-                          AND COALESCE(i2.is_deleted, false) = false
-                    ), 0)
-                    - COALESCE((
-                        SELECT SUM(ip.amount) FROM invoice_payments ip
-                        JOIN invoices i3 ON i3.id = ip.invoice_id
-                        WHERE i3.customer_id = u.id AND i3.company_id = $1
-                          AND COALESCE(i3.is_deleted, false) = false
-                    ), 0)
-                    - COALESCE((
-                        SELECT SUM(t.amount) FROM transactions t
-                        WHERE t.reference_id = u.id AND t.company_id = $1
-                          AND t.type = 'CUSTOMER_PAYMENT'
-                    ), 0)
-                ) > 0
-            ORDER BY amount DESC
+            SELECT x.name, x.amount FROM (
+                SELECT
+                    COALESCE(u.nickname, u.username) as name,
+                    GREATEST(0,
+                        COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
+                        + COALESCE((
+                            SELECT SUM(CASE WHEN UPPER(COALESCE(i2.invoice_type,'')) != 'SALES_RETURN'
+                                            THEN i2.total_amount ELSE -i2.total_amount END)
+                            FROM invoices i2
+                            WHERE i2.customer_id = u.id AND i2.company_id = $1
+                              AND COALESCE(i2.is_deleted, false) = false
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(ip.amount) FROM invoice_payments ip
+                            JOIN invoices i3 ON i3.id = ip.invoice_id
+                            WHERE i3.customer_id = u.id AND i3.company_id = $1
+                              AND COALESCE(i3.is_deleted, false) = false
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(t.amount) FROM transactions t
+                            WHERE t.reference_id = u.id AND t.company_id = $1
+                              AND t.type = 'CUSTOMER_PAYMENT'
+                        ), 0)
+                    ) as amount
+                FROM users u
+                WHERE u.role IN ('user','customer') AND u.company_id = $1
+            ) x
+            WHERE x.amount > 0
+            ORDER BY x.amount DESC
             LIMIT 10
         `;
         const data = await db.pgAll(sql, [companyId]);
