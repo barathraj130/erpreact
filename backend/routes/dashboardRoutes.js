@@ -71,6 +71,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
                     FROM invoices i2
                     WHERE i2.customer_id = u.id AND i2.company_id = $1
                       AND COALESCE(i2.is_deleted, false) = false
+                      AND COALESCE(i2.bill_purpose, '') != 'name_only'
                 ), 0)
                 - COALESCE((
                     SELECT SUM(ip.amount) FROM invoice_payments ip
@@ -108,6 +109,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
                                         THEN i2.total_amount ELSE -i2.total_amount END)
                         FROM invoices i2 WHERE i2.customer_id = u.id AND i2.company_id = $1
                           AND COALESCE(i2.is_deleted, false) = false
+                          AND COALESCE(i2.bill_purpose, '') != 'name_only'
                     ), 0)
                     - COALESCE((
                         SELECT SUM(ip.amount) FROM invoice_payments ip
@@ -213,6 +215,7 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
                             FROM invoices i2
                             WHERE i2.customer_id = u.id AND i2.company_id = $1
                               AND COALESCE(i2.is_deleted, false) = false
+                              AND COALESCE(i2.bill_purpose, '') != 'name_only'
                         ), 0)
                         - COALESCE((
                             SELECT SUM(ip.amount) FROM invoice_payments ip

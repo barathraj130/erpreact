@@ -88,6 +88,7 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
                 + COALESCE((
                     SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
                     FROM invoices WHERE customer_id = $1 AND company_id = $2
+                      AND COALESCE(is_deleted, false) = false AND COALESCE(bill_purpose, '') != 'name_only'
                 ), 0)
                 - COALESCE((
                     SELECT SUM(ip.amount)
@@ -140,6 +141,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 + COALESCE((
                     SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
                     FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted, false) = false
+                      AND COALESCE(bill_purpose, '') != 'name_only'
                 ), 0)
                 - COALESCE((
                     SELECT SUM(ip.amount)
@@ -429,6 +431,7 @@ router.post("/send-reminders", authMiddleware, async (req, res) => {
                 + COALESCE((
                     SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
                     FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted, false) = false
+                      AND COALESCE(bill_purpose, '') != 'name_only'
                 ), 0)
                 - COALESCE((
                     SELECT SUM(ip.amount) FROM invoice_payments ip
