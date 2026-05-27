@@ -119,8 +119,8 @@ export const deleteCustomer = async (id: number, force = false): Promise<ApiResp
     method: "DELETE",
   });
   const body = await res.json().catch(() => ({}));
-  // 400 with error message = safe warning (linked records), not a throw
-  if (!res.ok && res.status !== 400) {
+  // 400/409 with error message = safe warning (linked records), not a throw
+  if (!res.ok && res.status !== 400 && res.status !== 409) {
     throw new Error(body?.error || `Failed to delete customer (${res.status})`);
   }
   return body;
