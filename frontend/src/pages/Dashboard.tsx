@@ -40,6 +40,7 @@ const Dashboard: React.FC = () => {
     totalRevenue: 0,
     monthlyRevenue: 0,
     outstanding: 0,
+    outstandingCount: 0,
     cashAvailable: 0,
     taxSales: 0,
     anonSales: 0,
@@ -78,6 +79,7 @@ const Dashboard: React.FC = () => {
             totalRevenue: totalRev,
             monthlyRevenue: monthRev,
             outstanding: Number(kpiRes.outstanding_receivables || 0),
+            outstandingCount: Number(kpiRes.outstanding_customer_count || 0),
             cashAvailable: Number(kpiRes.available_cash || 0),
             taxSales: Number(kpiRes.sales_breakdown?.tax_sales || 0),
             anonSales: Number(kpiRes.sales_breakdown?.anon_sales || 0),
@@ -155,7 +157,7 @@ const Dashboard: React.FC = () => {
           <KPICard
             title="OUTSTANDING"
             value={stats.outstanding}
-            sub={`${outstandingCustomers.length} customers`}
+            sub={`${stats.outstandingCount} customers`}
             icon="⚠️"
             color="amber"
           />
