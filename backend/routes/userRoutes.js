@@ -410,7 +410,7 @@ router.post("/send-reminders", authMiddleware, async (req, res) => {
         const { sendWhatsApp } = await import('../utils/whatsapp.js');
         const company = await db.pgGet(`SELECT company_name, phone FROM companies WHERE id = $1`, [companyId]);
         const companyName = company?.company_name || 'JBS Knit Wear';
-        const companyPhone = company?.phone || '';
+        const companyPhone = company?.phone || '9791902205';
 
         // Get all customers with outstanding balance > 0
         const customers = await db.pgAll(`
