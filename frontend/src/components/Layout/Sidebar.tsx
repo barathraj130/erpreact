@@ -90,7 +90,7 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
       });
   }
 
-  if (hasModule("procurement")) {
+  if (hasModule("procurement") || hasModule("purchases")) {
     baseItems.push({ 
         name: "Purchases", 
         icon: <FaTruck />, 
