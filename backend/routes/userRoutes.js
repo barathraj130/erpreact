@@ -403,16 +403,25 @@ router.delete("/:id", authMiddleware, checkPermission("Sales", "delete_invoices"
     }
 });
 
-// POST /users/send-reminders — send outstanding balance WhatsApp to all customers with balance > 0
+// POST /users/send-reminders — send outstanding balance WhatsApp to customers
+// Accepts optional { customer_ids: [id, ...] } to target specific customers
 router.post("/send-reminders", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id || req.user.company_id;
+    const { customer_ids } = req.body || {};
+    const filterByIds = Array.isArray(customer_ids) && customer_ids.length > 0;
+
     try {
         const { sendWhatsApp } = await import('../utils/whatsapp.js');
         const company = await db.pgGet(`SELECT company_name, phone FROM companies WHERE id = $1`, [companyId]);
         const companyName = company?.company_name || 'JBS Knit Wear';
         const companyPhone = company?.phone || '9791902205';
 
-        // Get all customers with outstanding balance > 0
+        // Build WHERE clause — optionally filter by specific customer IDs
+        const idFilter = filterByIds
+            ? `AND u.id = ANY($2::int[])`
+            : '';
+        const params = filterByIds ? [companyId, customer_ids] : [companyId];
+
         const customers = await db.pgAll(`
             SELECT
                 u.id, COALESCE(u.nickname, u.username) as name, u.phone,
@@ -433,8 +442,9 @@ router.post("/send-reminders", authMiddleware, async (req, res) => {
             FROM users u
             WHERE u.role IN ('user','customer') AND u.company_id = $1
               AND u.phone IS NOT NULL AND u.phone != ''
+              ${idFilter}
             ORDER BY u.id ASC
-        `, [companyId]);
+        `, params);
 
         let sent = 0, skipped = 0;
         const results = [];

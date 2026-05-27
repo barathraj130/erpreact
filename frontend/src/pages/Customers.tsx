@@ -16,6 +16,7 @@ import {
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { deleteCustomer } from "../api/userApi";
+import { apiFetch } from "../utils/api";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import { useUsers } from "../hooks/useUsers";
 import AddCustomerModal from "./AddCustomerModal";
@@ -33,6 +34,9 @@ const Customers: React.FC = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [sending, setSending] = useState(false);
   const [reminderMsg, setReminderMsg] = useState<string | null>(null);
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderList, setReminderList] = useState<any[]>([]);
+  const [sentIds, setSentIds] = useState<Set<number>>(new Set());
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -106,14 +110,55 @@ const Customers: React.FC = () => {
     setCustomerToEdit(null);
   };
 
-  const handleSendReminders = async () => {
-    if (!window.confirm("Send outstanding balance WhatsApp reminders to ALL customers with pending dues?")) return;
+  const fmt = (n: number) => "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+
+  // Open preview modal — build list from already-loaded customers
+  const openReminderModal = () => {
+    const list = displayedCustomers
+      .filter((c) => Number(c.remaining_balance) > 0 && c.phone)
+      .map((c) => ({
+        id: c.id,
+        name: c.nickname || c.username,
+        phone: c.phone,
+        outstanding: Number(c.remaining_balance),
+      }));
+    setReminderList(list);
+    setSentIds(new Set());
+    setReminderMsg(null);
+    setShowReminderModal(true);
+  };
+
+  // Send to one customer
+  const sendOne = async (customerId: number) => {
+    setSending(true);
+    try {
+      const res = await apiFetch("/users/send-reminders", {
+        method: "POST",
+        body: JSON.stringify({ customer_ids: [customerId] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setSentIds((prev) => new Set([...prev, customerId]));
+    } catch (err: any) {
+      alert("Failed: " + err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Send to all in the list
+  const sendAll = async () => {
     setSending(true);
     setReminderMsg(null);
     try {
-      const res = await apiFetch("/users/send-reminders", { method: "POST" });
+      const ids = reminderList.map((c) => c.id);
+      const res = await apiFetch("/users/send-reminders", {
+        method: "POST",
+        body: JSON.stringify({ customer_ids: ids }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
+      setSentIds(new Set(ids));
       setReminderMsg(data.message);
     } catch (err: any) {
       setReminderMsg("❌ " + err.message);
@@ -135,18 +180,16 @@ const Customers: React.FC = () => {
             <FaSync className={loading ? "fa-spin" : ""} size={14} />
           </button>
           <button
-            onClick={handleSendReminders}
-            disabled={sending}
-            title="Send outstanding balance WhatsApp to all customers"
+            onClick={openReminderModal}
+            title="Preview and send outstanding balance WhatsApp reminders"
             style={{
               display: "flex", alignItems: "center", gap: "6px",
               padding: "8px 14px", borderRadius: "50px",
-              background: sending ? "#94a3b8" : "#25D366",
-              color: "#fff", border: "none", fontWeight: 600,
-              fontSize: "13px", cursor: sending ? "not-allowed" : "pointer"
+              background: "#25D366", color: "#fff", border: "none",
+              fontWeight: 600, fontSize: "13px", cursor: "pointer"
             }}
           >
-            📱 {sending ? "Sending…" : "Send Reminders"}
+            📱 Send Reminders
           </button>
           <button
             className="page-btn-round page-btn-round-primary"
@@ -410,6 +453,99 @@ const Customers: React.FC = () => {
           onSuccess={refresh}
           customerToEdit={customerToEdit}
         />
+      )}
+
+      {/* ── WhatsApp Reminder Preview Modal ── */}
+      {showReminderModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+          zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px"
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: "16px", width: "100%", maxWidth: "560px",
+            maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)"
+          }}>
+            {/* Header */}
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>📱 Send Outstanding Reminders</div>
+                <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
+                  {reminderList.length} customers with pending balance
+                </div>
+              </div>
+              <button onClick={() => setShowReminderModal(false)}
+                style={{ background: "none", border: "none", fontSize: "1.3rem", cursor: "pointer", color: "#94a3b8" }}>✕</button>
+            </div>
+
+            {/* List */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+              {reminderList.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>
+                  No customers with outstanding balance and phone number.
+                </div>
+              ) : reminderList.map((c) => (
+                <div key={c.id} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 14px", marginBottom: "8px", borderRadius: "10px",
+                  background: sentIds.has(c.id) ? "#f0fdf4" : "#f8fafc",
+                  border: `1px solid ${sentIds.has(c.id) ? "#bbf7d0" : "#e2e8f0"}`
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "14px" }}>{c.name}</div>
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>📞 {c.phone}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ fontWeight: 700, color: "#dc2626", fontSize: "14px" }}>{fmt(c.outstanding)}</div>
+                    {sentIds.has(c.id) ? (
+                      <span style={{ color: "#16a34a", fontWeight: 600, fontSize: "13px" }}>✅ Sent</span>
+                    ) : (
+                      <button
+                        onClick={() => sendOne(c.id)}
+                        disabled={sending}
+                        style={{
+                          padding: "5px 12px", borderRadius: "20px", border: "none",
+                          background: "#25D366", color: "#fff", fontWeight: 600,
+                          fontSize: "12px", cursor: sending ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        Send
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "16px 24px", borderTop: "1px solid #f1f5f9" }}>
+              {reminderMsg && (
+                <div style={{
+                  marginBottom: "12px", padding: "8px 12px", borderRadius: "8px",
+                  background: reminderMsg.startsWith("❌") ? "#fef2f2" : "#f0fdf4",
+                  color: reminderMsg.startsWith("❌") ? "#dc2626" : "#16a34a",
+                  fontSize: "13px", fontWeight: 600
+                }}>{reminderMsg}</div>
+              )}
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button onClick={() => setShowReminderModal(false)}
+                  style={{ padding: "9px 20px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer", fontWeight: 500 }}>
+                  Close
+                </button>
+                {reminderList.length > 0 && sentIds.size < reminderList.length && (
+                  <button onClick={sendAll} disabled={sending}
+                    style={{
+                      padding: "9px 20px", borderRadius: "8px", border: "none",
+                      background: sending ? "#94a3b8" : "#25D366", color: "#fff",
+                      fontWeight: 700, cursor: sending ? "not-allowed" : "pointer"
+                    }}>
+                    {sending ? "Sending…" : `📱 Send All (${reminderList.length - sentIds.size})`}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showTransactionModal && selectedCustomer && (
