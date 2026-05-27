@@ -211,8 +211,9 @@ const AddCustomerModal: React.FC<Props> = ({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const [formData, setFormData] = useState({
+  const [balanceType, setBalanceType] = useState<"receivable" | "advance">("receivable");
 
+  const [formData, setFormData] = useState({
     username: "",
     nickname: "",
     email: "",
@@ -226,13 +227,15 @@ const AddCustomerModal: React.FC<Props> = ({
     bank_account_no: "",
     bank_ifsc_code: "",
     opening_balance: 0,
-    password: "", // ✅ Added password field
+    password: "",
   });
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (customerToEdit) {
+      const bal = Number(customerToEdit.initial_balance || 0);
+      setBalanceType(bal < 0 ? "advance" : "receivable");
       setFormData({
         username: customerToEdit.username || "",
         nickname: customerToEdit.nickname || "",
@@ -246,8 +249,8 @@ const AddCustomerModal: React.FC<Props> = ({
         bank_name: customerToEdit.bank_name || "",
         bank_account_no: customerToEdit.bank_account_no || "",
         bank_ifsc_code: customerToEdit.bank_ifsc_code || "",
-        opening_balance: customerToEdit.initial_balance || 0,
-        password: "", // Don't preload existing password hash
+        opening_balance: Math.abs(bal),
+        password: "",
       });
     }
   }, [customerToEdit]);
@@ -261,10 +264,16 @@ const AddCustomerModal: React.FC<Props> = ({
     }
     setLoading(true);
     try {
+      // Advance payment = negative opening balance (company owes customer)
+      const signedBalance = balanceType === "advance"
+        ? -Math.abs(formData.opening_balance)
+        : Math.abs(formData.opening_balance);
+      const payload = { ...formData, opening_balance: signedBalance };
+
       if (customerToEdit) {
-        await updateCustomer(customerToEdit.id, formData);
+        await updateCustomer(customerToEdit.id, payload);
       } else {
-        await createCustomer(formData);
+        await createCustomer(payload);
       }
       onSuccess();
       onClose();
@@ -558,53 +567,87 @@ const AddCustomerModal: React.FC<Props> = ({
             </div>
 
             {/* 6. OPENING BALANCE */}
-            <div
-              style={{
-                marginTop: "10px",
-                background: "#f0f9ff",
-                padding: "15px",
-                borderRadius: "8px",
-                border: "1px solid #bae6fd",
-              }}
-            >
-              <label
-                style={{
-                  ...styles.label,
-                  color: "#0369a1",
-                  marginBottom: "8px",
-                }}
-              >
-                Opening Balance (Receivable)
-              </label>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <span
+            <div style={{ marginTop: "16px" }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+                Opening Balance
+              </div>
+
+              {/* Toggle: Receivable vs Advance */}
+              <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
+                <button
+                  type="button"
+                  onClick={() => setBalanceType("receivable")}
                   style={{
-                    fontSize: "1.2rem",
-                    color: "#0369a1",
-                    fontWeight: "bold",
-                    marginRight: "10px",
+                    flex: 1, padding: "10px 14px", borderRadius: "10px", cursor: "pointer",
+                    border: balanceType === "receivable" ? "2px solid #2563eb" : "2px solid #e2e8f0",
+                    background: balanceType === "receivable" ? "#eff6ff" : "#f8fafc",
+                    color: balanceType === "receivable" ? "#1d4ed8" : "#64748b",
+                    fontWeight: 700, fontSize: "13px", transition: "all 0.2s",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: "4px",
                   }}
                 >
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  disabled={!!customerToEdit}
+                  <span style={{ fontSize: "18px" }}>📋</span>
+                  <span>Receivable</span>
+                  <span style={{ fontSize: "11px", fontWeight: 400, color: balanceType === "receivable" ? "#3b82f6" : "#94a3b8" }}>
+                    Customer owes you
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBalanceType("advance")}
                   style={{
-                    ...styles.input,
-                    paddingLeft: "12px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                    backgroundColor: customerToEdit ? "#e2e8f0" : "#fff",
+                    flex: 1, padding: "10px 14px", borderRadius: "10px", cursor: "pointer",
+                    border: balanceType === "advance" ? "2px solid #16a34a" : "2px solid #e2e8f0",
+                    background: balanceType === "advance" ? "#f0fdf4" : "#f8fafc",
+                    color: balanceType === "advance" ? "#15803d" : "#64748b",
+                    fontWeight: 700, fontSize: "13px", transition: "all 0.2s",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: "4px",
                   }}
-                  value={formData.opening_balance}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      opening_balance: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                />
+                >
+                  <span style={{ fontSize: "18px" }}>💵</span>
+                  <span>Advance Payment</span>
+                  <span style={{ fontSize: "11px", fontWeight: 400, color: balanceType === "advance" ? "#16a34a" : "#94a3b8" }}>
+                    You owe the customer
+                  </span>
+                </button>
+              </div>
+
+              {/* Amount input */}
+              <div style={{
+                background: balanceType === "advance" ? "#f0fdf4" : "#f0f9ff",
+                padding: "14px 16px", borderRadius: "10px",
+                border: `1px solid ${balanceType === "advance" ? "#bbf7d0" : "#bae6fd"}`,
+              }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "8px",
+                  color: balanceType === "advance" ? "#15803d" : "#0369a1" }}>
+                  {balanceType === "advance"
+                    ? "💵 Advance Amount (credit to customer)"
+                    : "📋 Receivable Amount (customer owes)"}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "1.3rem", fontWeight: "bold",
+                    color: balanceType === "advance" ? "#16a34a" : "#0369a1" }}>₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    disabled={!!customerToEdit}
+                    style={{
+                      ...styles.input, paddingLeft: "12px", textAlign: "right",
+                      fontWeight: "bold", fontSize: "1.1rem",
+                      backgroundColor: customerToEdit ? "#e2e8f0" : "#fff",
+                      border: `1.5px solid ${balanceType === "advance" ? "#86efac" : "#7dd3fc"}`,
+                    }}
+                    value={formData.opening_balance}
+                    onChange={(e) =>
+                      setFormData({ ...formData, opening_balance: parseFloat(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+                {customerToEdit && (
+                  <div style={{ marginTop: "6px", fontSize: "11px", color: "#94a3b8" }}>
+                    Opening balance cannot be changed after creation.
+                  </div>
+                )}
               </div>
             </div>
           </form>
