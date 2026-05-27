@@ -168,6 +168,94 @@ router.delete('/bank-accounts/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// ─────────────────────────────────────────────
+// GET /company/opening-balance  — fetch current opening balances
+// ─────────────────────────────────────────────
+router.get('/opening-balance', authMiddleware, async (req, res) => {
+    const companyId = req.user?.active_company_id;
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized.' });
+    try {
+        const cash = await db.pgGet(
+            `SELECT COALESCE(SUM(amount), 0) as amount
+             FROM cash_ledger
+             WHERE company_id = $1 AND source = 'OPENING_BALANCE' AND direction = 'in'`,
+            [companyId]
+        );
+        const bankRows = await db.pgAll(
+            `SELECT bank_name, COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) as amount
+             FROM bank_ledger
+             WHERE company_id = $1 AND source = 'OPENING_BALANCE'
+             GROUP BY bank_name`,
+            [companyId]
+        );
+        res.json({
+            cash_opening: parseFloat(cash?.amount || 0),
+            bank_openings: bankRows || []
+        });
+    } catch (err) {
+        console.error('Get opening balance error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────
+// POST /company/opening-balance — set/replace opening balances
+// Body: { cash_opening: 50000, bank_openings: [{ bank_detail_id, bank_name, amount }] }
+// ─────────────────────────────────────────────
+router.post('/opening-balance', authMiddleware, async (req, res) => {
+    const companyId = req.user?.active_company_id;
+    const branchId = req.user?.branch_id || 1;
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized.' });
+
+    const { cash_opening, bank_openings = [] } = req.body;
+
+    try {
+        // Replace cash opening balance (delete old, insert new)
+        await db.pgRun(
+            `DELETE FROM cash_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        if (Number(cash_opening) > 0) {
+            await db.pgRun(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', CURRENT_DATE)`,
+                [companyId, branchId, Number(cash_opening)]
+            );
+        }
+
+        // Replace bank opening balances per bank
+        for (const b of bank_openings) {
+            const bankName = b.bank_name || 'Bank';
+            const amount = Number(b.amount) || 0;
+
+            await db.pgRun(
+                `DELETE FROM bank_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE' AND bank_name = $2`,
+                [companyId, bankName]
+            );
+            if (amount > 0) {
+                await db.pgRun(
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                     VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', $4, CURRENT_DATE)`,
+                    [companyId, branchId, amount, bankName]
+                );
+            }
+
+            // Also update bank_details.opening_balance for display consistency
+            if (b.bank_detail_id) {
+                await db.pgRun(
+                    `UPDATE bank_details SET opening_balance = $1, current_balance = $1 WHERE id = $2 AND company_id = $3`,
+                    [amount, b.bank_detail_id, companyId]
+                );
+            }
+        }
+
+        res.json({ success: true, message: 'Opening balances saved successfully.' });
+    } catch (err) {
+        console.error('Set opening balance error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 /**
  * 🏢 CREATE NEW COMPANY (Global Administration)
  * Only accessible by 'superadmin'

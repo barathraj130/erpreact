@@ -90,6 +90,12 @@ const AdminSetup: React.FC = () => {
     is_default: false
   });
 
+  // Opening Balance State
+  const [cashOpening, setCashOpening] = useState<number>(0);
+  const [bankOpenings, setBankOpenings] = useState<Record<number, number>>({});
+  const [savingOB, setSavingOB] = useState(false);
+  const [obMsg, setObMsg] = useState<string | null>(null);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
     window.addEventListener("resize", handleResize);
@@ -113,15 +119,27 @@ const AdminSetup: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [profileRes, branchRes, bankRes] = await Promise.all([
+      const [profileRes, branchRes, bankRes, obRes] = await Promise.all([
         apiFetch("/company/profile"),
         apiFetch("/branches"),
-        apiFetch("/company/bank-accounts")
+        apiFetch("/company/bank-accounts"),
+        apiFetch("/company/opening-balance").catch(() => null)
       ]);
-      
+
       const profileData = await profileRes.json();
       const branchData = await branchRes.json();
       const bankData = await bankRes.json();
+      if (obRes) {
+        const obData = await obRes.json().catch(() => null);
+        if (obData) {
+          setCashOpening(Number(obData.cash_opening || 0));
+          // Map bank_name -> amount for pre-fill
+          const bMap: Record<string, number> = {};
+          (obData.bank_openings || []).forEach((b: any) => { bMap[b.bank_name] = Number(b.amount); });
+          // We'll use bank name as key for display; map to id later
+          setBankOpenings(bMap as any);
+        }
+      }
       
       setProfile(profileData);
       setProfileForm(profileData);
@@ -307,6 +325,30 @@ const AdminSetup: React.FC = () => {
       });
     }
     setShowBankModal(true);
+  };
+
+  const handleSaveOpeningBalances = async () => {
+    setSavingOB(true);
+    setObMsg(null);
+    try {
+      const bankOBList = bankAccounts.map((b) => ({
+        bank_detail_id: b.id,
+        bank_name: b.bank_name,
+        amount: Number((bankOpenings as any)[b.bank_name] || (bankOpenings as any)[b.id] || 0),
+      }));
+      const res = await apiFetch("/company/opening-balance", {
+        method: "POST",
+        body: JSON.stringify({ cash_opening: cashOpening, bank_openings: bankOBList }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setObMsg("✅ Opening balances saved! Dashboard cash will update.");
+      setTimeout(() => setObMsg(null), 4000);
+    } catch (err: any) {
+      setObMsg("❌ " + err.message);
+    } finally {
+      setSavingOB(false);
+    }
   };
 
   const deleteBank = async (id: number) => {
@@ -703,6 +745,90 @@ const AdminSetup: React.FC = () => {
                         ))}
                       </tbody>
                     </table>
+
+                    {/* ── Opening Balances Section ── */}
+                    <div style={{ margin: "28px 0 0", padding: "0 32px 28px" }}>
+                      <div style={{ borderTop: "1px dashed var(--border)", paddingTop: "24px" }}>
+                        <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
+                          💰 Opening Balances
+                        </div>
+                        <div style={{ fontSize: "12px", color: "var(--text-3)", marginBottom: "20px" }}>
+                          Set the starting cash and bank balances. These are applied once and reflected in the dashboard Cash Available figure.
+                        </div>
+
+                        {/* Cash in Hand */}
+                        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "16px 20px", marginBottom: "14px" }}>
+                          <div style={{ fontWeight: 700, fontSize: "13px", color: "#15803d", marginBottom: "10px" }}>🏦 Cash in Hand (Opening)</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#16a34a" }}>₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={cashOpening}
+                              onChange={e => setCashOpening(parseFloat(e.target.value) || 0)}
+                              style={{
+                                flex: 1, padding: "10px 14px", borderRadius: "8px",
+                                border: "1.5px solid #86efac", fontSize: "1rem",
+                                fontWeight: 700, outline: "none", background: "#fff"
+                              }}
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Per Bank Opening */}
+                        {bankAccounts.length > 0 && bankAccounts.map(b => (
+                          <div key={b.id} style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "12px", padding: "16px 20px", marginBottom: "14px" }}>
+                            <div style={{ fontWeight: 700, fontSize: "13px", color: "#0369a1", marginBottom: "10px" }}>
+                              🏛️ {b.bank_name} — {b.account_number}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#0284c7" }}>₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={(bankOpenings as any)[b.bank_name] ?? (bankOpenings as any)[b.id] ?? 0}
+                                onChange={e => setBankOpenings(prev => ({ ...prev, [b.bank_name]: parseFloat(e.target.value) || 0 }))}
+                                style={{
+                                  flex: 1, padding: "10px 14px", borderRadius: "8px",
+                                  border: "1.5px solid #7dd3fc", fontSize: "1rem",
+                                  fontWeight: 700, outline: "none", background: "#fff"
+                                }}
+                                placeholder="0"
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        {bankAccounts.length === 0 && (
+                          <div style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic", marginBottom: "14px" }}>
+                            Add a bank account above to set its opening balance.
+                          </div>
+                        )}
+
+                        {obMsg && (
+                          <div style={{
+                            padding: "10px 14px", borderRadius: "8px", marginBottom: "12px",
+                            background: obMsg.startsWith("✅") ? "#f0fdf4" : "#fef2f2",
+                            color: obMsg.startsWith("✅") ? "#16a34a" : "#dc2626",
+                            fontSize: "13px", fontWeight: 600
+                          }}>{obMsg}</div>
+                        )}
+
+                        <button
+                          onClick={handleSaveOpeningBalances}
+                          disabled={savingOB}
+                          style={{
+                            padding: "10px 28px", borderRadius: "8px", border: "none",
+                            background: savingOB ? "#94a3b8" : "linear-gradient(135deg,#2563eb,#4f46e5)",
+                            color: "#fff", fontWeight: 700, fontSize: "13px",
+                            cursor: savingOB ? "not-allowed" : "pointer"
+                          }}
+                        >
+                          {savingOB ? "Saving…" : "💾 Save Opening Balances"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
