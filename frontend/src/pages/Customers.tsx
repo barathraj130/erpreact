@@ -31,6 +31,8 @@ const Customers: React.FC = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [sending, setSending] = useState(false);
+  const [reminderMsg, setReminderMsg] = useState<string | null>(null);
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -104,6 +106,22 @@ const Customers: React.FC = () => {
     setCustomerToEdit(null);
   };
 
+  const handleSendReminders = async () => {
+    if (!window.confirm("Send outstanding balance WhatsApp reminders to ALL customers with pending dues?")) return;
+    setSending(true);
+    setReminderMsg(null);
+    try {
+      const res = await apiFetch("/users/send-reminders", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setReminderMsg(data.message);
+    } catch (err: any) {
+      setReminderMsg("❌ " + err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="page-container">
       {/* Header */}
@@ -117,6 +135,20 @@ const Customers: React.FC = () => {
             <FaSync className={loading ? "fa-spin" : ""} size={14} />
           </button>
           <button
+            onClick={handleSendReminders}
+            disabled={sending}
+            title="Send outstanding balance WhatsApp to all customers"
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 14px", borderRadius: "50px",
+              background: sending ? "#94a3b8" : "#25D366",
+              color: "#fff", border: "none", fontWeight: 600,
+              fontSize: "13px", cursor: sending ? "not-allowed" : "pointer"
+            }}
+          >
+            📱 {sending ? "Sending…" : "Send Reminders"}
+          </button>
+          <button
             className="page-btn-round page-btn-round-primary"
             onClick={() => {
               setCustomerToEdit(null);
@@ -127,6 +159,16 @@ const Customers: React.FC = () => {
           </button>
         </div>
       </div>
+      {reminderMsg && (
+        <div style={{
+          margin: "8px 0", padding: "10px 16px", borderRadius: "8px",
+          background: reminderMsg.startsWith("❌") ? "#fef2f2" : "#f0fdf4",
+          color: reminderMsg.startsWith("❌") ? "#dc2626" : "#16a34a",
+          fontSize: "13px", fontWeight: 600
+        }}>
+          {reminderMsg}
+        </div>
+      )}
 
       {/* Stats Board */}
       <div className="premium-stats-grid">

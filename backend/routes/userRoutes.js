@@ -403,4 +403,80 @@ router.delete("/:id", authMiddleware, checkPermission("Sales", "delete_invoices"
     }
 });
 
+// POST /users/send-reminders — send outstanding balance WhatsApp to all customers with balance > 0
+router.post("/send-reminders", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id || req.user.company_id;
+    try {
+        const { sendWhatsApp } = await import('../utils/whatsapp.js');
+        const company = await db.pgGet(`SELECT company_name, phone FROM companies WHERE id = $1`, [companyId]);
+        const companyName = company?.company_name || 'JBS Knit Wear';
+        const companyPhone = company?.phone || '';
+
+        // Get all customers with outstanding balance > 0
+        const customers = await db.pgAll(`
+            SELECT
+                u.id, COALESCE(u.nickname, u.username) as name, u.phone,
+                COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
+                + COALESCE((
+                    SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
+                    FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted, false) = false
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(ip.amount) FROM invoice_payments ip
+                    JOIN invoices i ON i.id = ip.invoice_id
+                    WHERE i.customer_id = u.id AND i.company_id = $1 AND COALESCE(i.is_deleted, false) = false
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount) FROM transactions
+                    WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0) as outstanding
+            FROM users u
+            WHERE u.role IN ('user','customer') AND u.company_id = $1
+              AND u.phone IS NOT NULL AND u.phone != ''
+            ORDER BY u.id ASC
+        `, [companyId]);
+
+        let sent = 0, skipped = 0;
+        const results = [];
+
+        for (const c of customers) {
+            const bal = Number(c.outstanding) || 0;
+            if (bal <= 0) { skipped++; continue; }
+
+            const fmt = (n) => '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+            const msg =
+`Dear ${c.name},
+
+This is a gentle reminder from *${companyName}*.
+
+📋 *Outstanding Balance: ${fmt(bal)}*
+
+Kindly arrange the payment at your earliest convenience.
+
+For queries, contact us:
+📞 ${companyPhone}
+*${companyName}*`;
+
+            try {
+                await sendWhatsApp(String(c.phone), msg);
+                sent++;
+                results.push({ name: c.name, phone: c.phone, outstanding: bal, status: 'sent' });
+            } catch (e) {
+                results.push({ name: c.name, phone: c.phone, outstanding: bal, status: 'failed', error: e.message });
+            }
+        }
+
+        res.json({
+            success: true,
+            sent,
+            skipped,
+            message: `✅ Sent reminders to ${sent} customers. Skipped ${skipped} (no balance or no phone).`,
+            results
+        });
+    } catch (err) {
+        console.error('[send-reminders]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;
