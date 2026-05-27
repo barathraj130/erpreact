@@ -11,6 +11,7 @@ import {
   FaChartBar,
   FaCheckCircle,
   FaClock,
+  FaWhatsapp,
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { useAuthUser } from "../hooks/useAuthUser";
@@ -25,6 +26,8 @@ const Invoices: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [seriesFilter, setSeriesFilter] = useState<"ALL" | "TAX" | "INV" | "NSB">("ALL");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [sendingPdfId, setSendingPdfId] = useState<number | null>(null);
+  const [sentPdfIds, setSentPdfIds] = useState<Set<number>>(new Set());
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -43,6 +46,21 @@ const Invoices: React.FC = () => {
       refresh();
     } catch (err) {
       alert("Failed to delete invoice.");
+    }
+  };
+
+  const handleSendPdf = async (inv: any) => {
+    setSendingPdfId(inv.id);
+    try {
+      const res = await apiFetch(`/invoice/${inv.id}/send-pdf`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setSentPdfIds(prev => new Set([...prev, inv.id]));
+      setTimeout(() => setSentPdfIds(prev => { const s = new Set(prev); s.delete(inv.id); return s; }), 5000);
+    } catch (err: any) {
+      alert(`❌ ${err.message}`);
+    } finally {
+      setSendingPdfId(null);
     }
   };
 
@@ -181,7 +199,21 @@ const Invoices: React.FC = () => {
                     ₹{Number(inv.total_amount).toLocaleString()}
                   </span>
                 </div>
-                <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => handleSendPdf(inv)}
+                    disabled={sendingPdfId === inv.id}
+                    style={{
+                      flex: 1, padding: "7px 10px", borderRadius: "8px", border: "none",
+                      background: sentPdfIds.has(inv.id) ? "#bbf7d0" : "#25D366",
+                      color: sentPdfIds.has(inv.id) ? "#16a34a" : "#fff",
+                      fontWeight: 700, fontSize: "12px", cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                      opacity: sendingPdfId === inv.id ? 0.6 : 1,
+                    }}
+                  >
+                    {sentPdfIds.has(inv.id) ? "✅ Sent" : sendingPdfId === inv.id ? "⏳" : <><FaWhatsapp size={12} /> Send PDF</>}
+                  </button>
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => navigate(`/invoices/${inv.id}`)}>
                     <FaEye size={12} /> View
                   </button>
@@ -239,7 +271,23 @@ const Invoices: React.FC = () => {
                       <span className="font-bold">₹{Number(inv.total_amount).toLocaleString()}</span>
                     </td>
                     <td className="text-center">
-                      <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
+                        {/* WhatsApp Send PDF */}
+                        <button
+                          onClick={() => handleSendPdf(inv)}
+                          disabled={sendingPdfId === inv.id}
+                          title="Send PDF to customer via WhatsApp"
+                          style={{
+                            padding: "5px 8px", borderRadius: "7px", border: "none",
+                            background: sentPdfIds.has(inv.id) ? "#bbf7d0" : "#25D366",
+                            color: sentPdfIds.has(inv.id) ? "#16a34a" : "#fff",
+                            cursor: "pointer", fontSize: "11px", fontWeight: 600,
+                            display: "flex", alignItems: "center", gap: "4px",
+                            opacity: sendingPdfId === inv.id ? 0.6 : 1,
+                          }}
+                        >
+                          {sentPdfIds.has(inv.id) ? "✅" : sendingPdfId === inv.id ? "⏳" : <FaWhatsapp size={12} />}
+                        </button>
                         <button className="page-btn-round-sm" onClick={() => navigate(`/invoices/${inv.id}`)} aria-label="View invoice">
                           <FaEye size={13} />
                         </button>
