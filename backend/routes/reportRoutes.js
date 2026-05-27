@@ -174,7 +174,34 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
         const [todaySales, todayPurchases, receivables, outputGst, inputGst, activeCustomers] = await Promise.all([
             db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices WHERE company_id = $1 AND DATE(invoice_date) = CURRENT_DATE AND COALESCE(bill_purpose,'') != 'name_only' AND COALESCE(is_deleted,false)=false`, [companyId]),
             db.pgGet(`SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_bills WHERE company_id = $1 AND DATE(bill_date) = CURRENT_DATE AND COALESCE(bill_purpose,'') != 'name_only'`, [companyId]).catch(() => ({ total: 0 })),
-            db.pgGet(`SELECT COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) as total FROM invoices WHERE company_id = $1 AND COALESCE(bill_purpose,'') != 'name_only' AND COALESCE(is_deleted,false)=false AND COALESCE(status,'PENDING') != 'PAID'`, [companyId]),
+            // True receivables: opening_balance + invoices − invoice_payments − CUSTOMER_PAYMENT transactions
+            db.pgGet(`
+                SELECT COALESCE(SUM(x.bal), 0) as total FROM (
+                    SELECT GREATEST(0,
+                        COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
+                        + COALESCE((
+                            SELECT SUM(CASE WHEN UPPER(COALESCE(i2.invoice_type,'')) != 'SALES_RETURN'
+                                            THEN i2.total_amount ELSE -i2.total_amount END)
+                            FROM invoices i2
+                            WHERE i2.customer_id = u.id AND i2.company_id = $1
+                              AND COALESCE(i2.is_deleted, false) = false
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(ip.amount) FROM invoice_payments ip
+                            JOIN invoices i3 ON i3.id = ip.invoice_id
+                            WHERE i3.customer_id = u.id AND i3.company_id = $1
+                              AND COALESCE(i3.is_deleted, false) = false
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(t.amount) FROM transactions t
+                            WHERE t.reference_id = u.id AND t.company_id = $1
+                              AND t.type = 'CUSTOMER_PAYMENT'
+                        ), 0)
+                    ) as bal
+                    FROM users u
+                    WHERE u.role IN ('user','customer') AND u.company_id = $1
+                ) x WHERE x.bal > 0
+            `, [companyId]),
             db.pgGet(`SELECT COALESCE(SUM(COALESCE(cgst_total,0) + COALESCE(sgst_total,0) + COALESCE(igst_total,0)), 0) as total FROM invoices WHERE company_id = $1 AND COALESCE(bill_purpose,'') != 'name_only' AND COALESCE(is_deleted,false)=false`, [companyId]),
             db.pgGet(`SELECT COALESCE(SUM(COALESCE(cgst_total,0) + COALESCE(sgst_total,0) + COALESCE(igst_total,0)), 0) as total FROM purchase_bills WHERE company_id = $1 AND COALESCE(bill_purpose,'') != 'name_only'`, [companyId]).catch(() => ({ total: 0 })),
             db.pgGet(`SELECT COUNT(*) as count FROM users WHERE company_id = $1 AND role = 'customer'`, [companyId]),
