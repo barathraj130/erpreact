@@ -317,9 +317,11 @@ const AddCustomerModal: React.FC<Props> = ({
               label="Customer / Business Name"
               icon={FaBuilding}
               value={formData.username}
-              onChange={(e: any) =>
-                setFormData({ ...formData, username: e.target.value })
-              }
+              onChange={(e: any) => {
+                const val = e.target.value;
+                // Keep nickname in sync with business name so display always shows the new name
+                setFormData({ ...formData, username: val, nickname: val });
+              }}
               placeholder="e.g. Acme Corp Pvt Ltd"
               required
             />
