@@ -2,6 +2,21 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install Chromium + required system libraries for Puppeteer PDF generation
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    font-noto \
+    font-noto-devanagari
+
+# Tell Puppeteer to skip downloading Chrome and use the system Chromium instead
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 # Copy backend package files ONLY (not root package.json which has broken install script)
 COPY backend/package*.json ./
 

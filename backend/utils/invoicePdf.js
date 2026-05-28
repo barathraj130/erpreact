@@ -383,8 +383,14 @@ let _browser = null;
 
 async function getBrowser() {
     if (_browser && _browser.connected) return _browser;
+
+    // On Railway/Docker (Alpine): PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    // On dev machines: fall back to Puppeteer's bundled Chrome
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+
     _browser = await puppeteer.launch({
-        headless: 'new',
+        headless: true,
+        executablePath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -393,6 +399,7 @@ async function getBrowser() {
             '--disable-extensions',
             '--no-zygote',
             '--single-process',
+            '--font-render-hinting=none',
         ],
     });
     return _browser;
