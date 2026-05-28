@@ -133,11 +133,9 @@ const AdminSetup: React.FC = () => {
         const obData = await obRes.json().catch(() => null);
         if (obData) {
           setCashOpening(Number(obData.cash_opening || 0));
-          // Map bank_name -> amount for pre-fill
-          const bMap: Record<string, number> = {};
-          (obData.bank_openings || []).forEach((b: any) => { bMap[b.bank_name] = Number(b.amount); });
-          // We'll use bank name as key for display; map to id later
-          setBankOpenings(bMap as any);
+          // Sum all bank opening entries into a single value
+          const totalBank = (obData.bank_openings || []).reduce((s: number, b: any) => s + Number(b.amount || 0), 0);
+          setBankOpenings({ "__bank__": totalBank } as any);
         }
       }
       
@@ -331,18 +329,17 @@ const AdminSetup: React.FC = () => {
     setSavingOB(true);
     setObMsg(null);
     try {
-      const bankOBList = bankAccounts.map((b) => ({
-        bank_detail_id: b.id,
-        bank_name: b.bank_name,
-        amount: Number((bankOpenings as any)[b.bank_name] || (bankOpenings as any)[b.id] || 0),
-      }));
+      const bankAmount = Number((bankOpenings as any)["__bank__"] || 0);
+      const bankOBList = bankAmount > 0
+        ? [{ bank_detail_id: null, bank_name: "Bank", amount: bankAmount }]
+        : [];
       const res = await apiFetch("/company/opening-balance", {
         method: "POST",
         body: JSON.stringify({ cash_opening: cashOpening, bank_openings: bankOBList }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
-      setObMsg("✅ Opening balances saved! Dashboard cash will update.");
+      setObMsg("✅ Opening balances saved! Dashboard will reflect the new Cash Available.");
       setTimeout(() => setObMsg(null), 4000);
     } catch (err: any) {
       setObMsg("❌ " + err.message);
@@ -776,35 +773,25 @@ const AdminSetup: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Per Bank Opening */}
-                        {bankAccounts.length > 0 && bankAccounts.map(b => (
-                          <div key={b.id} style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "12px", padding: "16px 20px", marginBottom: "14px" }}>
-                            <div style={{ fontWeight: 700, fontSize: "13px", color: "#0369a1", marginBottom: "10px" }}>
-                              🏛️ {b.bank_name} — {b.account_number}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                              <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#0284c7" }}>₹</span>
-                              <input
-                                type="number"
-                                min="0"
-                                value={(bankOpenings as any)[b.bank_name] ?? (bankOpenings as any)[b.id] ?? 0}
-                                onChange={e => setBankOpenings(prev => ({ ...prev, [b.bank_name]: parseFloat(e.target.value) || 0 }))}
-                                style={{
-                                  flex: 1, padding: "10px 14px", borderRadius: "8px",
-                                  border: "1.5px solid #7dd3fc", fontSize: "1rem",
-                                  fontWeight: 700, outline: "none", background: "#fff"
-                                }}
-                                placeholder="0"
-                              />
-                            </div>
+                        {/* Bank Balance — always visible, no need to add bank account first */}
+                        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "12px", padding: "16px 20px", marginBottom: "14px" }}>
+                          <div style={{ fontWeight: 700, fontSize: "13px", color: "#0369a1", marginBottom: "10px" }}>🏛️ Bank Balance (Opening)</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#0284c7" }}>₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={(bankOpenings as any)["__bank__"] ?? 0}
+                              onChange={e => setBankOpenings(prev => ({ ...prev, "__bank__": parseFloat(e.target.value) || 0 }))}
+                              style={{
+                                flex: 1, padding: "10px 14px", borderRadius: "8px",
+                                border: "1.5px solid #7dd3fc", fontSize: "1rem",
+                                fontWeight: 700, outline: "none", background: "#fff"
+                              }}
+                              placeholder="0"
+                            />
                           </div>
-                        ))}
-
-                        {bankAccounts.length === 0 && (
-                          <div style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic", marginBottom: "14px" }}>
-                            Add a bank account above to set its opening balance.
-                          </div>
-                        )}
+                        </div>
 
                         {obMsg && (
                           <div style={{
