@@ -210,33 +210,56 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
     const { cash_opening, bank_openings = [] } = req.body;
 
     try {
-        // Replace cash opening balance (delete old, insert new)
+        // ── CASH: set opening balance so total = desired amount ──────────────
+        // 1. Get current cash balance from all non-opening-balance entries
+        const cashRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS bal
+             FROM cash_ledger
+             WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        const currentCash = Number(cashRow?.bal || 0);
+        const desiredCash = Number(cash_opening) || 0;
+        const cashAdj = desiredCash - currentCash; // signed adjustment
+
+        // 2. Delete old opening balance entry
         await db.pgRun(
             `DELETE FROM cash_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
-        if (Number(cash_opening) > 0) {
+        // 3. Insert adjustment so that currentCash + adjustment = desiredCash
+        if (cashAdj !== 0) {
             await db.pgRun(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                 VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', CURRENT_DATE)`,
-                [companyId, branchId, Number(cash_opening)]
+                 VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, CURRENT_DATE)`,
+                [companyId, branchId, Math.abs(cashAdj), cashAdj > 0 ? 'in' : 'out']
             );
         }
 
-        // Replace bank opening balances per bank
+        // ── BANK: same pattern per bank name ────────────────────────────────
         for (const b of bank_openings) {
             const bankName = b.bank_name || 'Bank';
-            const amount = Number(b.amount) || 0;
+            const desiredBank = Number(b.amount) || 0;
+
+            // Get current bank balance from non-opening entries
+            const bankRow = await db.pgGet(
+                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS bal
+                 FROM bank_ledger
+                 WHERE company_id = $1 AND bank_name = $2 AND source != 'OPENING_BALANCE'`,
+                [companyId, bankName]
+            );
+            const currentBank = Number(bankRow?.bal || 0);
+            const bankAdj = desiredBank - currentBank;
 
             await db.pgRun(
                 `DELETE FROM bank_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE' AND bank_name = $2`,
                 [companyId, bankName]
             );
-            if (amount > 0) {
+            if (bankAdj !== 0) {
                 await db.pgRun(
                     `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                     VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', $4, CURRENT_DATE)`,
-                    [companyId, branchId, amount, bankName]
+                     VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, $5, CURRENT_DATE)`,
+                    [companyId, branchId, Math.abs(bankAdj), bankAdj > 0 ? 'in' : 'out', bankName]
                 );
             }
 
@@ -244,7 +267,7 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
             if (b.bank_detail_id) {
                 await db.pgRun(
                     `UPDATE bank_details SET opening_balance = $1, current_balance = $1 WHERE id = $2 AND company_id = $3`,
-                    [amount, b.bank_detail_id, companyId]
+                    [desiredBank, b.bank_detail_id, companyId]
                 );
             }
         }
