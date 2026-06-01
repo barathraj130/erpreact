@@ -285,8 +285,18 @@ router.get("/preview-number", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (req, res) => {
     const companyId = req.user.active_company_id;
     const sql = `
-        SELECT i.*, COALESCE(u.nickname, u.username) as customer_name,
-        COALESCE(json_agg(li.*) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
+        SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.status,
+               i.customer_id, i.notes, i.paid_amount, i.discount_amount,
+               i.cgst_total, i.sgst_total, i.igst_total, i.tax_total,
+               i.sub_total, i.vehicle_number, i.transportation_mode, i.date_of_supply,
+               i.reverse_charge, i.bundles_count, i.bill_purpose, i.series_prefix,
+               i.created_at, i.updated_at,
+               COALESCE(u.nickname, u.username) as customer_name,
+               COALESCE(
+                 (SELECT SUM(li2.line_total) FROM invoice_line_items li2 WHERE li2.invoice_id = i.id),
+                 i.total_amount
+               ) AS total_amount,
+               COALESCE(json_agg(li.*) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
         FROM invoices i
         LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
         LEFT JOIN users u ON i.customer_id = u.id
