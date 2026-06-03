@@ -261,30 +261,54 @@ router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
         client = await db.getClient();
         await client.query('BEGIN');
 
-        // Find all PERSONAL_RECEIPT transactions that have a reference_id (customer_id)
-        // but no matching customer_ledger entry (matched by proprietor transaction id in description OR by amount+date+customer)
-        const missing = await client.query(`
+        // Fetch ALL PERSONAL_RECEIPT transactions for this company
+        const allReceipts = await client.query(`
             SELECT pt.id, pt.amount, pt.transaction_date, pt.party_name, pt.reference_id, pt.notes
             FROM proprietor_transactions pt
             WHERE pt.company_id = $1
               AND pt.transaction_type = 'PERSONAL_RECEIPT'
-              AND pt.reference_id IS NOT NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM customer_ledger cl
-                WHERE cl.company_id = $1
-                  AND cl.customer_id = pt.reference_id
-                  AND cl.type = 'PERSONAL_RECEIPT'
-                  AND cl.credit = pt.amount
-                  AND cl.date = pt.transaction_date
-              )
         `, [companyId]);
 
         const inserted = [];
-        for (const row of missing.rows) {
+
+        for (const row of allReceipts.rows) {
+            let customerId = row.reference_id ? parseInt(row.reference_id) : null;
+
+            // If reference_id is missing but party_name exists, look up customer by name
+            if (!customerId && row.party_name) {
+                const custRow = await client.query(
+                    `SELECT id FROM users WHERE company_id = $1 AND LOWER(username) = LOWER($2) LIMIT 1`,
+                    [companyId, row.party_name.trim()]
+                );
+                if (custRow.rows.length > 0) {
+                    customerId = custRow.rows[0].id;
+                    // Also patch the proprietor_transactions row so future syncs work faster
+                    await client.query(
+                        `UPDATE proprietor_transactions SET reference_id = $1, reference_type = 'customer' WHERE id = $2`,
+                        [customerId, row.id]
+                    );
+                }
+            }
+
+            if (!customerId) continue; // Can't resolve customer — skip
+
+            // Check if a customer_ledger entry already exists for this transaction
+            const exists = await client.query(`
+                SELECT 1 FROM customer_ledger
+                WHERE company_id = $1
+                  AND customer_id = $2
+                  AND type = 'PERSONAL_RECEIPT'
+                  AND credit = $3
+                  AND date = $4
+                LIMIT 1
+            `, [companyId, customerId, row.amount, row.transaction_date]);
+
+            if (exists.rows.length > 0) continue; // Already present — skip
+
             await client.query(
                 `INSERT INTO customer_ledger (customer_id, company_id, branch_id, date, type, description, credit)
                  VALUES ($1,$2,$3,$4,'PERSONAL_RECEIPT',$5,$6)`,
-                [row.reference_id, companyId, branchId, row.transaction_date,
+                [customerId, companyId, branchId, row.transaction_date,
                  `Payment received via proprietor personal account${row.notes ? ' - ' + row.notes : ''}`,
                  row.amount]
             );
