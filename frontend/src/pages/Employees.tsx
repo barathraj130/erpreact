@@ -442,7 +442,9 @@ const Employees: React.FC = () => {
                         ).toLocaleString()}
                       </div>
                     </div>
-                    <div className="attendance-pill" style={{ fontSize: "0.8rem" }}>{emp.days_present || 0} Days</div>
+                    <div className="attendance-pill" style={{ fontSize: "0.8rem", background: emp.paid_days > 0 ? "#dcfce7" : undefined, color: emp.paid_days > 0 ? "#15803d" : undefined }}>
+                      {emp.paid_days > 0 ? `${emp.paid_days} Day${emp.paid_days > 1 ? "s" : ""} Paid` : `${emp.days_present || 0} Days`}
+                    </div>
                   </div>
 
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -548,8 +550,8 @@ const Employees: React.FC = () => {
                       </div>
                     </td>
                     <td style={{ textAlign: "center" }}>
-                      <div className="attendance-pill">
-                        {emp.days_present || 0} Days
+                      <div className="attendance-pill" style={{ background: emp.paid_days > 0 ? "#dcfce7" : undefined, color: emp.paid_days > 0 ? "#15803d" : undefined, fontWeight: emp.paid_days > 0 ? 700 : undefined }}>
+                        {emp.paid_days > 0 ? `${emp.paid_days} Day${emp.paid_days > 1 ? "s" : ""} Paid` : `${emp.days_present || 0} Days`}
                       </div>
                     </td>
                     <td>

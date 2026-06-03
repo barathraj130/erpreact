@@ -683,13 +683,20 @@ router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
                                 WHEN 'half_day' THEN COALESCE(e.salary, 0) / 52
                                 ELSE 0 END
                     END
-                ) AS daily_wage
+                ) AS daily_wage,
+
+                -- Already paid for this date?
+                CASE WHEN dsp.id IS NOT NULL THEN true ELSE false END AS already_paid,
+                dsp.daily_wage  AS paid_wage,
+                dsp.payment_mode AS paid_mode
 
             FROM employees e
             LEFT JOIN daily_attendance da
               ON da.employee_id = e.id AND da.attendance_date = $2
             LEFT JOIN attendance_logs al
               ON al.employee_id = e.id AND al.date = $2
+            LEFT JOIN daily_salary_payments dsp
+              ON dsp.employee_id = e.id AND dsp.payment_date = $2 AND dsp.company_id = $1
             WHERE e.company_id = $1
               AND COALESCE(e.status, 'Active') = 'Active'
             ORDER BY e.name ASC

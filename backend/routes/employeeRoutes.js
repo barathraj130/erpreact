@@ -24,22 +24,29 @@ router.get('/', authMiddleware, async (req, res) => {
         }
 
         let sql = `
-            SELECT 
+            SELECT
                 e.*,
                 COALESCE(a.today_status, 'Absent') as today_status,
-                COALESCE(m.month_present, 0) as month_present_days
+                COALESCE(m.month_present, 0) as month_present_days,
+                COALESCE(pd.paid_days, 0) as paid_days
             FROM employees e
             LEFT JOIN (
-                SELECT employee_id, status as today_status 
-                FROM attendance 
+                SELECT employee_id, status as today_status
+                FROM attendance
                 WHERE date = CURRENT_DATE
             ) a ON e.id = a.employee_id
             LEFT JOIN (
-                SELECT employee_id, COUNT(*) as month_present 
-                FROM attendance 
+                SELECT employee_id, COUNT(*) as month_present
+                FROM attendance
                 WHERE date >= DATE_TRUNC('month', CURRENT_DATE) AND status = 'Present'
                 GROUP BY employee_id
             ) m ON e.id = m.employee_id
+            LEFT JOIN (
+                SELECT employee_id, COUNT(*) as paid_days
+                FROM daily_salary_payments
+                WHERE company_id = $1 AND status = 'paid'
+                GROUP BY employee_id
+            ) pd ON e.id = pd.employee_id
             ${where}
             ORDER BY e.name ASC
         `;
