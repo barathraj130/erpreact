@@ -63,29 +63,52 @@ const PersonalAccountsAdmin: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
-  const openAdd = () => { setEditId(null); setForm({ ...defaultForm }); setShowModal(true); };
+  const openAdd = () => { setEditId(null); setForm({ ...defaultForm }); setSaveError(null); setShowModal(true); };
   const openEdit = (acc: PersonalAccount) => {
     setEditId(acc.id);
     setForm({ account_name: acc.account_name, account_type: acc.account_type, upi_id: acc.upi_id || "", bank_name: acc.bank_name || "", account_number: acc.account_number || "", ifsc_code: acc.ifsc_code || "", holder_name: acc.holder_name || "", notes: acc.notes || "" });
+    setSaveError(null);
     setShowModal(true);
   };
+
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setSaveError(null);
     try {
-      const payload: any = { account_name: form.account_name, account_type: form.account_type, notes: form.notes };
+      const payload: any = {
+        account_name: form.account_name.trim(),
+        account_type: form.account_type,
+        notes: form.notes,
+      };
       if (form.account_type === "upi") payload.upi_id = form.upi_id;
-      if (form.account_type === "bank") { payload.bank_name = form.bank_name; payload.account_number = form.account_number; payload.ifsc_code = form.ifsc_code; payload.holder_name = form.holder_name; }
+      if (form.account_type === "bank") {
+        payload.bank_name     = form.bank_name;
+        payload.account_number = form.account_number;
+        payload.ifsc_code     = form.ifsc_code;
+        payload.holder_name   = form.holder_name;
+      }
 
-      await apiFetch(editId !== null ? `/personal-accounts/${editId}` : "/personal-accounts", {
-        method: editId !== null ? "PUT" : "POST",
-        body: JSON.stringify(payload),
-      });
+      const res = await apiFetch(
+        editId !== null ? `/personal-accounts/${editId}` : "/personal-accounts",
+        { method: editId !== null ? "PUT" : "POST", body: payload }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+        throw new Error(err.error || `Failed with status ${res.status}`);
+      }
+
       setShowModal(false);
-      load();
-    } catch { alert("Failed to save account"); }
-    finally { setSaving(false); }
+      setSaveError(null);
+      await load();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to save account");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleActive = async (acc: PersonalAccount) => {
@@ -208,6 +231,11 @@ const PersonalAccountsAdmin: React.FC = () => {
                     <input type="text" placeholder="Any remarks..." value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
                   </div>
                 </div>
+                {saveError && (
+                  <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#dc2626", fontSize: "13px", marginBottom: "12px" }}>
+                    ❌ {saveError}
+                  </div>
+                )}
                 <div className="page-modal-actions">
                   <button type="button" className="page-btn-round" onClick={() => setShowModal(false)}>Cancel</button>
                   <button type="submit" className="page-btn-round page-btn-round-primary" disabled={saving}>{saving ? "Saving..." : editId !== null ? "Update" : "Add Account"}</button>
