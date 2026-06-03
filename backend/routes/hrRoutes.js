@@ -832,12 +832,39 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             // WhatsApp to employee
             if (emp.phone) {
+                // Fetch total remaining advance balance for this employee (after today's deduction)
+                let advanceRemaining = 0;
+                try {
+                    const advTot = await client.query(
+                        `SELECT COALESCE(SUM(COALESCE(current_balance, amount, 0)), 0) AS remaining
+                         FROM salary_advances
+                         WHERE employee_id = $1
+                           AND COALESCE(status, 'ACTIVE') != 'RECOVERED'
+                           AND COALESCE(current_balance, amount, 0) > 0`,
+                        [p.employee_id]
+                    );
+                    advanceRemaining = Number(advTot.rows[0]?.remaining || 0);
+                } catch (_) {}
+
+                // Build advance section of message
+                let advanceLines = '';
+                if (deduction > 0) {
+                    advanceLines += `\n✂️ Advance Deducted : ₹${deduction.toLocaleString('en-IN')}`;
+                    advanceLines += advanceRemaining > 0
+                        ? `\n💳 Advance Remaining: ₹${advanceRemaining.toLocaleString('en-IN')}`
+                        : `\n✅ Advance Fully Recovered`;
+                } else if (advanceRemaining > 0) {
+                    advanceLines += `\n💳 Pending Advance  : ₹${advanceRemaining.toLocaleString('en-IN')}`;
+                }
+
                 sendWhatsApp(String(emp.phone),
 `Dear ${emp.name},
-Your daily wage has been paid.
-Date: ${date}
-Gross: ₹${grossWage.toLocaleString('en-IN')}${deduction > 0 ? `\nDeduction: −₹${deduction.toLocaleString('en-IN')}` : ''}
-Net Paid: ₹${wage.toLocaleString('en-IN')} (${pMode})
+Your daily wage has been paid. 💰
+━━━━━━━━━━━━━━━━━━
+📅 Date     : ${date}
+💵 Gross    : ₹${grossWage.toLocaleString('en-IN')}${deduction > 0 ? `\n✂️ Deduction : ₹${deduction.toLocaleString('en-IN')}` : ''}
+✅ Net Paid : ₹${wage.toLocaleString('en-IN')} (${pMode})${advanceLines}
+━━━━━━━━━━━━━━━━━━
 Thank you! 🙏
 JBS Knit Wear`).catch(() => {});
             }
