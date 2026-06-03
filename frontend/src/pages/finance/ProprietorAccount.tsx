@@ -31,22 +31,28 @@ const ALL_FILTERS: Array<{ key: string; label: string }> = [
 const ProprietorAccount: React.FC = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [personalAccounts, setPersonalAccounts] = useState<PersonalAccount[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
   const [txType, setTxType] = useState<TxType>("DRAWINGS");
-  const [form, setForm] = useState({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_name: "" });
+  const [form, setForm] = useState({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_id: "", party_name: "" });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [txRes, paRes] = await Promise.all([
+      const [txRes, paRes, custRes, suppRes] = await Promise.all([
         apiFetch("/proprietor-transactions").then(r => r.json()),
         apiFetch("/personal-accounts").then(r => r.json()),
+        apiFetch("/users").then(r => r.json()).catch(() => []),
+        apiFetch("/suppliers").then(r => r.json()).catch(() => []),
       ]);
       setTransactions(Array.isArray(txRes) ? txRes : []);
       setPersonalAccounts(Array.isArray(paRes) ? paRes.filter((a: any) => a.is_active) : []);
+      setCustomers(Array.isArray(custRes) ? custRes : []);
+      setSuppliers(Array.isArray(suppRes) ? suppRes : []);
     } catch { setTransactions([]); }
     finally { setLoading(false); }
   };
@@ -55,7 +61,7 @@ const ProprietorAccount: React.FC = () => {
 
   const openModal = (type: TxType) => {
     setTxType(type);
-    setForm({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_name: "" });
+    setForm({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_id: "", party_name: "" });
     setShowModal(true);
   };
 
@@ -68,7 +74,10 @@ const ProprietorAccount: React.FC = () => {
       const payload: any = { amount: parseFloat(form.amount), transaction_date: form.transaction_date, notes: form.notes };
       if (isPersonal) {
         payload.personal_account_id = parseInt(form.personal_account_id);
+        payload.party_id   = form.party_id   ? parseInt(form.party_id)   : null;
         payload.party_name = form.party_name;
+        payload.reference_id   = form.party_id ? parseInt(form.party_id) : null;
+        payload.reference_type = txType === "PERSONAL_RECEIPT" ? "customer" : "supplier";
       } else {
         payload.payment_mode = form.payment_mode;
       }
@@ -243,9 +252,32 @@ const ProprietorAccount: React.FC = () => {
                         )}
                       </div>
                       <div style={{ gridColumn: "1 / -1" }}>
-                        <label>Party Name ({txType === "PERSONAL_RECEIPT" ? "Customer" : "Supplier"})</label>
-                        <input type="text" placeholder={txType === "PERSONAL_RECEIPT" ? "Customer name" : "Supplier name"}
-                          value={form.party_name} onChange={e => setForm({ ...form, party_name: e.target.value })} />
+                        <label>{txType === "PERSONAL_RECEIPT" ? "Customer *" : "Supplier *"}</label>
+                        <select
+                          required
+                          value={form.party_id}
+                          onChange={e => {
+                            const list = txType === "PERSONAL_RECEIPT" ? customers : suppliers;
+                            const selected = list.find((x: any) => String(x.id) === e.target.value);
+                            setForm({
+                              ...form,
+                              party_id: e.target.value,
+                              party_name: selected ? (selected.username || selected.nickname || selected.name || "") : "",
+                            });
+                          }}
+                        >
+                          <option value="">-- Select {txType === "PERSONAL_RECEIPT" ? "Customer" : "Supplier"} --</option>
+                          {(txType === "PERSONAL_RECEIPT" ? customers : suppliers).map((p: any) => (
+                            <option key={p.id} value={p.id}>
+                              {p.username || p.nickname || p.name}
+                            </option>
+                          ))}
+                        </select>
+                        {(txType === "PERSONAL_RECEIPT" ? customers : suppliers).length === 0 && (
+                          <div style={{ fontSize: "12px", color: "#f97316", marginTop: 4 }}>
+                            No {txType === "PERSONAL_RECEIPT" ? "customers" : "suppliers"} found.
+                          </div>
+                        )}
                       </div>
                     </>
                   ) : (

@@ -146,57 +146,109 @@ router.post('/capital', authMiddleware, async (req, res) => {
     }
 });
 
-// POST /personal-receipt — Customer paid to personal account (NO cash/bank ledger)
+// POST /personal-receipt — Customer paid to personal account
+//   → records in proprietor_transactions
+//   → credits customer_ledger (reduces what customer owes)
 router.post('/personal-receipt', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id || 1;
-    const { amount, personal_account_id, party_name, reference_id, reference_type, transaction_date, notes } = req.body;
+    const { amount, personal_account_id, party_id, party_name, reference_id, reference_type, transaction_date, notes } = req.body;
     if (!amount || parseFloat(amount) <= 0) return res.status(400).json({ error: 'Valid amount required' });
     if (!personal_account_id) return res.status(400).json({ error: 'personal_account_id is required' });
 
-    const amt   = parseFloat(amount);
-    const tDate = transaction_date || new Date().toISOString().split('T')[0];
+    const amt       = parseFloat(amount);
+    const tDate     = transaction_date || new Date().toISOString().split('T')[0];
+    // party_id from frontend (customer id); fall back to reference_id for backward compat
+    const customerId = party_id ? parseInt(party_id) : (reference_id ? parseInt(reference_id) : null);
 
+    let client;
     try {
-        const row = await db.pgGet(
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const row = await client.query(
             `INSERT INTO proprietor_transactions
              (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by,
               personal_account_id, party_name, reference_id, reference_type)
              VALUES ($1,$2,'PERSONAL_RECEIPT',$3,'PERSONAL',$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
             [companyId, branchId, amt, tDate, notes || null, req.user.id,
-             personal_account_id, party_name || null, reference_id || null, reference_type || null]
+             personal_account_id, party_name || null, customerId, 'customer']
         );
-        res.status(201).json(row);
+        const record = row.rows[0];
+
+        // ── Update customer ledger: CREDIT (payment received reduces outstanding) ──
+        if (customerId) {
+            try {
+                await client.query(
+                    `INSERT INTO customer_ledger (customer_id, company_id, branch_id, date, type, description, credit)
+                     VALUES ($1,$2,$3,$4,'PERSONAL_RECEIPT',$5,$6)`,
+                    [customerId, companyId, branchId, tDate,
+                     `Payment received via proprietor personal account${notes ? ' - ' + notes : ''}`,
+                     amt]
+                );
+            } catch (ledgerErr) {
+                console.warn('customer_ledger personal-receipt insert skipped:', ledgerErr.message);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json(record);
     } catch (err) {
+        if (client) await client.query('ROLLBACK');
         console.error('Personal receipt error:', err);
         res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
     }
 });
 
-// POST /personal-payment — Paid supplier from personal account (NO cash/bank ledger)
+// POST /personal-payment — Paid supplier from personal account
+//   → records in proprietor_transactions
+//   → reduces supplier current_balance (payment made reduces what we owe supplier)
 router.post('/personal-payment', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id || 1;
-    const { amount, personal_account_id, party_name, reference_id, reference_type, transaction_date, notes } = req.body;
+    const { amount, personal_account_id, party_id, party_name, reference_id, reference_type, transaction_date, notes } = req.body;
     if (!amount || parseFloat(amount) <= 0) return res.status(400).json({ error: 'Valid amount required' });
     if (!personal_account_id) return res.status(400).json({ error: 'personal_account_id is required' });
 
-    const amt   = parseFloat(amount);
-    const tDate = transaction_date || new Date().toISOString().split('T')[0];
+    const amt        = parseFloat(amount);
+    const tDate      = transaction_date || new Date().toISOString().split('T')[0];
+    const supplierId = party_id ? parseInt(party_id) : (reference_id ? parseInt(reference_id) : null);
 
+    let client;
     try {
-        const row = await db.pgGet(
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const row = await client.query(
             `INSERT INTO proprietor_transactions
              (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by,
               personal_account_id, party_name, reference_id, reference_type)
              VALUES ($1,$2,'PERSONAL_PAYMENT',$3,'PERSONAL',$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
             [companyId, branchId, amt, tDate, notes || null, req.user.id,
-             personal_account_id, party_name || null, reference_id || null, reference_type || null]
+             personal_account_id, party_name || null, supplierId, 'supplier']
         );
-        res.status(201).json(row);
+        const record = row.rows[0];
+
+        // ── Update supplier balance: reduce what we owe (payment made) ──
+        if (supplierId) {
+            await client.query(
+                `UPDATE suppliers
+                 SET current_balance = GREATEST(0, current_balance - $1)
+                 WHERE id = $2 AND company_id = $3`,
+                [amt, supplierId, companyId]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json(record);
     } catch (err) {
+        if (client) await client.query('ROLLBACK');
         console.error('Personal payment error:', err);
         res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
     }
 });
 
