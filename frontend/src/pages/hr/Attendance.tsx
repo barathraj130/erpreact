@@ -281,6 +281,30 @@ const Attendance: React.FC = () => {
                   </div>
                 </div>
 
+                {/* ON DUTY reason — show whenever work_assigned is present */}
+                {record?.work_assigned && record.work_assigned.trim() && (
+                  <div style={{
+                    marginBottom: "12px",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    background: "var(--accent-bg, #fffbeb)",
+                    border: "1px solid var(--accent, #f59e0b)",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                  }}>
+                    <FaBriefcase size={12} style={{ color: "var(--accent, #f59e0b)", marginTop: "2px", flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontSize: "9px", fontWeight: 800, color: "var(--accent, #f59e0b)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "2px" }}>
+                        On Duty Reason
+                      </div>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-1, #1e293b)", lineHeight: "1.4" }}>
+                        {record.work_assigned}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Quick Actions */}
                 <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px" }}>
                   {Object.entries(statusConfig).map(([key, c]: any) => (
@@ -308,7 +332,7 @@ const Attendance: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                
+
                 {record?.method && (
                   <div style={{ marginTop: "12px", borderTop: "1px solid var(--border-soft)", paddingTop: "8px", fontSize: "10px", color: "var(--text-3)", display: "flex", alignItems: "center", gap: "4px" }}>
                     <FaFingerprint size={10} /> Logged via {record.method}
