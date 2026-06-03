@@ -175,22 +175,24 @@ router.get('/opening-balance', authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     if (!companyId) return res.status(401).json({ error: 'Unauthorized.' });
     try {
+        // Return TOTAL balance (all entries), not just the OPENING_BALANCE entry.
+        // This ensures the Admin Setup field shows the real current balance,
+        // so saving it keeps the total the same (adj = 0).
         const cash = await db.pgGet(
-            `SELECT COALESCE(SUM(amount), 0) as amount
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS amount
              FROM cash_ledger
-             WHERE company_id = $1 AND source = 'OPENING_BALANCE' AND direction = 'in'`,
+             WHERE company_id = $1`,
             [companyId]
         );
-        const bankRows = await db.pgAll(
-            `SELECT bank_name, COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) as amount
+        const bankRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS amount
              FROM bank_ledger
-             WHERE company_id = $1 AND source = 'OPENING_BALANCE'
-             GROUP BY bank_name`,
+             WHERE company_id = $1`,
             [companyId]
         );
         res.json({
             cash_opening: parseFloat(cash?.amount || 0),
-            bank_openings: bankRows || []
+            bank_openings: [{ bank_name: 'Bank', amount: parseFloat(bankRow?.amount || 0) }]
         });
     } catch (err) {
         console.error('Get opening balance error:', err.message);
