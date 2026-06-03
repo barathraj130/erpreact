@@ -175,19 +175,18 @@ router.get('/opening-balance', authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     if (!companyId) return res.status(401).json({ error: 'Unauthorized.' });
     try {
-        // Return TOTAL balance (all entries), not just the OPENING_BALANCE entry.
-        // This ensures the Admin Setup field shows the real current balance,
-        // so saving it keeps the total the same (adj = 0).
+        // Return the OPENING_BALANCE entry amounts — after a hard reset,
+        // these ARE the total balances.
         const cash = await db.pgGet(
             `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS amount
              FROM cash_ledger
-             WHERE company_id = $1`,
+             WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
         const bankRow = await db.pgGet(
             `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS amount
              FROM bank_ledger
-             WHERE company_id = $1`,
+             WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
         res.json({
@@ -212,60 +211,29 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
     const { cash_opening, bank_openings = [] } = req.body;
 
     try {
-        // ── CASH: set opening balance so total = desired amount ──────────────
-        // 1. Get current cash balance from all non-opening-balance entries
-        const cashRow = await db.pgGet(
-            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS bal
-             FROM cash_ledger
-             WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
-            [companyId]
-        );
-        const currentCash = Number(cashRow?.bal || 0);
+        // ── CASH: hard reset — wipe ALL cash_ledger, insert fresh OPENING_BALANCE ──
         const desiredCash = Number(cash_opening) || 0;
-        const cashAdj = desiredCash - currentCash; // signed adjustment
-
-        // 2. Delete old opening balance entry
-        await db.pgRun(
-            `DELETE FROM cash_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
-            [companyId]
-        );
-        // 3. Insert adjustment so that currentCash + adjustment = desiredCash
-        if (cashAdj !== 0) {
+        await db.pgRun(`DELETE FROM cash_ledger WHERE company_id = $1`, [companyId]);
+        if (desiredCash > 0) {
             await db.pgRun(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                 VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, CURRENT_DATE)`,
-                [companyId, branchId, Math.abs(cashAdj), cashAdj > 0 ? 'in' : 'out']
+                 VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', '2000-01-01')`,
+                [companyId, branchId, desiredCash]
             );
         }
 
-        // ── BANK: same pattern per bank name ────────────────────────────────
+        // ── BANK: hard reset — wipe ALL bank_ledger, insert fresh OPENING_BALANCE ──
+        await db.pgRun(`DELETE FROM bank_ledger WHERE company_id = $1`, [companyId]);
         for (const b of bank_openings) {
             const bankName = b.bank_name || 'Bank';
             const desiredBank = Number(b.amount) || 0;
-
-            // Get current bank balance from non-opening entries
-            const bankRow = await db.pgGet(
-                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS bal
-                 FROM bank_ledger
-                 WHERE company_id = $1 AND bank_name = $2 AND source != 'OPENING_BALANCE'`,
-                [companyId, bankName]
-            );
-            const currentBank = Number(bankRow?.bal || 0);
-            const bankAdj = desiredBank - currentBank;
-
-            await db.pgRun(
-                `DELETE FROM bank_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE' AND bank_name = $2`,
-                [companyId, bankName]
-            );
-            if (bankAdj !== 0) {
+            if (desiredBank > 0) {
                 await db.pgRun(
                     `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                     VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, $5, CURRENT_DATE)`,
-                    [companyId, branchId, Math.abs(bankAdj), bankAdj > 0 ? 'in' : 'out', bankName]
+                     VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', $4, '2000-01-01')`,
+                    [companyId, branchId, desiredBank, bankName]
                 );
             }
-
-            // Also update bank_details.opening_balance for display consistency
             if (b.bank_detail_id) {
                 await db.pgRun(
                     `UPDATE bank_details SET opening_balance = $1, current_balance = $1 WHERE id = $2 AND company_id = $3`,
