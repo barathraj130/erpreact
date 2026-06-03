@@ -59,8 +59,8 @@ export const processTransaction = async (txData, user) => {
             // Payment via proprietor's personal account — recorded in proprietor_transactions
             await client.query(`
                 INSERT INTO proprietor_transactions
-                    (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, affects_ledger)
-                VALUES ($1, $2, $3, $4, 'PERSONAL_ACCOUNT', $5, $6, $7, true)
+                    (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by)
+                VALUES ($1, $2, $3, $4, 'PERSONAL_ACCOUNT', $5, $6, $7)
             `, [
                 companyId, branchId,
                 direction === 'in' ? 'CAPITAL_INTRODUCED' : 'DRAWINGS',
