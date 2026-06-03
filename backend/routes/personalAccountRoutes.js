@@ -4,9 +4,36 @@ import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 
 const router = express.Router();
 
+// Ensure table exists (handles production DBs that haven't run migrations)
+const ensureTable = async () => {
+    await db.pgRun(`
+        CREATE TABLE IF NOT EXISTS personal_accounts (
+            id             SERIAL PRIMARY KEY,
+            company_id     INTEGER NOT NULL,
+            account_name   VARCHAR(100) NOT NULL,
+            account_type   VARCHAR(20) NOT NULL DEFAULT 'upi',
+            upi_id         VARCHAR(100),
+            bank_name      VARCHAR(100),
+            account_number VARCHAR(100),
+            ifsc_code      VARCHAR(50),
+            holder_name    VARCHAR(100),
+            notes          TEXT,
+            is_active      BOOLEAN DEFAULT true,
+            created_at     TIMESTAMP DEFAULT NOW(),
+            updated_at     TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+    // Add personal_account_id to proprietor_transactions if missing
+    await db.pgRun(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS personal_account_id INTEGER`).catch(() => {});
+    await db.pgRun(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS party_name VARCHAR(255)`).catch(() => {});
+    await db.pgRun(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_id INTEGER`).catch(() => {});
+    await db.pgRun(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50)`).catch(() => {});
+};
+
 router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
+        await ensureTable();
         const rows = await db.pgAll(`
             SELECT pa.*,
                 COALESCE(SUM(CASE WHEN pt.transaction_type IN ('PERSONAL_RECEIPT') THEN pt.amount ELSE 0 END), 0) as total_received,
@@ -29,6 +56,7 @@ router.post('/', authMiddleware, async (req, res) => {
     const { account_name, account_type, upi_id, bank_name, account_number, ifsc_code, holder_name, notes } = req.body;
     if (!account_name) return res.status(400).json({ error: 'account_name is required' });
     try {
+        await ensureTable();
         const row = await db.pgGet(`
             INSERT INTO personal_accounts (company_id, account_name, account_type, upi_id, bank_name, account_number, ifsc_code, holder_name, notes)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
@@ -36,7 +64,7 @@ router.post('/', authMiddleware, async (req, res) => {
         res.status(201).json(row);
     } catch (err) {
         console.error('Personal account create error:', err);
-        res.status(500).json({ error: 'Failed to create personal account' });
+        res.status(500).json({ error: err.message || 'Failed to create personal account' });
     }
 });
 
