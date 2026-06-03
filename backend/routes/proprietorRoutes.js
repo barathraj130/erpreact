@@ -39,8 +39,8 @@ router.post('/drawings', authMiddleware, async (req, res) => {
         await client.query('BEGIN');
 
         const row = await client.query(
-            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, affects_ledger)
-             VALUES ($1,$2,'DRAWINGS',$3,$4,$5,$6,$7,true) RETURNING *`,
+            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by)
+             VALUES ($1,$2,'DRAWINGS',$3,$4,$5,$6,$7) RETURNING *`,
             [companyId, branchId, amt, pMode, tDate, notes || null, req.user.id]
         );
         const record = row.rows[0];
@@ -101,8 +101,8 @@ router.post('/capital', authMiddleware, async (req, res) => {
         await client.query('BEGIN');
 
         const row = await client.query(
-            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, affects_ledger)
-             VALUES ($1,$2,'CAPITAL_INTRO',$3,$4,$5,$6,$7,true) RETURNING *`,
+            `INSERT INTO proprietor_transactions (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by)
+             VALUES ($1,$2,'CAPITAL_INTRO',$3,$4,$5,$6,$7) RETURNING *`,
             [companyId, branchId, amt, pMode, tDate, notes || null, req.user.id]
         );
         const record = row.rows[0];
@@ -161,8 +161,8 @@ router.post('/personal-receipt', authMiddleware, async (req, res) => {
         const row = await db.pgGet(
             `INSERT INTO proprietor_transactions
              (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by,
-              affects_ledger, personal_account_id, party_name, reference_id, reference_type)
-             VALUES ($1,$2,'PERSONAL_RECEIPT',$3,'PERSONAL',$4,$5,$6, false,$7,$8,$9,$10) RETURNING *`,
+              personal_account_id, party_name, reference_id, reference_type)
+             VALUES ($1,$2,'PERSONAL_RECEIPT',$3,'PERSONAL',$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
             [companyId, branchId, amt, tDate, notes || null, req.user.id,
              personal_account_id, party_name || null, reference_id || null, reference_type || null]
         );
@@ -188,8 +188,8 @@ router.post('/personal-payment', authMiddleware, async (req, res) => {
         const row = await db.pgGet(
             `INSERT INTO proprietor_transactions
              (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by,
-              affects_ledger, personal_account_id, party_name, reference_id, reference_type)
-             VALUES ($1,$2,'PERSONAL_PAYMENT',$3,'PERSONAL',$4,$5,$6, false,$7,$8,$9,$10) RETURNING *`,
+              personal_account_id, party_name, reference_id, reference_type)
+             VALUES ($1,$2,'PERSONAL_PAYMENT',$3,'PERSONAL',$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
             [companyId, branchId, amt, tDate, notes || null, req.user.id,
              personal_account_id, party_name || null, reference_id || null, reference_type || null]
         );
