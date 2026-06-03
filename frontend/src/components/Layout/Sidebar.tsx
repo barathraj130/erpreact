@@ -64,6 +64,7 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
           section: "Operations",
           subItems: [
               { name: "Orders", path: "/invoices" },
+              { name: "Sales Returns", path: "/sales/returns" },
               { name: "Customers", path: "/customers" },
               { name: "Portal Alerts", path: "/sales/customer-notifications" }
           ] 

@@ -34,6 +34,7 @@ import WeeklySalary from "./pages/hr/WeeklySalary";
 import DailySalary from "./pages/hr/DailySalary";
 import Inventory from "./pages/Inventory";
 import Invoices from "./pages/Invoices";
+import SalesReturns from "./pages/SalesReturns";
 import InvoiceDetails from "./pages/InvoiceDetails";
 import Ledgers from "./pages/Ledgers";
 import Login from "./pages/Login";
@@ -274,6 +275,7 @@ const App: React.FC = () => {
             <Route path="/invoices/new" element={<CreateInvoice />} />
             <Route path="/invoices/:id" element={<InvoiceDetails />} />
             <Route path="/invoices/edit/:id" element={<EditInvoice />} />
+            <Route path="/sales/returns" element={<SalesReturns />} />
             <Route path="/products" element={<Inventory />} />
             <Route path="/documents" element={<DocumentManager />} />
             <Route path="/ai-insights" element={<AIInsights />} />

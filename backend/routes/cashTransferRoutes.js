@@ -4,11 +4,12 @@ import * as db from '../database/pg.js';
 
 const router = express.Router();
 
-// GET all cash transfers
+// GET all cash transfers (branch transfers + bank↔cash ledger entries)
 router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
-        const rows = await db.pgAll(
+        // Branch-to-branch transfers (stored in cash_transfers table)
+        const branchRows = await db.pgAll(
             `SELECT ct.*,
                     fb.name AS from_branch_name,
                     tb.name AS to_branch_name
@@ -19,8 +20,59 @@ router.get('/', authMiddleware, async (req, res) => {
              ORDER BY ct.transfer_date DESC, ct.created_at DESC`,
             [companyId]
         );
-        res.json(rows);
+
+        // Bank→Cash transfers: bank_ledger 'out' paired with cash_ledger 'in' (source = CASH_TRANSFER)
+        const bankToCashRows = await db.pgAll(
+            `SELECT bl.id,
+                    bl.company_id,
+                    bl.branch_id,
+                    'BANK_TO_CASH' AS transfer_type,
+                    bl.amount,
+                    'CASH' AS payment_mode,
+                    bl.date AS transfer_date,
+                    bl.created_at,
+                    NULL AS reference_no,
+                    NULL AS notes,
+                    NULL AS from_branch_name,
+                    NULL AS to_branch_name
+             FROM bank_ledger bl
+             WHERE bl.company_id = $1
+               AND bl.source = 'CASH_TRANSFER'
+               AND bl.direction = 'out'
+               AND bl.bank_name = 'Main Account'
+             ORDER BY bl.date DESC, bl.created_at DESC`,
+            [companyId]
+        );
+
+        // Cash→Bank transfers: cash_ledger 'out' where source = CASH_TRANSFER
+        const cashToBankRows = await db.pgAll(
+            `SELECT cl.id,
+                    cl.company_id,
+                    cl.branch_id,
+                    'CASH_TO_BANK' AS transfer_type,
+                    cl.amount,
+                    'CASH' AS payment_mode,
+                    cl.date AS transfer_date,
+                    cl.created_at,
+                    NULL AS reference_no,
+                    NULL AS notes,
+                    NULL AS from_branch_name,
+                    NULL AS to_branch_name
+             FROM cash_ledger cl
+             WHERE cl.company_id = $1
+               AND cl.source = 'CASH_TRANSFER'
+               AND cl.direction = 'out'
+             ORDER BY cl.date DESC, cl.created_at DESC`,
+            [companyId]
+        );
+
+        // Merge and sort by date desc
+        const all = [...branchRows, ...bankToCashRows, ...cashToBankRows]
+            .sort((a, b) => new Date(b.transfer_date || b.created_at).getTime() - new Date(a.transfer_date || a.created_at).getTime());
+
+        res.json(all);
     } catch (err) {
+        console.error('Cash transfers fetch error:', err);
         res.status(500).json({ error: 'Failed to fetch cash transfers' });
     }
 });
