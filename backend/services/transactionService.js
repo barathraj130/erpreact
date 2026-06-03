@@ -55,21 +55,35 @@ export const processTransaction = async (txData, user) => {
                 INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
             `, [companyId, branchId, txData.type, txData.amount, direction, txData.date, transactionId]);
+        } else if (mode === 'PROPRIETOR') {
+            // Payment via proprietor's personal account — recorded in proprietor_transactions
+            await client.query(`
+                INSERT INTO proprietor_transactions
+                    (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, affects_ledger)
+                VALUES ($1, $2, $3, $4, 'PERSONAL_ACCOUNT', $5, $6, $7, true)
+            `, [
+                companyId, branchId,
+                direction === 'in' ? 'CAPITAL_INTRODUCED' : 'DRAWINGS',
+                txData.amount,
+                txData.date,
+                txData.description || 'Transaction via proprietor personal account',
+                user?.id || null,
+            ]);
         } else {
             await client.query(`
                 INSERT INTO bank_ledger (
-                    company_id, branch_id, bank_account_id, source, amount, direction, 
+                    company_id, branch_id, bank_account_id, source, amount, direction,
                     bank_name, transaction_id, date
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             `, [
-                companyId, 
-                branchId, 
+                companyId,
+                branchId,
                 txData.bank_account_id || null, // Capture specific bank account
-                txData.type, 
-                txData.amount, 
-                direction, 
-                txData.bank_name || 'Primary Bank', 
-                txData.bank_ref_no || transactionId, 
+                txData.type,
+                txData.amount,
+                direction,
+                txData.bank_name || 'Primary Bank',
+                txData.bank_ref_no || transactionId,
                 txData.date
             ]);
         }

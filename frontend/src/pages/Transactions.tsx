@@ -511,6 +511,7 @@ const Transactions: React.FC = () => {
                     <select className="form-input" style={{ borderRadius: "10px" }} value={formData.mode} onChange={e => setFormData({...formData, mode: e.target.value})}>
                       <option value="CASH">Liquid Cash</option>
                       <option value="BANK">Bank Digital Transfer</option>
+                      <option value="PROPRIETOR">Proprietor Personal Account</option>
                     </select>
                   </div>
                   
