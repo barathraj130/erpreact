@@ -8,6 +8,8 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0 }).format(Number(n || 0));
 
 const TRANSFER_TYPES = [
+  { value: "BANK_TO_CASH", label: "🏦 Bank → Cash (Withdraw from Bank)" },
+  { value: "CASH_TO_BANK", label: "💵 Cash → Bank (Deposit to Bank)" },
   { value: "BRANCH_TO_MAIN", label: "Branch → Main Branch" },
   { value: "MAIN_TO_BRANCH", label: "Main → Branch" },
   { value: "BRANCH_TO_BRANCH", label: "Branch → Branch" },
@@ -19,7 +21,7 @@ const CashTransfers: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
-    transfer_type: "BRANCH_TO_MAIN",
+    transfer_type: "BANK_TO_CASH",
     from_branch_id: "",
     to_branch_id: "",
     amount: 0,
@@ -52,7 +54,7 @@ const CashTransfers: React.FC = () => {
         body: JSON.stringify(form),
       });
       setShowModal(false);
-      setForm({ transfer_type: "BRANCH_TO_MAIN", from_branch_id: "", to_branch_id: "", amount: 0, payment_mode: "CASH", transfer_date: new Date().toISOString().split("T")[0], reference_no: "", notes: "" });
+      setForm({ transfer_type: "BANK_TO_CASH", from_branch_id: "", to_branch_id: "", amount: 0, payment_mode: "CASH", transfer_date: new Date().toISOString().split("T")[0], reference_no: "", notes: "" });
       load();
     } catch { alert("Failed to record transfer"); }
   };

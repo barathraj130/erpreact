@@ -52,9 +52,32 @@ router.post('/', authMiddleware, async (req, res) => {
         );
         const record = row.rows[0];
 
-        // Record as cash out from the sending branch and cash in for receiving branch
+        // Record ledger entries based on transfer type
         const txDate = transfer_date || new Date();
-        if (pMode === 'CASH') {
+        const brId = fromBrId;
+
+        if (tType === 'BANK_TO_CASH') {
+            // Bank → Cash: money leaves bank, enters cash
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'out','Main Account',$4,$5)`,
+                [companyId, brId, amt, `TRF-${record.id}-BANK-OUT`, txDate]
+            );
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'in',$4)`,
+                [companyId, brId, amt, txDate]
+            );
+        } else if (tType === 'CASH_TO_BANK') {
+            // Cash → Bank: money leaves cash, enters bank
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'out',$4)`,
+                [companyId, brId, amt, txDate]
+            );
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'in','Main Account',$4,$5)`,
+                [companyId, brId, amt, `TRF-${record.id}-BANK-IN`, txDate]
+            );
+        } else if (pMode === 'CASH') {
+            // Branch-to-branch cash transfer
             await client.query(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'out',$4)`,
                 [companyId, fromBrId, amt, txDate]
