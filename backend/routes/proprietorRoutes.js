@@ -252,6 +252,56 @@ router.post('/personal-payment', authMiddleware, async (req, res) => {
     }
 });
 
+// POST /sync-customer-ledger — Backfill missing customer_ledger credits for old PERSONAL_RECEIPT entries
+router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        // Find all PERSONAL_RECEIPT transactions that have a reference_id (customer_id)
+        // but no matching customer_ledger entry (matched by proprietor transaction id in description OR by amount+date+customer)
+        const missing = await client.query(`
+            SELECT pt.id, pt.amount, pt.transaction_date, pt.party_name, pt.reference_id, pt.notes
+            FROM proprietor_transactions pt
+            WHERE pt.company_id = $1
+              AND pt.transaction_type = 'PERSONAL_RECEIPT'
+              AND pt.reference_id IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM customer_ledger cl
+                WHERE cl.company_id = $1
+                  AND cl.customer_id = pt.reference_id
+                  AND cl.type = 'PERSONAL_RECEIPT'
+                  AND cl.credit = pt.amount
+                  AND cl.date = pt.transaction_date
+              )
+        `, [companyId]);
+
+        const inserted = [];
+        for (const row of missing.rows) {
+            await client.query(
+                `INSERT INTO customer_ledger (customer_id, company_id, branch_id, date, type, description, credit)
+                 VALUES ($1,$2,$3,$4,'PERSONAL_RECEIPT',$5,$6)`,
+                [row.reference_id, companyId, branchId, row.transaction_date,
+                 `Payment received via proprietor personal account${row.notes ? ' - ' + row.notes : ''}`,
+                 row.amount]
+            );
+            inserted.push({ id: row.id, party_name: row.party_name, amount: row.amount, date: row.transaction_date });
+        }
+
+        await client.query('COMMIT');
+        res.json({ synced: inserted.length, entries: inserted });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Sync customer ledger error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Backward-compat POST / (maps WITHDRAWAL→drawings, INVESTMENT→capital)
 router.post('/', authMiddleware, async (req, res) => {
     const { transaction_type } = req.body;

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { apiFetch } from "../../utils/api";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaUserCircle, FaPlus, FaArrowDown, FaArrowUp, FaSync, FaTimes, FaMobileAlt, FaHandHoldingUsd, FaExternalLinkAlt } from "react-icons/fa";
+import { FaUserCircle, FaPlus, FaArrowDown, FaArrowUp, FaSync, FaTimes, FaMobileAlt, FaHandHoldingUsd, FaExternalLinkAlt, FaTools } from "react-icons/fa";
 import "../PageShared.css";
 
 const fmt = (n: number) =>
@@ -41,6 +41,27 @@ const ProprietorAccount: React.FC = () => {
   const [txType, setTxType] = useState<TxType>("DRAWINGS");
   const [form, setForm] = useState({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_id: "", party_name: "" });
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const syncLedger = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await apiFetch("/proprietor-transactions/sync-customer-ledger", { method: "POST", body: JSON.stringify({}) });
+      const data = await res.json();
+      if (data.synced === 0) {
+        alert("✅ All customer ledgers are already up to date. No missing entries found.");
+      } else {
+        const names = data.entries.map((e: any) => `• ${e.party_name} — ₹${Number(e.amount).toLocaleString("en-IN")} on ${new Date(e.date).toLocaleDateString("en-IN")}`).join("\n");
+        alert(`✅ Synced ${data.synced} missing ledger entr${data.synced === 1 ? "y" : "ies"}:\n\n${names}`);
+        load();
+      }
+    } catch {
+      alert("❌ Failed to sync ledger. Please try again.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -109,6 +130,15 @@ const ProprietorAccount: React.FC = () => {
         </div>
         <div className="page-header-actions">
           <button className="page-btn-round-sm" onClick={load}><FaSync className={loading ? "fa-spin" : ""} size={12} /></button>
+          <button
+            className="page-btn-round"
+            style={{ background: "#f0f9ff", color: "#0369a1", border: "1px solid #bae6fd", fontSize: "11px" }}
+            onClick={syncLedger}
+            disabled={syncing}
+            title="Backfill missing customer ledger entries for old Personal Receipt transactions"
+          >
+            <FaTools size={10} /> {syncing ? "Syncing..." : "Sync Ledger"}
+          </button>
           <button className="page-btn-round" style={{ background: "#ecfdf5", color: "#16a34a", border: "1px solid #bbf7d0" }} onClick={() => openModal("CAPITAL_INTRO")}>
             <FaArrowDown size={11} /> Capital Intro
           </button>
