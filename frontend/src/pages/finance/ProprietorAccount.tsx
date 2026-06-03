@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { apiFetch } from "../../utils/api";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaUserCircle, FaPlus, FaArrowDown, FaArrowUp, FaSync, FaTimes, FaMobileAlt, FaHandHoldingUsd } from "react-icons/fa";
+import { FaUserCircle, FaPlus, FaArrowDown, FaArrowUp, FaSync, FaTimes, FaMobileAlt, FaHandHoldingUsd, FaExternalLinkAlt } from "react-icons/fa";
 import "../PageShared.css";
 
 const fmt = (n: number) =>
@@ -29,6 +30,7 @@ const ALL_FILTERS: Array<{ key: string; label: string }> = [
 ];
 
 const ProprietorAccount: React.FC = () => {
+  const navigate = useNavigate();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [personalAccounts, setPersonalAccounts] = useState<PersonalAccount[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -246,8 +248,15 @@ const ProprietorAccount: React.FC = () => {
                           ))}
                         </select>
                         {personalAccounts.length === 0 && (
-                          <div style={{ fontSize: "12px", color: "#f97316", marginTop: "4px" }}>
-                            No personal accounts found. Add one in Settings → Personal Accounts.
+                          <div style={{ fontSize: "12px", color: "#f97316", marginTop: "6px", display: "flex", alignItems: "center", gap: "6px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px", padding: "8px 12px" }}>
+                            <span>No personal accounts found.</span>
+                            <button
+                              type="button"
+                              onClick={() => { setShowModal(false); navigate("/settings/personal-accounts"); }}
+                              style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: "#f97316", color: "#fff", border: "none", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                            >
+                              <FaExternalLinkAlt size={9} /> Add Personal Account
+                            </button>
                           </div>
                         )}
                       </div>
