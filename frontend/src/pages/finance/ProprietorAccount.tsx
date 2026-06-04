@@ -129,16 +129,28 @@ const ProprietorAccount: React.FC = () => {
       } else {
         payload.payment_mode = form.payment_mode;
       }
+
+      let res: Response;
       if (editingId !== null) {
-        await apiFetch(`/proprietor-transactions/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
+        res = await apiFetch(`/proprietor-transactions/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       } else {
-        await apiFetch(TX_META[txType].endpoint, { method: "POST", body: JSON.stringify(payload) });
+        res = await apiFetch(TX_META[txType].endpoint, { method: "POST", body: JSON.stringify(payload) });
       }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        alert(`❌ Failed to save: ${errData.error || res.statusText}`);
+        return;
+      }
+
       setShowModal(false);
       setEditingId(null);
       load();
-    } catch { alert("Failed to save transaction"); }
-    finally { setSaving(false); }
+    } catch (err: any) {
+      alert(`❌ Failed to save transaction: ${err.message || "Network error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filtered = filter === "ALL" ? transactions : transactions.filter(t => t.transaction_type === filter);

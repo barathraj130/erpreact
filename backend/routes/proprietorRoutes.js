@@ -5,8 +5,34 @@ import { createTransactionInternal, getAccountByCode } from '../utils/accounting
 
 const router = express.Router();
 
+// Ensure all required columns exist in proprietor_transactions (safe for production)
+let columnsEnsured = false;
+async function ensureProprietorColumns() {
+    if (columnsEnsured) return;
+    try {
+        const client = await db.getClient();
+        try {
+            await client.query(`
+                ALTER TABLE proprietor_transactions
+                    ADD COLUMN IF NOT EXISTS personal_account_id INTEGER,
+                    ADD COLUMN IF NOT EXISTS party_name TEXT,
+                    ADD COLUMN IF NOT EXISTS reference_id INTEGER,
+                    ADD COLUMN IF NOT EXISTS reference_type TEXT,
+                    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+            `);
+            columnsEnsured = true;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.warn('ensureProprietorColumns warning:', err.message);
+        columnsEnsured = true; // don't retry on every request
+    }
+}
+
 // GET all proprietor transactions
 router.get('/', authMiddleware, async (req, res) => {
+    await ensureProprietorColumns();
     const companyId = req.user.active_company_id;
     try {
         const rows = await db.pgAll(
@@ -333,6 +359,7 @@ router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
 
 // PUT /:id — Edit a proprietor transaction (amount, date, notes, payment_mode)
 router.put('/:id', authMiddleware, async (req, res) => {
+    await ensureProprietorColumns();
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id || 1;
     const { id } = req.params;
