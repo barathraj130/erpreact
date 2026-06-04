@@ -484,11 +484,19 @@ const InvoiceDetails: React.FC = () => {
     const storedLineRate = val(item.tax_percent || item.gst_rate || (storedCgstRate + storedSgstRate + storedIgstRate));
     // Fall back to the user's override rate when nothing is stored (old invoices with 0 GST)
     const gstRate = isNonTax ? 0 : (storedLineRate > 0 ? storedLineRate : gstOverrideRate);
-    const gstAmt = (taxable * gstRate) / 100;
+
+    // If no GST rate is stored/known, back-derive GST from stored line_total
+    // (line_total = taxable + GST was stored at creation time even if rates weren't)
+    const storedLineTotal = val(item.line_total || item.taxable_value);
+    const derivedGstAmt = (!isNonTax && gstRate === 0 && storedLineTotal > taxable)
+      ? storedLineTotal - taxable  // GST = stored_total - taxable
+      : (taxable * gstRate) / 100;
+    const gstAmt = derivedGstAmt;
+
+    // Derive effective GST rate from back-calculated gstAmt for display
+    const effectiveGstRate = taxable > 0 ? (gstAmt / taxable) * 100 : gstRate;
+
     // Always re-derive CGST/SGST/IGST split from the correct isSameState.
-    // Do NOT use stored cgst_amount/sgst_amount/igst_amount — they may have been
-    // saved with the wrong split (e.g. CGST+SGST for a non-TN customer before fix).
-    // The total GST amount is preserved; only the classification changes.
     const cgst = isSameState && !isNonTax ? gstAmt / 2 : 0;
     const sgst = isSameState && !isNonTax ? gstAmt / 2 : 0;
     const igst = !isSameState && !isNonTax ? gstAmt : 0;
@@ -500,7 +508,7 @@ const InvoiceDetails: React.FC = () => {
       name: item.description || item.name || "",
       hsn: item.hsn_acs_code || item.hsn || "",
       uom: item.uom || "Pcs",
-      qty: Math.abs(qty), rate, taxable, gstRate, cgst, sgst, igst,
+      qty: Math.abs(qty), rate, taxable, gstRate: effectiveGstRate, cgst, sgst, igst,
       isReturn,
       lineTotal: taxable + cgst + sgst + igst,
     };
