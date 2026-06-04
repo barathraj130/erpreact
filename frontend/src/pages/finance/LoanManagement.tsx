@@ -59,6 +59,9 @@ const LoanManagement: React.FC = () => {
     notes: "",
     duration_months: 12,
     loan_type: "BANK",
+    // Existing loan extras
+    down_payment: 0,
+    outstanding_interest: 0,
   });
   const [receiptRows, setReceiptRows] = useState<{ mode: string; amount: number }[]>([
     { mode: "CASH", amount: 0 },
@@ -124,6 +127,8 @@ const LoanManagement: React.FC = () => {
         notes: "",
         duration_months: 12,
         loan_type: "BANK",
+        down_payment: 0,
+        outstanding_interest: 0,
       });
       setReceiptRows([{ mode: "CASH", amount: 0 }]);
     } catch (err: any) {
@@ -882,6 +887,57 @@ const LoanManagement: React.FC = () => {
                         </span>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* ── Existing Loan Details (shown only when is_existing_loan) ── */}
+                {formData.is_existing_loan && (
+                  <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📋 Existing Loan Details
+                      <span style={{ fontSize: '11px', fontWeight: 500, color: '#b45309' }}>— fill in what you know</span>
+                    </div>
+
+                    {/* Down Payment */}
+                    <div style={{ marginBottom: '14px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '5px' }}>
+                        💵 Amount Already Paid (Down Payment / Part Repayment)
+                      </div>
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontWeight: 700, fontSize: '13px' }}>₹</span>
+                        <input
+                          type="number" min={0} value={formData.down_payment || ''}
+                          placeholder="0"
+                          onChange={e => setFormData({ ...formData, down_payment: Number(e.target.value) })}
+                          style={{ width: '100%', padding: '10px 12px 10px 26px', borderRadius: '8px', border: '1.5px solid #fcd34d', fontSize: '14px', boxSizing: 'border-box', background: '#fff' }}
+                        />
+                      </div>
+                      {formData.down_payment > 0 && formData.principal_amount > 0 && (
+                        <div style={{ fontSize: '11px', color: '#065f46', marginTop: '4px', fontWeight: 600, background: '#d1fae5', padding: '4px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                          Remaining Principal: ₹{Math.max(0, formData.principal_amount - formData.down_payment).toLocaleString('en-IN')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Outstanding Interest */}
+                    <div style={{ marginBottom: '14px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '5px' }}>
+                        📈 Outstanding / Unpaid Interest (Accumulated)
+                      </div>
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontWeight: 700, fontSize: '13px' }}>₹</span>
+                        <input
+                          type="number" min={0} value={formData.outstanding_interest || ''}
+                          placeholder="0 — if interest is fully paid"
+                          onChange={e => setFormData({ ...formData, outstanding_interest: Number(e.target.value) })}
+                          style={{ width: '100%', padding: '10px 12px 10px 26px', borderRadius: '8px', border: '1.5px solid #fcd34d', fontSize: '14px', boxSizing: 'border-box', background: '#fff' }}
+                        />
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#b45309', marginTop: '3px' }}>
+                        Total interest that has accrued but not yet been paid to the lender
+                      </div>
+                    </div>
+
                   </div>
                 )}
 

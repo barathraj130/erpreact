@@ -72,17 +72,41 @@ export const createLoan = async (user, loanData) => {
 
         // Best-effort: update new columns added by migration.
         // Must use SAVEPOINT — a bare .catch() inside a BEGIN tx still poisons the transaction.
+        const downPayment         = parseFloat(loanData.down_payment         || 0);
+        const outstandingInterest = parseFloat(loanData.outstanding_interest || 0);
+        // Remaining principal after any down-payment already made on this existing loan
+        const principalOutstanding = Math.max(0, principal - downPayment);
+
         await client.query(`SAVEPOINT sp_loan_new_cols`);
         try {
             await client.query(
                 `UPDATE loans SET loan_type = $1, principal_outstanding = $2 WHERE id = $3`,
-                [loanType, principal, loanRes.rows[0].id]
+                [loanType, principalOutstanding, loanRes.rows[0].id]
             );
             await client.query(`RELEASE SAVEPOINT sp_loan_new_cols`);
         } catch (_) {
             await client.query(`ROLLBACK TO SAVEPOINT sp_loan_new_cols`);
             await client.query(`RELEASE SAVEPOINT sp_loan_new_cols`);
         }
+
+        // Best-effort: save existing-loan extra fields if columns exist
+        await client.query(`SAVEPOINT sp_loan_existing_extras`);
+        try {
+            await client.query(`
+                ALTER TABLE loans
+                    ADD COLUMN IF NOT EXISTS down_payment         NUMERIC(15,2) DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS outstanding_interest NUMERIC(15,2) DEFAULT 0
+            `);
+            await client.query(
+                `UPDATE loans SET down_payment = $1, outstanding_interest = $2 WHERE id = $3`,
+                [downPayment, outstandingInterest, loanRes.rows[0].id]
+            );
+            await client.query(`RELEASE SAVEPOINT sp_loan_existing_extras`);
+        } catch (_) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_loan_existing_extras`);
+            await client.query(`RELEASE SAVEPOINT sp_loan_existing_extras`);
+        }
+
         const loan = loanRes.rows[0];
 
         // 2. Double-Entry: Loan Disbursement
