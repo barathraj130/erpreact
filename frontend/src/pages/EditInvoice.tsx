@@ -112,6 +112,18 @@ const tableCellRightStyle: React.CSSProperties = {
   paddingRight: "4px",
 };
 
+// Bill type options
+const BILL_TYPES = [
+  { value: "TAX_INVOICE", label: "Tax Invoice (TAX) — With GST" },
+  { value: "NON_TAX_INVOICE", label: "Invoice (INV) — No GST" },
+  { value: "NOMINAL_TAX_INVOICE", label: "Nominal Tax Invoice" },
+  { value: "NSB_INVOICE", label: "NSB Invoice — No GST" },
+  { value: "RETAIL_SALE", label: "Retail Sale — No GST" },
+];
+
+// Types that have NO GST
+const NON_TAX_TYPES = new Set(["NON_TAX_INVOICE", "NSB_INVOICE", "RETAIL_SALE", "GIFTED_ITEM"]);
+
 // Payment method options
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Cash", icon: <FaMoneyBillWave />, color: "#10b981" },
@@ -316,6 +328,8 @@ const EditInvoice: React.FC = () => {
     setCustomerId(id);
   };
 
+  const isNonTax = NON_TAX_TYPES.has(invoiceType);
+
   let totalTaxable = 0,
     totalCGST = 0,
     totalSGST = 0,
@@ -325,9 +339,10 @@ const EditInvoice: React.FC = () => {
     const taxable = amount;
     const isSameState =
       (customer.stateCode || "33") === (company.stateCode || "33");
-    const cgstRate = isSameState ? 2.5 : 0;
-    const sgstRate = isSameState ? 2.5 : 0;
-    const igstRate = isSameState ? 0 : 5;
+    // No GST for non-tax invoice types
+    const cgstRate = isNonTax ? 0 : (isSameState ? 2.5 : 0);
+    const sgstRate = isNonTax ? 0 : (isSameState ? 2.5 : 0);
+    const igstRate = isNonTax ? 0 : (isSameState ? 0 : 5);
     const cgst = taxable * (cgstRate / 100);
     const sgst = taxable * (sgstRate / 100);
     const igst = taxable * (igstRate / 100);
@@ -781,6 +796,30 @@ const EditInvoice: React.FC = () => {
                   style={inputStyle}
                 />
               </div>
+            </div>
+            <div>
+              <label style={inputLabelStyle}>Bill Type</label>
+              <CustomSelect
+                value={invoiceType}
+                onChange={(e) => setInvoiceType(e.target.value)}
+                style={{
+                  ...inputStyle,
+                  borderColor: isNonTax ? "#f59e0b" : "var(--border-color)",
+                  background: isNonTax ? "#fffbeb" : "white",
+                  fontWeight: 600,
+                }}
+              >
+                {BILL_TYPES.map((bt) => (
+                  <option key={bt.value} value={bt.value}>
+                    {bt.label}
+                  </option>
+                ))}
+              </CustomSelect>
+              {isNonTax && (
+                <div style={{ fontSize: "0.7rem", color: "#b45309", marginTop: "4px", fontWeight: 600 }}>
+                  ⚠ No GST applied — Grand Total = Taxable Amount only
+                </div>
+              )}
             </div>
             <div>
               <label style={inputLabelStyle}>Customer</label>
@@ -1330,7 +1369,17 @@ const EditInvoice: React.FC = () => {
                 textTransform: "uppercase",
               }}
             >
-              INVOICE
+              {invoiceType === "TAX_INVOICE"
+                ? "TAX INVOICE"
+                : invoiceType === "NON_TAX_INVOICE"
+                ? "INVOICE"
+                : invoiceType === "NOMINAL_TAX_INVOICE"
+                ? "NOMINAL TAX INVOICE"
+                : invoiceType === "NSB_INVOICE"
+                ? "NSB INVOICE"
+                : invoiceType === "RETAIL_SALE"
+                ? "RETAIL SALE"
+                : "INVOICE"}
             </div>
 
             {/* Metadata Grid */}

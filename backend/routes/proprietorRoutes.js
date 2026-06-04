@@ -334,6 +334,7 @@ router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
 // PUT /:id — Edit a proprietor transaction (amount, date, notes, payment_mode)
 router.put('/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
     const { id } = req.params;
     const { amount, transaction_date, notes, payment_mode, personal_account_id, party_id, party_name } = req.body;
 
@@ -368,17 +369,49 @@ router.put('/:id', authMiddleware, async (req, res) => {
             [newAmt, newDate, newNotes, newMode, newPAId, newPartyName, customerId, id, companyId]
         );
 
-        // If it's a PERSONAL_RECEIPT, update the transactions entry too
-        if (tx.transaction_type === 'PERSONAL_RECEIPT' && customerId) {
-            await client.query(
-                `UPDATE transactions
-                 SET amount = $1, transaction_date = $2, date = $2, description = $3
-                 WHERE company_id = $4 AND reference_id = $5
-                   AND type = 'CUSTOMER_PAYMENT' AND reference_type = 'PERSONAL_RECEIPT'`,
-                [newAmt, newDate,
-                 `Payment received via proprietor personal account${newNotes ? ' - ' + newNotes : ''}`,
-                 companyId, customerId]
-            );
+        // If it's a PERSONAL_RECEIPT, sync the linked customer ledger entry
+        if (tx.transaction_type === 'PERSONAL_RECEIPT') {
+            const oldCustomerId = tx.reference_id ? parseInt(tx.reference_id) : null;
+            const oldAmt = parseFloat(tx.amount);
+
+            // Step 1: Remove the OLD transactions entry (matched by old customer + old amount)
+            if (oldCustomerId) {
+                try {
+                    await client.query(
+                        `DELETE FROM transactions
+                         WHERE id = (
+                             SELECT id FROM transactions
+                             WHERE company_id = $1
+                               AND reference_id = $2
+                               AND type = 'CUSTOMER_PAYMENT'
+                               AND reference_type = 'PERSONAL_RECEIPT'
+                               AND amount = $3
+                             ORDER BY id DESC
+                             LIMIT 1
+                         )`,
+                        [companyId, oldCustomerId, oldAmt]
+                    );
+                } catch (delErr) {
+                    console.warn('Could not delete old transactions entry:', delErr.message);
+                }
+            }
+
+            // Step 2: Insert a fresh entry with the updated values
+            if (customerId) {
+                try {
+                    await client.query(
+                        `INSERT INTO transactions
+                           (company_id, branch_id, transaction_date, reference_type, reference_id,
+                            description, created_by, user_id, amount, type, category, date, bill_purpose)
+                         VALUES ($1,$2,$3,'PERSONAL_RECEIPT',$4,$5,$6,$4,$7,'CUSTOMER_PAYMENT','PAYMENT',$8,'real')`,
+                        [companyId, branchId, newDate, customerId,
+                         `Payment received via proprietor personal account${newNotes ? ' - ' + newNotes : ''}`,
+                         req.user.id, newAmt, newDate]
+                    );
+                } catch (insErr) {
+                    console.warn('Could not insert updated transactions entry:', insErr.message);
+                }
+            }
         }
 
         await client.query('COMMIT');
