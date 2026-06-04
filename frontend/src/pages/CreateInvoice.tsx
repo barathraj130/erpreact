@@ -1025,35 +1025,8 @@ const CreateInvoice: React.FC = () => {
 
           {/* Line Items */}
           <div className="ci-card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <div className="ci-card-title" style={{ marginBottom: 0 }}>
-                Line Items
-              </div>
-              <button
-                className="page-btn-round"
-                style={{ padding: '6px 16px', fontSize: '0.72rem' }}
-                onClick={() =>
-                  setItems([
-                    ...items,
-                    {
-                      id: Date.now(),
-                      desc: "",
-                      hsn: "",
-                      uom: "Pcs",
-                      qty: 0,
-                      rate: 0,
-                    },
-                  ])
-                }
-              >
-                <FaPlus size={10} /> Add Item
-              </button>
+            <div className="ci-card-title" style={{ marginBottom: 0 }}>
+              Line Items
             </div>
             <AnimatePresence mode="popLayout">
               {items.map((it, i) => (
@@ -1143,6 +1116,35 @@ const CreateInvoice: React.FC = () => {
                 </motion.div>
               ))}
             </AnimatePresence>
+
+            {/* Add Item button — below last item */}
+            <button
+              className="page-btn-round"
+              style={{
+                width: '100%',
+                marginTop: '10px',
+                padding: '10px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                background: '#f0f9ff',
+                color: '#0369a1',
+                border: '1.5px dashed #7dd3fc',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              onClick={() =>
+                setItems([
+                  ...items,
+                  { id: Date.now(), desc: "", hsn: "", uom: "Pcs", qty: 0, rate: 0 },
+                ])
+              }
+            >
+              <FaPlus size={11} /> Add Item
+            </button>
           </div>
 
           {/* Return Section */}
