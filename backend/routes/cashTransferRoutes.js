@@ -4,67 +4,109 @@ import * as db from '../database/pg.js';
 
 const router = express.Router();
 
+// Ensure cash_transfers table exists (safe for production)
+let tableEnsured = false;
+async function ensureTable() {
+    if (tableEnsured) return;
+    try {
+        const client = await db.getClient();
+        try {
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS cash_transfers (
+                    id              SERIAL PRIMARY KEY,
+                    company_id      INTEGER NOT NULL,
+                    from_branch_id  INTEGER,
+                    to_branch_id    INTEGER,
+                    transfer_type   TEXT NOT NULL DEFAULT 'BRANCH_TO_MAIN',
+                    amount          NUMERIC(15,2) NOT NULL,
+                    payment_mode    TEXT DEFAULT 'CASH',
+                    transfer_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+                    reference_no    TEXT,
+                    notes           TEXT,
+                    created_by      INTEGER,
+                    created_at      TIMESTAMPTZ DEFAULT NOW()
+                )
+            `);
+            tableEnsured = true;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.warn('ensureTable cash_transfers warning:', err.message);
+        tableEnsured = true;
+    }
+}
+
 // GET all cash transfers (branch transfers + bank↔cash ledger entries)
 router.get('/', authMiddleware, async (req, res) => {
+    await ensureTable();
     const companyId = req.user.active_company_id;
     try {
         // Branch-to-branch transfers (stored in cash_transfers table)
-        const branchRows = await db.pgAll(
-            `SELECT ct.*,
-                    fb.name AS from_branch_name,
-                    tb.name AS to_branch_name
-             FROM cash_transfers ct
-             LEFT JOIN branches fb ON ct.from_branch_id = fb.id
-             LEFT JOIN branches tb ON ct.to_branch_id   = tb.id
-             WHERE ct.company_id = $1
-             ORDER BY ct.transfer_date DESC, ct.created_at DESC`,
-            [companyId]
-        );
+        let branchRows = [];
+        try {
+            branchRows = await db.pgAll(
+                `SELECT ct.*,
+                        fb.name AS from_branch_name,
+                        tb.name AS to_branch_name
+                 FROM cash_transfers ct
+                 LEFT JOIN branches fb ON ct.from_branch_id = fb.id
+                 LEFT JOIN branches tb ON ct.to_branch_id   = tb.id
+                 WHERE ct.company_id = $1
+                 ORDER BY ct.transfer_date DESC, ct.created_at DESC`,
+                [companyId]
+            );
+        } catch (e) { console.warn('cash_transfers branch query skipped:', e.message); }
 
-        // Bank→Cash transfers: bank_ledger 'out' paired with cash_ledger 'in' (source = CASH_TRANSFER)
-        const bankToCashRows = await db.pgAll(
-            `SELECT bl.id,
-                    bl.company_id,
-                    bl.branch_id,
-                    'BANK_TO_CASH' AS transfer_type,
-                    bl.amount,
-                    'CASH' AS payment_mode,
-                    bl.date AS transfer_date,
-                    bl.created_at,
-                    NULL AS reference_no,
-                    NULL AS notes,
-                    NULL AS from_branch_name,
-                    NULL AS to_branch_name
-             FROM bank_ledger bl
-             WHERE bl.company_id = $1
-               AND bl.source = 'CASH_TRANSFER'
-               AND bl.direction = 'out'
-               AND bl.bank_name = 'Main Account'
-             ORDER BY bl.date DESC, bl.created_at DESC`,
-            [companyId]
-        );
+        // Bank→Cash transfers: bank_ledger 'out' (source = CASH_TRANSFER)
+        let bankToCashRows = [];
+        try {
+            bankToCashRows = await db.pgAll(
+                `SELECT bl.id,
+                        bl.company_id,
+                        bl.branch_id,
+                        'BANK_TO_CASH' AS transfer_type,
+                        bl.amount,
+                        'CASH' AS payment_mode,
+                        bl.date AS transfer_date,
+                        bl.created_at,
+                        NULL AS reference_no,
+                        NULL AS notes,
+                        NULL AS from_branch_name,
+                        NULL AS to_branch_name
+                 FROM bank_ledger bl
+                 WHERE bl.company_id = $1
+                   AND bl.source = 'CASH_TRANSFER'
+                   AND bl.direction = 'out'
+                 ORDER BY bl.date DESC, bl.created_at DESC`,
+                [companyId]
+            );
+        } catch (e) { console.warn('bank_ledger BANK_TO_CASH query skipped:', e.message); }
 
         // Cash→Bank transfers: cash_ledger 'out' where source = CASH_TRANSFER
-        const cashToBankRows = await db.pgAll(
-            `SELECT cl.id,
-                    cl.company_id,
-                    cl.branch_id,
-                    'CASH_TO_BANK' AS transfer_type,
-                    cl.amount,
-                    'CASH' AS payment_mode,
-                    cl.date AS transfer_date,
-                    cl.created_at,
-                    NULL AS reference_no,
-                    NULL AS notes,
-                    NULL AS from_branch_name,
-                    NULL AS to_branch_name
-             FROM cash_ledger cl
-             WHERE cl.company_id = $1
-               AND cl.source = 'CASH_TRANSFER'
-               AND cl.direction = 'out'
-             ORDER BY cl.date DESC, cl.created_at DESC`,
-            [companyId]
-        );
+        let cashToBankRows = [];
+        try {
+            cashToBankRows = await db.pgAll(
+                `SELECT cl.id,
+                        cl.company_id,
+                        cl.branch_id,
+                        'CASH_TO_BANK' AS transfer_type,
+                        cl.amount,
+                        'CASH' AS payment_mode,
+                        cl.date AS transfer_date,
+                        cl.created_at,
+                        NULL AS reference_no,
+                        NULL AS notes,
+                        NULL AS from_branch_name,
+                        NULL AS to_branch_name
+                 FROM cash_ledger cl
+                 WHERE cl.company_id = $1
+                   AND cl.source = 'CASH_TRANSFER'
+                   AND cl.direction = 'out'
+                 ORDER BY cl.date DESC, cl.created_at DESC`,
+                [companyId]
+            );
+        } catch (e) { console.warn('cash_ledger CASH_TO_BANK query skipped:', e.message); }
 
         // Merge and sort by date desc
         const all = [...branchRows, ...bankToCashRows, ...cashToBankRows]
@@ -79,6 +121,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
 // POST — record branch handover or inter-branch transfer
 router.post('/', authMiddleware, async (req, res) => {
+    await ensureTable();
     const companyId = req.user.active_company_id;
     const { from_branch_id, to_branch_id, transfer_type, amount, payment_mode, transfer_date, reference_no, notes } = req.body;
 
