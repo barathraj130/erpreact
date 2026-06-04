@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { apiFetch } from "../../utils/api";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaUserCircle, FaPlus, FaArrowDown, FaArrowUp, FaSync, FaTimes, FaMobileAlt, FaHandHoldingUsd, FaExternalLinkAlt, FaTools } from "react-icons/fa";
+import { FaUserCircle, FaPlus, FaArrowDown, FaArrowUp, FaSync, FaTimes, FaMobileAlt, FaHandHoldingUsd, FaExternalLinkAlt, FaTools, FaEdit, FaTrash } from "react-icons/fa";
 import "../PageShared.css";
 
 const fmt = (n: number) =>
@@ -42,6 +42,7 @@ const ProprietorAccount: React.FC = () => {
   const [form, setForm] = useState({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_id: "", party_name: "" });
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const syncLedger = async () => {
     if (syncing) return;
@@ -84,8 +85,32 @@ const ProprietorAccount: React.FC = () => {
 
   const openModal = (type: TxType) => {
     setTxType(type);
+    setEditingId(null);
     setForm({ amount: "", payment_mode: "CASH", transaction_date: today(), notes: "", personal_account_id: "", party_id: "", party_name: "" });
     setShowModal(true);
+  };
+
+  const openEdit = (t: any) => {
+    setTxType(t.transaction_type as TxType);
+    setEditingId(t.id);
+    setForm({
+      amount: String(t.amount),
+      payment_mode: t.payment_mode || "CASH",
+      transaction_date: t.transaction_date ? t.transaction_date.substring(0, 10) : today(),
+      notes: t.notes || "",
+      personal_account_id: t.personal_account_id ? String(t.personal_account_id) : "",
+      party_id: t.reference_id ? String(t.reference_id) : "",
+      party_name: t.party_name || "",
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm("Delete this transaction? This cannot be undone.")) return;
+    try {
+      await apiFetch(`/proprietor-transactions/${id}`, { method: "DELETE", body: JSON.stringify({}) });
+      load();
+    } catch { alert("Failed to delete transaction"); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -104,10 +129,15 @@ const ProprietorAccount: React.FC = () => {
       } else {
         payload.payment_mode = form.payment_mode;
       }
-      await apiFetch(TX_META[txType].endpoint, { method: "POST", body: JSON.stringify(payload) });
+      if (editingId !== null) {
+        await apiFetch(`/proprietor-transactions/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
+      } else {
+        await apiFetch(TX_META[txType].endpoint, { method: "POST", body: JSON.stringify(payload) });
+      }
       setShowModal(false);
+      setEditingId(null);
       load();
-    } catch { alert("Failed to record transaction"); }
+    } catch { alert("Failed to save transaction"); }
     finally { setSaving(false); }
   };
 
@@ -201,6 +231,7 @@ const ProprietorAccount: React.FC = () => {
               <th className="text-right">Amount</th>
               <th>Mode</th>
               <th>Notes</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -230,6 +261,24 @@ const ProprietorAccount: React.FC = () => {
                     )}
                   </td>
                   <td style={{ color: "#64748b", fontSize: "13px" }}>{t.notes || "—"}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        onClick={() => openEdit(t)}
+                        style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", cursor: "pointer", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}
+                        title="Edit"
+                      >
+                        <FaEdit size={11} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(t.id)}
+                        style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", cursor: "pointer", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}
+                        title="Delete"
+                      >
+                        <FaTrash size={11} /> Delete
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -244,7 +293,7 @@ const ProprietorAccount: React.FC = () => {
             <motion.div className="page-modal" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: "18px" }}>{TX_META[txType].label}</h2>
+                  <h2 style={{ margin: 0, fontSize: "18px" }}>{editingId !== null ? "Edit " : ""}{TX_META[txType].label}</h2>
                   {isPersonalType && (
                     <div style={{ fontSize: "12px", color: "#7c3aed", marginTop: "4px", fontWeight: 600 }}>
                       Personal account only — does not affect business cash/bank ledger
@@ -339,7 +388,7 @@ const ProprietorAccount: React.FC = () => {
                 </div>
                 <div className="page-modal-actions">
                   <button type="button" className="page-btn-round" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="page-btn-round page-btn-round-primary" disabled={saving}>{saving ? "Saving..." : "Save"}</button>
+                  <button type="submit" className="page-btn-round page-btn-round-primary" disabled={saving}>{saving ? "Saving..." : editingId !== null ? "Update" : "Save"}</button>
                 </div>
               </form>
             </motion.div>

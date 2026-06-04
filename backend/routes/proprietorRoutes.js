@@ -331,6 +331,115 @@ router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
     }
 });
 
+// PUT /:id — Edit a proprietor transaction (amount, date, notes, payment_mode)
+router.put('/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { id } = req.params;
+    const { amount, transaction_date, notes, payment_mode, personal_account_id, party_id, party_name } = req.body;
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            `SELECT * FROM proprietor_transactions WHERE id = $1 AND company_id = $2`,
+            [id, companyId]
+        );
+        if (existing.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Transaction not found' });
+        }
+
+        const tx = existing.rows[0];
+        const newAmt = amount ? parseFloat(amount) : parseFloat(tx.amount);
+        const newDate = transaction_date || tx.transaction_date;
+        const newNotes = notes !== undefined ? notes : tx.notes;
+        const newMode = payment_mode || tx.payment_mode;
+        const newPAId = personal_account_id ? parseInt(personal_account_id) : tx.personal_account_id;
+        const customerId = party_id ? parseInt(party_id) : tx.reference_id;
+        const newPartyName = party_name !== undefined ? party_name : tx.party_name;
+
+        await client.query(
+            `UPDATE proprietor_transactions
+             SET amount = $1, transaction_date = $2, notes = $3, payment_mode = $4,
+                 personal_account_id = $5, party_name = $6, reference_id = $7, updated_at = NOW()
+             WHERE id = $8 AND company_id = $9`,
+            [newAmt, newDate, newNotes, newMode, newPAId, newPartyName, customerId, id, companyId]
+        );
+
+        // If it's a PERSONAL_RECEIPT, update the transactions entry too
+        if (tx.transaction_type === 'PERSONAL_RECEIPT' && customerId) {
+            await client.query(
+                `UPDATE transactions
+                 SET amount = $1, transaction_date = $2, date = $2, description = $3
+                 WHERE company_id = $4 AND reference_id = $5
+                   AND type = 'CUSTOMER_PAYMENT' AND reference_type = 'PERSONAL_RECEIPT'`,
+                [newAmt, newDate,
+                 `Payment received via proprietor personal account${newNotes ? ' - ' + newNotes : ''}`,
+                 companyId, customerId]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Proprietor update error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// DELETE /:id — Delete a proprietor transaction
+router.delete('/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { id } = req.params;
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const existing = await client.query(
+            `SELECT * FROM proprietor_transactions WHERE id = $1 AND company_id = $2`,
+            [id, companyId]
+        );
+        if (existing.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Transaction not found' });
+        }
+
+        const tx = existing.rows[0];
+
+        // If PERSONAL_RECEIPT, remove the linked customer ledger entry too
+        if (tx.transaction_type === 'PERSONAL_RECEIPT' && tx.reference_id) {
+            await client.query(
+                `DELETE FROM transactions
+                 WHERE company_id = $1 AND reference_id = $2
+                   AND type = 'CUSTOMER_PAYMENT' AND reference_type = 'PERSONAL_RECEIPT'
+                   AND amount = $3`,
+                [companyId, tx.reference_id, tx.amount]
+            );
+        }
+
+        await client.query(
+            `DELETE FROM proprietor_transactions WHERE id = $1 AND company_id = $2`,
+            [id, companyId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Proprietor delete error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // Backward-compat POST / (maps WITHDRAWAL→drawings, INVESTMENT→capital)
 router.post('/', authMiddleware, async (req, res) => {
     const { transaction_type } = req.body;
