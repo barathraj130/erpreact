@@ -294,9 +294,14 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
                COALESCE(u.nickname, u.username) as customer_name,
                CASE
                  WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
-                 THEN COALESCE(i.sub_total, i.total_amount)
+                    OR i.invoice_number LIKE 'INV/%'
+                 THEN COALESCE(
+                   (SELECT SUM(li2.taxable_value) FROM invoice_line_items li2 WHERE li2.invoice_id = i.id AND COALESCE(li2.is_return, false) = false),
+                   i.sub_total,
+                   i.total_amount
+                 )
                  ELSE COALESCE(
-                   (SELECT SUM(li2.line_total) FROM invoice_line_items li2 WHERE li2.invoice_id = i.id),
+                   (SELECT SUM(li2.line_total) FROM invoice_line_items li2 WHERE li2.invoice_id = i.id AND COALESCE(li2.is_return, false) = false),
                    i.total_amount
                  )
                END AS total_amount,
@@ -1297,23 +1302,27 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 customer_id        = $2,
                 notes              = $3,
                 total_amount       = $4,
-                paid_amount        = $5,
-                status             = $6,
-                invoice_date       = COALESCE($7::date, invoice_date),
-                vehicle_number     = COALESCE($8, vehicle_number),
-                transportation_mode = COALESCE($9, transportation_mode),
-                date_of_supply     = COALESCE($10::date, date_of_supply),
-                reverse_charge     = COALESCE($11, reverse_charge),
-                bundles_count      = COALESCE($12, bundles_count),
+                sub_total          = $5,
+                paid_amount        = $6,
+                status             = $7,
+                invoice_type       = COALESCE($8, invoice_type),
+                invoice_date       = COALESCE($9::date, invoice_date),
+                vehicle_number     = COALESCE($10, vehicle_number),
+                transportation_mode = COALESCE($11, transportation_mode),
+                date_of_supply     = COALESCE($12::date, date_of_supply),
+                reverse_charge     = COALESCE($13, reverse_charge),
+                bundles_count      = COALESCE($14, bundles_count),
                 updated_at         = NOW()
-             WHERE id = $13 AND company_id = $14`,
+             WHERE id = $15 AND company_id = $16`,
             [
                 finalInvoiceNumber,
                 effectiveCustomerId,
                 notes || null,
                 totalAmount,
+                totalTaxable,          // sub_total = taxable amount (no GST), always correct
                 amount_paid || 0,
                 payment_status || 'PENDING',
+                editInvoiceType || null,  // save the bill type if provided
                 newInvoiceDate || null,
                 transport_details?.vehicle || null,
                 transport_details?.mode   || null,

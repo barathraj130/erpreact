@@ -163,9 +163,14 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN' THEN 'CREDIT_NOTE' ELSE 'SALES' END AS category,
          CASE
            WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
-           THEN COALESCE(i.sub_total, i.total_amount)
+              OR i.invoice_number LIKE 'INV/%'
+           THEN COALESCE(
+             (SELECT SUM(li.taxable_value) FROM invoice_line_items li WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false),
+             i.sub_total,
+             i.total_amount
+           )
            ELSE COALESCE(
-             (SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id),
+             (SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false),
              i.total_amount
            )
          END AS amount,
@@ -244,8 +249,15 @@ async function getCustomerTotals(companyId, customerId) {
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
          THEN CASE
            WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
-           THEN COALESCE(i.sub_total, i.total_amount)
-           ELSE COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
+              OR i.invoice_number LIKE 'INV/%'
+           THEN COALESCE(
+             (SELECT SUM(li.taxable_value) FROM invoice_line_items li WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false),
+             i.sub_total, i.total_amount
+           )
+           ELSE COALESCE(
+             (SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false),
+             i.total_amount
+           )
          END ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN'
          THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
@@ -296,8 +308,15 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
          THEN CASE
            WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
-           THEN COALESCE(i.sub_total, i.total_amount)
-           ELSE COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
+              OR i.invoice_number LIKE 'INV/%'
+           THEN COALESCE(
+             (SELECT SUM(li.taxable_value) FROM invoice_line_items li WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false),
+             i.sub_total, i.total_amount
+           )
+           ELSE COALESCE(
+             (SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false),
+             i.total_amount
+           )
          END ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN'
          THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
