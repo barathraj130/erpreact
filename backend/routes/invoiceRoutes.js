@@ -292,10 +292,14 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
                i.reverse_charge, i.bundles_count, i.bill_purpose, i.series_prefix,
                i.created_at, i.updated_at,
                COALESCE(u.nickname, u.username) as customer_name,
-               COALESCE(
-                 (SELECT SUM(li2.line_total) FROM invoice_line_items li2 WHERE li2.invoice_id = i.id),
-                 i.total_amount
-               ) AS total_amount,
+               CASE
+                 WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
+                 THEN COALESCE(i.sub_total, i.total_amount)
+                 ELSE COALESCE(
+                   (SELECT SUM(li2.line_total) FROM invoice_line_items li2 WHERE li2.invoice_id = i.id),
+                   i.total_amount
+                 )
+               END AS total_amount,
                COALESCE(json_agg(li.*) FILTER (WHERE li.id IS NOT NULL), '[]') AS line_items
         FROM invoices i
         LEFT JOIN invoice_line_items li ON li.invoice_id = i.id

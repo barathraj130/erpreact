@@ -160,6 +160,7 @@ const EditInvoice: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [company, setCompany] = useState<any>({});
   const [invoiceNo, setInvoiceNo] = useState("");
+  const [invoiceType, setInvoiceType] = useState<string>("TAX_INVOICE");
   const [items, setItems] = useState<InvoiceItem[]>([
     { name: "", hsn: "", uom: "Pcs", qty: 0, rate: 0 },
   ]);
@@ -249,6 +250,7 @@ const EditInvoice: React.FC = () => {
           const inv = await invoiceRes.json();
           if (inv && !inv.error) {
             setInvoiceNo(inv.invoice_number || "");
+            setInvoiceType(inv.invoice_type || "TAX_INVOICE");
             setNotes(inv.notes || "");
             setAmountPaidAlready(Number(inv.paid_amount) || 0);
 
@@ -444,6 +446,7 @@ const EditInvoice: React.FC = () => {
     const payload: any = {
       invoice_number: invoiceNo.trim(),
       invoice_date: meta.invoiceDate,
+      invoice_type: invoiceType,
       customer_id: customerId,
       items: formattedItems,
       notes: notes.trim(),

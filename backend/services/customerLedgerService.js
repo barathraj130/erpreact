@@ -161,10 +161,14 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          i.invoice_date AS date,
          CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN' THEN 'RETURN' ELSE 'INVOICE' END AS type,
          CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN' THEN 'CREDIT_NOTE' ELSE 'SALES' END AS category,
-         COALESCE(
-           (SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id),
-           i.total_amount
-         ) AS amount,
+         CASE
+           WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
+           THEN COALESCE(i.sub_total, i.total_amount)
+           ELSE COALESCE(
+             (SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id),
+             i.total_amount
+           )
+         END AS amount,
          CASE
            WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN' THEN 'Credit note #' || i.invoice_number
            ELSE 'Invoice #' || i.invoice_number
@@ -238,8 +242,11 @@ async function getCustomerTotals(companyId, customerId) {
   const invoiceTotals = await db.pgGet(
     `SELECT
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
-         THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
-         ELSE 0 END), 0) AS total_billed,
+         THEN CASE
+           WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
+           THEN COALESCE(i.sub_total, i.total_amount)
+           ELSE COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
+         END ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN'
          THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
          ELSE 0 END), 0) AS total_returns
@@ -287,8 +294,11 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
   const invoiceTotals = await client.query(
     `SELECT
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
-         THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
-         ELSE 0 END), 0) AS total_billed,
+         THEN CASE
+           WHEN UPPER(COALESCE(i.invoice_type,'')) IN ('NON_TAX_INVOICE','RETAIL_SALE','GIFTED_ITEM','NSB_INVOICE')
+           THEN COALESCE(i.sub_total, i.total_amount)
+           ELSE COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
+         END ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN'
          THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
          ELSE 0 END), 0) AS total_returns
