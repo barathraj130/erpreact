@@ -4,6 +4,32 @@ import * as db from '../database/pg.js';
 
 const router = express.Router();
 
+// ── Ensure sales_returns table exists in production ───────────────────────────
+const ensureTable = async () => {
+    await db.pgRun(`
+        CREATE TABLE IF NOT EXISTS sales_returns (
+            id                      SERIAL PRIMARY KEY,
+            company_id              INTEGER NOT NULL,
+            branch_id               INTEGER NOT NULL DEFAULT 1,
+            return_number           VARCHAR(50) NOT NULL,
+            original_invoice_id     INTEGER,
+            original_invoice_number VARCHAR(100),
+            customer_id             INTEGER,
+            customer_name           VARCHAR(255),
+            return_date             DATE NOT NULL,
+            items                   JSONB NOT NULL DEFAULT '[]',
+            total_amount            NUMERIC(12,2) NOT NULL DEFAULT 0,
+            notes                   TEXT,
+            refund_type             VARCHAR(30) NOT NULL DEFAULT 'CREDIT_NOTE',
+            created_by              INTEGER,
+            created_at              TIMESTAMP DEFAULT NOW(),
+            updated_at              TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+    // Add return_amount column to invoices if missing
+    await db.pgRun(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS return_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+};
+
 // ── helper: generate return number ────────────────────────────────────────────
 async function generateReturnNumber(companyId) {
     const now = new Date();
@@ -21,6 +47,7 @@ async function generateReturnNumber(companyId) {
 router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
+        await ensureTable();
         const rows = await db.pgAll(
             `SELECT sr.*,
                     c.username AS customer_display
@@ -102,6 +129,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     let client;
     try {
+        await ensureTable();
         client = await db.getClient();
         await client.query('BEGIN');
 
