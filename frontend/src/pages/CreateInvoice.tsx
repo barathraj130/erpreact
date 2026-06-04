@@ -238,6 +238,7 @@ const CreateInvoice: React.FC = () => {
   const [discount, setDiscount] = useState<number>(0);
   const [customerAdvance, setCustomerAdvance] = useState<number>(0);
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
+  const [pendingCredits, setPendingCredits] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [customerInfo, setCustomerInfo] = useState({
     name: "---",
@@ -371,8 +372,15 @@ const CreateInvoice: React.FC = () => {
       const rawBalance = Number(c.remaining_balance ?? 0);
       const advance = rawBalance < 0 ? Math.abs(rawBalance) : 0;
       setCustomerAdvance(advance);
+
+      // Fetch pending credit notes for this customer
+      apiFetch(`/sales-returns/pending-credits?customer_id=${id}`)
+        .then(r => r.json())
+        .then(data => setPendingCredits(Array.isArray(data) ? data : []))
+        .catch(() => setPendingCredits([]));
     } else {
       setCustomerAdvance(0);
+      setPendingCredits([]);
     }
   };
 
@@ -1170,6 +1178,48 @@ const CreateInvoice: React.FC = () => {
                 <FaPlus size={10} /> Add Return
               </button>
             </div>
+
+            {/* Pending Credit Notes for this customer */}
+            {pendingCredits.length > 0 && (
+              <div style={{ marginTop: '12px', padding: '10px 14px', background: '#fef9c3', borderRadius: '8px', border: '1px solid #fde047' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#854d0e', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>
+                  ⚠️ Pending Credit Notes for this Customer
+                </div>
+                {pendingCredits.map((cr: any) => (
+                  <div key={cr.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', padding: '8px 10px', background: 'white', borderRadius: '6px', border: '1px solid #fde047' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: '0.75rem', color: '#b45309' }}>{cr.return_number}</span>
+                      {cr.original_invoice_number && <span style={{ fontSize: '0.65rem', color: '#92400e', marginLeft: '6px' }}>vs {cr.original_invoice_number}</span>}
+                      <span style={{ fontSize: '0.65rem', color: '#78350f', marginLeft: '6px' }}>{new Date(cr.return_date).toLocaleDateString('en-IN')}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: 900, color: '#dc2626', fontSize: '0.85rem' }}>
+                        ₹{Number(cr.remaining_credit).toLocaleString('en-IN')}
+                      </span>
+                      <button
+                        type="button"
+                        style={{ padding: '4px 10px', fontSize: '0.65rem', fontWeight: 700, background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                        onClick={() => {
+                          // Apply this credit note's items as return items
+                          const items: any[] = Array.isArray(cr.items) ? cr.items : (typeof cr.items === 'string' ? JSON.parse(cr.items) : []);
+                          const mapped = items.map((it: any) => ({
+                            id: Date.now() + Math.random(),
+                            desc: it.description || '',
+                            hsn: '',
+                            uom: 'Pcs',
+                            qty: Number(it.qty) || 0,
+                            rate: Number(it.rate) || 0,
+                          }));
+                          setReturnItems([...returnItems, ...mapped]);
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             
             <AnimatePresence mode="popLayout">
               {returnItems.map((it, i) => (

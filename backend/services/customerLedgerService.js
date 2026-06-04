@@ -94,6 +94,35 @@ export async function ensureCustomerLedgerMetadata(client, customerId, companyId
   return { customer: { ...customer, meta: nextMeta }, ledgerId, openingBalance };
 }
 
+async function getSalesReturnRows(companyId, customerId) {
+  try {
+    return await db.pgAll(
+      `SELECT
+         3000000000 + sr.id AS id,
+         sr.return_date            AS date,
+         'RETURN'                  AS type,
+         'CREDIT_NOTE'             AS category,
+         sr.total_amount           AS amount,
+         'Sales Return ' || sr.return_number ||
+           CASE WHEN sr.original_invoice_number IS NOT NULL
+                THEN ' (against ' || sr.original_invoice_number || ')'
+                ELSE '' END       AS description,
+         sr.original_invoice_id   AS related_invoice_id,
+         sr.original_invoice_number AS invoice_number,
+         NULL::TEXT               AS payment_method,
+         NULL::TEXT               AS bank_name,
+         NULL::TEXT               AS bank_transaction_id,
+         NULL::TIMESTAMP          AS bank_timestamp,
+         sr.created_at            AS sort_created_at
+       FROM sales_returns sr
+       WHERE sr.company_id = $1 AND sr.customer_id = $2`,
+      [companyId, customerId],
+    );
+  } catch (e) {
+    return []; // table may not exist yet
+  }
+}
+
 async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   const params = [companyId, customerId];
   const invoiceConditions = ["i.company_id = $1", "i.customer_id = $2", "COALESCE(i.is_deleted, false) = false"];
@@ -189,6 +218,17 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
   );
+
+  // Also fetch from sales_returns table (may not exist on older DBs)
+  const srRows = await getSalesReturnRows(companyId, customerId);
+
+  // Merge and sort by date
+  const all = [...rows, ...srRows].sort((a, b) => {
+    const da = new Date(a.date), db2 = new Date(b.date);
+    if (da - db2 !== 0) return da - db2;
+    return (new Date(a.sort_created_at) - new Date(b.sort_created_at));
+  });
+  return all;
 }
 
 async function getCustomerTotals(companyId, customerId) {
@@ -216,9 +256,19 @@ async function getCustomerTotals(companyId, customerId) {
     [companyId, customerId],
   );
 
+  // Also sum from sales_returns table
+  let srReturnsTotal = 0;
+  try {
+    const srTotals = await db.pgGet(
+      `SELECT COALESCE(SUM(total_amount), 0) AS sr_total FROM sales_returns WHERE company_id = $1 AND customer_id = $2`,
+      [companyId, customerId],
+    );
+    srReturnsTotal = toNumber(srTotals?.sr_total);
+  } catch (e) { /* table may not exist yet */ }
+
   return {
     total_billed: toNumber(invoiceTotals?.total_billed),
-    total_returns: toNumber(invoiceTotals?.total_returns),
+    total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
     total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct),
   };
 }
@@ -245,8 +295,18 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
   );
 
   const billed = toNumber(invoiceTotals.rows[0]?.total_billed);
-  const returned = toNumber(invoiceTotals.rows[0]?.total_returns);
+  let returned = toNumber(invoiceTotals.rows[0]?.total_returns);
   const paid = toNumber(paymentTotals.rows[0]?.total_paid);
+
+  // Add sales_returns table totals
+  try {
+    const srTotals = await client.query(
+      `SELECT COALESCE(SUM(total_amount), 0) AS sr_total FROM sales_returns WHERE company_id = $1 AND customer_id = $2`,
+      [companyId, customerId],
+    );
+    returned += toNumber(srTotals.rows[0]?.sr_total);
+  } catch (e) { /* table may not exist yet */ }
+
   const outstanding = openingBalance + billed - paid - returned;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);

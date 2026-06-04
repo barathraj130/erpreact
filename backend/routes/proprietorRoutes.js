@@ -176,18 +176,20 @@ router.post('/personal-receipt', authMiddleware, async (req, res) => {
         );
         const record = row.rows[0];
 
-        // ── Update customer ledger: CREDIT (payment received reduces outstanding) ──
+        // ── Update customer ledger via transactions table (what the ledger UI reads) ──
         if (customerId) {
             try {
                 await client.query(
-                    `INSERT INTO customer_ledger (customer_id, company_id, branch_id, date, type, description, credit)
-                     VALUES ($1,$2,$3,$4,'PERSONAL_RECEIPT',$5,$6)`,
-                    [customerId, companyId, branchId, tDate,
+                    `INSERT INTO transactions
+                       (company_id, branch_id, transaction_date, reference_type, reference_id,
+                        description, created_by, user_id, amount, type, category, date, bill_purpose)
+                     VALUES ($1,$2,$3,'PERSONAL_RECEIPT',$4,$5,$6,$4,$7,'CUSTOMER_PAYMENT','PAYMENT',$8,'real')`,
+                    [companyId, branchId, tDate, customerId,
                      `Payment received via proprietor personal account${notes ? ' - ' + notes : ''}`,
-                     amt]
+                     req.user.id, amt, tDate]
                 );
             } catch (ledgerErr) {
-                console.warn('customer_ledger personal-receipt insert skipped:', ledgerErr.message);
+                console.warn('transactions personal-receipt insert skipped:', ledgerErr.message);
             }
         }
 
@@ -292,13 +294,14 @@ router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
 
             if (!customerId) continue; // Can't resolve customer — skip
 
-            // Check if a customer_ledger entry already exists for this transaction
+            // Check if a transactions entry already exists for this proprietor receipt
             const exists = await client.query(`
-                SELECT 1 FROM customer_ledger
+                SELECT 1 FROM transactions
                 WHERE company_id = $1
-                  AND customer_id = $2
-                  AND type = 'PERSONAL_RECEIPT'
-                  AND credit = $3
+                  AND reference_id = $2
+                  AND type = 'CUSTOMER_PAYMENT'
+                  AND reference_type = 'PERSONAL_RECEIPT'
+                  AND amount = $3
                   AND date = $4
                 LIMIT 1
             `, [companyId, customerId, row.amount, row.transaction_date]);
@@ -306,11 +309,13 @@ router.post('/sync-customer-ledger', authMiddleware, async (req, res) => {
             if (exists.rows.length > 0) continue; // Already present — skip
 
             await client.query(
-                `INSERT INTO customer_ledger (customer_id, company_id, branch_id, date, type, description, credit)
-                 VALUES ($1,$2,$3,$4,'PERSONAL_RECEIPT',$5,$6)`,
-                [customerId, companyId, branchId, row.transaction_date,
+                `INSERT INTO transactions
+                   (company_id, branch_id, transaction_date, reference_type, reference_id,
+                    description, user_id, amount, type, category, date, bill_purpose)
+                 VALUES ($1,$2,$3,'PERSONAL_RECEIPT',$4,$5,$4,$6,'CUSTOMER_PAYMENT','PAYMENT',$7,'real')`,
+                [companyId, branchId, row.transaction_date, customerId,
                  `Payment received via proprietor personal account${row.notes ? ' - ' + row.notes : ''}`,
-                 row.amount]
+                 row.amount, row.transaction_date]
             );
             inserted.push({ id: row.id, party_name: row.party_name, amount: row.amount, date: row.transaction_date });
         }

@@ -28,6 +28,8 @@ const ensureTable = async () => {
     `).catch(() => {});
     // Add return_amount column to invoices if missing
     await db.pgRun(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS return_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    // Track how much of a credit note has been applied to new invoices
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS applied_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
 };
 
 // ── helper: generate return number ────────────────────────────────────────────
@@ -224,6 +226,33 @@ router.post('/', authMiddleware, async (req, res) => {
         res.status(500).json({ error: err.message });
     } finally {
         if (client) client.release();
+    }
+});
+
+// ── GET /pending-credits  – unapplied credit notes for a customer ─────────────
+router.get('/pending-credits', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { customer_id } = req.query;
+    if (!customer_id) return res.json([]);
+    try {
+        await ensureTable();
+        // Returns that have NOT been applied to another invoice (applied_to_invoice_id IS NULL)
+        const rows = await db.pgAll(`
+            SELECT sr.id, sr.return_number, sr.return_date, sr.total_amount,
+                   sr.original_invoice_number, sr.items, sr.refund_type,
+                   COALESCE(sr.applied_amount, 0) AS applied_amount,
+                   sr.total_amount - COALESCE(sr.applied_amount, 0) AS remaining_credit
+            FROM sales_returns sr
+            WHERE sr.company_id = $1
+              AND sr.customer_id = $2
+              AND sr.refund_type = 'CREDIT_NOTE'
+              AND (sr.applied_amount IS NULL OR sr.applied_amount < sr.total_amount)
+            ORDER BY sr.return_date DESC
+        `, [companyId, customer_id]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Pending credits fetch error:', err);
+        res.json([]); // return empty on error (table may not exist)
     }
 });
 
