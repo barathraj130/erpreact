@@ -431,9 +431,11 @@ export const createChitGroup = async (user, chitData) => {
     const branchId = user.branch_id || 1;
 
     try {
+        await client.query('BEGIN');
+
         const sql = `
             INSERT INTO chit_groups (
-                company_id, branch_id, group_name, total_value, 
+                company_id, branch_id, group_name, total_value,
                 monthly_installment, duration_months, start_date
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
@@ -442,8 +444,52 @@ export const createChitGroup = async (user, chitData) => {
             companyId, branchId, chitData.group_name, chitData.total_value,
             chitData.monthly_installment, chitData.duration_months, chitData.start_date
         ]);
-        return res.rows[0];
+        const group = res.rows[0];
+
+        // ── Existing chit: auto-generate historical installment records ──
+        const isExisting  = chitData.is_existing_chit === true || chitData.is_existing_chit === 'true';
+        const currentMonth = parseInt(chitData.current_month || 0);
+        const unpaidMonths = Array.isArray(chitData.unpaid_months)
+            ? chitData.unpaid_months.map(Number)
+            : (chitData.unpaid_months ? String(chitData.unpaid_months).split(',').map(Number) : []);
+        const auctionWon       = chitData.auction_won === true || chitData.auction_won === 'true';
+        const auctionWonMonth  = parseInt(chitData.auction_won_month || 0);
+        const auctionAmount    = parseFloat(chitData.auction_amount || 0);
+        const monthly          = parseFloat(chitData.monthly_installment || 0);
+        const startDate        = new Date(chitData.start_date);
+
+        if (isExisting && currentMonth > 0) {
+            for (let m = 1; m <= currentMonth; m++) {
+                const isPaid   = !unpaidMonths.includes(m);
+                const isAuction = auctionWon && auctionWonMonth === m;
+                if (!isPaid) continue; // skip — will show as OVERDUE in schedule
+
+                // Calculate payment_date = start_date + (m-1) months
+                const payDate = new Date(startDate);
+                payDate.setMonth(payDate.getMonth() + m - 1);
+                const payDateStr = payDate.toISOString().split('T')[0];
+
+                await client.query(`
+                    INSERT INTO chit_installments
+                        (company_id, chit_group_id, payment_date, amount,
+                         is_auction_won, auction_amount_received, notes)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `, [
+                    companyId,
+                    group.id,
+                    payDateStr,
+                    monthly,
+                    isAuction,
+                    isAuction ? auctionAmount : 0,
+                    `Existing chit — Month ${m} (historical)`,
+                ]);
+            }
+        }
+
+        await client.query('COMMIT');
+        return group;
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Create Chit Group Error:', err);
         throw err;
     } finally {
