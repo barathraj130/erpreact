@@ -104,10 +104,31 @@ export const processTransaction = async (txData, user) => {
                 break;
 
             case 'EXPENSE_PAYMENT':
-                await client.query(`
-                    INSERT INTO expenses (transaction_id, company_id, branch_id, category, description, amount, expense_date)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                `, [transactionId, companyId, branchId, txData.expense_category || 'General', txData.description, txData.amount, txData.date]);
+                await client.query(`SAVEPOINT sp_expenses`);
+                try {
+                    await client.query(`
+                        CREATE TABLE IF NOT EXISTS expenses (
+                            id              SERIAL PRIMARY KEY,
+                            transaction_id  INTEGER,
+                            company_id      INTEGER NOT NULL,
+                            branch_id       INTEGER,
+                            category        TEXT DEFAULT 'General',
+                            description     TEXT,
+                            amount          NUMERIC(15,2) NOT NULL,
+                            expense_date    DATE,
+                            created_at      TIMESTAMPTZ DEFAULT NOW()
+                        )
+                    `);
+                    await client.query(`
+                        INSERT INTO expenses (transaction_id, company_id, branch_id, category, description, amount, expense_date)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    `, [transactionId, companyId, branchId, txData.expense_category || 'General', txData.description, txData.amount, txData.date]);
+                    await client.query(`RELEASE SAVEPOINT sp_expenses`);
+                } catch (expErr) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_expenses`);
+                    await client.query(`RELEASE SAVEPOINT sp_expenses`);
+                    console.warn('expenses insert skipped (table may not exist):', expErr.message);
+                }
                 break;
 
             case 'SALARY_PAYMENT':
