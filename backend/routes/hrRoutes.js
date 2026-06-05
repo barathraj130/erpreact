@@ -212,6 +212,59 @@ router.get("/ledger/:employeeId", authMiddleware, async (req, res) => {
     }
 });
 
+// PUT /hr/advance/:id — Edit opening advance amount
+router.put("/advance/:id", authMiddleware, async (req, res) => {
+    const advanceId  = parseInt(req.params.id);
+    const companyId  = req.user.active_company_id;
+    const { amount, reason } = req.body;
+    const newAmount  = parseFloat(amount);
+
+    if (isNaN(newAmount) || newAmount < 0) {
+        return res.status(400).json({ error: 'Valid amount required' });
+    }
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        // Fetch existing record
+        const existing = await client.query(
+            `SELECT * FROM salary_advances WHERE id = $1 AND company_id = $2`,
+            [advanceId, companyId]
+        );
+        if (!existing.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Advance not found' });
+        }
+        const row = existing.rows[0];
+
+        // Calculate how much has already been repaid
+        const repaidRes = await client.query(
+            `SELECT COALESCE(SUM(amount_deducted), 0) AS repaid FROM advance_repayments WHERE advance_id = $1`,
+            [advanceId]
+        );
+        const repaid = parseFloat(repaidRes.rows[0].repaid || 0);
+        const newBalance = Math.max(0, newAmount - repaid);
+
+        await client.query(
+            `UPDATE salary_advances
+             SET amount = $1, current_balance = $2, reason = COALESCE($3, reason)
+             WHERE id = $4 AND company_id = $5`,
+            [newAmount, newBalance, reason || null, advanceId, companyId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ success: true, amount: newAmount, current_balance: newBalance });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        console.error('[advance PUT]', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // ==========================================
 // 2. ATTENDANCE (QR SYSTEM - ADMIN KIOSK)
 // ==========================================

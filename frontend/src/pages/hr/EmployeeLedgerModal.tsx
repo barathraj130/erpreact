@@ -5,6 +5,8 @@ import {
   FaBook,
   FaHistory,
   FaTimes,
+  FaEdit,
+  FaCheck,
 } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
 
@@ -17,24 +19,53 @@ const EmployeeLedgerModal: React.FC<Props> = ({ employee, onClose }) => {
   const [ledger, setLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editAmount, setEditAmount] = useState<string>("");
+  const [editReason, setEditReason] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  const loadLedger = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/hr/ledger/${employee.id}`);
+      const data = await res.json();
+      setLedger(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener("resize", handleResize);
-    const loadLedger = async () => {
-      try {
-        const res = await apiFetch(`/hr/ledger/${employee.id}`);
-        const data = await res.json();
-        setLedger(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadLedger();
     return () => window.removeEventListener("resize", handleResize);
   }, [employee.id]);
+
+  const handleSaveEdit = async (advanceId: number) => {
+    const amt = parseFloat(editAmount);
+    if (isNaN(amt) || amt < 0) { alert("Enter a valid amount"); return; }
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/hr/advance/${advanceId}`, {
+        method: "PUT",
+        body: JSON.stringify({ amount: amt, reason: editReason }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Failed to update: " + (err.error || res.statusText));
+        return;
+      }
+      setEditingId(null);
+      loadLedger();
+    } catch (e) {
+      alert("Failed to update advance");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const fmt = (n: number) =>
     Number(n).toLocaleString("en-IN", {
@@ -336,6 +367,8 @@ const EmployeeLedgerModal: React.FC<Props> = ({ employee, onClose }) => {
               ) : (
                 ledger.map((row, i) => {
                   const isAdvance = row.type === "ADVANCE";
+                  const isOpening = row.payment_method === "OPENING";
+                  const isEditing = editingId === row.id;
                   return (
                     <tr
                       key={i}
@@ -343,6 +376,7 @@ const EmployeeLedgerModal: React.FC<Props> = ({ employee, onClose }) => {
                       style={{
                         borderBottom: "1px solid var(--bg-body)",
                         transition: "background-color 0.2s",
+                        background: isEditing ? "#fffbeb" : undefined,
                       }}
                     >
                       <td style={{ padding: "16px 20px" }}>
@@ -425,17 +459,65 @@ const EmployeeLedgerModal: React.FC<Props> = ({ employee, onClose }) => {
                               fontSize: "0.72rem",
                               fontWeight: 700,
                               background:
+                                isOpening              ? "#fef3c7" :
                                 row.payment_method === "CASH" ? "#dcfce7" :
                                 row.payment_method === "UPI"  ? "#ede9fe" : "#dbeafe",
                               color:
+                                isOpening              ? "#92400e" :
                                 row.payment_method === "CASH" ? "#15803d" :
                                 row.payment_method === "UPI"  ? "#6d28d9" : "#1d4ed8",
                             }}>
-                              {row.payment_method === "CASH" ? "💵" : row.payment_method === "UPI" ? "📲" : "🏦"}{" "}
-                              {row.payment_method}
-                              {row.bank_name ? ` — ${row.bank_name}` : ""}
+                              {isOpening ? "🏢 OPENING" : row.payment_method === "CASH" ? "💵" : row.payment_method === "UPI" ? "📲" : "🏦"}{" "}
+                              {!isOpening && row.payment_method}
+                              {!isOpening && row.bank_name ? ` — ${row.bank_name}` : ""}
                             </span>
                           </div>
+                        )}
+
+                        {/* Inline edit form for OPENING rows */}
+                        {isOpening && isEditing && (
+                          <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: 600 }}>₹</span>
+                              <input
+                                type="number" min={0} value={editAmount}
+                                autoFocus
+                                onChange={e => setEditAmount(e.target.value)}
+                                style={{ width: "110px", padding: "5px 8px", borderRadius: "6px", border: "1.5px solid #f59e0b", fontSize: "14px", fontWeight: 700 }}
+                              />
+                            </div>
+                            <input
+                              type="text" placeholder="Reason (optional)" value={editReason}
+                              onChange={e => setEditReason(e.target.value)}
+                              style={{ width: "180px", padding: "5px 8px", borderRadius: "6px", border: "1.5px solid #e5e7eb", fontSize: "12px" }}
+                            />
+                            <div style={{ display: "flex", gap: "6px" }}>
+                              <button
+                                onClick={() => handleSaveEdit(row.id)}
+                                disabled={saving}
+                                style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#16a34a", color: "#fff", fontWeight: 700, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                              >
+                                <FaCheck size={10} /> {saving ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                style={{ padding: "4px 12px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "#fff", fontWeight: 600, fontSize: "12px", cursor: "pointer" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Edit pencil for OPENING rows */}
+                        {isOpening && !isEditing && (
+                          <button
+                            onClick={() => { setEditingId(row.id); setEditAmount(String(row.amount)); setEditReason(row.description || ""); }}
+                            title="Edit opening advance"
+                            style={{ marginTop: "6px", display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 10px", borderRadius: "6px", border: "1.5px solid #fcd34d", background: "#fffbeb", color: "#92400e", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            <FaEdit size={10} /> Edit Amount
+                          </button>
                         )}
                         {isMobile && (
                           <div
