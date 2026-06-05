@@ -92,8 +92,8 @@ const categories = [
         icon: <FaUserFriends />,
         color: "#ef4444",
         reports: [
-            { id: "attendance", name: "Attendance Report" },
-            { id: "salary", name: "Salary Report" },
+            { id: "attendance-report", name: "Attendance Report" },
+            { id: "salary-report", name: "Salary Report" },
             { id: "employee-ledger", name: "Employee Ledger Report" }
         ]
     },

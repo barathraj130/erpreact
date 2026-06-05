@@ -245,8 +245,23 @@ router.get('/finance/trial-balance', authMiddleware, async (req, res) => {
         const report = await getTrialBalance(companyId, filterType);
         res.json(report);
     } catch (err) {
-        console.error("Trial balance error:", err);
-        res.json({ accounts: [], totals: { debit: 0, credit: 0 } });
+        console.error("Trial balance error:", err.message);
+        // Fallback: simple ledger_entries aggregation
+        try {
+            const rows = await db.pgAll(`
+                SELECT ca.name AS ledger_name,
+                       0 AS opening,
+                       COALESCE(SUM(le.debit),0)  AS debit,
+                       COALESCE(SUM(le.credit),0) AS credit,
+                       COALESCE(SUM(le.debit),0) - COALESCE(SUM(le.credit),0) AS closing
+                FROM ledger_entries le
+                JOIN chart_of_accounts ca ON le.account_id = ca.id
+                WHERE le.company_id = $1
+                GROUP BY ca.name
+                ORDER BY ca.name
+            `, [companyId]);
+            res.json(rows || []);
+        } catch (_) { res.json([]); }
     }
 });
 
@@ -261,8 +276,15 @@ router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
         const report = await getProfitAndLoss(companyId, null, startDate || '2000-01-01', endDate || '2099-12-31', filterType);
         res.json(report);
     } catch (err) {
-        console.error("P&L error:", err);
-        res.json({ income: [], expenses: [], net_profit: 0 });
+        console.error("P&L error:", err.message);
+        try {
+            const [sales, purchases, expenses] = await Promise.all([
+                db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]),
+                db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
+                db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
+            ]);
+            res.json({ income: [{ name:'Sales', amount: parseFloat(sales?.total||0) }], expenses: [{ name:'Purchases', amount: parseFloat(purchases?.total||0) }, { name:'Expenses', amount: parseFloat(expenses?.total||0) }], net_profit: parseFloat(sales?.total||0) - parseFloat(purchases?.total||0) - parseFloat(expenses?.total||0) });
+        } catch(_) { res.json({ income:[], expenses:[], net_profit:0 }); }
     }
 });
 
@@ -277,8 +299,20 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
         const report = await getBalanceSheet(companyId, filterType);
         res.json(report);
     } catch (err) {
-        console.error("Balance sheet error:", err);
-        res.json({ assets: [], liabilities: [], equity: [] });
+        console.error("Balance sheet error:", err.message);
+        try {
+            const rows = await db.pgAll(`
+                SELECT ca.name AS particulars, ca.account_type,
+                       COALESCE(SUM(le.debit),0) - COALESCE(SUM(le.credit),0) AS amount
+                FROM chart_of_accounts ca
+                LEFT JOIN ledger_entries le ON le.account_id = ca.id AND le.company_id = $1
+                WHERE ca.company_id = $1 OR ca.company_id IS NULL
+                GROUP BY ca.id, ca.name, ca.account_type
+                HAVING ABS(COALESCE(SUM(le.debit),0) - COALESCE(SUM(le.credit),0)) > 0
+                ORDER BY ca.account_type, ca.name
+            `, [companyId]);
+            res.json(rows || []);
+        } catch(_) { res.json([]); }
     }
 });
 
