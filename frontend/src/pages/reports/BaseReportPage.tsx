@@ -83,25 +83,76 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
     };
 
     const getChartData = () => {
+        if (!data.length) return { trend: [], pie: [] };
+
+        // ── Hardcoded specifics for known reports ──
         if (reportId === 'sales-register') {
-            // Group by date
             const grouped = data.reduce((acc: any, item) => {
-                const d = new Date(item.invoice_date).toLocaleDateString();
-                acc[d] = (acc[d] || 0) + parseFloat(item.total_amount);
+                const d = item.invoice_date ? new Date(item.invoice_date).toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) : 'N/A';
+                acc[d] = (acc[d] || 0) + parseFloat(item.total_amount || 0);
                 return acc;
             }, {});
-            return Object.entries(grouped).map(([name, value]) => ({ name, value })).slice(-10);
+            const trend = Object.entries(grouped).map(([name, value]) => ({ name, value })).slice(-12);
+            const pie = data.slice(0, 6).map(item => ({ name: String(item.customer_name || item.invoice_number || '').slice(0, 14), value: parseFloat(item.total_amount || 0) }));
+            return { trend, pie };
         }
-        if (reportId === 'customer-sales') {
-            return data.slice(0, 10).map(item => ({ name: item.customer_name, value: parseFloat(item.total_sales) }));
+
+        // ── Generic auto-detection ──
+        // 1. Find a date column for trend grouping
+        const dateCol = columns.find(c => c.type === 'date' || c.key.includes('date') || c.key.includes('Date'));
+        // 2. Find the primary amount/value column
+        const amountCol = columns.find(c => c.type === 'amount');
+        // 3. Find the best label column (first non-amount, non-date text column)
+        const labelCol = columns.find(c => c !== dateCol && c !== amountCol && c.type !== 'amount' && c.type !== 'date');
+
+        const amountKey = amountCol?.key;
+        const labelKey  = labelCol?.key  || columns[0]?.key;
+        const dateKey   = dateCol?.key;
+
+        if (!amountKey) {
+            // No amount column — just count records per label
+            const grouped = data.slice(0, 10).reduce((acc: any, item) => {
+                const k = String(item[labelKey] || 'Other').slice(0, 16);
+                acc[k] = (acc[k] || 0) + 1;
+                return acc;
+            }, {});
+            const pie = Object.entries(grouped).map(([name, value]) => ({ name, value }));
+            return { trend: pie, pie };
         }
-        if (reportId === 'product-sales') {
-            return data.slice(0, 10).map(item => ({ name: item.product_name, value: parseFloat(item.revenue) }));
+
+        // Trend: group by date if date col exists, otherwise top items
+        let trend: any[] = [];
+        if (dateKey) {
+            const grouped = data.reduce((acc: any, item) => {
+                const raw = item[dateKey];
+                const d = raw ? new Date(raw).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'N/A';
+                acc[d] = (acc[d] || 0) + parseFloat(item[amountKey] || 0);
+                return acc;
+            }, {});
+            trend = Object.entries(grouped)
+                .map(([name, value]) => ({ name, value }))
+                .slice(-12);
+        } else {
+            trend = data.slice(0, 12).map(item => ({
+                name: String(item[labelKey] || '').slice(0, 14),
+                value: parseFloat(item[amountKey] || 0),
+            }));
         }
-        return [];
+
+        // Pie: top 6 by amount
+        const pie = [...data]
+            .sort((a, b) => parseFloat(b[amountKey] || 0) - parseFloat(a[amountKey] || 0))
+            .slice(0, 6)
+            .map(item => ({
+                name: String(item[labelKey] || item[dateKey] || '').slice(0, 16),
+                value: parseFloat(item[amountKey] || 0),
+            }))
+            .filter(d => d.value > 0);
+
+        return { trend, pie };
     };
 
-    const chartData = getChartData();
+    const { trend: trendData, pie: pieData } = getChartData();
 
     return (
         <div className="db-page">
@@ -129,7 +180,11 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
                     <div className="report-hero-stats">
                         <div className="hero-stat-item">
                             <span className="hero-stat-label">Total Volume</span>
-                            <span className="hero-stat-value">₹{(calculateTotal('total_amount') || calculateTotal('total_sales') || calculateTotal('revenue')).toLocaleString('en-IN')}</span>
+                            <span className="hero-stat-value">₹{(() => {
+                                const amountKey = columns.find(c => c.type === 'amount')?.key;
+                                return amountKey ? calculateTotal(amountKey).toLocaleString('en-IN') :
+                                    (calculateTotal('total_amount') || calculateTotal('total_sales') || calculateTotal('revenue') || calculateTotal('amount') || calculateTotal('value')).toLocaleString('en-IN');
+                            })()}</span>
                         </div>
                         <div className="hero-stat-item">
                             <span className="hero-stat-label">Record Count</span>
@@ -146,9 +201,9 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
                             <FaChartLine color="#4F46E5" />
                         </div>
                         <div className="db-card-body" style={{ height: '240px' }}>
-                            {chartData.length > 0 ? (
+                            {trendData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={chartData}>
+                                    <AreaChart data={trendData}>
                                         <defs>
                                             <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
                                                 <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3}/>
@@ -157,8 +212,8 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
                                         </defs>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} tickFormatter={(v) => v >= 100000 ? `${(v/100000).toFixed(1)}L` : v} />
-                                        <Tooltip />
+                                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} tickFormatter={(v: number) => v >= 100000 ? `${(v/100000).toFixed(1)}L` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
+                                        <Tooltip formatter={(v: any) => [`₹${Number(v).toLocaleString('en-IN')}`, '']} />
                                         <Area type="monotone" dataKey="value" stroke="#4F46E5" fillOpacity={1} fill="url(#colorVal)" />
                                     </AreaChart>
                                 </ResponsiveContainer>
@@ -171,13 +226,13 @@ const BaseReportPage: React.FC<BaseReportProps> = ({
                             <FaChartPie color="#10B981" />
                         </div>
                         <div className="db-card-body" style={{ height: '240px' }}>
-                            {chartData.length > 0 ? (
+                            {pieData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
-                                        <Pie data={chartData.slice(0, 5)} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                                            {chartData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+                                        <Pie data={pieData} innerRadius={55} outerRadius={78} paddingAngle={4} dataKey="value">
+                                            {pieData.map((_: any, index: number) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
                                         </Pie>
-                                        <Tooltip />
+                                        <Tooltip formatter={(v: any) => [`₹${Number(v).toLocaleString('en-IN')}`, '']} />
                                         <Legend wrapperStyle={{ fontSize: '10px' }} />
                                     </PieChart>
                                 </ResponsiveContainer>
