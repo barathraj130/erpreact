@@ -436,4 +436,709 @@ router.get('/gst/gstr1-summary', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * 💳 PAYMENT COLLECTION REPORT
+ */
+router.get('/sales/payment-collection', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let where = 'WHERE ip.company_id = $1';
+        const params = [companyId];
+        if (startDate && endDate) {
+            where += ` AND ip.payment_date BETWEEN $2::date AND $3::date`;
+            params.push(startDate, endDate);
+        }
+        const sql = `
+            SELECT ip.payment_date as date,
+                   COALESCE(u.username, u.name, 'Unknown') as customer_name,
+                   ip.payment_method as method,
+                   ip.reference_number as reference,
+                   ip.amount
+            FROM invoice_payments ip
+            LEFT JOIN invoices i ON ip.invoice_id = i.id
+            LEFT JOIN users u ON i.customer_id = u.id
+            ${where}
+            ORDER BY ip.payment_date DESC, ip.id DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('payment-collection error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📊 GST SUMMARY (monthly)
+ */
+router.get('/gst/summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT TO_CHAR(invoice_date, 'Mon YYYY') AS month,
+                   DATE_TRUNC('month', invoice_date)  AS month_sort,
+                   COALESCE(SUM(cgst_total), 0)       AS output_cgst,
+                   COALESCE(SUM(sgst_total), 0)       AS output_sgst,
+                   0                                  AS input_cgst,
+                   0                                  AS input_sgst,
+                   COALESCE(SUM(COALESCE(cgst_total,0) + COALESCE(sgst_total,0) + COALESCE(igst_total,0)), 0) AS net_liability
+            FROM invoices
+            WHERE company_id = $1
+              AND COALESCE(invoice_type,'') = 'TAX_INVOICE'
+              AND COALESCE(is_deleted, false) = false
+            GROUP BY month, month_sort
+            ORDER BY month_sort DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('gst/summary error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🧾 GSTR-1 READY REPORT
+ */
+router.get('/gst/gstr-1', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let where = `WHERE i.company_id = $1 AND COALESCE(i.invoice_type,'') = 'TAX_INVOICE' AND COALESCE(i.is_deleted,false)=false AND COALESCE(i.bill_purpose,'')!='name_only'`;
+        const params = [companyId];
+        if (startDate && endDate) { where += ` AND i.invoice_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT i.invoice_number AS invoice_no, i.invoice_date AS date,
+                   COALESCE(u.username, u.name, i.customer_name) AS receiver_name,
+                   COALESCE(u.gstin, '') AS gstin,
+                   COALESCE(i.sub_total, 0) AS taxable_amount,
+                   COALESCE(i.tax_total, COALESCE(i.cgst_total,0)+COALESCE(i.sgst_total,0)+COALESCE(i.igst_total,0), 0) AS total_tax,
+                   COALESCE(i.total_amount, 0) AS total_amount
+            FROM invoices i
+            LEFT JOIN users u ON i.customer_id = u.id
+            ${where}
+            ORDER BY i.invoice_date DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('gstr-1 error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📋 GSTR-3B READY REPORT
+ */
+router.get('/gst/gstr-3b', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND invoice_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT
+                CASE WHEN UPPER(COALESCE(gst_type,'')) IN ('INTER_STATE','IGST') THEN 'Inter-state Supplies' ELSE 'Intra-state Supplies' END AS supply_nature,
+                COALESCE(SUM(sub_total), 0)   AS taxable_value,
+                COALESCE(SUM(igst_total), 0)  AS igst,
+                COALESCE(SUM(cgst_total), 0)  AS cgst,
+                COALESCE(SUM(sgst_total), 0)  AS sgst
+            FROM invoices
+            WHERE company_id = $1
+              AND COALESCE(invoice_type,'') = 'TAX_INVOICE'
+              AND COALESCE(is_deleted,false)=false
+              AND COALESCE(bill_purpose,'')!='name_only'
+              ${dateFilter}
+            GROUP BY supply_nature
+            ORDER BY supply_nature
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('gstr-3b error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📈 P&L STATEMENT (alias)
+ */
+router.get('/finance/pl', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        const [sales, purchases, expenses] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]),
+            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(() => ({total:0})),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE company_id=$1`, [companyId]).catch(() => ({total:0})),
+        ]);
+        const totalSales = parseFloat(sales?.total || 0);
+        const totalPurchases = parseFloat(purchases?.total || 0);
+        const totalExpenses = parseFloat(expenses?.total || 0);
+        const grossProfit = totalSales - totalPurchases;
+        const netProfit = grossProfit - totalExpenses;
+        res.json([
+            { particulars: 'Total Sales (Revenue)',     amount: totalSales },
+            { particulars: 'Cost of Purchases',         amount: -totalPurchases },
+            { particulars: 'Gross Profit',              amount: grossProfit },
+            { particulars: 'Operating Expenses',        amount: -totalExpenses },
+            { particulars: 'Net Profit / (Loss)',        amount: netProfit },
+        ]);
+    } catch (err) {
+        console.error('pl error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 💰 CASH FLOW STATEMENT
+ */
+router.get('/finance/cash-flow', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+
+        const [cashIn, cashOut, bankIn, bankOut] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' ${dateFilter}`, params),
+        ]);
+        const ci = parseFloat(cashIn?.total||0), co = parseFloat(cashOut?.total||0);
+        const bi = parseFloat(bankIn?.total||0), bo = parseFloat(bankOut?.total||0);
+        res.json([
+            { activity: 'Cash Receipts',      inflow: ci,    outflow: 0,  net: ci },
+            { activity: 'Cash Payments',       inflow: 0,     outflow: co, net: -co },
+            { activity: 'Bank Receipts',       inflow: bi,    outflow: 0,  net: bi },
+            { activity: 'Bank Payments',       inflow: 0,     outflow: bo, net: -bo },
+            { activity: 'Net Cash Flow',       inflow: ci+bi, outflow: co+bo, net: (ci+bi)-(co+bo) },
+        ]);
+    } catch (err) {
+        console.error('cash-flow error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📒 LEDGER ACCOUNT REPORT
+ */
+router.get('/finance/ledger', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND l.entry_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT l.entry_date AS date, ca.account_type AS type,
+                   COALESCE(t.description,'') AS particulars,
+                   COALESCE(l.debit,0) AS debit, COALESCE(l.credit,0) AS credit,
+                   COALESCE(l.debit,0) - COALESCE(l.credit,0) AS balance
+            FROM ledger_entries l
+            JOIN chart_of_accounts ca ON l.account_id = ca.id
+            LEFT JOIN transactions t ON l.transaction_id = t.id
+            WHERE l.company_id = $1 ${dateFilter}
+            ORDER BY l.entry_date DESC, l.id DESC
+            LIMIT 500
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('ledger error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📦 STOCK MOVEMENT
+ */
+router.get('/inventory/movement', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND i.invoice_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT i.invoice_date AS date, p.name AS product_name,
+                   'SALE' AS type, i.invoice_number AS reference,
+                   0 AS qty_in, SUM(li.quantity) AS qty_out,
+                   p.current_stock AS balance
+            FROM invoice_line_items li
+            JOIN invoices i ON li.invoice_id = i.id
+            JOIN products p ON li.product_id = p.id
+            WHERE i.company_id = $1 AND COALESCE(i.is_deleted,false)=false
+              AND COALESCE(li.is_return,false)=false ${dateFilter}
+            GROUP BY i.invoice_date, p.name, i.invoice_number, p.current_stock
+            ORDER BY i.invoice_date DESC
+            LIMIT 500
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('inventory/movement error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 💎 STOCK VALUATION
+ */
+router.get('/inventory/valuation', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT name AS product_name, COALESCE(current_stock,0) AS qty,
+                   COALESCE(cost_price,0) AS rate,
+                   COALESCE(current_stock,0) * COALESCE(cost_price,0) AS value
+            FROM products
+            WHERE company_id = $1 AND COALESCE(is_deleted,false)=false
+            ORDER BY value DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('valuation error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 💀 DEAD STOCK
+ */
+router.get('/inventory/dead-stock', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT p.name AS product_name,
+                   MAX(i.invoice_date) AS last_date,
+                   COALESCE(CURRENT_DATE - MAX(i.invoice_date)::date, 999) AS idle_days,
+                   COALESCE(p.current_stock,0) * COALESCE(p.cost_price,0) AS value
+            FROM products p
+            LEFT JOIN invoice_line_items li ON li.product_id = p.id
+            LEFT JOIN invoices i ON li.invoice_id = i.id AND COALESCE(i.is_deleted,false)=false
+            WHERE p.company_id = $1 AND COALESCE(p.is_deleted,false)=false
+              AND COALESCE(p.current_stock,0) > 0
+            GROUP BY p.id, p.name, p.current_stock, p.cost_price
+            HAVING MAX(i.invoice_date) < CURRENT_DATE - INTERVAL '60 days' OR MAX(i.invoice_date) IS NULL
+            ORDER BY idle_days DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('dead-stock error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🏦 LOAN STATEMENT
+ */
+router.get('/finance/loan-statement', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT COALESCE(ln.lender_name, l.party_name, 'Unknown') AS entity_name,
+                   COALESCE(l.principal_amount,0) AS principal,
+                   0 AS interest,
+                   COALESCE(l.principal_outstanding, l.principal_amount, 0) AS outstanding
+            FROM loans l
+            LEFT JOIN lenders ln ON l.lender_id = ln.id
+            WHERE l.company_id = $1
+            ORDER BY l.id DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('loan-statement error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🪙 CHIT FUND REPORT
+ */
+router.get('/finance/chit-fund', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT cg.group_name,
+                   COALESCE(cg.total_value,0) AS total_value,
+                   COUNT(ci.id) AS paid_count,
+                   COALESCE(SUM(ci.amount),0) AS total_paid
+            FROM chit_groups cg
+            LEFT JOIN chit_installments ci ON ci.chit_group_id = cg.id AND ci.company_id = $1
+            WHERE cg.company_id = $1
+            GROUP BY cg.id, cg.group_name, cg.total_value
+            ORDER BY cg.id DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('chit-fund error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🤝 BROKER COMMISSION REPORT
+ */
+router.get('/finance/broker-commission', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT b.name AS broker_name,
+                   COALESCE(SUM(i.total_amount),0) AS total_volume,
+                   COALESCE(SUM(COALESCE(i.broker_commission,0)),0) AS earned,
+                   0 AS paid,
+                   COALESCE(SUM(COALESCE(i.broker_commission,0)),0) AS outstanding
+            FROM brokers b
+            LEFT JOIN invoices i ON i.broker_id = b.id AND COALESCE(i.is_deleted,false)=false
+            WHERE b.company_id = $1
+            GROUP BY b.id, b.name
+            ORDER BY total_volume DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('broker-commission error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 👤 EMPLOYEE LEDGER REPORT
+ */
+router.get('/hr/employee-ledger', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT e.name AS employee_name,
+                   COALESCE(SUM(CASE WHEN sa.id IS NOT NULL THEN COALESCE(sa.current_balance, sa.amount, 0) ELSE 0 END),0) AS advances,
+                   0 AS salary_due,
+                   COALESCE(SUM(CASE WHEN sa.id IS NOT NULL THEN COALESCE(sa.current_balance, sa.amount, 0) ELSE 0 END),0) AS net_payable
+            FROM employees e
+            LEFT JOIN salary_advances sa ON sa.employee_id = e.id AND sa.company_id = $1
+                AND COALESCE(sa.status,'ACTIVE') != 'RECOVERED'
+            WHERE e.company_id = $1
+            GROUP BY e.id, e.name
+            ORDER BY advances DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('hr/employee-ledger error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🏥 BUSINESS HEALTH DASHBOARD
+ */
+router.get('/executive/health', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const [sales, purchases, receivables, loans] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]),
+            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
+            db.pgGet(`SELECT COALESCE(SUM(total_amount - paid_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND status != 'PAID'`, [companyId]),
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total FROM loans WHERE company_id=$1 AND status='ACTIVE'`, [companyId]).catch(()=>({total:0})),
+        ]);
+        res.json([
+            { metric: 'Total Sales',        value: parseFloat(sales?.total||0),       growth: '' },
+            { metric: 'Total Purchases',    value: parseFloat(purchases?.total||0),    growth: '' },
+            { metric: 'Total Receivables',  value: parseFloat(receivables?.total||0),  growth: '' },
+            { metric: 'Loan Outstanding',   value: parseFloat(loans?.total||0),        growth: '' },
+        ]);
+    } catch (err) {
+        console.error('executive/health error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📅 DAY CLOSING SUMMARY
+ */
+router.get('/executive/day-closing', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    const date = startDate || new Date().toISOString().split('T')[0];
+    try {
+        const [sales, purchases, payments, expenses] = await Promise.all([
+            db.pgGet(`SELECT COUNT(*) AS count, COALESCE(SUM(total_amount),0) AS amount FROM invoices WHERE company_id=$1 AND DATE(invoice_date)=$2::date AND COALESCE(is_deleted,false)=false`, [companyId, date]),
+            db.pgGet(`SELECT COUNT(*) AS count, COALESCE(SUM(total_amount),0) AS amount FROM purchase_bills WHERE company_id=$1 AND DATE(bill_date)=$2::date AND COALESCE(is_deleted,false)=false`, [companyId, date]).catch(()=>({count:0,amount:0})),
+            db.pgGet(`SELECT COUNT(*) AS count, COALESCE(SUM(amount),0) AS amount FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND DATE(ip.payment_date)=$2::date`, [companyId, date]),
+            db.pgGet(`SELECT COUNT(*) AS count, COALESCE(SUM(amount),0) AS amount FROM expenses WHERE company_id=$1 AND DATE(expense_date)=$2::date`, [companyId, date]).catch(()=>({count:0,amount:0})),
+        ]);
+        res.json([
+            { category: 'Sales',    count: parseInt(sales?.count||0),     amount: parseFloat(sales?.amount||0) },
+            { category: 'Purchases',count: parseInt(purchases?.count||0),  amount: parseFloat(purchases?.amount||0) },
+            { category: 'Payments', count: parseInt(payments?.count||0),   amount: parseFloat(payments?.amount||0) },
+            { category: 'Expenses', count: parseInt(expenses?.count||0),   amount: parseFloat(expenses?.amount||0) },
+        ]);
+    } catch (err) {
+        console.error('day-closing error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🛒 PURCHASE REGISTER
+ */
+router.get('/purchase/register', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let where = 'WHERE pb.company_id = $1 AND COALESCE(pb.is_deleted,false)=false';
+        const params = [companyId];
+        if (startDate && endDate) { where += ` AND pb.bill_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT pb.bill_date AS date, pb.bill_number AS bill_no,
+                   COALESCE(s.name, pb.supplier_name, 'Unknown') AS supplier_name,
+                   COALESCE(pb.sub_total, 0) AS taxable_amount,
+                   COALESCE(pb.tax_total, COALESCE(pb.cgst_total,0)+COALESCE(pb.sgst_total,0)+COALESCE(pb.igst_total,0), 0) AS total_tax,
+                   COALESCE(pb.total_amount, 0) AS total_amount,
+                   COALESCE(pb.payment_status, pb.status, 'PENDING') AS status
+            FROM purchase_bills pb
+            LEFT JOIN suppliers s ON pb.supplier_id = s.id
+            ${where}
+            ORDER BY pb.bill_date DESC, pb.id DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('purchase/register error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🏭 SUPPLIER-WISE PURCHASE
+ */
+router.get('/purchase/supplier-wise', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT COALESCE(s.name, pb.supplier_name, 'Unknown') AS supplier_name,
+                   COUNT(pb.id) AS bill_count,
+                   COALESCE(SUM(pb.total_amount), 0) AS total_purchase,
+                   COALESCE(SUM(pb.paid_amount), 0) AS total_paid,
+                   COALESCE(SUM(pb.total_amount - COALESCE(pb.paid_amount,0)), 0) AS balance
+            FROM purchase_bills pb
+            LEFT JOIN suppliers s ON pb.supplier_id = s.id
+            WHERE pb.company_id = $1 AND COALESCE(pb.is_deleted,false)=false
+            GROUP BY s.id, s.name, pb.supplier_name
+            ORDER BY total_purchase DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('purchase/supplier-wise error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 📦 PRODUCT-WISE PURCHASE
+ */
+router.get('/purchase/product-wise', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT COALESCE(p.name, pbi.product_name, 'Unknown') AS product_name,
+                   COALESCE(SUM(pbi.quantity), 0) AS total_qty,
+                   COALESCE(AVG(pbi.unit_price), 0) AS avg_cost,
+                   COALESCE(SUM(pbi.line_total), 0) AS total_value
+            FROM purchase_bill_items pbi
+            JOIN purchase_bills pb ON pbi.bill_id = pb.id
+            LEFT JOIN products p ON pbi.product_id = p.id
+            WHERE pb.company_id = $1 AND COALESCE(pb.is_deleted,false)=false
+            GROUP BY p.id, p.name, pbi.product_name
+            ORDER BY total_value DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('purchase/product-wise error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 🤝 BROKER-WISE PURCHASE
+ */
+router.get('/purchase/broker-wise', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT COALESCE(b.name, 'Direct') AS broker_name,
+                   COUNT(pb.id) AS bill_count,
+                   COALESCE(SUM(pb.total_amount), 0) AS total_purchase
+            FROM purchase_bills pb
+            LEFT JOIN brokers b ON pb.broker_id = b.id
+            WHERE pb.company_id = $1 AND COALESCE(pb.is_deleted,false)=false
+            GROUP BY b.id, b.name
+            ORDER BY total_purchase DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('purchase/broker-wise error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 💳 PURCHASE PAYMENT REPORT
+ */
+router.get('/purchase/payments', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let where = 'WHERE pp.company_id = $1';
+        const params = [companyId];
+        if (startDate && endDate) { where += ` AND pp.payment_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT pp.payment_date AS date,
+                   COALESCE(s.name, pb.supplier_name, 'Unknown') AS supplier_name,
+                   pp.payment_method AS method,
+                   pp.amount,
+                   pp.reference_number AS reference
+            FROM purchase_bill_payments pp
+            JOIN purchase_bills pb ON pp.bill_id = pb.id
+            LEFT JOIN suppliers s ON pb.supplier_id = s.id
+            ${where}
+            ORDER BY pp.payment_date DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        // Fallback: try purchase_payments table
+        try {
+            const data = await db.pgAll(`SELECT * FROM purchase_payments WHERE company_id=$1 ORDER BY created_at DESC LIMIT 200`, [req.user.active_company_id]);
+            res.json(data || []);
+        } catch (_) { res.json([]); }
+    }
+});
+
+/**
+ * 🤝 BROKER-WISE SALES
+ */
+router.get('/sales/broker-wise', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const sql = `
+            SELECT COALESCE(b.name, 'Direct') AS broker_name,
+                   COUNT(i.id) AS invoice_count,
+                   COALESCE(SUM(i.total_amount), 0) AS total_sales,
+                   COALESCE(SUM(COALESCE(i.broker_commission,0)), 0) AS commission
+            FROM invoices i
+            LEFT JOIN brokers b ON i.broker_id = b.id
+            WHERE i.company_id = $1 AND COALESCE(i.is_deleted,false)=false
+              AND COALESCE(i.bill_purpose,'')!='name_only'
+            GROUP BY b.id, b.name
+            ORDER BY total_sales DESC
+        `;
+        const data = await db.pgAll(sql, [companyId]);
+        res.json(data || []);
+    } catch (err) {
+        console.error('sales/broker-wise error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * ↩️ SALES RETURN REPORT
+ */
+router.get('/sales/returns', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let where = `WHERE i.company_id=$1 AND UPPER(COALESCE(i.invoice_type,''))='SALES_RETURN' AND COALESCE(i.is_deleted,false)=false`;
+        const params = [companyId];
+        if (startDate && endDate) { where += ` AND i.invoice_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT i.invoice_date AS date, i.invoice_number AS return_no,
+                   COALESCE(u.username, u.name, 'Unknown') AS customer_name,
+                   COALESCE(i.total_amount, 0) AS amount
+            FROM invoices i
+            LEFT JOIN users u ON i.customer_id = u.id
+            ${where}
+            ORDER BY i.invoice_date DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('sales/returns error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 👥 ATTENDANCE REPORT
+ */
+router.get('/hr/attendance', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND a.date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT e.name,
+                   COUNT(CASE WHEN a.status = 'present' THEN 1 END) AS present_days,
+                   COUNT(CASE WHEN a.status = 'absent'  THEN 1 END) AS absent_days,
+                   COUNT(CASE WHEN a.status = 'od'      THEN 1 END) AS od_days,
+                   CASE WHEN COUNT(a.id) > 0
+                        THEN ROUND(COUNT(CASE WHEN a.status='present' THEN 1 END)::numeric / COUNT(a.id) * 100, 1)::TEXT || '%'
+                        ELSE '0%' END AS pct
+            FROM employees e
+            LEFT JOIN attendance a ON a.employee_id = e.id AND a.company_id = $1 ${dateFilter}
+            WHERE e.company_id = $1
+            GROUP BY e.id, e.name
+            ORDER BY present_days DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('hr/attendance error:', err.message);
+        res.json([]);
+    }
+});
+
+/**
+ * 💼 SALARY REGISTER
+ */
+router.get('/hr/salary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
+    try {
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND sp.payment_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        const sql = `
+            SELECT e.name,
+                   COALESCE(SUM(sp.gross_salary), SUM(sp.amount), 0) AS gross,
+                   COALESCE(SUM(sp.deductions), 0) AS deductions,
+                   COALESCE(SUM(COALESCE(sp.net_salary, sp.amount, 0)), 0) AS net,
+                   CASE WHEN COUNT(sp.id)>0 THEN 'PAID' ELSE 'PENDING' END AS status
+            FROM employees e
+            LEFT JOIN salary_payments sp ON sp.employee_id = e.id AND sp.company_id = $1 ${dateFilter}
+            WHERE e.company_id = $1
+            GROUP BY e.id, e.name
+            ORDER BY gross DESC
+        `;
+        const data = await db.pgAll(sql, params);
+        res.json(data || []);
+    } catch (err) {
+        console.error('hr/salary error:', err.message);
+        res.json([]);
+    }
+});
+
 export default router;
