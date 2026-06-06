@@ -47,7 +47,8 @@ export const processTransaction = async (txData, user) => {
         const transactionId = txRes.rows[0].id;
 
         // 2. Handle Cash/Bank Ledger Impact
-        const direction = ['CUSTOMER_PAYMENT', 'RECEIPT'].includes(txData.type) ? 'in' : 'out';
+        const INFLOW_TYPES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE'];
+        const direction = INFLOW_TYPES.includes(txData.type) ? 'in' : 'out';
         const mode = (txData.mode || 'CASH').toUpperCase();
 
         if (mode === 'CASH') {
