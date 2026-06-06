@@ -22,6 +22,7 @@ interface ReturnItem {
   description: string;
   qty: number;
   rate: number;
+  max_qty?: number; // original invoice qty — for validation display
 }
 
 interface InvoiceLineItem {
@@ -94,14 +95,16 @@ const SalesReturns: React.FC = () => {
   useEffect(() => { load(); }, [load]);
 
   // When an invoice is selected, prefill items from its line items
+  // Pre-fill qty=0 so user explicitly enters the return qty (with max_qty shown as hint)
   const handleSelectInvoice = (inv: Invoice) => {
     setSelectedInvoice(inv);
     if (inv.line_items && inv.line_items.length > 0) {
       setItems(inv.line_items.map(li => ({
         product_id: li.product_id,
         description: li.description || "Item",
-        qty: Number(li.quantity) || 1,
+        qty: 0,                              // start at 0 — user enters actual return qty
         rate: Number(li.unit_price) || 0,
+        max_qty: Number(li.quantity) || 0,   // original qty for reference / validation
       })));
     } else {
       setItems([{ ...EMPTY_ITEM }]);
@@ -120,8 +123,10 @@ const SalesReturns: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (items.every(i => !i.description.trim())) {
-      alert("Please enter at least one return item description.");
+    // Only submit items that actually have a qty > 0
+    const activeItems = items.filter(i => Number(i.qty) > 0 && i.description.trim());
+    if (activeItems.length === 0) {
+      alert("Please enter a return quantity (> 0) for at least one item.");
       return;
     }
     setSubmitting(true);
@@ -131,7 +136,7 @@ const SalesReturns: React.FC = () => {
         customer_id: selectedInvoice?.customer_id || null,
         customer_name: selectedInvoice?.customer_name || null,
         return_date: returnDate,
-        items,
+        items: activeItems,
         refund_type: refundType,
         notes,
       };
@@ -359,11 +364,27 @@ const SalesReturns: React.FC = () => {
                           </td>
                           <td style={{ padding: "6px 10px" }}>
                             <input
-                              type="number" min="0.01" step="0.01" required
-                              value={item.qty}
-                              onChange={e => updateItem(idx, "qty", Number(e.target.value))}
-                              style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px", textAlign: "right" }}
+                              type="number" min="0" step="0.01" required
+                              value={item.qty === 0 ? "" : item.qty}
+                              placeholder="0"
+                              max={item.max_qty || undefined}
+                              onChange={e => {
+                                const val = Number(e.target.value);
+                                if (item.max_qty && val > item.max_qty) return; // block exceeding original
+                                updateItem(idx, "qty", val);
+                              }}
+                              style={{
+                                width: "100%", borderRadius: 6, padding: "5px 8px", textAlign: "right",
+                                border: item.max_qty && item.qty > item.max_qty
+                                  ? "1.5px solid #ef4444"
+                                  : "1px solid #e2e8f0"
+                              }}
                             />
+                            {item.max_qty ? (
+                              <div style={{ fontSize: 10, color: "#94a3b8", textAlign: "right", marginTop: 2 }}>
+                                max {item.max_qty}
+                              </div>
+                            ) : null}
                           </td>
                           <td style={{ padding: "6px 10px" }}>
                             <input

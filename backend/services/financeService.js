@@ -286,8 +286,20 @@ export const recordLoanRepayment = async (user, paymentData) => {
             payment = paymentRes.rows[0];
         }
 
-        // 2. Reduce principal_outstanding for principal payments (best-effort — column may not exist yet)
+        // 2. Reduce principal_outstanding for principal payments
         if (principalComp > 0) {
+            await client.query(`SAVEPOINT sp_ensure_col`);
+            try {
+                // Ensure column exists before UPDATE (production DBs may lack it)
+                await client.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS principal_outstanding NUMERIC(15,2)`);
+                // Seed NULL rows with principal_amount so GREATEST works correctly
+                await client.query(`UPDATE loans SET principal_outstanding = principal_amount WHERE principal_outstanding IS NULL`);
+                await client.query(`RELEASE SAVEPOINT sp_ensure_col`);
+            } catch (_) {
+                await client.query(`ROLLBACK TO SAVEPOINT sp_ensure_col`);
+                await client.query(`RELEASE SAVEPOINT sp_ensure_col`);
+            }
+
             await client.query(`SAVEPOINT sp_principal_update`);
             try {
                 await client.query(`
