@@ -364,25 +364,29 @@ const SalesReturns: React.FC = () => {
                           </td>
                           <td style={{ padding: "6px 10px" }}>
                             <input
-                              type="number" min="0" step="0.01" required
-                              value={item.qty === 0 ? "" : item.qty}
-                              placeholder="0"
+                              type="number" min="0" step="1" required
+                              value={item.qty}
+                              onFocus={e => { if (Number(e.target.value) === 0) e.target.select(); }}
                               max={item.max_qty || undefined}
                               onChange={e => {
-                                const val = Number(e.target.value);
-                                if (item.max_qty && val > item.max_qty) return; // block exceeding original
+                                const val = Math.max(0, Number(e.target.value) || 0);
+                                if (item.max_qty && val > item.max_qty) return;
                                 updateItem(idx, "qty", val);
                               }}
                               style={{
-                                width: "100%", borderRadius: 6, padding: "5px 8px", textAlign: "right",
-                                border: item.max_qty && item.qty > item.max_qty
-                                  ? "1.5px solid #ef4444"
-                                  : "1px solid #e2e8f0"
+                                width: "100%", borderRadius: 6, padding: "6px 8px", textAlign: "center",
+                                fontWeight: 700, fontSize: 14,
+                                color: item.qty === 0 ? "#94a3b8" : "#1e293b",
+                                background: item.qty === 0 ? "#f8fafc" : "#fff",
+                                border: item.qty === 0
+                                  ? "1.5px dashed #cbd5e1"
+                                  : "1.5px solid #6366f1",
+                                outline: "none",
                               }}
                             />
                             {item.max_qty ? (
-                              <div style={{ fontSize: 10, color: "#94a3b8", textAlign: "right", marginTop: 2 }}>
-                                max {item.max_qty}
+                              <div style={{ fontSize: 10, color: "#6366f1", textAlign: "center", marginTop: 2, fontWeight: 600 }}>
+                                / {item.max_qty} max
                               </div>
                             ) : null}
                           </td>
