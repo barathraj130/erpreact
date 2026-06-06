@@ -168,7 +168,13 @@ router.get('/cash', authMiddleware, async (req, res) => {
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
-        const entries = await db.pgAll(sql, params);
+        const INFLOW_SOURCES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment'];
+        const rawEntries = await db.pgAll(sql, params);
+        // Correct direction for known inflow sources (fixes historically mis-recorded entries)
+        const entries = rawEntries.map(e => ({
+            ...e,
+            direction: INFLOW_SOURCES.includes(e.source) ? 'in' : e.direction
+        }));
         res.json({ entries, opening_balance });
     } catch (err) {
         console.error("Cash ledger error:", err);
@@ -204,7 +210,12 @@ router.get('/bank', authMiddleware, async (req, res) => {
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
-        const entries = await db.pgAll(sql, params);
+        const INFLOW_SOURCES = ['CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment'];
+        const rawEntries = await db.pgAll(sql, params);
+        const entries = rawEntries.map(e => ({
+            ...e,
+            direction: INFLOW_SOURCES.includes(e.source) ? 'in' : e.direction
+        }));
         res.json({ entries, opening_balance });
     } catch (err) {
         console.error("Bank ledger error:", err);
