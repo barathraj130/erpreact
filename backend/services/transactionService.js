@@ -132,12 +132,23 @@ export const processTransaction = async (txData, user) => {
                 break;
 
             case 'SALARY_PAYMENT':
-                if (refId) {
-                    await client.query(`
-                        UPDATE salary_payments
-                        SET status = 'PAID', paid_date = $1, transaction_id = $2
-                        WHERE id = $3 AND company_id = $4
-                    `, [txData.date, transactionId, refId, companyId]);
+                // salary_payments table has no company_id column — use SAVEPOINT so a missing
+                // ref_id or missing columns never blocks the transaction from posting
+                await client.query(`SAVEPOINT sp_salary_payment`);
+                try {
+                    if (refId) {
+                        // Try with status/paid_date columns first (newer schema)
+                        await client.query(`
+                            UPDATE salary_payments
+                            SET status = 'PAID', paid_date = $1, transaction_id = $2
+                            WHERE id = $3
+                        `, [txData.date, transactionId, refId]);
+                    }
+                    await client.query(`RELEASE SAVEPOINT sp_salary_payment`);
+                } catch (salErr) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_salary_payment`);
+                    await client.query(`RELEASE SAVEPOINT sp_salary_payment`);
+                    console.warn('salary_payment update skipped:', salErr.message);
                 }
                 break;
 
