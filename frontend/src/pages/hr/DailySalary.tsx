@@ -63,7 +63,7 @@ const DailySalary: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load");
       const list = (Array.isArray(data) ? data : (data.employees || []))
-        .filter((e: any) => (e.salary_type || "").toLowerCase() !== "weekly");
+        .filter((e: any) => (e.salary_type || "").toLowerCase() === "daily");
       setRows(list.map((e: any) => ({
         employee_id:           e.id || e.employee_id,
         employee_name:         e.name || e.employee_name,
