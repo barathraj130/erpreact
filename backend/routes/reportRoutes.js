@@ -1125,17 +1125,17 @@ router.get('/hr/attendance', authMiddleware, async (req, res) => {
         if (startDate && endDate) { dateFilter = `AND a.date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
         const sql = `
             SELECT e.name,
-                   COUNT(CASE WHEN a.status = 'present' THEN 1 END) AS present_days,
-                   COUNT(CASE WHEN a.status = 'absent'  THEN 1 END) AS absent_days,
-                   COUNT(CASE WHEN a.status = 'od'      THEN 1 END) AS od_days,
+                   COUNT(CASE WHEN UPPER(a.status) IN ('PRESENT','P') THEN 1 END) AS present_days,
+                   COUNT(CASE WHEN UPPER(a.status) IN ('ABSENT','A')  THEN 1 END) AS absent_days,
+                   COUNT(CASE WHEN UPPER(a.status) IN ('OD','ON_DUTY','ON-DUTY') THEN 1 END) AS od_days,
                    CASE WHEN COUNT(a.id) > 0
-                        THEN ROUND(COUNT(CASE WHEN a.status='present' THEN 1 END)::numeric / COUNT(a.id) * 100, 1)::TEXT || '%'
+                        THEN ROUND(COUNT(CASE WHEN UPPER(a.status) IN ('PRESENT','P','OD','ON_DUTY','HALF_DAY') THEN 1 END)::numeric / COUNT(a.id) * 100, 1)::TEXT || '%'
                         ELSE '0%' END AS pct
             FROM employees e
-            LEFT JOIN attendance a ON a.employee_id = e.id AND a.company_id = $1 ${dateFilter}
+            LEFT JOIN attendance_logs a ON a.employee_id = e.id AND a.company_id = $1 ${dateFilter}
             WHERE e.company_id = $1
             GROUP BY e.id, e.name
-            ORDER BY present_days DESC
+            ORDER BY e.name
         `;
         const data = await db.pgAll(sql, params);
         res.json(data || []);
@@ -1154,18 +1154,21 @@ router.get('/hr/salary', authMiddleware, async (req, res) => {
     try {
         let dateFilter = '';
         const params = [companyId];
-        if (startDate && endDate) { dateFilter = `AND sp.payment_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        if (startDate && endDate) { dateFilter = `AND sp.date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+        // salary_payments: employee_id, salary_id, amount, mode, date
+        // salaries: employee_id, base_salary, bonus, deductions, advance_deducted, final_salary
         const sql = `
             SELECT e.name,
-                   COALESCE(SUM(sp.gross_salary), SUM(sp.amount), 0) AS gross,
-                   COALESCE(SUM(sp.deductions), 0) AS deductions,
-                   COALESCE(SUM(COALESCE(sp.net_salary, sp.amount, 0)), 0) AS net,
+                   COALESCE(SUM(s.base_salary + COALESCE(s.bonus,0)), SUM(sp.amount), 0)  AS gross,
+                   COALESCE(SUM(COALESCE(s.deductions,0) + COALESCE(s.advance_deducted,0)), 0) AS deductions,
+                   COALESCE(SUM(COALESCE(s.final_salary, sp.amount, 0)), 0) AS net,
                    CASE WHEN COUNT(sp.id)>0 THEN 'PAID' ELSE 'PENDING' END AS status
             FROM employees e
-            LEFT JOIN salary_payments sp ON sp.employee_id = e.id AND sp.company_id = $1 ${dateFilter}
+            LEFT JOIN salary_payments sp ON sp.employee_id = e.id ${dateFilter}
+            LEFT JOIN salaries s ON s.id = sp.salary_id
             WHERE e.company_id = $1
             GROUP BY e.id, e.name
-            ORDER BY gross DESC
+            ORDER BY net DESC
         `;
         const data = await db.pgAll(sql, params);
         res.json(data || []);
