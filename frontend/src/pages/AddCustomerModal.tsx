@@ -630,11 +630,10 @@ const AddCustomerModal: React.FC<Props> = ({
                   <input
                     type="number"
                     min="0"
-                    disabled={!!customerToEdit}
                     style={{
                       ...styles.input, paddingLeft: "12px", textAlign: "right",
                       fontWeight: "bold", fontSize: "1.1rem",
-                      backgroundColor: customerToEdit ? "#e2e8f0" : "#fff",
+                      backgroundColor: "#fff",
                       border: `1.5px solid ${balanceType === "advance" ? "#86efac" : "#7dd3fc"}`,
                     }}
                     value={formData.opening_balance}
@@ -644,8 +643,8 @@ const AddCustomerModal: React.FC<Props> = ({
                   />
                 </div>
                 {customerToEdit && (
-                  <div style={{ marginTop: "6px", fontSize: "11px", color: "#94a3b8" }}>
-                    Opening balance cannot be changed after creation.
+                  <div style={{ marginTop: "6px", fontSize: "11px", color: "#d97706", fontWeight: 600 }}>
+                    ⚠️ Changing this will recalculate the customer's balance.
                   </div>
                 )}
               </div>

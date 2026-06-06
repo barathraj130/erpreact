@@ -497,13 +497,12 @@ const AddCustomerModal: React.FC<Props> = ({
                 </span>
                 <input
                   type="number"
-                  disabled={!!customerToEdit}
                   style={{
                     ...styles.input,
                     paddingLeft: "12px",
                     textAlign: "right",
                     fontWeight: "bold",
-                    backgroundColor: customerToEdit ? "#e2e8f0" : "#fff",
+                    backgroundColor: "#fff",
                   }}
                   value={formData.opening_balance}
                   onChange={(e) =>

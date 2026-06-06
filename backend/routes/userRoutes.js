@@ -272,10 +272,11 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
 
 // UPDATE CUSTOMER
 router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), async (req, res) => {
-    const { 
-        username, nickname, email, phone, gstin, 
+    const {
+        username, nickname, email, phone, gstin,
         address_line1, city_pincode, state, state_code,
         bank_name, bank_account_no, bank_ifsc_code,
+        opening_balance, // ✅ Editable opening balance
         password // ✅ Optional Password Reset
     } = req.body;
 
@@ -285,11 +286,11 @@ router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), as
         await client.query("BEGIN");
 
         // Base Update Query
-        let sql = `UPDATE users SET 
+        let sql = `UPDATE users SET
             username=$1, nickname=$2, email=$3, phone=$4, gstin=$5,
             address_line1=$6, city_pincode=$7, state=$8, state_code=$9,
             bank_name=$10, bank_account_no=$11, bank_ifsc_code=$12`;
-        
+
         let params = [
             username, nickname || null, email || null, phone || null, gstin || null,
             address_line1 || null, city_pincode || null, state || null, state_code || null,
@@ -311,6 +312,27 @@ router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), as
         params.push(req.user.active_company_id);
 
         await client.query(sql, params);
+
+        // ✅ Update opening balance in meta if provided
+        if (opening_balance !== undefined && opening_balance !== null) {
+            const newOpeningBalance = parseFloat(opening_balance) || 0;
+            const userRow = await client.query(
+                `SELECT meta FROM users WHERE id = $1 AND company_id = $2`,
+                [req.params.id, req.user.active_company_id]
+            );
+            if (userRow.rows.length > 0) {
+                const currentMeta = userRow.rows[0].meta || {};
+                const updatedMeta = {
+                    ...currentMeta,
+                    customer_opening_balance: newOpeningBalance
+                };
+                await client.query(
+                    `UPDATE users SET meta = $1 WHERE id = $2 AND company_id = $3`,
+                    [JSON.stringify(updatedMeta), req.params.id, req.user.active_company_id]
+                );
+            }
+        }
+
         await ensureCustomerLedgerMetadata(client, req.params.id, req.user.active_company_id);
         await recomputeCustomerBalance(client, req.params.id, req.user.active_company_id);
 
