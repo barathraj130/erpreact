@@ -352,7 +352,7 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
             // We add them to cash_ledger with source PROPRIETOR so cash flow reflects them.
             const existing = await db.pgGet(`SELECT id FROM cash_ledger WHERE company_id=$1 AND source=$2 AND date=$3 AND amount=$4 LIMIT 1`, [companyId, source, r.date, r.amount]);
             if (!existing) {
-                await db.pgRun(`INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [companyId, branchId, source, r.amount, direction, r.date, r.notes || null]);
+                await db.pgRun(`INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,$3,$4,$5,$6)`, [companyId, branchId, source, r.amount, direction, r.date]);
                 inserted++;
             }
         }
