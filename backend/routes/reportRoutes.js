@@ -1366,4 +1366,23 @@ router.get('/hr/salary', authMiddleware, async (req, res) => {
     }
 });
 
+// ─── Enterprise Reports Sub-Routers ────────────────────────────────────────
+import salesReports from './reports/sales.js';
+import purchaseReports from './reports/purchase.js';
+import inventoryReports from './reports/inventory.js';
+import financeNewReports from './reports/finance.js';
+import gstNewReports from './reports/gst.js';
+import hrNewReports from './reports/hr.js';
+import executiveNewReports from './reports/executive.js';
+import savedReports from './reports/saved.js';
+
+router.use('/sales', salesReports);
+router.use('/purchase', purchaseReports);
+router.use('/inventory', inventoryReports);
+router.use('/finance', financeNewReports);
+router.use('/gst', gstNewReports);
+router.use('/hr', hrNewReports);
+router.use('/executive', executiveNewReports);
+router.use('/', savedReports);
+
 export default router;

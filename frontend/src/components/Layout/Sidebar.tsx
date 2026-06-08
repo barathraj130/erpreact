@@ -53,8 +53,22 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
 
   const baseItems: MenuItem[] = [
     { name: "Dashboard", path: "/dashboard", icon: <FaTachometerAlt />, section: "Overview" },
-    { name: "Reports", path: "/reports", icon: <FaBrain />, section: "Analytics" },
-    { name: "Intelligence", path: "/reports/world-class", icon: <FaBrain />, section: "Analytics" },
+    {
+      name: "Reports",
+      icon: <FaBrain />,
+      section: "Analytics",
+      subItems: [
+        { name: "All Reports", path: "/reports" },
+        { name: "Executive Dashboard", path: "/reports/executive" },
+        { name: "Sales Reports", path: "/reports/sales" },
+        { name: "Purchase Reports", path: "/reports/purchase" },
+        { name: "Inventory Reports", path: "/reports/inventory" },
+        { name: "Finance Reports", path: "/reports/finance" },
+        { name: "GST Reports", path: "/reports/gst" },
+        { name: "HR Reports", path: "/reports/hr" },
+        { name: "Intelligence", path: "/reports/world-class" },
+      ]
+    },
   ];
 
   if (hasModule("sales")) {

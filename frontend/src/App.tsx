@@ -79,6 +79,16 @@ import PersonalAccountsAdmin from "./pages/PersonalAccountsAdmin";
 // New Reports Module
 import ReportsDashboard from "./pages/reports/ReportsDashboard";
 import ReportViewer from "./pages/reports/ReportViewer";
+
+// Enterprise Reports Module
+import ReportsHome from "./pages/reports/ReportsHome";
+import SalesReports from "./pages/reports/SalesReports";
+import PurchaseReports from "./pages/reports/PurchaseReports";
+import InventoryReports from "./pages/reports/InventoryReports";
+import FinanceReports from "./pages/reports/FinanceReports";
+import GSTReports from "./pages/reports/GSTReports";
+import HRReports from "./pages/reports/HRReports";
+import ExecutiveDashboard from "./pages/reports/ExecutiveDashboard";
 import ConsolidatedInventory from "./pages/ConsolidatedInventory";
 import StockTransfer from "./pages/StockTransfer";
 import StockRequestsInbox from "./pages/StockRequestsInbox";
@@ -317,7 +327,15 @@ const App: React.FC = () => {
             <Route path="/reports/world-class" element={<AdvancedReports />} />
             
             {/* New Comprehensive Reports Module */}
-            <Route path="/reports" element={<ReportsDashboard />} />
+            <Route path="/reports" element={<ReportsHome />} />
+            <Route path="/reports/sales" element={<SalesReports />} />
+            <Route path="/reports/purchase" element={<PurchaseReports />} />
+            <Route path="/reports/inventory" element={<InventoryReports />} />
+            <Route path="/reports/finance" element={<FinanceReports />} />
+            <Route path="/reports/gst" element={<GSTReports />} />
+            <Route path="/reports/hr" element={<HRReports />} />
+            <Route path="/reports/executive" element={<ExecutiveDashboard />} />
+            <Route path="/reports/classic" element={<ReportsDashboard />} />
             <Route path="/reports/:reportId" element={<ReportViewer />} />
           </Route>
 
