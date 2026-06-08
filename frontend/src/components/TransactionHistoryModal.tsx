@@ -25,6 +25,8 @@ interface TransactionHistoryModalProps {
   entityType: "supplier" | "customer";
   entityId: number;
   entityName: string;
+  /** Called after a round-off is successfully applied, so parent can refresh its list */
+  onRoundOffApplied?: () => void;
 }
 
 function formatDate(value?: string | null) {
@@ -124,6 +126,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   entityType,
   entityId,
   entityName,
+  onRoundOffApplied,
 }) => {
   const [supplierLedger, setSupplierLedger] = useState<any>(null);
   const [customerLedger, setCustomerLedger] = useState<CustomerLedgerResponse | null>(null);
@@ -202,7 +205,8 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
       if (!res.ok) throw new Error(data.error || "Failed");
       setRoundOffMsg({ type: "success", text: `Round off of ${fmt(amt)} applied! New pending: ${fmt(data.new_pending ?? 0)}` });
       setRoundOffForm({ amount: "", date: new Date().toISOString().split("T")[0], notes: "" });
-      await loadData();
+      await loadData();            // refresh ledger entries inside modal
+      onRoundOffApplied?.();       // tell parent to refresh customer list
     } catch (e: any) {
       setRoundOffMsg({ type: "error", text: e.message });
     } finally {

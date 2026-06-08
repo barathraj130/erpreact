@@ -688,6 +688,7 @@ const Customers: React.FC = () => {
           entityType="customer"
           entityId={selectedCustomer.id}
           entityName={selectedCustomer.username}
+          onRoundOffApplied={refresh}
         />
       )}
     </div>
