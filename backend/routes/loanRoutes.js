@@ -9,9 +9,18 @@ const router = express.Router();
 
 router.get('/', authMiddleware, async (req, res) => {
     try {
-        // Absolute minimum query — no JOINs, no subqueries, no new columns.
-        // Just get all loan rows first. Frontend handles missing fields with fallbacks.
-        const loans = await db.pgAll(`SELECT * FROM loans ORDER BY id DESC`);
+        // Compute outstanding and paid totals from loan_payments directly (never trust principal_outstanding column alone)
+        const loans = await db.pgAll(`
+            SELECT l.*,
+                GREATEST(0, l.principal_amount - COALESCE((
+                    SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id
+                ), 0)) AS remaining_principal_computed,
+                COALESCE((SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS paid_principal_computed,
+                COALESCE((SELECT SUM(lp.total_amount) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_paid_computed,
+                COALESCE((SELECT SUM(lp.interest_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_interest_computed
+            FROM loans l
+            ORDER BY l.id DESC
+        `);
         console.log(`GET /loans → ${loans.length} rows`);
 
         // Attach lender_name from lenders table (separate safe query)
@@ -31,10 +40,10 @@ router.get('/', authMiddleware, async (req, res) => {
             lender_type:  lenderMap[l.lender_id]?.lender_type || l.party_type || 'Bank',
             lender_phone: lenderMap[l.lender_id]?.phone || null,
             loan_type:    l.loan_type || l.party_type || 'BANK',
-            remaining_principal: l.principal_outstanding ?? l.outstanding_amount ?? l.principal_amount,
-            paid_principal:   0,
-            total_paid:       0,
-            total_interest_paid: 0,
+            remaining_principal: l.remaining_principal_computed,
+            paid_principal:      l.paid_principal_computed,
+            total_paid:          l.total_paid_computed,
+            total_interest_paid: l.total_interest_computed,
         }));
 
         res.json(result);
