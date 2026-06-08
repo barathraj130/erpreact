@@ -153,6 +153,11 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                     SELECT SUM(amount)
                     FROM transactions
                     WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(total_amount)
+                    FROM sales_returns
+                    WHERE customer_id = u.id AND company_id = $1
                 ), 0) as remaining_balance
             FROM users u
             WHERE u.role IN ('user', 'customer') AND u.company_id = $1
@@ -489,6 +494,10 @@ router.post("/send-reminders", authMiddleware, async (req, res) => {
                 - COALESCE((
                     SELECT SUM(amount) FROM transactions
                     WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(total_amount) FROM sales_returns
+                    WHERE customer_id = u.id AND company_id = $1
                 ), 0) as outstanding
             FROM users u
             WHERE u.role IN ('user','customer') AND u.company_id = $1
