@@ -39,8 +39,9 @@ router.get('/summary', authMiddleware, async (req, res) => {
     console.log('Dashboard API called for company_id:', companyId, 'branchFilter:', branchFilter);
 
     try {
-        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1`;
-        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1`;
+        // Exclude OPENING_BALANCE entries so cash shows only transaction-based movement
+        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND source != 'OPENING_BALANCE'`;
+        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND source != 'OPENING_BALANCE'`;
 
         const totalRevSql = `
             SELECT COALESCE(SUM(total_amount), 0) as total_revenue
@@ -60,8 +61,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
               AND invoice_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
         `;
 
-        // True outstanding: opening balance + invoices − invoice_payments − CUSTOMER_PAYMENT transactions
-        // Matches the formula used on the Customers page
+        // True outstanding: opening balance + invoices − invoice_payments − sales_returns − CUSTOMER_PAYMENT transactions
         const outstandingSql = `
             SELECT COALESCE(SUM(GREATEST(0,
                 COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
@@ -78,6 +78,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
                     JOIN invoices i3 ON i3.id = ip.invoice_id
                     WHERE i3.customer_id = u.id AND i3.company_id = $1
                       AND COALESCE(i3.is_deleted, false) = false
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(sr.total_amount) FROM sales_returns sr
+                    WHERE sr.customer_id = u.id AND sr.company_id = $1
                 ), 0)
                 - COALESCE((
                     SELECT SUM(t.amount) FROM transactions t
@@ -99,7 +103,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
               AND COALESCE(bill_purpose, '') != 'name_only'
         `;
 
-        // Count customers with positive outstanding balance (proper subquery, no HAVING)
+        // Count customers with positive outstanding balance
         const outstandingCountSql = `
             SELECT COUNT(*) as cnt FROM (
                 SELECT GREATEST(0,
@@ -116,6 +120,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
                         JOIN invoices i3 ON i3.id = ip.invoice_id
                         WHERE i3.customer_id = u.id AND i3.company_id = $1
                           AND COALESCE(i3.is_deleted, false) = false
+                    ), 0)
+                    - COALESCE((
+                        SELECT SUM(sr.total_amount) FROM sales_returns sr
+                        WHERE sr.customer_id = u.id AND sr.company_id = $1
                     ), 0)
                     - COALESCE((
                         SELECT SUM(t.amount) FROM transactions t
@@ -251,20 +259,55 @@ router.get('/expense-breakdown', authMiddleware, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     try {
-        const ledgerSql = `
-            SELECT
-                ca.name as category,
-                SUM(COALESCE(le.debit, 0) - COALESCE(le.credit, 0)) as amount
-            FROM ledger_entries le
-            JOIN chart_of_accounts ca ON le.account_id = ca.id
-            WHERE le.company_id = $1
-              AND (ca.name ILIKE '%expense%' OR ca.name ILIKE '%salary%' OR ca.name ILIKE '%commission%')
-            GROUP BY ca.name
-            HAVING SUM(COALESCE(le.debit, 0) - COALESCE(le.credit, 0)) > 0
-            ORDER BY amount DESC
-        `;
-        const expenses = await db.pgAll(ledgerSql, [companyId]);
-        res.json(expenses && expenses.length > 0 ? expenses : [{ category: "No expenses recorded", amount: 0 }]);
+        // Build expense breakdown from actual source tables
+        const [txExpenses, purchases, dailySalary, monthlySalary] = await Promise.all([
+            // General transactions (EXPENSE, EXPENSE_PAYMENT, MISC_EXPENSE, etc.)
+            db.pgAll(`
+                SELECT
+                    COALESCE(NULLIF(expense_category,''), category, type) as category,
+                    SUM(amount) as amount
+                FROM transactions
+                WHERE company_id = $1
+                  AND type IN ('EXPENSE','EXPENSE_PAYMENT','MISC_EXPENSE','PURCHASE','UTILITY','MAINTENANCE')
+                GROUP BY COALESCE(NULLIF(expense_category,''), category, type)
+                ORDER BY amount DESC
+            `, [companyId]).catch(() => []),
+
+            // Purchase bills (procurement expenses)
+            db.pgGet(`
+                SELECT 'Purchases / Procurement' as category,
+                       COALESCE(SUM(COALESCE(total_amount, grand_total, net_amount, 0)), 0) as amount
+                FROM purchase_bills
+                WHERE company_id = $1 AND COALESCE(is_deleted,false) = false
+            `, [companyId]).catch(() => null),
+
+            // Daily wage payments
+            db.pgGet(`
+                SELECT 'Daily Wages' as category,
+                       COALESCE(SUM(gross_wage), 0) as amount
+                FROM daily_salary_payments
+                WHERE company_id = $1
+            `, [companyId]).catch(() => null),
+
+            // Monthly salary payments (join with salaries for gross)
+            db.pgGet(`
+                SELECT 'Staff Salaries' as category,
+                       COALESCE(SUM(sp.amount), 0) as amount
+                FROM salary_payments sp
+                JOIN salaries s ON s.id = sp.salary_id
+                WHERE s.company_id = $1
+            `, [companyId]).catch(() => null),
+        ]);
+
+        const combined = [...txExpenses];
+        if (purchases?.amount > 0) combined.push(purchases);
+        if (dailySalary?.amount > 0) combined.push(dailySalary);
+        if (monthlySalary?.amount > 0) combined.push(monthlySalary);
+
+        // Sort by amount descending
+        combined.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+
+        res.json(combined.length > 0 ? combined : [{ category: "No expenses recorded", amount: 0 }]);
     } catch (err) {
         console.error("Expense breakdown error:", err);
         res.json([{ category: "No expenses recorded", amount: 0 }]);
