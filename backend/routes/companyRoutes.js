@@ -339,6 +339,24 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
             }
         }
 
+        // 6. Proprietor account receipts (customers paying into proprietor's personal account)
+        const propTxns = await db.pgAll(`
+            SELECT transaction_date AS date, amount, transaction_type, notes
+            FROM proprietor_transactions
+            WHERE company_id = $1
+        `, [companyId]).catch(() => []);
+        for (const r of propTxns) {
+            const direction = r.transaction_type === 'PERSONAL_RECEIPT' ? 'in' : 'out';
+            const source    = r.transaction_type === 'PERSONAL_RECEIPT' ? 'PROPRIETOR_RECEIPT' : 'PROPRIETOR_PAYOUT';
+            // Proprietor receipts are NOT physical cash/bank — they represent amounts owed via personal account.
+            // We add them to cash_ledger with source PROPRIETOR so cash flow reflects them.
+            const existing = await db.pgGet(`SELECT id FROM cash_ledger WHERE company_id=$1 AND source=$2 AND date=$3 AND amount=$4 LIMIT 1`, [companyId, source, r.date, r.amount]);
+            if (!existing) {
+                await db.pgRun(`INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [companyId, branchId, source, r.amount, direction, r.date, r.notes || null]);
+                inserted++;
+            }
+        }
+
         res.json({ success: true, inserted, message: `Ledger rebuilt — ${inserted} entries restored.` });
     } catch (err) {
         console.error('Rebuild ledger error:', err.message);

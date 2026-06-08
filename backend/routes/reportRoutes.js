@@ -637,20 +637,35 @@ router.get('/finance/cash-flow', authMiddleware, async (req, res) => {
         const params = [companyId];
         if (startDate && endDate) { dateFilter = `AND date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
 
-        const [cashIn, cashOut, bankIn, bankOut] = await Promise.all([
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' ${dateFilter}`, params),
+        const [cashIn, cashOut, bankIn, bankOut, invPayCash, invPayBank, propReceipts, propPayouts] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND source != 'OPENING_BALANCE' ${dateFilter}`, params),
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' ${dateFilter}`, params),
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND source != 'OPENING_BALANCE' ${dateFilter}`, params),
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' ${dateFilter}`, params),
+            // Invoice payments received (direct cash/bank from customers)
+            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND (ip.payment_method IS NULL OR UPPER(ip.payment_method) NOT IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS')) ${dateFilter.replace('date','ip.payment_date')}`, params).catch(()=>({total:0})),
+            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND UPPER(COALESCE(ip.payment_method,'')) IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${dateFilter.replace('date','ip.payment_date')}`, params).catch(()=>({total:0})),
+            // Proprietor personal account receipts from customers
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' ${dateFilter.replace('date','transaction_date')}`, params).catch(()=>({total:0})),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='WITHDRAWAL' ${dateFilter.replace('date','transaction_date')}`, params).catch(()=>({total:0})),
         ]);
         const ci = parseFloat(cashIn?.total||0), co = parseFloat(cashOut?.total||0);
         const bi = parseFloat(bankIn?.total||0), bo = parseFloat(bankOut?.total||0);
+        const ipc = parseFloat(invPayCash?.total||0), ipb = parseFloat(invPayBank?.total||0);
+        const pr = parseFloat(propReceipts?.total||0), pp = parseFloat(propPayouts?.total||0);
+        // Combine: ledger + invoice payments + proprietor receipts
+        const totalIn  = ci + bi + ipc + ipb + pr;
+        const totalOut = co + bo + pp;
         res.json([
-            { activity: 'Cash Receipts',      inflow: ci,    outflow: 0,  net: ci },
-            { activity: 'Cash Payments',       inflow: 0,     outflow: co, net: -co },
-            { activity: 'Bank Receipts',       inflow: bi,    outflow: 0,  net: bi },
-            { activity: 'Bank Payments',       inflow: 0,     outflow: bo, net: -bo },
-            { activity: 'Net Cash Flow',       inflow: ci+bi, outflow: co+bo, net: (ci+bi)-(co+bo) },
+            { activity: 'Cash Receipts (Ledger)',           inflow: ci,   outflow: 0,  net: ci },
+            { activity: 'Bank Receipts (Ledger)',           inflow: bi,   outflow: 0,  net: bi },
+            { activity: 'Customer Payments (Cash)',         inflow: ipc,  outflow: 0,  net: ipc },
+            { activity: 'Customer Payments (Bank)',         inflow: ipb,  outflow: 0,  net: ipb },
+            { activity: 'Proprietor Account Receipts',     inflow: pr,   outflow: 0,  net: pr },
+            { activity: 'Cash Payments',                   inflow: 0,    outflow: co, net: -co },
+            { activity: 'Bank Payments',                   inflow: 0,    outflow: bo, net: -bo },
+            { activity: 'Proprietor Account Payouts',      inflow: 0,    outflow: pp, net: -pp },
+            { activity: 'NET CASH FLOW',                   inflow: totalIn, outflow: totalOut, net: totalIn - totalOut },
         ]);
     } catch (err) {
         console.error('cash-flow error:', err.message);
@@ -876,18 +891,36 @@ router.get('/hr/employee-ledger', authMiddleware, async (req, res) => {
  */
 router.get('/executive/health', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
+    const { startDate, endDate } = req.query;
     try {
-        const [sales, purchases, receivables, loans] = await Promise.all([
-            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]),
-            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
-            db.pgGet(`SELECT COALESCE(SUM(total_amount - paid_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND status != 'PAID'`, [companyId]),
+        let dateFilter = '';
+        const params = [companyId];
+        if (startDate && endDate) { dateFilter = `AND invoice_date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
+
+        const [sales, purchases, receivables, loans, collected, proprietorReceipts] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' ${dateFilter}`, params),
+            // Try purchase_bills, fallback to purchase_bill with different column names
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
+            // Receivables = invoices billed - directly paid via invoice_payments
+            db.pgGet(`SELECT COALESCE(SUM(i.total_amount),0) AS total FROM invoices i WHERE i.company_id=$1 AND COALESCE(i.is_deleted,false)=false AND i.status != 'PAID' AND COALESCE(i.bill_purpose,'')!='name_only'`, [companyId]),
             db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total FROM loans WHERE company_id=$1 AND status='ACTIVE'`, [companyId]).catch(()=>({total:0})),
+            // Amount already collected via invoice_payments
+            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND COALESCE(i.is_deleted,false)=false`, [companyId]),
+            // Receipts via proprietor personal account
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT'`, [companyId]).catch(()=>({total:0})),
         ]);
+
+        const totalSales      = parseFloat(sales?.total||0);
+        const totalPurchases  = parseFloat(purchases?.total||0);
+        const totalCollected  = parseFloat(collected?.total||0) + parseFloat(proprietorReceipts?.total||0);
+        const totalReceivables = Math.max(0, totalSales - totalCollected);
+        const loanOutstanding  = parseFloat(loans?.total||0);
+
         res.json([
-            { metric: 'Total Sales',        value: parseFloat(sales?.total||0),       growth: '' },
-            { metric: 'Total Purchases',    value: parseFloat(purchases?.total||0),    growth: '' },
-            { metric: 'Total Receivables',  value: parseFloat(receivables?.total||0),  growth: '' },
-            { metric: 'Loan Outstanding',   value: parseFloat(loans?.total||0),        growth: '' },
+            { metric: 'Total Sales',        value: totalSales,        growth: '-' },
+            { metric: 'Total Purchases',    value: totalPurchases,    growth: '-' },
+            { metric: 'Total Receivables',  value: totalReceivables,  growth: '-' },
+            { metric: 'Loan Outstanding',   value: loanOutstanding,   growth: '-' },
         ]);
     } catch (err) {
         console.error('executive/health error:', err.message);
