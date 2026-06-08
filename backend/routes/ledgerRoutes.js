@@ -151,6 +151,9 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
+        // Self-heal: fix any OPENING_BALANCE stored with wrong direction='out'
+        await db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
         // OPENING_BALANCE entries always count as positive (starting capital, never debt)
         const openingParams = [companyId];
@@ -195,6 +198,9 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
+        // Self-heal: fix any OPENING_BALANCE stored with wrong direction='out'
+        await db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+
         // Opening balance = net of ALL bank transactions strictly BEFORE startDate
         const openingParams = [companyId];
         let openingSql = `
