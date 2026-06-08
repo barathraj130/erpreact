@@ -293,26 +293,98 @@ router.get('/finance/profit-loss', authMiddleware, async (req, res) => {
  */
 router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
-    const { filterType } = req.query;
     try {
-        const { getBalanceSheet } = await import('../utils/accountingEngine.js');
-        const report = await getBalanceSheet(companyId, filterType);
-        res.json(report);
+        // ── ASSETS ─────────────────────────────────────────────────────────────
+        const [
+            cashLedger, bankLedger,
+            receivables, advancePaid,
+            inventory,
+            loansGiven,
+            propReceiptBalance,
+        ] = await Promise.all([
+            // Cash in hand = net of cash_ledger (excluding opening balance)
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS total
+                      FROM cash_ledger WHERE company_id=$1 AND source!='OPENING_BALANCE'`, [companyId]).catch(()=>({total:0})),
+            // Cash at bank = net of bank_ledger
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS total
+                      FROM bank_ledger WHERE company_id=$1 AND source!='OPENING_BALANCE'`, [companyId]).catch(()=>({total:0})),
+            // Accounts Receivable = unpaid invoice amounts
+            db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS total
+                      FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND status!='PAID' AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]).catch(()=>({total:0})),
+            // Customer Advances (overpaid = negative outstanding = asset for them, not us)
+            db.pgGet(`SELECT COALESCE(SUM(ABS(remaining_balance)),0) AS total FROM (
+                        SELECT (COALESCE(initial_balance,0)
+                            + COALESCE((SELECT SUM(total_amount) FROM invoices WHERE customer_id=u.id AND company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'),0)
+                            - COALESCE((SELECT SUM(amount) FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.customer_id=u.id AND i.company_id=$1),0)
+                            - COALESCE((SELECT SUM(total_amount) FROM sales_returns WHERE customer_id=u.id AND company_id=$1),0)
+                        ) AS remaining_balance
+                        FROM users u WHERE u.company_id=$1 AND u.role='customer'
+                      ) sub WHERE remaining_balance < 0`, [companyId]).catch(()=>({total:0})),
+            // Inventory / Stock value
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(stock_quantity,0) * COALESCE(purchase_price,selling_price,0)),0) AS total
+                      FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
+            // Loans given out (if any assets lent)
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total
+                      FROM loans WHERE company_id=$1 AND loan_direction='GIVEN' AND status='ACTIVE'`, [companyId]).catch(()=>({total:0})),
+            // Proprietor account receipts not yet settled (money customers paid via proprietor)
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions
+                      WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT'`, [companyId]).catch(()=>({total:0})),
+        ]);
+
+        // ── LIABILITIES ────────────────────────────────────────────────────────
+        const [
+            payables,
+            loansPayable,
+            lenderBalance,
+        ] = await Promise.all([
+            // Accounts Payable = unpaid purchase bills
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)
+                            - COALESCE(paid_amount,0)),0) AS total
+                      FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
+            // Loans payable (loans taken)
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total
+                      FROM loans WHERE company_id=$1 AND (loan_direction IS NULL OR loan_direction!='GIVEN') AND status='ACTIVE'`, [companyId]).catch(()=>({total:0})),
+            // Lender balances
+            db.pgGet(`SELECT COALESCE(SUM(balance),0) AS total FROM lenders WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
+        ]);
+
+        const cashVal    = parseFloat(cashLedger?.total||0);
+        const bankVal    = parseFloat(bankLedger?.total||0);
+        const recVal     = parseFloat(receivables?.total||0);
+        const advVal     = parseFloat(advancePaid?.total||0);
+        const invVal     = parseFloat(inventory?.total||0);
+        const loanGiven  = parseFloat(loansGiven?.total||0);
+        const propRec    = parseFloat(propReceiptBalance?.total||0);
+
+        const payVal     = parseFloat(payables?.total||0);
+        const loanPay    = parseFloat(loansPayable?.total||0);
+        const lenderVal  = parseFloat(lenderBalance?.total||0);
+
+        const totalAssets      = cashVal + bankVal + recVal + advVal + invVal + loanGiven + propRec;
+        const totalLiabilities = payVal + loanPay + lenderVal;
+        const netEquity        = totalAssets - totalLiabilities;
+
+        res.json([
+            // ASSETS
+            { particulars: 'Cash in Hand',                     account_type: 'ASSET',     amount: cashVal },
+            { particulars: 'Cash at Bank',                     account_type: 'ASSET',     amount: bankVal },
+            { particulars: 'Accounts Receivable (Customers)',  account_type: 'ASSET',     amount: recVal },
+            { particulars: 'Customer Advance Credits',         account_type: 'ASSET',     amount: advVal },
+            { particulars: 'Inventory / Stock Value',          account_type: 'ASSET',     amount: invVal },
+            { particulars: 'Proprietor Account Receipts',      account_type: 'ASSET',     amount: propRec },
+            { particulars: 'Loans Given (Active)',             account_type: 'ASSET',     amount: loanGiven },
+            { particulars: 'TOTAL ASSETS',                     account_type: 'TOTAL',     amount: totalAssets },
+            // LIABILITIES
+            { particulars: 'Accounts Payable (Suppliers)',     account_type: 'LIABILITY', amount: payVal },
+            { particulars: 'Loans Payable (Active)',           account_type: 'LIABILITY', amount: loanPay },
+            { particulars: 'Lender Balances',                  account_type: 'LIABILITY', amount: lenderVal },
+            { particulars: 'TOTAL LIABILITIES',                account_type: 'TOTAL',     amount: totalLiabilities },
+            // EQUITY
+            { particulars: 'Net Owner\'s Equity',              account_type: 'EQUITY',    amount: netEquity },
+        ]);
     } catch (err) {
         console.error("Balance sheet error:", err.message);
-        try {
-            const rows = await db.pgAll(`
-                SELECT ca.name AS particulars, ca.account_type,
-                       COALESCE(SUM(le.debit),0) - COALESCE(SUM(le.credit),0) AS amount
-                FROM chart_of_accounts ca
-                LEFT JOIN ledger_entries le ON le.account_id = ca.id AND le.company_id = $1
-                WHERE ca.company_id = $1 OR ca.company_id IS NULL
-                GROUP BY ca.id, ca.name, ca.account_type
-                HAVING ABS(COALESCE(SUM(le.debit),0) - COALESCE(SUM(le.credit),0)) > 0
-                ORDER BY ca.account_type, ca.name
-            `, [companyId]);
-            res.json(rows || []);
-        } catch(_) { res.json([]); }
+        res.json([]);
     }
 });
 
