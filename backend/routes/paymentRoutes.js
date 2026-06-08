@@ -513,4 +513,57 @@ router.get("/summary", authMiddleware, checkAccess('Sales', 'view_invoices'), as
     }
 });
 
+/* ============================================================
+   ROUND-OFF / DISCOUNT ADJUSTMENT
+   Writes off a small amount from a customer's pending balance
+   (e.g. ₹96,995 → round off ₹995 → balance becomes ₹96,000)
+============================================================ */
+router.post("/round-off", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { customer_id, amount, date, notes } = req.body;
+
+    if (!customer_id || !amount || Number(amount) <= 0) {
+        return res.status(400).json({ error: "customer_id and a positive amount are required" });
+    }
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        const roundOffDate = date || new Date().toISOString().split("T")[0];
+        const description = notes?.trim() || "Round off adjustment";
+
+        // Create a ROUND_OFF ledger event (type='ROUND_OFF' — treated as credit in ledger)
+        await createCustomerLedgerEvent(client, {
+            companyId,
+            branchId: req.user.branch_id || 1,
+            customerId: Number(customer_id),
+            type: "ROUND_OFF",
+            category: "ROUND_OFF",
+            amount: Number(amount),
+            date: roundOffDate,
+            description,
+            referenceType: "ROUND_OFF",
+            createdBy: req.user.id,
+        });
+
+        // Recompute the customer's outstanding balance
+        const updated = await recomputeCustomerBalance(client, Number(customer_id), companyId);
+
+        await client.query("COMMIT");
+        res.json({
+            success: true,
+            message: "Round off applied successfully",
+            new_pending: updated.pending_amount,
+        });
+    } catch (err) {
+        if (client) await client.query("ROLLBACK");
+        console.error("Round off error:", err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 export default router;

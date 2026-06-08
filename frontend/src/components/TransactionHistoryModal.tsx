@@ -112,6 +112,12 @@ function exportCustomerLedgerCsv(
   URL.revokeObjectURL(url);
 }
 
+interface RoundOffForm {
+  amount: string;
+  date: string;
+  notes: string;
+}
+
 const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   isOpen,
   onClose,
@@ -124,6 +130,10 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ start_date: "", end_date: "", payment_method: "" });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [showRoundOff, setShowRoundOff] = useState(false);
+  const [roundOffForm, setRoundOffForm] = useState<RoundOffForm>({ amount: "", date: new Date().toISOString().split("T")[0], notes: "" });
+  const [roundOffLoading, setRoundOffLoading] = useState(false);
+  const [roundOffMsg, setRoundOffMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -175,6 +185,30 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
 
   const pendingAmount = customerSummary?.pending_amount || 0;
   const isAdvance = pendingAmount < 0;
+
+  const handleRoundOffSubmit = async () => {
+    const amt = parseFloat(roundOffForm.amount);
+    if (!amt || amt <= 0) { setRoundOffMsg({ type: "error", text: "Enter a valid positive amount" }); return; }
+    if (amt > pendingAmount) { setRoundOffMsg({ type: "error", text: `Cannot exceed pending balance of ${fmt(pendingAmount)}` }); return; }
+    setRoundOffLoading(true);
+    setRoundOffMsg(null);
+    try {
+      const res = await apiFetch("/payments/round-off", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customer_id: entityId, amount: amt, date: roundOffForm.date, notes: roundOffForm.notes }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setRoundOffMsg({ type: "success", text: `Round off of ${fmt(amt)} applied! New pending: ${fmt(data.new_pending ?? 0)}` });
+      setRoundOffForm({ amount: "", date: new Date().toISOString().split("T")[0], notes: "" });
+      await loadData();
+    } catch (e: any) {
+      setRoundOffMsg({ type: "error", text: e.message });
+    } finally {
+      setRoundOffLoading(false);
+    }
+  };
 
   const summaryCards = entityType === "customer" ? [
     { label: "Total Billed", value: customerSummary?.total_billed || 0, color: "#0f766e", bg: "#f0fdfa", icon: <FaFileInvoiceDollar size={14} /> },
@@ -270,9 +304,21 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
         .thm-info-item-text { font-size: 11.5px; color: #64748b; }
         .thm-opening-bal { padding: 16px; border-top: 1px solid #f1f5f9; background: #f0fdf4; }
         
-        .thm-footer { padding: 16px 24px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+        .thm-footer { padding: 16px 24px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
         .thm-btn-done { height: 40px; padding: 0 24px; border-radius: 8px; background: #0f172a; color: #fff; font-weight: 700; border: none; cursor: pointer; }
         .thm-btn-close { width: 36px; height: 36px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; color: #94a3b8; cursor: pointer; display: grid; place-items: center; }
+        .thm-btn-roundoff { height: 40px; padding: 0 18px; border-radius: 8px; background: #fff7ed; color: #c2410c; font-weight: 700; border: 1px solid #fed7aa; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+        .thm-btn-roundoff:hover { background: #ffedd5; }
+        .thm-roundoff-panel { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 18px 20px; margin: 0 24px 0 24px; display: flex; flex-direction: column; gap: 14px; }
+        .thm-roundoff-title { font-weight: 800; font-size: 14px; color: #7c2d12; display: flex; align-items: center; gap: 8px; }
+        .thm-roundoff-grid { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 12px; align-items: end; }
+        .thm-roundoff-label { font-size: 11px; font-weight: 700; color: #9a3412; margin-bottom: 4px; text-transform: uppercase; }
+        .thm-roundoff-input { width: 100%; height: 38px; border: 1px solid #fdba74; border-radius: 8px; padding: 0 10px; font-size: 13px; background: #fff; box-sizing: border-box; }
+        .thm-roundoff-input:focus { outline: none; border-color: #f97316; }
+        .thm-btn-apply { height: 38px; padding: 0 20px; border-radius: 8px; background: #ea580c; color: #fff; font-weight: 700; border: none; cursor: pointer; font-size: 13px; white-space: nowrap; }
+        .thm-btn-apply:disabled { opacity: 0.6; cursor: not-allowed; }
+        .thm-roundoff-info { font-size: 12px; color: #9a3412; background: #ffedd5; border-radius: 8px; padding: 8px 12px; }
+        @media (max-width: 768px) { .thm-roundoff-grid { grid-template-columns: 1fr 1fr; } }
         
         .thm-row-type-badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-right: 6px; }
         .thm-skeleton { height: 40px; background: #f1f5f9; border-radius: 8px; animation: thmPulse 1.5s infinite; }
@@ -307,7 +353,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
               <FaInfoCircle color="#0ea5e9" size={14} />
               <div>
                 {entityType === "customer" ? (
-                  <span>Formula: <strong>Opening + Bills − Payments − Returns</strong></span>
+                  <span>Formula: <strong>Opening + Bills − Payments − Returns − Round Offs</strong></span>
                 ) : (
                   <span>Formula: <strong>Opening + Bills − Payments</strong></span>
                 )}
@@ -371,11 +417,11 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                             <td>
                               <div style={{ fontWeight: 700 }}>{row.description}</div>
                               <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
-                                <span className="thm-row-type-badge" style={{ 
-                                  background: (row.type === 'BILL' || row.type === 'INVOICE') ? '#eff6ff' : '#f0fdf4',
-                                  color: (row.type === 'BILL' || row.type === 'INVOICE') ? '#2563eb' : '#16a34a'
-                                }}>{row.type}</span>
-                                {row.category}
+                                <span className="thm-row-type-badge" style={{
+                                  background: row.type === 'ROUND_OFF' ? '#fff7ed' : (row.type === 'BILL' || row.type === 'INVOICE') ? '#eff6ff' : '#f0fdf4',
+                                  color: row.type === 'ROUND_OFF' ? '#c2410c' : (row.type === 'BILL' || row.type === 'INVOICE') ? '#2563eb' : '#16a34a'
+                                }}>{row.type === 'ROUND_OFF' ? 'ROUND OFF' : row.type}</span>
+                                {row.category === 'ROUND_OFF' ? 'Discount/Write-off' : row.category}
                               </div>
                             </td>
                             <td>{row.invoice_number || row.reference_number || "—"}</td>
@@ -422,6 +468,12 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                         <div className="thm-info-item-text">When balance goes negative, the customer has overpaid — shown as Advance credit.</div>
                       </div>
                     )}
+                    {entityType === 'customer' && (
+                      <div className="thm-info-item" style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+                        <div className="thm-info-item-title"><span>⚖️</span> Round Off</div>
+                        <div className="thm-info-item-text">Small balance write-offs agreed with the customer. Reduces pending without cash receipt.</div>
+                      </div>
+                    )}
                   </div>
                   <div className="thm-opening-bal">
                     <div className="thm-stat-label">Opening Balance</div>
@@ -432,9 +484,88 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
             </div>
           </div>
 
+          {/* Round-Off Panel */}
+          {showRoundOff && entityType === "customer" && pendingAmount > 0 && (
+            <div className="thm-roundoff-panel">
+              <div className="thm-roundoff-title">
+                <span>⚖️</span> Round Off Pending Balance
+              </div>
+              <div className="thm-roundoff-info">
+                Current pending: <strong>{fmt(pendingAmount)}</strong> — enter the amount to write off/discount. The difference will be settled.
+              </div>
+              <div className="thm-roundoff-grid">
+                <div>
+                  <div className="thm-roundoff-label">Amount to Write Off (₹)</div>
+                  <input
+                    type="number"
+                    className="thm-roundoff-input"
+                    placeholder="e.g. 995"
+                    min="0.01"
+                    step="0.01"
+                    value={roundOffForm.amount}
+                    onChange={e => {
+                      setRoundOffForm(f => ({ ...f, amount: e.target.value }));
+                      setRoundOffMsg(null);
+                    }}
+                  />
+                  {roundOffForm.amount && parseFloat(roundOffForm.amount) > 0 && parseFloat(roundOffForm.amount) <= pendingAmount && (
+                    <div style={{ fontSize: 11, color: "#15803d", marginTop: 3 }}>
+                      After: <strong>{fmt(pendingAmount - parseFloat(roundOffForm.amount))}</strong>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="thm-roundoff-label">Date</div>
+                  <input
+                    type="date"
+                    className="thm-roundoff-input"
+                    value={roundOffForm.date}
+                    onChange={e => setRoundOffForm(f => ({ ...f, date: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <div className="thm-roundoff-label">Reason / Notes</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="text"
+                      className="thm-roundoff-input"
+                      placeholder="e.g. Round off agreed with customer"
+                      value={roundOffForm.notes}
+                      onChange={e => setRoundOffForm(f => ({ ...f, notes: e.target.value }))}
+                    />
+                    <button className="thm-btn-apply" disabled={roundOffLoading} onClick={handleRoundOffSubmit}>
+                      {roundOffLoading ? "…" : "Apply"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {roundOffMsg && (
+                <div style={{
+                  fontSize: 13, fontWeight: 600, padding: "8px 12px", borderRadius: 8,
+                  background: roundOffMsg.type === "success" ? "#f0fdf4" : "#fef2f2",
+                  color: roundOffMsg.type === "success" ? "#15803d" : "#dc2626",
+                  border: `1px solid ${roundOffMsg.type === "success" ? "#bbf7d0" : "#fca5a5"}`
+                }}>
+                  {roundOffMsg.type === "success" ? "✓ " : "✗ "}{roundOffMsg.text}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="thm-footer">
-            <div className="thm-footer-info">
-              {entityType === 'customer' ? customerRows.length : supplierTransactions.length} entries recorded
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div className="thm-footer-info">
+                {entityType === 'customer' ? customerRows.length : supplierTransactions.length} entries recorded
+              </div>
+              {entityType === "customer" && pendingAmount > 0 && (
+                <button
+                  className="thm-btn-roundoff"
+                  onClick={() => { setShowRoundOff(v => !v); setRoundOffMsg(null); }}
+                >
+                  <span>⚖️</span>
+                  {showRoundOff ? "Cancel Round Off" : "Round Off"}
+                </button>
+              )}
             </div>
             <button className="thm-btn-done" onClick={onClose}>Done</button>
           </div>

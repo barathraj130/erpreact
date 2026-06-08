@@ -154,6 +154,11 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   if (filters.start_date) txConditions.push(`t.transaction_date >= $3`);
   if (filters.end_date)   txConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
 
+  // Round-off / discount adjustments (stored as type='ROUND_OFF' with user_id = customerId)
+  const roConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'ROUND_OFF'"];
+  if (filters.start_date) roConditions.push(`COALESCE(t.transaction_date, t.date) >= $3`);
+  if (filters.end_date)   roConditions.push(`COALESCE(t.transaction_date, t.date) <= $${filters.start_date ? 4 : 3}`);
+
   const rows = await db.pgAll(
     `SELECT * FROM (
        SELECT
@@ -225,7 +230,26 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          NULL::TIMESTAMP AS bank_timestamp,
          t.created_at AS sort_created_at
        FROM transactions t
-       WHERE t.company_id = $1 AND t.reference_id = $2 AND t.type = 'CUSTOMER_PAYMENT'
+       WHERE ${txConditions.join(" AND ")}
+
+       UNION ALL
+
+       SELECT
+         3000000000 + t.id AS id,
+         COALESCE(t.transaction_date::date, t.date::date, CURRENT_DATE) AS date,
+         'ROUND_OFF' AS type,
+         'ROUND_OFF' AS category,
+         t.amount AS amount,
+         COALESCE(t.description, 'Round Off Adjustment') AS description,
+         NULL::INTEGER AS related_invoice_id,
+         NULL::TEXT AS invoice_number,
+         NULL::TEXT AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         t.created_at AS sort_created_at
+       FROM transactions t
+       WHERE ${roConditions.join(" AND ")}
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
@@ -292,10 +316,22 @@ async function getCustomerTotals(companyId, customerId) {
     srReturnsTotal = toNumber(srTotals?.sr_total);
   } catch (e) { /* table may not exist yet */ }
 
+  // Round-off / discount adjustments
+  let roundOffTotal = 0;
+  try {
+    const roTotals = await db.pgGet(
+      `SELECT COALESCE(SUM(amount), 0) AS total_round_off
+       FROM transactions
+       WHERE company_id = $1 AND user_id = $2 AND type = 'ROUND_OFF'`,
+      [companyId, customerId],
+    );
+    roundOffTotal = toNumber(roTotals?.total_round_off);
+  } catch (e) { /* ignore */ }
+
   return {
     total_billed: toNumber(invoiceTotals?.total_billed),
     total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
-    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct),
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal,
   };
 }
 
@@ -347,14 +383,26 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     returned += toNumber(srTotals.rows[0]?.sr_total);
   } catch (e) { /* table may not exist yet */ }
 
-  const outstanding = openingBalance + billed - paid - returned;
+  // Add round-off / discount adjustments
+  let roundOff = 0;
+  try {
+    const roTotals = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_round_off
+       FROM transactions
+       WHERE company_id = $1 AND user_id = $2 AND type = 'ROUND_OFF'`,
+      [companyId, customerId],
+    );
+    roundOff = toNumber(roTotals.rows[0]?.total_round_off);
+  } catch (e) { /* no round-offs yet */ }
+
+  const outstanding = openingBalance + billed - paid - returned - roundOff;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);
 
   return {
     opening_balance: openingBalance,
     total_billed: billed,
-    total_paid: paid,
+    total_paid: paid + roundOff,   // surface round-offs inside total_paid for display
     total_returns: returned,
     pending_amount: outstanding,
     ledger_id: snapshot.ledgerId,
