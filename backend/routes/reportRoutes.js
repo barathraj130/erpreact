@@ -351,7 +351,7 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
         const [
             payables,
             loansPayable,
-            lenderBalance,
+            salaryPayable,
         ] = await Promise.all([
             // Accounts Payable = purchase bills minus what's been paid via purchase_bill_payments
             db.pgGet(`SELECT COALESCE(
@@ -360,13 +360,34 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
                       ,0) AS total
                       FROM purchase_bills pb
                       WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
-            // Loans payable (loans taken = not GIVEN)
-            db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total
-                      FROM loans WHERE company_id=$1
-                        AND UPPER(COALESCE(loan_direction,'TAKEN')) != 'GIVEN'
-                        AND UPPER(COALESCE(status,'ACTIVE')) = 'ACTIVE'`, [companyId]).catch(()=>({total:0})),
-            // Lender balances (opening_balance from lenders table)
-            db.pgGet(`SELECT COALESCE(SUM(COALESCE(opening_balance,0)),0) AS total FROM lenders WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
+            // Loans payable: use principal_outstanding (after repayments) from loans taken
+            // Also include lender opening_balance minus repayments made via loan_payments
+            db.pgGet(`
+                SELECT COALESCE(SUM(
+                    COALESCE(l.principal_outstanding,
+                        l.principal_amount - COALESCE((
+                            SELECT SUM(lp.principal_paid)
+                            FROM loan_payments lp WHERE lp.loan_id = l.id
+                        ), 0),
+                    l.principal_amount, 0)
+                ), 0) AS total
+                FROM loans l
+                WHERE l.company_id = $1
+                  AND UPPER(COALESCE(l.loan_direction, 'TAKEN')) != 'GIVEN'
+                  AND UPPER(COALESCE(l.status, 'active')) IN ('ACTIVE','PENDING','ONGOING')
+            `, [companyId]).catch(()=>({total:0})),
+            // Salary payable = monthly salaries of active employees not yet paid this month
+            db.pgGet(`
+                SELECT COALESCE(SUM(s.gross_salary - COALESCE(s.deductions,0)),0) AS total
+                FROM salaries s
+                WHERE s.company_id = $1
+                  AND s.salary_type = 'monthly'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM salary_payments sp
+                    WHERE sp.salary_id = s.id
+                      AND DATE_TRUNC('month', sp.date) = DATE_TRUNC('month', CURRENT_DATE)
+                  )
+            `, [companyId]).catch(()=>({total:0})),
         ]);
 
         // Cash in hand = ledger misc + invoice payments received (cash) + direct receipts - purchases paid - wages - loans repaid - salaries
@@ -389,12 +410,12 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
         const loanGiven = parseFloat(loansGiven?.total||0);
         const propRec   = parseFloat(propReceiptBalance?.total||0);
 
-        const payVal    = Math.max(0, parseFloat(payables?.total||0));
-        const loanPay   = parseFloat(loansPayable?.total||0);
-        const lenderVal = parseFloat(lenderBalance?.total||0);
+        const payVal     = Math.max(0, parseFloat(payables?.total||0));
+        const loanPay    = parseFloat(loansPayable?.total||0);
+        const salPayable = parseFloat(salaryPayable?.total||0);
 
         const totalAssets      = cashVal + bankVal + recVal + advVal + invVal + loanGiven + propRec;
-        const totalLiabilities = payVal + loanPay + lenderVal;
+        const totalLiabilities = payVal + loanPay + salPayable;
         const netEquity        = totalAssets - totalLiabilities;
 
         res.json([
@@ -409,8 +430,8 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
             { particulars: 'TOTAL ASSETS',                     account_type: 'TOTAL',     amount: totalAssets },
             // LIABILITIES
             { particulars: 'Accounts Payable (Suppliers)',     account_type: 'LIABILITY', amount: payVal },
-            { particulars: 'Loans Payable (Active)',           account_type: 'LIABILITY', amount: loanPay },
-            { particulars: 'Lender Balances',                  account_type: 'LIABILITY', amount: lenderVal },
+            { particulars: 'Loans Payable (Outstanding)',      account_type: 'LIABILITY', amount: loanPay },
+            { particulars: 'Salary Payable (This Month)',      account_type: 'LIABILITY', amount: salPayable },
             { particulars: 'TOTAL LIABILITIES',                account_type: 'TOTAL',     amount: totalLiabilities },
             // EQUITY
             { particulars: 'Net Owner\'s Equity',              account_type: 'EQUITY',    amount: netEquity },
