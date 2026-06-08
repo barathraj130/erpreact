@@ -28,8 +28,38 @@ router.get('/top-customers', authMiddleware, async (req, res) => {
         u.username AS customer_name,
         COUNT(i.id) AS invoice_count,
         COALESCE(SUM(i.total_amount), 0) AS total_sales,
-        COALESCE(SUM(i.paid_amount), 0) AS total_paid,
-        COALESCE(SUM(i.total_amount - COALESCE(i.paid_amount, 0)), 0) AS outstanding,
+        (
+          COALESCE((
+            SELECT SUM(ip.amount)
+            FROM invoice_payments ip
+            JOIN invoices i2 ON i2.id = ip.invoice_id
+            WHERE i2.customer_id = u.id AND i2.company_id = $1
+              AND COALESCE(i2.is_deleted, false) = false
+          ), 0) +
+          COALESCE((
+            SELECT SUM(tx.amount)
+            FROM transactions tx
+            WHERE tx.user_id = u.id AND tx.company_id = $1
+              AND tx.type = 'CUSTOMER_PAYMENT'
+          ), 0)
+        ) AS total_paid,
+        GREATEST(0,
+          COALESCE(SUM(i.total_amount), 0) - (
+            COALESCE((
+              SELECT SUM(ip.amount)
+              FROM invoice_payments ip
+              JOIN invoices i2 ON i2.id = ip.invoice_id
+              WHERE i2.customer_id = u.id AND i2.company_id = $1
+                AND COALESCE(i2.is_deleted, false) = false
+            ), 0) +
+            COALESCE((
+              SELECT SUM(tx.amount)
+              FROM transactions tx
+              WHERE tx.user_id = u.id AND tx.company_id = $1
+                AND tx.type = 'CUSTOMER_PAYMENT'
+            ), 0)
+          )
+        ) AS outstanding,
         MAX(i.invoice_date) AS last_purchase
       FROM users u
       JOIN invoices i ON i.customer_id = u.id
@@ -187,23 +217,23 @@ router.get('/aging-receivables', authMiddleware, async (req, res) => {
       SELECT
         u.username AS customer_name,
         COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date <= 30
-          THEN i.total_amount - COALESCE(i.paid_amount, 0) ELSE 0 END), 0) AS days_0_30,
+          THEN GREATEST(0, i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0))) ELSE 0 END), 0) AS days_0_30,
         COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date BETWEEN 31 AND 60
-          THEN i.total_amount - COALESCE(i.paid_amount, 0) ELSE 0 END), 0) AS days_31_60,
+          THEN GREATEST(0, i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0))) ELSE 0 END), 0) AS days_31_60,
         COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date BETWEEN 61 AND 90
-          THEN i.total_amount - COALESCE(i.paid_amount, 0) ELSE 0 END), 0) AS days_61_90,
+          THEN GREATEST(0, i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0))) ELSE 0 END), 0) AS days_61_90,
         COALESCE(SUM(CASE WHEN CURRENT_DATE - i.invoice_date::date > 90
-          THEN i.total_amount - COALESCE(i.paid_amount, 0) ELSE 0 END), 0) AS days_90_plus,
-        COALESCE(SUM(i.total_amount - COALESCE(i.paid_amount, 0)), 0) AS total_outstanding
+          THEN GREATEST(0, i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0))) ELSE 0 END), 0) AS days_90_plus,
+        COALESCE(SUM(GREATEST(0, i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0)))), 0) AS total_outstanding
       FROM users u
       JOIN invoices i ON i.customer_id = u.id
       WHERE u.company_id = $1
         AND COALESCE(i.is_deleted, false) = false
         AND COALESCE(i.bill_purpose, '') != 'name_only'
-        AND i.total_amount - COALESCE(i.paid_amount, 0) > 0
+        AND i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0)) > 0
         AND u.role = 'customer'
       GROUP BY u.id, u.username
-      HAVING COALESCE(SUM(i.total_amount - COALESCE(i.paid_amount, 0)), 0) > 0
+      HAVING COALESCE(SUM(GREATEST(0, i.total_amount - COALESCE(i.amount_paid, COALESCE(i.paid_amount, 0)))), 0) > 0
       ORDER BY total_outstanding DESC
     `;
     const data = await db.pgAll(sql, [companyId]);
