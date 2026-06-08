@@ -74,24 +74,27 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
 
         // Known inflow sources always count as positive regardless of stored direction
         // Self-heal: fix inflow sources stored with wrong direction='out'
-        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // NOTE: CUSTOMER_PAYMENT is intentionally excluded — those entries are always deleted in Step 1
+        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         await Promise.all([
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
         ]);
 
-        // ── Self-heal step 1: remove ONLY auto-synced PERSONAL_RECEIPT entries
-        //    (reference_id IS NOT NULL → was auto-synced; linked transaction is a personal receipt)
-        //    DO NOT delete entries with reference_id=NULL — those may be old legitimate cash entries
+        // ── Self-heal step 1: remove ALL auto-synced CUSTOMER_PAYMENT entries
+        //    CUSTOMER_PAYMENT = money received into proprietor's personal account, NEVER company cash
+        //    Delete those with reference_id IS NOT NULL (auto-synced) regardless of reference_type
+        //    Also remove old source='CUSTOMER_PAYMENT' entries with reference_id=NULL (from old rebuild)
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.type = 'CUSTOMER_PAYMENT'
-                  AND COALESCE(t.reference_type,'') = 'PERSONAL_RECEIPT'
+              AND source = 'CUSTOMER_PAYMENT'
+              AND (
+                reference_id IS NULL
+                OR EXISTS (
+                  SELECT 1 FROM transactions t
+                  WHERE t.id = cash_ledger.reference_id AND t.type = 'CUSTOMER_PAYMENT'
+                )
               )
         `, [companyId]).catch(()=>{});
 
@@ -131,20 +134,6 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             FROM transactions t
             WHERE t.company_id = $1
               AND t.type = 'RECEIPT'
-              AND t.amount > 0
-              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
-        `, [companyId]).catch(()=>{});
-
-        // ── Self-heal step 5: re-sync non-personal CUSTOMER_PAYMENT transactions
-        //    (direct customer cash payments recorded via Transactions page, NOT via proprietor personal account)
-        await db.pgRun(`
-            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
-            SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
-                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
-            FROM transactions t
-            WHERE t.company_id = $1
-              AND t.type = 'CUSTOMER_PAYMENT'
-              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
@@ -238,26 +227,28 @@ router.get('/cash', authMiddleware, async (req, res) => {
         ).catch(()=>{});
 
         // Self-heal: fix inflow sources stored with wrong direction='out'
+        // NOTE: CUSTOMER_PAYMENT intentionally excluded — those entries are deleted in Step 1
         await db.pgRun(
             `UPDATE cash_ledger SET direction='in'
              WHERE company_id=$1
-               AND source IN ('OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+               AND source IN ('OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
                AND direction='out' AND amount>0`,
             [companyId]
         ).catch(()=>{});
 
-        // ── Step 1: Remove ONLY auto-synced PERSONAL_RECEIPT entries
-        //    (reference_id IS NOT NULL → auto-synced; linked transaction is a personal receipt)
-        //    NEVER delete reference_id=NULL entries — those may be old legitimate company cash
+        // ── Step 1: Remove ALL CUSTOMER_PAYMENT entries from cash ledger
+        //    CUSTOMER_PAYMENT = money into proprietor's personal account, NEVER company cash
+        //    Deletes both auto-synced (reference_id IS NOT NULL) and old entries (reference_id IS NULL)
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.type = 'CUSTOMER_PAYMENT'
-                  AND COALESCE(t.reference_type,'') = 'PERSONAL_RECEIPT'
+              AND source = 'CUSTOMER_PAYMENT'
+              AND (
+                reference_id IS NULL
+                OR EXISTS (
+                  SELECT 1 FROM transactions t
+                  WHERE t.id = cash_ledger.reference_id AND t.type = 'CUSTOMER_PAYMENT'
+                )
               )
         `, [companyId]).catch(()=>{});
 
@@ -305,23 +296,10 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
-        // ── Step 5: Re-sync non-personal CUSTOMER_PAYMENT transactions ──
-        //    (direct customer cash payments, NOT via proprietor personal account)
-        await db.pgRun(`
-            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
-            SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
-                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
-            FROM transactions t
-            WHERE t.company_id = $1
-              AND t.type = 'CUSTOMER_PAYMENT'
-              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
-              AND t.amount > 0
-              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
-        `, [companyId]).catch(()=>{});
-
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
         // Known inflow sources always count as positive regardless of stored direction
-        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // NOTE: CUSTOMER_PAYMENT excluded — those entries are purged in Step 1
+        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE
@@ -347,7 +325,9 @@ router.get('/cash', authMiddleware, async (req, res) => {
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
-        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment']);
+        // NOTE: CUSTOMER_PAYMENT excluded — purged in Step 1, never reaches direction mapping
+        // NOTE: CASH_RECONCILIATION is also excluded — it can be 'in' (excess) or 'out' (shortage), direction field controls it
+        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment']);
         const rawEntries = await db.pgAll(sql, params);
         // Correct direction for known inflow sources (fixes historically mis-recorded entries)
         // OPENING_BALANCE must always be 'in' regardless of how it was stored
@@ -359,6 +339,80 @@ router.get('/cash', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error("Cash ledger error:", err);
         res.status(500).json({ error: "Failed to fetch cash ledger" });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /ledger/cash-reconciliation
+// Record a daily cash count variance (excess or shortage)
+// Body: { date, actual_cash, notes }
+// Reads current computer balance up to and including `date`, computes variance,
+// inserts one cash_ledger entry with source='CASH_RECONCILIATION'
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const { date, actual_cash, notes } = req.body;
+
+    if (!date || actual_cash === undefined || actual_cash === null || actual_cash === '') {
+        return res.status(400).json({ error: 'date and actual_cash are required' });
+    }
+    const actualCash = Number(actual_cash);
+    if (isNaN(actualCash) || actualCash < 0) {
+        return res.status(400).json({ error: 'actual_cash must be a non-negative number' });
+    }
+
+    try {
+        // Compute computer balance up to and including the given date (exclude existing CASH_RECONCILIATION for that date to avoid double-count)
+        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const balRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE
+                WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
+                WHEN direction = 'in' THEN amount
+                ELSE -amount
+             END), 0) AS balance
+             FROM cash_ledger
+             WHERE company_id = $1
+               AND date <= $2
+               AND source != 'CASH_RECONCILIATION'`,
+            [companyId, date]
+        );
+        const computerBalance = Number(balRow?.balance || 0);
+        const variance = actualCash - computerBalance;   // positive = excess, negative = shortage
+
+        if (variance === 0) {
+            return res.json({ success: true, message: 'Balances match — no adjustment needed', computer_balance: computerBalance, actual_cash: actualCash, variance: 0 });
+        }
+
+        // Delete any existing reconciliation for the same date (re-reconcile is idempotent)
+        await db.pgRun(
+            `DELETE FROM cash_ledger WHERE company_id = $1 AND date = $2 AND source = 'CASH_RECONCILIATION'`,
+            [companyId, date]
+        );
+
+        const direction = variance > 0 ? 'in' : 'out';
+        const amount    = Math.abs(variance);
+        const description = notes?.trim() || (variance > 0
+            ? `Cash excess on ${date} (actual ₹${actualCash.toFixed(2)}, computer ₹${computerBalance.toFixed(2)})`
+            : `Cash shortage on ${date} (actual ₹${actualCash.toFixed(2)}, computer ₹${computerBalance.toFixed(2)})`);
+
+        await db.pgRun(
+            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, description)
+             VALUES ($1, $2, 'CASH_RECONCILIATION', $3, $4, $5, $6)`,
+            [companyId, branchId, amount, direction, date, description]
+        );
+
+        res.json({
+            success: true,
+            message: variance > 0 ? `Excess of ₹${amount.toFixed(2)} recorded` : `Shortage of ₹${amount.toFixed(2)} recorded`,
+            computer_balance: computerBalance,
+            actual_cash:      actualCash,
+            variance,
+            direction,
+        });
+    } catch (err) {
+        console.error('[cash-reconciliation]', err.message);
+        res.status(500).json({ error: 'Failed to record cash reconciliation' });
     }
 });
 

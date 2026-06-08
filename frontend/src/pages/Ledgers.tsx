@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FaPlus, FaSearch, FaBook, FaFingerprint, FaMoneyBillWave, FaBuilding, FaWallet, FaFilter, FaTimes } from "react-icons/fa";
+import { FaPlus, FaSearch, FaBook, FaFingerprint, FaMoneyBillWave, FaBuilding, FaWallet, FaFilter, FaTimes, FaBalanceScale } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../utils/api";
 import "./finance/Finance.css";
@@ -49,6 +49,14 @@ const Ledgers: React.FC = () => {
     account_type: "ASSET",
     opening_balance: 0,
   });
+
+  // ── Cash Reconciliation ──
+  const [showReconcile, setShowReconcile] = useState(false);
+  const [reconcileDate, setReconcileDate] = useState(today);
+  const [reconcileActual, setReconcileActual] = useState("");
+  const [reconcileNotes, setReconcileNotes] = useState("");
+  const [reconcileLoading, setReconcileLoading] = useState(false);
+  const [reconcileMsg, setReconcileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -184,24 +192,30 @@ const Ledgers: React.FC = () => {
         if (entry.direction === "in") runningBalance += amt;
         else runningBalance -= amt;
 
+        const isReconcile = entry.source === "CASH_RECONCILIATION";
         rows.push(
-          <tr key={`${gi}-${idx}`} style={{ borderBottom: "1px solid #f1f5f9", background: "white" }}>
+          <tr key={`${gi}-${idx}`} style={{ borderBottom: "1px solid #f1f5f9", background: isReconcile ? "#faf5ff" : "white" }}>
             <td style={{ padding: "14px 16px", color: "#64748b", fontSize: "13px" }}>
               {fmtDate(entry.date || entry.created_at)}
             </td>
-            <td style={{ padding: "14px 16px", fontWeight: 500, textTransform: "capitalize" }}>
-              {entry.source}
+            <td style={{ padding: "14px 16px", fontWeight: 500 }}>
+              {isReconcile ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ background: "#ede9fe", color: "#6d28d9", fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", letterSpacing: "0.04em" }}>RECONCILED</span>
+                  <span style={{ color: "#6d28d9", fontWeight: 600 }}>Cash Reconciliation</span>
+                </span>
+              ) : sourceLabel(entry.source)}
             </td>
             {type === "BANK" && (
               <td style={{ padding: "14px 16px" }}>
-                <div style={{ fontWeight: 600 }}>{entry.bank_name || "-"}</div>
-                <div style={{ fontSize: "11px", color: "#94a3b8" }}>{entry.transaction_id || ""}</div>
+                <div style={{ fontWeight: 600 }}>{(entry as any).bank_name || "-"}</div>
+                <div style={{ fontSize: "11px", color: "#94a3b8" }}>{(entry as any).transaction_id || ""}</div>
               </td>
             )}
-            <td style={{ padding: "14px 16px", color: "#10b981", fontWeight: 600, textAlign: "right" }}>
+            <td style={{ padding: "14px 16px", color: isReconcile && entry.direction === "in" ? "#7c3aed" : "#10b981", fontWeight: 600, textAlign: "right" }}>
               {entry.direction === "in" ? fmt(amt) : "-"}
             </td>
-            <td style={{ padding: "14px 16px", color: "#ef4444", fontWeight: 600, textAlign: "right" }}>
+            <td style={{ padding: "14px 16px", color: isReconcile && entry.direction === "out" ? "#7c3aed" : "#ef4444", fontWeight: 600, textAlign: "right" }}>
               {entry.direction === "out" ? fmt(amt) : "-"}
             </td>
             <td style={{ padding: "14px 16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#1e293b" }}>
@@ -227,6 +241,53 @@ const Ledgers: React.FC = () => {
     return rows;
   };
 
+  // ── Reconciliation submit ──
+  const handleReconcileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reconcileActual || isNaN(Number(reconcileActual)) || Number(reconcileActual) < 0) {
+      setReconcileMsg({ type: "error", text: "Please enter a valid actual cash amount (≥ 0)" });
+      return;
+    }
+    setReconcileLoading(true);
+    setReconcileMsg(null);
+    try {
+      const res = await apiFetch("/ledger/cash-reconciliation", {
+        method: "POST",
+        body: { date: reconcileDate, actual_cash: Number(reconcileActual), notes: reconcileNotes.trim() },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save reconciliation");
+      setReconcileMsg({ type: "success", text: data.message });
+      setReconcileActual("");
+      setReconcileNotes("");
+      // Reload the ledger to show the new entry
+      await fetchData();
+    } catch (err: any) {
+      setReconcileMsg({ type: "error", text: err.message || "Failed to save" });
+    } finally {
+      setReconcileLoading(false);
+    }
+  };
+
+  // ── Source label helper ──
+  const sourceLabel = (source: string) => {
+    const map: Record<string, string> = {
+      OPENING_BALANCE: "Opening Balance",
+      RECEIPT: "Receipt",
+      INVOICE: "Invoice",
+      EXPENSE: "Expense",
+      SALARY: "Salary",
+      WAGES: "Wages",
+      GIFT_CONTRIBUTION: "Gift / Contribution",
+      LOAN_RECEIVED: "Loan Received",
+      LOAN_DISBURSEMENT: "Loan Disbursement",
+      CASH_RECONCILIATION: "Cash Reconciliation",
+      Payment: "Payment",
+      payment: "Payment",
+    };
+    return map[source] || source.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  };
+
   return (
     <div className="page-container" style={{ padding: isMobile ? "16px" : "24px", maxWidth: "1400px", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
       
@@ -242,11 +303,21 @@ const Ledgers: React.FC = () => {
         
         {activeTab !== "ACCOUNTS" && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: isMobile ? "flex-start" : "flex-end", gap: "8px" }}>
-            <div style={{ display: "flex", gap: "10px", alignItems: "center", background: "#f8fafc", padding: "8px 12px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
-              <FaFilter color="#94a3b8" size={14} />
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontSize: "14px", fontWeight: 600, color: "#334155" }} />
-              <span style={{ color: "#cbd5e1" }}>–</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontSize: "14px", fontWeight: 600, color: "#334155" }} />
+            <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", background: "#f8fafc", padding: "8px 12px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+                <FaFilter color="#94a3b8" size={14} />
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontSize: "14px", fontWeight: 600, color: "#334155" }} />
+                <span style={{ color: "#cbd5e1" }}>–</span>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontSize: "14px", fontWeight: 600, color: "#334155" }} />
+              </div>
+              {activeTab === "CASH" && (
+                <button
+                  onClick={() => { setShowReconcile(v => !v); setReconcileMsg(null); }}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "12px", background: showReconcile ? "#7c3aed" : "#ede9fe", color: showReconcile ? "white" : "#7c3aed", border: "1.5px solid #c4b5fd", fontWeight: 700, fontSize: "13px", cursor: "pointer", transition: "all 0.2s" }}
+                >
+                  <FaBalanceScale size={13} /> Reconcile Cash
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -288,6 +359,126 @@ const Ledgers: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Cash Reconciliation Panel ── */}
+      <AnimatePresence>
+        {showReconcile && activeTab === "CASH" && (
+          <motion.div
+            key="reconcile-panel"
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+            style={{ background: "linear-gradient(135deg, #faf5ff 0%, #ede9fe 100%)", border: "1.5px solid #c4b5fd", borderRadius: "20px", padding: "24px", marginBottom: "24px" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <FaBalanceScale size={16} color="#7c3aed" />
+                  <span style={{ fontWeight: 700, fontSize: "16px", color: "#4c1d95" }}>Daily Cash Reconciliation</span>
+                </div>
+                <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#7c3aed" }}>
+                  Record the difference between computer balance and actual physical cash count.
+                </p>
+              </div>
+              <button onClick={() => setShowReconcile(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#7c3aed", padding: "4px" }}>
+                <FaTimes size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleReconcileSubmit}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "160px 1fr 1fr", gap: "16px", alignItems: "end", marginBottom: "16px" }}>
+                {/* Date */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#6d28d9", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Date</label>
+                  <input
+                    type="date"
+                    value={reconcileDate}
+                    onChange={e => setReconcileDate(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #c4b5fd", background: "white", fontSize: "14px", fontWeight: 600, color: "#1e293b", boxSizing: "border-box" }}
+                  />
+                </div>
+                {/* Computer Balance (read-only) */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#6d28d9", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Computer Says</label>
+                  <div style={{ padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #c4b5fd", background: "#f3e8ff", fontSize: "15px", fontWeight: 800, color: "#4c1d95" }}>
+                    ₹{cashBalance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                  </div>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "#8b5cf6" }}>Closing balance for selected date range</p>
+                </div>
+                {/* Actual cash input */}
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#6d28d9", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Actual Cash Count</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 300"
+                    min="0"
+                    step="0.01"
+                    value={reconcileActual}
+                    onChange={e => setReconcileActual(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #c4b5fd", background: "white", fontSize: "14px", fontWeight: 600, color: "#1e293b", boxSizing: "border-box" }}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Live variance preview */}
+              {reconcileActual !== "" && !isNaN(Number(reconcileActual)) && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", borderRadius: "12px", marginBottom: "16px",
+                  background: Number(reconcileActual) > cashBalance ? "#f0fdf4" : Number(reconcileActual) < cashBalance ? "#fef2f2" : "#f0fdf4",
+                  border: `1.5px solid ${Number(reconcileActual) > cashBalance ? "#bbf7d0" : Number(reconcileActual) < cashBalance ? "#fecaca" : "#bbf7d0"}`,
+                }}>
+                  <span style={{ fontSize: "20px" }}>
+                    {Number(reconcileActual) > cashBalance ? "📈" : Number(reconcileActual) < cashBalance ? "📉" : "✅"}
+                  </span>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: "14px", color: Number(reconcileActual) > cashBalance ? "#15803d" : Number(reconcileActual) < cashBalance ? "#dc2626" : "#15803d" }}>
+                      {Number(reconcileActual) === cashBalance
+                        ? "✓ Cash matches — no adjustment needed"
+                        : Number(reconcileActual) > cashBalance
+                          ? `Cash Excess: ₹${(Number(reconcileActual) - cashBalance).toLocaleString("en-IN", { minimumFractionDigits: 2 })} extra in hand`
+                          : `Cash Shortage: ₹${(cashBalance - Number(reconcileActual)).toLocaleString("en-IN", { minimumFractionDigits: 2 })} less than expected`}
+                    </span>
+                    {Number(reconcileActual) !== cashBalance && (
+                      <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748b" }}>
+                        Will be recorded as a {Number(reconcileActual) > cashBalance ? "cash IN (+)" : "cash OUT (−)"} adjustment entry
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes + Submit */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr auto", gap: "12px", alignItems: "end" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#6d28d9", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes (optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Short change from counter, error in yesterday's count..."
+                    value={reconcileNotes}
+                    onChange={e => setReconcileNotes(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #c4b5fd", background: "white", fontSize: "14px", color: "#1e293b", boxSizing: "border-box" }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={reconcileLoading}
+                  style={{ padding: "10px 24px", borderRadius: "12px", background: reconcileLoading ? "#c4b5fd" : "#7c3aed", color: "white", border: "none", fontWeight: 700, fontSize: "14px", cursor: reconcileLoading ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+                >
+                  {reconcileLoading ? "Saving…" : "Save Reconciliation"}
+                </button>
+              </div>
+
+              {reconcileMsg && (
+                <div style={{ marginTop: "12px", padding: "10px 14px", borderRadius: "10px", background: reconcileMsg.type === "success" ? "#f0fdf4" : "#fef2f2", border: `1px solid ${reconcileMsg.type === "success" ? "#bbf7d0" : "#fecaca"}`, color: reconcileMsg.type === "success" ? "#15803d" : "#dc2626", fontWeight: 600, fontSize: "13px" }}>
+                  {reconcileMsg.type === "success" ? "✓ " : "⚠ "}{reconcileMsg.text}
+                </div>
+              )}
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div style={{ display: "flex", gap: "12px", marginBottom: "20px", borderBottom: "1px solid #e2e8f0", paddingBottom: "16px" }}>
         {["CASH", "BANK", "ACCOUNTS"].map(tab => (
