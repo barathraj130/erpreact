@@ -72,6 +72,18 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
         ]);
+        // Remove personal-receipt entries wrongly synced to cash_ledger
+        // (PERSONAL_RECEIPT goes to proprietor's personal account, NOT company cash)
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.reference_type = 'PERSONAL_RECEIPT'
+              )
+        `, [companyId]).catch(()=>{});
         // Remove duplicate auto-synced entries for invoice payments already in cash_ledger via invoice_id
         await db.pgRun(`
             DELETE FROM cash_ledger
@@ -97,7 +109,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND t.company_id = $1 AND t.type = 'RECEIPT'
               AND t.related_invoice_id = cl.invoice_id AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
-        // Sync only truly missing entries (paymentRoutes.js payments, standalone receipts)
+        // Sync only truly missing company-cash entries (exclude personal-account receipts)
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
@@ -105,6 +117,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             FROM transactions t
             WHERE t.company_id = $1
               AND t.type IN ('RECEIPT','CUSTOMER_PAYMENT')
+              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (
                   SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1
@@ -202,8 +215,19 @@ router.get('/cash', authMiddleware, async (req, res) => {
         ).catch(()=>{});
 
         // Auto-sync: deduplicate and fill cash_ledger from transactions
-        // Step 1: Remove incorrectly auto-synced duplicates (entries where invoice already
-        //         added a cash_ledger row with invoice_id, so reference_id entry is duplicate)
+        // Step 1a: Remove personal-receipt entries (went to proprietor personal account, not company cash)
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.reference_type = 'PERSONAL_RECEIPT'
+              )
+        `, [companyId]).catch(()=>{});
+
+        // Step 1b: Remove duplicate auto-synced entries for invoice payments already covered by invoice_id rows
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
@@ -235,7 +259,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
-        // Step 3: Sync only truly missing entries (no cash_ledger row references this transaction)
+        // Step 3: Sync only truly missing company-cash entries (exclude personal-account receipts)
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
@@ -243,6 +267,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
             FROM transactions t
             WHERE t.company_id = $1
               AND t.type IN ('RECEIPT', 'CUSTOMER_PAYMENT')
+              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (
                   SELECT 1 FROM cash_ledger cl
