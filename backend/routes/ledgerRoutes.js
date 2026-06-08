@@ -71,20 +71,45 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
         await Promise.all([
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
-            // Auto-sync missing RECEIPT/CUSTOMER_PAYMENT transactions to cash_ledger
-            db.pgRun(`
-                INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
-                SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
-                       COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
-                FROM transactions t
-                WHERE t.company_id = $1
-                  AND t.type IN ('RECEIPT','CUSTOMER_PAYMENT')
-                  AND t.amount > 0
-                  AND NOT EXISTS (
-                      SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1
-                  )
-            `, [companyId]).catch(()=>{}),
         ]);
+        // Remove duplicate auto-synced entries for invoice payments already in cash_ledger via invoice_id
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.related_invoice_id IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1 FROM cash_ledger cl2
+                    WHERE cl2.company_id = $1
+                      AND cl2.invoice_id = t.related_invoice_id
+                      AND cl2.reference_id IS NULL
+                  )
+              )
+        `, [companyId]).catch(()=>{});
+        // Link invoice-creation entries to their transactions so future syncs skip them
+        await db.pgRun(`
+            UPDATE cash_ledger cl SET reference_id = t.id
+            FROM transactions t
+            WHERE cl.company_id = $1 AND cl.invoice_id IS NOT NULL AND cl.reference_id IS NULL
+              AND t.company_id = $1 AND t.type = 'RECEIPT'
+              AND t.related_invoice_id = cl.invoice_id AND ABS(t.amount) = cl.amount
+        `, [companyId]).catch(()=>{});
+        // Sync only truly missing entries (paymentRoutes.js payments, standalone receipts)
+        await db.pgRun(`
+            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+            SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
+                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
+            FROM transactions t
+            WHERE t.company_id = $1
+              AND t.type IN ('RECEIPT','CUSTOMER_PAYMENT')
+              AND t.amount > 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1
+              )
+        `, [companyId]).catch(()=>{});
 
         const [cashRow, bankRow] = await Promise.all([
             db.pgGet(
@@ -176,8 +201,41 @@ router.get('/cash', authMiddleware, async (req, res) => {
             [companyId]
         ).catch(()=>{});
 
-        // Auto-sync: Add RECEIPT/CUSTOMER_PAYMENT transactions that are not yet in cash_ledger
-        // (paymentRoutes.js writes to transactions but not to cash_ledger)
+        // Auto-sync: deduplicate and fill cash_ledger from transactions
+        // Step 1: Remove incorrectly auto-synced duplicates (entries where invoice already
+        //         added a cash_ledger row with invoice_id, so reference_id entry is duplicate)
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.related_invoice_id IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1 FROM cash_ledger cl2
+                    WHERE cl2.company_id = $1
+                      AND cl2.invoice_id = t.related_invoice_id
+                      AND cl2.reference_id IS NULL
+                  )
+              )
+        `, [companyId]).catch(()=>{});
+
+        // Step 2: Link invoice-creation cash_ledger entries to their transactions
+        await db.pgRun(`
+            UPDATE cash_ledger cl
+            SET reference_id = t.id
+            FROM transactions t
+            WHERE cl.company_id = $1
+              AND cl.invoice_id IS NOT NULL
+              AND cl.reference_id IS NULL
+              AND t.company_id = $1
+              AND t.type = 'RECEIPT'
+              AND t.related_invoice_id = cl.invoice_id
+              AND ABS(t.amount) = cl.amount
+        `, [companyId]).catch(()=>{});
+
+        // Step 3: Sync only truly missing entries (no cash_ledger row references this transaction)
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
