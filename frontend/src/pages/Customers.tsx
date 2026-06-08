@@ -208,6 +208,24 @@ const Customers: React.FC = () => {
             <FaSync className={loading ? "fa-spin" : ""} size={14} />
           </button>
           <button
+            title="Recompute all customer outstanding balances"
+            onClick={async () => {
+              if (!window.confirm("Recompute all customer balances? This fixes any mismatch between ledger and list.")) return;
+              const res = await apiFetch("/users/recompute-all-balances", { method: "POST" });
+              const data = await res.json();
+              alert(`Done! Fixed: ${data.fixed}, Errors: ${data.errors}`);
+              refresh();
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 14px", borderRadius: "50px",
+              background: "#6366f1", color: "#fff", border: "none",
+              fontWeight: 600, fontSize: "13px", cursor: "pointer"
+            }}
+          >
+            🔄 Sync Balances
+          </button>
+          <button
             onClick={openReminderModal}
             title="Preview and send outstanding balance WhatsApp reminders"
             style={{

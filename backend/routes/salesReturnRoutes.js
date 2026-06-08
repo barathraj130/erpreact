@@ -1,6 +1,7 @@
 import express from 'express';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as db from '../database/pg.js';
+import { ensureCustomerLedgerMetadata, recomputeCustomerBalance } from '../services/customerLedgerService.js';
 
 const router = express.Router();
 
@@ -219,6 +220,21 @@ router.post('/', authMiddleware, async (req, res) => {
         }
 
         await client.query('COMMIT');
+
+        // Recompute customer outstanding balance after return (best-effort)
+        if (origCustomerId) {
+            try {
+                const balClient = await db.getClient();
+                await balClient.query('BEGIN');
+                await ensureCustomerLedgerMetadata(balClient, origCustomerId, companyId);
+                await recomputeCustomerBalance(balClient, origCustomerId, companyId);
+                await balClient.query('COMMIT');
+                balClient.release();
+            } catch (balErr) {
+                console.warn('Balance recompute after return skipped:', balErr.message);
+            }
+        }
+
         res.status(201).json(record);
     } catch (err) {
         if (client) await client.query('ROLLBACK');

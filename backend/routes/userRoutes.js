@@ -347,6 +347,32 @@ router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), as
     }
 });
 
+// ── POST /users/recompute-all-balances — fix all customer outstanding amounts ──
+router.post("/recompute-all-balances", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    let fixed = 0, errors = 0;
+    try {
+        const customers = await db.pgAll(
+            `SELECT id FROM users WHERE role = 'customer' AND company_id = $1`,
+            [companyId]
+        );
+        for (const c of customers) {
+            try {
+                const client = await db.getClient();
+                await client.query('BEGIN');
+                await ensureCustomerLedgerMetadata(client, c.id, companyId);
+                await recomputeCustomerBalance(client, c.id, companyId);
+                await client.query('COMMIT');
+                client.release();
+                fixed++;
+            } catch (e) { errors++; }
+        }
+        res.json({ success: true, fixed, errors });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get("/:id/ledger", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     try {
         const statement = await buildCustomerLedgerStatement(req.user.active_company_id, Number(req.params.id), req.query);
