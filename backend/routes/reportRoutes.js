@@ -360,21 +360,23 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
                       ,0) AS total
                       FROM purchase_bills pb
                       WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
-            // Loans payable: use principal_outstanding (after repayments) from loans taken
-            // Also include lender opening_balance minus repayments made via loan_payments
+            // Loans payable: principal_outstanding (auto-updated on each repayment)
+            // Fall back to principal_amount - SUM(principal_component) from loan_payments
             db.pgGet(`
                 SELECT COALESCE(SUM(
-                    COALESCE(l.principal_outstanding,
+                    COALESCE(
+                        l.principal_outstanding,
                         l.principal_amount - COALESCE((
-                            SELECT SUM(lp.principal_paid)
+                            SELECT SUM(lp.principal_component)
                             FROM loan_payments lp WHERE lp.loan_id = l.id
                         ), 0),
-                    l.principal_amount, 0)
+                        0
+                    )
                 ), 0) AS total
                 FROM loans l
                 WHERE l.company_id = $1
                   AND UPPER(COALESCE(l.loan_direction, 'TAKEN')) != 'GIVEN'
-                  AND UPPER(COALESCE(l.status, 'active')) IN ('ACTIVE','PENDING','ONGOING')
+                  AND UPPER(COALESCE(l.status, 'ACTIVE')) IN ('ACTIVE','PENDING','ONGOING')
             `, [companyId]).catch(()=>({total:0})),
             // Salary payable = monthly salaries of active employees not yet paid this month
             db.pgGet(`
