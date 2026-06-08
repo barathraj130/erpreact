@@ -651,7 +651,7 @@ router.get('/finance/cash-flow', authMiddleware, async (req, res) => {
             cashIn, cashOut, bankIn, bankOut,
             invPayCash, invPayBank,
             propReceipts, propPayouts,
-            directReceiptsCash, directReceiptsBank,
+            directReceiptsCash, _unused,
         ] = await Promise.all([
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','CUSTOMER_PAYMENT','RECEIPT','PROPRIETOR_RECEIPT') ${dateFilter}`, params),
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','PURCHASE_PAYMENT','Daily_wage','LOAN_REPAYMENT','PROPRIETOR_PAYOUT') ${dateFilter}`, params),
@@ -667,25 +667,25 @@ router.get('/finance/cash-flow', authMiddleware, async (req, res) => {
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' ${propDateFilter}`, params).catch(()=>({total:0})),
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='WITHDRAWAL' ${propDateFilter}`, params).catch(()=>({total:0})),
 
-            // Direct receipts from transactions table (RECEIPT / CUSTOMER_PAYMENT not linked to invoice) — cash
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE company_id=$1 AND type IN ('CUSTOMER_PAYMENT','RECEIPT') AND UPPER(COALESCE(mode,'')) NOT IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${txDateFilter}`, params).catch(()=>({total:0})),
-            // Direct receipts — bank
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE company_id=$1 AND type IN ('CUSTOMER_PAYMENT','RECEIPT') AND UPPER(COALESCE(mode,'')) IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${txDateFilter}`, params).catch(()=>({total:0})),
+            // Direct receipts from transactions table (RECEIPT/CUSTOMER_PAYMENT)
+            // Note: transactions table has no 'mode' column — mode is only used at write-time
+            // to choose cash_ledger vs bank_ledger. We sum all direct receipts here.
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE company_id=$1 AND type IN ('CUSTOMER_PAYMENT','RECEIPT') ${txDateFilter}`, params).catch(()=>({total:0})),
+            db.pgGet(`SELECT 0 AS total`, []).catch(()=>({total:0})), // placeholder — bank split not available
         ]);
 
         const ci  = parseFloat(cashIn?.total||0),  co  = parseFloat(cashOut?.total||0);
         const bi  = parseFloat(bankIn?.total||0),   bo  = parseFloat(bankOut?.total||0);
         const ipc = parseFloat(invPayCash?.total||0), ipb = parseFloat(invPayBank?.total||0);
         const pr  = parseFloat(propReceipts?.total||0), pp = parseFloat(propPayouts?.total||0);
-        const drc = parseFloat(directReceiptsCash?.total||0), drb = parseFloat(directReceiptsBank?.total||0);
+        const dr  = parseFloat(directReceiptsCash?.total||0); // all direct receipts
 
-        const totalIn  = ci + bi + ipc + ipb + pr + drc + drb;
+        const totalIn  = ci + bi + ipc + ipb + pr + dr;
         const totalOut = co + bo + pp;
         res.json([
             { activity: 'Invoice Payments (Cash)',          inflow: ipc,  outflow: 0,   net: ipc },
             { activity: 'Invoice Payments (Bank/Online)',   inflow: ipb,  outflow: 0,   net: ipb },
-            { activity: 'Direct Receipts (Cash)',           inflow: drc,  outflow: 0,   net: drc },
-            { activity: 'Direct Receipts (Bank)',           inflow: drb,  outflow: 0,   net: drb },
+            { activity: 'Direct Receipts (Cash/Bank)',      inflow: dr,   outflow: 0,   net: dr },
             { activity: 'Proprietor Account Receipts',     inflow: pr,   outflow: 0,   net: pr },
             { activity: 'Other Cash Inflows',              inflow: ci,   outflow: 0,   net: ci },
             { activity: 'Other Bank Inflows',              inflow: bi,   outflow: 0,   net: bi },
