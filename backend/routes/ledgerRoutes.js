@@ -65,19 +65,22 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/balance/current', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
-        // OPENING_BALANCE entries always count as positive (they represent starting capital)
-        // Self-heal: fix any OPENING_BALANCE stored with wrong direction='out'
-        await db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
-        await db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+        // Known inflow sources always count as positive regardless of stored direction
+        // Self-heal: fix ALL inflow sources stored with wrong direction='out'
+        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        await Promise.all([
+            db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
+            db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
+        ]);
 
         const [cashRow, bankRow] = await Promise.all([
             db.pgGet(
-                `SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+                `SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
                  FROM cash_ledger WHERE company_id = $1`,
                 [companyId]
             ),
             db.pgGet(
-                `SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+                `SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
                  FROM bank_ledger WHERE company_id = $1`,
                 [companyId]
             ),
@@ -151,14 +154,25 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // Self-heal: fix any OPENING_BALANCE stored with wrong direction='out'
-        await db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+        // Self-heal: fix ALL known inflow sources stored with wrong direction='out'
+        await db.pgRun(
+            `UPDATE cash_ledger SET direction='in'
+             WHERE company_id=$1
+               AND source IN ('OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+               AND direction='out' AND amount>0`,
+            [companyId]
+        ).catch(()=>{});
 
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
-        // OPENING_BALANCE entries always count as positive (starting capital, never debt)
+        // Known inflow sources always count as positive regardless of stored direction
+        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
-            SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
+            SELECT COALESCE(SUM(CASE
+                WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
+                WHEN direction = 'in' THEN amount
+                ELSE -amount
+            END), 0) AS balance
             FROM cash_ledger
             WHERE company_id = $1 AND ${branchFilter}
         `;
@@ -198,13 +212,25 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // Self-heal: fix any OPENING_BALANCE stored with wrong direction='out'
-        await db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+        // Self-heal: fix ALL known inflow sources stored with wrong direction='out'
+        await db.pgRun(
+            `UPDATE bank_ledger SET direction='in'
+             WHERE company_id=$1
+               AND source IN ('OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+               AND direction='out' AND amount>0`,
+            [companyId]
+        ).catch(()=>{});
 
         // Opening balance = net of ALL bank transactions strictly BEFORE startDate
+        // Known inflow sources always count as positive regardless of stored direction
+        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
-            SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
+            SELECT COALESCE(SUM(CASE
+                WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
+                WHEN direction = 'in' THEN amount
+                ELSE -amount
+            END), 0) AS balance
             FROM bank_ledger
             WHERE company_id = $1 AND ${branchFilter}
         `;
@@ -246,10 +272,11 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     try {
         console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
 
-        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
+        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalCash = Number(cashRows?.balance || 0);
 
-        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
+        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalBank = Number(bankRows?.balance || 0);
 
         const invoiceRows = await db.pgAll(`
