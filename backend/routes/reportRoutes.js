@@ -637,34 +637,61 @@ router.get('/finance/cash-flow', authMiddleware, async (req, res) => {
         const params = [companyId];
         if (startDate && endDate) { dateFilter = `AND date BETWEEN $2::date AND $3::date`; params.push(startDate, endDate); }
 
-        const [cashIn, cashOut, bankIn, bankOut, invPayCash, invPayBank, propReceipts, propPayouts] = await Promise.all([
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND source != 'OPENING_BALANCE' ${dateFilter}`, params),
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' ${dateFilter}`, params),
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND source != 'OPENING_BALANCE' ${dateFilter}`, params),
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' ${dateFilter}`, params),
-            // Invoice payments received (direct cash/bank from customers)
-            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND (ip.payment_method IS NULL OR UPPER(ip.payment_method) NOT IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS')) ${dateFilter.replace('date','ip.payment_date')}`, params).catch(()=>({total:0})),
-            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND UPPER(COALESCE(ip.payment_method,'')) IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${dateFilter.replace('date','ip.payment_date')}`, params).catch(()=>({total:0})),
-            // Proprietor personal account receipts from customers
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' ${dateFilter.replace('date','transaction_date')}`, params).catch(()=>({total:0})),
-            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='WITHDRAWAL' ${dateFilter.replace('date','transaction_date')}`, params).catch(()=>({total:0})),
+        // Build separate date filters per table (avoid column-name collision in .replace)
+        let ipDateFilter = '';      // invoice_payments.payment_date
+        let propDateFilter = '';    // proprietor_transactions.transaction_date
+        let txDateFilter = '';      // transactions.date
+        if (startDate && endDate) {
+            ipDateFilter   = `AND ip.payment_date BETWEEN $2::date AND $3::date`;
+            propDateFilter = `AND transaction_date BETWEEN $2::date AND $3::date`;
+            txDateFilter   = `AND date BETWEEN $2::date AND $3::date`;
+        }
+
+        const [
+            cashIn, cashOut, bankIn, bankOut,
+            invPayCash, invPayBank,
+            propReceipts, propPayouts,
+            directReceiptsCash, directReceiptsBank,
+        ] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','CUSTOMER_PAYMENT','RECEIPT','PROPRIETOR_RECEIPT') ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','PURCHASE_PAYMENT','Daily_wage','LOAN_REPAYMENT','PROPRIETOR_PAYOUT') ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','CUSTOMER_PAYMENT','RECEIPT') ${dateFilter}`, params),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','PURCHASE_PAYMENT') ${dateFilter}`, params),
+
+            // Invoice payments received — cash methods
+            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND (ip.payment_method IS NULL OR UPPER(ip.payment_method) NOT IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS')) ${ipDateFilter}`, params).catch(()=>({total:0})),
+            // Invoice payments received — bank methods
+            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND UPPER(COALESCE(ip.payment_method,'')) IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${ipDateFilter}`, params).catch(()=>({total:0})),
+
+            // Proprietor personal account receipts
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' ${propDateFilter}`, params).catch(()=>({total:0})),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='WITHDRAWAL' ${propDateFilter}`, params).catch(()=>({total:0})),
+
+            // Direct receipts from transactions table (RECEIPT / CUSTOMER_PAYMENT not linked to invoice) — cash
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE company_id=$1 AND type IN ('CUSTOMER_PAYMENT','RECEIPT') AND UPPER(COALESCE(mode,'')) NOT IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${txDateFilter}`, params).catch(()=>({total:0})),
+            // Direct receipts — bank
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE company_id=$1 AND type IN ('CUSTOMER_PAYMENT','RECEIPT') AND UPPER(COALESCE(mode,'')) IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS') ${txDateFilter}`, params).catch(()=>({total:0})),
         ]);
-        const ci = parseFloat(cashIn?.total||0), co = parseFloat(cashOut?.total||0);
-        const bi = parseFloat(bankIn?.total||0), bo = parseFloat(bankOut?.total||0);
+
+        const ci  = parseFloat(cashIn?.total||0),  co  = parseFloat(cashOut?.total||0);
+        const bi  = parseFloat(bankIn?.total||0),   bo  = parseFloat(bankOut?.total||0);
         const ipc = parseFloat(invPayCash?.total||0), ipb = parseFloat(invPayBank?.total||0);
-        const pr = parseFloat(propReceipts?.total||0), pp = parseFloat(propPayouts?.total||0);
-        // Combine: ledger + invoice payments + proprietor receipts
-        const totalIn  = ci + bi + ipc + ipb + pr;
+        const pr  = parseFloat(propReceipts?.total||0), pp = parseFloat(propPayouts?.total||0);
+        const drc = parseFloat(directReceiptsCash?.total||0), drb = parseFloat(directReceiptsBank?.total||0);
+
+        const totalIn  = ci + bi + ipc + ipb + pr + drc + drb;
         const totalOut = co + bo + pp;
         res.json([
-            { activity: 'Cash Receipts (Ledger)',           inflow: ci,   outflow: 0,  net: ci },
-            { activity: 'Bank Receipts (Ledger)',           inflow: bi,   outflow: 0,  net: bi },
-            { activity: 'Customer Payments (Cash)',         inflow: ipc,  outflow: 0,  net: ipc },
-            { activity: 'Customer Payments (Bank)',         inflow: ipb,  outflow: 0,  net: ipb },
-            { activity: 'Proprietor Account Receipts',     inflow: pr,   outflow: 0,  net: pr },
-            { activity: 'Cash Payments',                   inflow: 0,    outflow: co, net: -co },
-            { activity: 'Bank Payments',                   inflow: 0,    outflow: bo, net: -bo },
-            { activity: 'Proprietor Account Payouts',      inflow: 0,    outflow: pp, net: -pp },
+            { activity: 'Invoice Payments (Cash)',          inflow: ipc,  outflow: 0,   net: ipc },
+            { activity: 'Invoice Payments (Bank/Online)',   inflow: ipb,  outflow: 0,   net: ipb },
+            { activity: 'Direct Receipts (Cash)',           inflow: drc,  outflow: 0,   net: drc },
+            { activity: 'Direct Receipts (Bank)',           inflow: drb,  outflow: 0,   net: drb },
+            { activity: 'Proprietor Account Receipts',     inflow: pr,   outflow: 0,   net: pr },
+            { activity: 'Other Cash Inflows',              inflow: ci,   outflow: 0,   net: ci },
+            { activity: 'Other Bank Inflows',              inflow: bi,   outflow: 0,   net: bi },
+            { activity: 'Cash Payments',                   inflow: 0,    outflow: co,  net: -co },
+            { activity: 'Bank Payments',                   inflow: 0,    outflow: bo,  net: -bo },
+            { activity: 'Proprietor Account Payouts',      inflow: 0,    outflow: pp,  net: -pp },
             { activity: 'NET CASH FLOW',                   inflow: totalIn, outflow: totalOut, net: totalIn - totalOut },
         ]);
     } catch (err) {

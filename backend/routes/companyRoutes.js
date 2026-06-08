@@ -321,13 +321,13 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
             }
         }
 
-        // 5. General transactions (MISC_EXPENSE, GIFT_CONTRIBUTION, etc.)
+        // 5. General transactions (MISC_EXPENSE, GIFT_CONTRIBUTION, CUSTOMER_PAYMENT, RECEIPT, etc.)
         const txns = await db.pgAll(`
             SELECT date, type AS source, amount, mode
             FROM transactions
-            WHERE company_id = $1 AND type NOT IN ('INVOICE','SALARY_PAYMENT','CUSTOMER_PAYMENT')
+            WHERE company_id = $1 AND type NOT IN ('INVOICE','SALARY_PAYMENT')
         `, [companyId]).catch(() => []);
-        const INFLOW_TYPES = ['RECEIPT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'];
+        const INFLOW_TYPES = ['RECEIPT','CUSTOMER_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'];
         for (const r of txns) {
             const direction = INFLOW_TYPES.includes(r.source) ? 'in' : 'out';
             const mode = (r.mode || '').toUpperCase();
