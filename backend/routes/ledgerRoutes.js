@@ -72,8 +72,8 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
         ]);
-        // Remove personal-receipt entries wrongly synced to cash_ledger
-        // (PERSONAL_RECEIPT goes to proprietor's personal account, NOT company cash)
+        // Remove any CUSTOMER_PAYMENT entries wrongly synced to cash_ledger
+        // (ALL CUSTOMER_PAYMENT transactions are proprietor personal-account receipts, never company cash)
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
@@ -81,7 +81,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND EXISTS (
                 SELECT 1 FROM transactions t
                 WHERE t.id = cash_ledger.reference_id
-                  AND t.reference_type = 'PERSONAL_RECEIPT'
+                  AND t.type = 'CUSTOMER_PAYMENT'
               )
         `, [companyId]).catch(()=>{});
         // Remove duplicate auto-synced entries for invoice payments already in cash_ledger via invoice_id
@@ -116,8 +116,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
                    COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
             FROM transactions t
             WHERE t.company_id = $1
-              AND t.type IN ('RECEIPT','CUSTOMER_PAYMENT')
-              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
+              AND t.type = 'RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (
                   SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1
