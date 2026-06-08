@@ -65,22 +65,38 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/balance/current', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
+        // ── Self-heal step 0: fix NULL dates so they appear in date-filtered queries ──
+        await db.pgRun(
+            `UPDATE cash_ledger SET date = created_at::date
+             WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
+            [companyId]
+        ).catch(()=>{});
+
         // Known inflow sources always count as positive regardless of stored direction
-        // Self-heal: fix ALL inflow sources stored with wrong direction='out'
+        // Self-heal: fix inflow sources stored with wrong direction='out'
         const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         await Promise.all([
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
         ]);
-        // Remove ALL CUSTOMER_PAYMENT entries from cash_ledger
-        // (ALL CUSTOMER_PAYMENT transactions are proprietor personal-account receipts, never company cash)
-        // Use source='CUSTOMER_PAYMENT' to catch both NULL and non-NULL reference_id entries
+
+        // ── Self-heal step 1: remove ONLY auto-synced PERSONAL_RECEIPT entries
+        //    (reference_id IS NOT NULL → was auto-synced; linked transaction is a personal receipt)
+        //    DO NOT delete entries with reference_id=NULL — those may be old legitimate cash entries
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
-              AND source = 'CUSTOMER_PAYMENT'
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.type = 'CUSTOMER_PAYMENT'
+                  AND COALESCE(t.reference_type,'') = 'PERSONAL_RECEIPT'
+              )
         `, [companyId]).catch(()=>{});
-        // Remove duplicate auto-synced entries for invoice payments already in cash_ledger via invoice_id
+
+        // ── Self-heal step 2: remove invoice-payment duplicates
+        //    (already covered via invoice_id row; auto-synced duplicate has reference_id IS NOT NULL)
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
@@ -97,7 +113,8 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
                   )
               )
         `, [companyId]).catch(()=>{});
-        // Link invoice-creation entries to their transactions so future syncs skip them
+
+        // ── Self-heal step 3: link invoice-creation entries to their transactions ──
         await db.pgRun(`
             UPDATE cash_ledger cl SET reference_id = t.id
             FROM transactions t
@@ -105,7 +122,8 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND t.company_id = $1 AND t.type = 'RECEIPT'
               AND t.related_invoice_id = cl.invoice_id AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
-        // Sync only truly missing company-cash entries (exclude personal-account receipts)
+
+        // ── Self-heal step 4: sync RECEIPT transactions (company cash receipts) ──
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
@@ -114,9 +132,21 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             WHERE t.company_id = $1
               AND t.type = 'RECEIPT'
               AND t.amount > 0
-              AND NOT EXISTS (
-                  SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1
-              )
+              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
+        `, [companyId]).catch(()=>{});
+
+        // ── Self-heal step 5: re-sync non-personal CUSTOMER_PAYMENT transactions
+        //    (direct customer cash payments recorded via Transactions page, NOT via proprietor personal account)
+        await db.pgRun(`
+            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+            SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
+                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
+            FROM transactions t
+            WHERE t.company_id = $1
+              AND t.type = 'CUSTOMER_PAYMENT'
+              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
+              AND t.amount > 0
+              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
         const [cashRow, bankRow] = await Promise.all([
@@ -200,7 +230,14 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // Self-heal: fix ALL known inflow sources stored with wrong direction='out'
+        // ── Self-heal step 0: fix NULL dates so they appear in date-filtered queries ──
+        await db.pgRun(
+            `UPDATE cash_ledger SET date = created_at::date
+             WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
+            [companyId]
+        ).catch(()=>{});
+
+        // Self-heal: fix inflow sources stored with wrong direction='out'
         await db.pgRun(
             `UPDATE cash_ledger SET direction='in'
              WHERE company_id=$1
@@ -209,15 +246,22 @@ router.get('/cash', authMiddleware, async (req, res) => {
             [companyId]
         ).catch(()=>{});
 
-        // Auto-sync: deduplicate and fill cash_ledger from transactions
-        // Step 1a: Remove ALL CUSTOMER_PAYMENT source entries (personal-account receipts, never company cash)
+        // ── Step 1: Remove ONLY auto-synced PERSONAL_RECEIPT entries
+        //    (reference_id IS NOT NULL → auto-synced; linked transaction is a personal receipt)
+        //    NEVER delete reference_id=NULL entries — those may be old legitimate company cash
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
-              AND source = 'CUSTOMER_PAYMENT'
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.type = 'CUSTOMER_PAYMENT'
+                  AND COALESCE(t.reference_type,'') = 'PERSONAL_RECEIPT'
+              )
         `, [companyId]).catch(()=>{});
 
-        // Step 1b: Remove duplicate auto-synced entries for invoice payments already covered by invoice_id rows
+        // ── Step 2: Remove invoice-payment duplicates ──
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
@@ -235,7 +279,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
               )
         `, [companyId]).catch(()=>{});
 
-        // Step 2: Link invoice-creation cash_ledger entries to their transactions
+        // ── Step 3: Link invoice-creation entries to their transactions ──
         await db.pgRun(`
             UPDATE cash_ledger cl
             SET reference_id = t.id
@@ -249,7 +293,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
-        // Step 3: Sync only RECEIPT type (company cash) — CUSTOMER_PAYMENT = personal account, never sync
+        // ── Step 4: Sync RECEIPT transactions (company cash) ──
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
@@ -258,10 +302,21 @@ router.get('/cash', authMiddleware, async (req, res) => {
             WHERE t.company_id = $1
               AND t.type = 'RECEIPT'
               AND t.amount > 0
-              AND NOT EXISTS (
-                  SELECT 1 FROM cash_ledger cl
-                  WHERE cl.reference_id = t.id AND cl.company_id = $1
-              )
+              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
+        `, [companyId]).catch(()=>{});
+
+        // ── Step 5: Re-sync non-personal CUSTOMER_PAYMENT transactions ──
+        //    (direct customer cash payments, NOT via proprietor personal account)
+        await db.pgRun(`
+            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+            SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
+                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
+            FROM transactions t
+            WHERE t.company_id = $1
+              AND t.type = 'CUSTOMER_PAYMENT'
+              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
+              AND t.amount > 0
+              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
@@ -292,13 +347,13 @@ router.get('/cash', authMiddleware, async (req, res) => {
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
-        const INFLOW_SOURCES = ['OPENING_BALANCE', 'CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment'];
+        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment']);
         const rawEntries = await db.pgAll(sql, params);
         // Correct direction for known inflow sources (fixes historically mis-recorded entries)
         // OPENING_BALANCE must always be 'in' regardless of how it was stored
         const entries = rawEntries.map(e => ({
             ...e,
-            direction: INFLOW_SOURCES.includes(e.source) ? 'in' : e.direction
+            direction: INFLOW_SOURCES.has(e.source) ? 'in' : e.direction
         }));
         res.json({ entries, opening_balance });
     } catch (err) {
