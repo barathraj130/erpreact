@@ -242,9 +242,24 @@ const Transactions: React.FC = () => {
           <h1 className="text-title">Transaction History</h1>
           <p className="text-body">Monitor and audit every financial movement across your organization.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowNewTxModal(true)}>
-             <FaPlus size={12} /> Record Transaction
-        </button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            className="btn btn-secondary"
+            title="Rebuild ledger from invoices, payments, salary, loans etc."
+            onClick={async () => {
+              if (!window.confirm("Rebuild ledger from all source records? This restores missing entries without deleting existing ones.")) return;
+              const res = await apiFetch("/company/rebuild-ledger", { method: "POST" });
+              const data = await res.json();
+              alert(data.message || (data.error ? `Error: ${data.error}` : "Done"));
+              fetchData();
+            }}
+          >
+            🔁 Rebuild Ledger
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowNewTxModal(true)}>
+            <FaPlus size={12} /> Record Transaction
+          </button>
+        </div>
       </header>
 
       {/* Stats sourced from cash+bank ledger (single source of truth = same as Ledgers page) */}

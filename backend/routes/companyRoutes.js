@@ -250,6 +250,103 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
 });
 
 /**
+ * 🔁 POST /company/rebuild-ledger — Rebuild cash_ledger + bank_ledger from source tables
+ * Reconstructs ledger entries from: invoice_payments, purchase_bill_payments,
+ * salary payments, daily_salary_payments, loan_payments, sales_returns, transactions
+ */
+router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
+    const companyId = req.user?.active_company_id;
+    const branchId  = req.user?.branch_id || 1;
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized.' });
+
+    let inserted = 0;
+    try {
+        // 1. Invoice payments (cash received from customers)
+        const invPay = await db.pgAll(`
+            SELECT ip.payment_date AS date, ip.amount, ip.payment_method AS mode, ip.reference_no AS ref
+            FROM invoice_payments ip
+            JOIN invoices i ON i.id = ip.invoice_id
+            WHERE i.company_id = $1
+        `, [companyId]);
+        for (const r of invPay) {
+            const mode = (r.mode || '').toUpperCase();
+            const tbl  = mode === 'BANK' || mode === 'ONLINE' || mode === 'UPI' || mode === 'CHEQUE' ? 'bank_ledger' : 'cash_ledger';
+            const existing = await db.pgGet(`SELECT id FROM ${tbl} WHERE company_id=$1 AND source='INVOICE_PAYMENT' AND date=$2 AND amount=$3 LIMIT 1`, [companyId, r.date, r.amount]);
+            if (!existing) {
+                await db.pgRun(`INSERT INTO ${tbl} (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'INVOICE_PAYMENT',$3,'in',$4)`, [companyId, branchId, r.amount, r.date]);
+                inserted++;
+            }
+        }
+
+        // 2. Purchase bill payments (cash paid to suppliers)
+        const purPay = await db.pgAll(`
+            SELECT payment_date AS date, amount, payment_mode AS mode
+            FROM purchase_bill_payments WHERE company_id = $1
+        `, [companyId]).catch(() => []);
+        for (const r of purPay) {
+            const mode = (r.mode || '').toUpperCase();
+            const tbl  = mode === 'BANK' || mode === 'ONLINE' || mode === 'UPI' || mode === 'CHEQUE' ? 'bank_ledger' : 'cash_ledger';
+            const existing = await db.pgGet(`SELECT id FROM ${tbl} WHERE company_id=$1 AND source='PURCHASE_PAYMENT' AND date=$2 AND amount=$3 LIMIT 1`, [companyId, r.date, r.amount]);
+            if (!existing) {
+                await db.pgRun(`INSERT INTO ${tbl} (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PURCHASE_PAYMENT',$3,'out',$4)`, [companyId, branchId, r.amount, r.date]);
+                inserted++;
+            }
+        }
+
+        // 3. Daily salary payments
+        const dsp = await db.pgAll(`
+            SELECT payment_date AS date, gross_wage AS amount, payment_mode AS mode
+            FROM daily_salary_payments WHERE company_id = $1
+        `, [companyId]).catch(() => []);
+        for (const r of dsp) {
+            const existing = await db.pgGet(`SELECT id FROM cash_ledger WHERE company_id=$1 AND source='Daily_wage' AND date=$2 AND amount=$3 LIMIT 1`, [companyId, r.date, r.amount]);
+            if (!existing) {
+                await db.pgRun(`INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'Daily_wage',$3,'out',$4)`, [companyId, branchId, r.amount, r.date]);
+                inserted++;
+            }
+        }
+
+        // 4. Loan repayments (principal + interest paid out)
+        const loanPay = await db.pgAll(`
+            SELECT lp.payment_date AS date, lp.total_amount AS amount, lp.payment_mode AS mode
+            FROM loan_payments lp
+            JOIN loans l ON l.id = lp.loan_id
+            WHERE l.company_id = $1
+        `, [companyId]).catch(() => []);
+        for (const r of loanPay) {
+            const existing = await db.pgGet(`SELECT id FROM cash_ledger WHERE company_id=$1 AND source='LOAN_REPAYMENT' AND date=$2 AND amount=$3 LIMIT 1`, [companyId, r.date, r.amount]);
+            if (!existing) {
+                await db.pgRun(`INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'LOAN_REPAYMENT',$3,'out',$4)`, [companyId, branchId, r.amount, r.date]);
+                inserted++;
+            }
+        }
+
+        // 5. General transactions (MISC_EXPENSE, GIFT_CONTRIBUTION, etc.)
+        const txns = await db.pgAll(`
+            SELECT date, type AS source, amount, mode
+            FROM transactions
+            WHERE company_id = $1 AND type NOT IN ('INVOICE','SALARY_PAYMENT','CUSTOMER_PAYMENT')
+        `, [companyId]).catch(() => []);
+        const INFLOW_TYPES = ['RECEIPT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'];
+        for (const r of txns) {
+            const direction = INFLOW_TYPES.includes(r.source) ? 'in' : 'out';
+            const mode = (r.mode || '').toUpperCase();
+            const tbl  = mode === 'BANK' || mode === 'ONLINE' ? 'bank_ledger' : 'cash_ledger';
+            const existing = await db.pgGet(`SELECT id FROM ${tbl} WHERE company_id=$1 AND source=$2 AND date=$3 AND amount=$4 LIMIT 1`, [companyId, r.source, r.date, r.amount]);
+            if (!existing) {
+                await db.pgRun(`INSERT INTO ${tbl} (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,$3,$4,$5,$6)`, [companyId, branchId, r.source, r.amount, direction, r.date]);
+                inserted++;
+            }
+        }
+
+        res.json({ success: true, inserted, message: `Ledger rebuilt — ${inserted} entries restored.` });
+    } catch (err) {
+        console.error('Rebuild ledger error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
  * 🏢 CREATE NEW COMPANY (Global Administration)
  * Only accessible by 'superadmin'
  */
