@@ -14,6 +14,7 @@ interface LedgerEntry {
   date: string;
   bank_name?: string;
   transaction_id?: string;
+  description?: string;
   created_at: string;
 }
 
@@ -200,9 +201,14 @@ const Ledgers: React.FC = () => {
             </td>
             <td style={{ padding: "14px 16px", fontWeight: 500 }}>
               {isReconcile ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ background: "#ede9fe", color: "#6d28d9", fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", letterSpacing: "0.04em" }}>RECONCILED</span>
-                  <span style={{ color: "#6d28d9", fontWeight: 600 }}>Cash Reconciliation</span>
+                <span style={{ display: "inline-flex", flexDirection: "column", gap: "2px" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ background: "#ede9fe", color: "#6d28d9", fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", letterSpacing: "0.04em" }}>RECONCILED</span>
+                    <span style={{ color: "#6d28d9", fontWeight: 600 }}>Cash Reconciliation</span>
+                  </span>
+                  {entry.description && (
+                    <span style={{ fontSize: "11px", color: "#8b5cf6" }}>{entry.description}</span>
+                  )}
                 </span>
               ) : sourceLabel(entry.source)}
             </td>

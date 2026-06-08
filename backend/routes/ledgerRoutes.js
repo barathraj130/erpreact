@@ -363,6 +363,9 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
     }
 
     try {
+        // ── Self-heal: ensure description column exists (dynamicSchema adds it on restart, but this covers first-run) ──
+        await db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS description TEXT`, []).catch(()=>{});
+
         // Compute computer balance up to and including the given date (exclude existing CASH_RECONCILIATION for that date to avoid double-count)
         const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const balRow = await db.pgGet(

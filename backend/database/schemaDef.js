@@ -253,10 +253,11 @@ export const schemaDefinition = {
         id: "SERIAL PRIMARY KEY",
         company_id: "INTEGER",
         branch_id: "INTEGER",
-        source: "VARCHAR(50)", 
+        source: "VARCHAR(50)",
         amount: "NUMERIC(15,2)",
-        direction: "VARCHAR(10)", 
+        direction: "VARCHAR(10)",
         date: "DATE",
+        description: "TEXT",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
@@ -267,10 +268,11 @@ export const schemaDefinition = {
         bank_account_id: "INTEGER", // Reference to bank_details
         source: "VARCHAR(50)",
         amount: "NUMERIC(15,2)",
-        direction: "VARCHAR(10)", 
+        direction: "VARCHAR(10)",
         bank_name: "TEXT",
         transaction_id: "TEXT",
         date: "DATE",
+        description: "TEXT",
         created_at: "TIMESTAMP DEFAULT NOW()"
     },
 
