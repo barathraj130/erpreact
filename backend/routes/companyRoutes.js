@@ -211,9 +211,9 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
     const { cash_opening, bank_openings = [] } = req.body;
 
     try {
-        // ── CASH: hard reset — wipe ALL cash_ledger, insert fresh OPENING_BALANCE ──
+        // ── CASH: only replace the OPENING_BALANCE entry — never touch real transactions ──
         const desiredCash = Number(cash_opening) || 0;
-        await db.pgRun(`DELETE FROM cash_ledger WHERE company_id = $1`, [companyId]);
+        await db.pgRun(`DELETE FROM cash_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`, [companyId]);
         if (desiredCash > 0) {
             await db.pgRun(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
@@ -222,8 +222,8 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
             );
         }
 
-        // ── BANK: hard reset — wipe ALL bank_ledger, insert fresh OPENING_BALANCE ──
-        await db.pgRun(`DELETE FROM bank_ledger WHERE company_id = $1`, [companyId]);
+        // ── BANK: only replace the OPENING_BALANCE entry — never touch real transactions ──
+        await db.pgRun(`DELETE FROM bank_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`, [companyId]);
         for (const b of bank_openings) {
             const bankName = b.bank_name || 'Bank';
             const desiredBank = Number(b.amount) || 0;
