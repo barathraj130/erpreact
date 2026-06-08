@@ -28,6 +28,7 @@ interface PayItem {
   employee_name: string;
   gross_wage: number;
   deduction: number;
+  extra_pay: number;
   net_wage: number;
   payment_mode: "cash" | "bank";
 }
@@ -125,6 +126,7 @@ const DailySalary: React.FC = () => {
       employee_name: r.employee_name,
       gross_wage:    r.daily_wage,
       deduction:     0,
+      extra_pay:     0,
       net_wage:      r.daily_wage,
       payment_mode:  r.payment_mode,
     })));
@@ -135,7 +137,16 @@ const DailySalary: React.FC = () => {
     setPayItems(prev => {
       const copy = [...prev];
       const d    = Math.max(0, Number(val) || 0);
-      copy[idx]  = { ...copy[idx], deduction: d, net_wage: Math.max(0, copy[idx].gross_wage - d) };
+      copy[idx]  = { ...copy[idx], deduction: d, net_wage: Math.max(0, copy[idx].gross_wage - d + copy[idx].extra_pay) };
+      return copy;
+    });
+  };
+
+  const updateExtraPay = (idx: number, val: string) => {
+    setPayItems(prev => {
+      const copy = [...prev];
+      const e    = Math.max(0, Number(val) || 0);
+      copy[idx]  = { ...copy[idx], extra_pay: e, net_wage: Math.max(0, copy[idx].gross_wage - copy[idx].deduction + e) };
       return copy;
     });
   };
@@ -158,9 +169,10 @@ const DailySalary: React.FC = () => {
           date,
           employees: payItems.map(p => ({
             employee_id:  p.employee_id,
-            daily_wage:   p.net_wage,      // pay net (after deduction)
+            daily_wage:   p.net_wage,      // pay net (after deduction + extra)
             gross_wage:   p.gross_wage,
             deduction:    p.deduction,
+            extra_pay:    p.extra_pay,
             payment_mode: p.payment_mode,
           })),
         },
@@ -393,8 +405,8 @@ const DailySalary: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Deduction input */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", alignItems: "center" }}>
+                  {/* Deduction + Extra Pay inputs */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", alignItems: "center" }}>
                     <div>
                       <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
                         Deduction (₹)
@@ -412,14 +424,33 @@ const DailySalary: React.FC = () => {
                         />
                       </div>
                     </div>
-                    <div style={{ background: p.deduction > 0 ? "#fef9c3" : "#f0fdf4", borderRadius: "10px", padding: "10px 14px", textAlign: "center" }}>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
+                        Extra Pay (₹)
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#a78bfa", fontSize: "0.85rem" }}>₹</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={p.extra_pay || ""}
+                          placeholder="0"
+                          onChange={e => updateExtraPay(idx, e.target.value)}
+                          style={{ width: "100%", padding: "10px 12px 10px 28px", borderRadius: "10px", border: "1.5px solid #ddd6fe", fontSize: "0.95rem", outline: "none", boxSizing: "border-box", background: "#faf5ff" }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ background: (p.deduction > 0 || p.extra_pay > 0) ? (p.extra_pay > 0 ? "#f5f3ff" : "#fef9c3") : "#f0fdf4", borderRadius: "10px", padding: "10px 14px", textAlign: "center" }}>
                       <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 600, textTransform: "uppercase", marginBottom: "2px" }}>Net Pay</div>
-                      <div style={{ fontSize: "1.25rem", fontWeight: 800, color: p.deduction > 0 ? "#d97706" : "#10b981" }}>{fmt(p.net_wage)}</div>
+                      <div style={{ fontSize: "1.25rem", fontWeight: 800, color: p.extra_pay > 0 ? "#7c3aed" : p.deduction > 0 ? "#d97706" : "#10b981" }}>{fmt(p.net_wage)}</div>
                     </div>
                   </div>
-                  {p.deduction > 0 && (
-                    <div style={{ marginTop: "8px", fontSize: "0.78rem", color: "#92400e", background: "#fef3c7", borderRadius: "8px", padding: "6px 12px" }}>
-                      ✂️ {fmt(p.gross_wage)} − {fmt(p.deduction)} deduction = <strong>{fmt(p.net_wage)}</strong>
+                  {(p.deduction > 0 || p.extra_pay > 0) && (
+                    <div style={{ marginTop: "8px", fontSize: "0.78rem", color: p.extra_pay > 0 ? "#5b21b6" : "#92400e", background: p.extra_pay > 0 ? "#ede9fe" : "#fef3c7", borderRadius: "8px", padding: "6px 12px" }}>
+                      {p.extra_pay > 0 ? "⭐" : "✂️"} {fmt(p.gross_wage)}
+                      {p.deduction > 0 && <> − {fmt(p.deduction)} deduct</>}
+                      {p.extra_pay > 0 && <> + {fmt(p.extra_pay)} bonus</>}
+                      {" "}= <strong>{fmt(p.net_wage)}</strong>
                     </div>
                   )}
                 </div>
@@ -433,6 +464,11 @@ const DailySalary: React.FC = () => {
                 {payItems.some(p => p.deduction > 0) && (
                   <span style={{ marginLeft: "8px", color: "#f59e0b", fontSize: "0.8rem" }}>
                     (−{fmt(payItems.reduce((s, p) => s + p.deduction, 0))} deducted)
+                  </span>
+                )}
+                {payItems.some(p => p.extra_pay > 0) && (
+                  <span style={{ marginLeft: "8px", color: "#7c3aed", fontSize: "0.8rem" }}>
+                    (+{fmt(payItems.reduce((s, p) => s + p.extra_pay, 0))} bonus)
                   </span>
                 )}
               </div>

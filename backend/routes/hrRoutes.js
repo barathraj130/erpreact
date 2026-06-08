@@ -792,6 +792,7 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
         // Add columns if table existed without them
         await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS gross_wage NUMERIC(12,2) DEFAULT 0`).catch(() => {});
         await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS deduction NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.pgRun(`ALTER TABLE daily_salary_payments ADD COLUMN IF NOT EXISTS extra_pay NUMERIC(12,2) DEFAULT 0`).catch(() => {});
 
         // Ensure advance_repayments has type + notes columns — must run BEFORE the transaction
         // so PostgreSQL DDL errors don't abort the payment transaction block
@@ -808,7 +809,8 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             const grossWage = Number(p.gross_wage || p.daily_wage) || 0;
             const deduction = Number(p.deduction) || 0;
-            const wage      = Number(p.daily_wage) || 0; // net pay (already reduced by deduction on frontend)
+            const extraPay  = Number(p.extra_pay) || 0;
+            const wage      = Number(p.daily_wage) || 0; // net pay (gross - deduction + extra_pay, computed on frontend)
             const pMode     = (p.payment_mode || 'cash').toUpperCase();
 
             if (wage <= 0) continue; // skip absent / zero-wage
@@ -824,11 +826,11 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             // Record payment
             await client.query(`
-                INSERT INTO daily_salary_payments (company_id, employee_id, payment_date, daily_wage, gross_wage, deduction, payment_mode, status)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,'paid')
+                INSERT INTO daily_salary_payments (company_id, employee_id, payment_date, daily_wage, gross_wage, deduction, extra_pay, payment_mode, status)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'paid')
                 ON CONFLICT (employee_id, payment_date) DO UPDATE
-                  SET gross_wage=$5, deduction=$6, daily_wage=$4, payment_mode=$7, status='paid', created_at=NOW()
-            `, [companyId, p.employee_id, date, wage, grossWage, deduction, pMode.toLowerCase()]);
+                  SET gross_wage=$5, deduction=$6, extra_pay=$7, daily_wage=$4, payment_mode=$8, status='paid', created_at=NOW()
+            `, [companyId, p.employee_id, date, wage, grossWage, deduction, extraPay, pMode.toLowerCase()]);
 
             // Ledger deduction (net wage out of cash/bank)
             if (pMode === 'CASH') {
