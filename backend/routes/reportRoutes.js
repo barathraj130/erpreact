@@ -297,17 +297,33 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
         // ── ASSETS ─────────────────────────────────────────────────────────────
         const [
             cashLedger, bankLedger,
+            cashInFromInvPay, cashOutPurchases, cashOutWages, cashOutLoans, cashOutSalary,
+            directReceipts, propBalance,
             receivables, advancePaid,
             inventory,
             loansGiven,
             propReceiptBalance,
         ] = await Promise.all([
-            // Cash in hand = net of cash_ledger (excluding opening balance)
+            // Cash in hand = net of cash_ledger (excluding opening balance + already-counted sources)
             db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS total
-                      FROM cash_ledger WHERE company_id=$1 AND source!='OPENING_BALANCE'`, [companyId]).catch(()=>({total:0})),
+                      FROM cash_ledger WHERE company_id=$1 AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','CUSTOMER_PAYMENT','RECEIPT','PROPRIETOR_RECEIPT','PURCHASE_PAYMENT','Daily_wage','LOAN_REPAYMENT')`, [companyId]).catch(()=>({total:0})),
             // Cash at bank = net of bank_ledger
             db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS total
-                      FROM bank_ledger WHERE company_id=$1 AND source!='OPENING_BALANCE'`, [companyId]).catch(()=>({total:0})),
+                      FROM bank_ledger WHERE company_id=$1 AND source NOT IN ('OPENING_BALANCE','INVOICE_PAYMENT','CUSTOMER_PAYMENT','RECEIPT')`, [companyId]).catch(()=>({total:0})),
+            // Invoice payments received (cash)
+            db.pgGet(`SELECT COALESCE(SUM(ip.amount),0) AS total FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE i.company_id=$1 AND (ip.payment_method IS NULL OR UPPER(ip.payment_method) NOT IN ('BANK','ONLINE','UPI','CHEQUE','NEFT','RTGS'))`, [companyId]).catch(()=>({total:0})),
+            // Cash paid to suppliers
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM purchase_bill_payments WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
+            // Daily wages paid
+            db.pgGet(`SELECT COALESCE(SUM(gross_wage),0) AS total FROM daily_salary_payments WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
+            // Loan repayments paid out
+            db.pgGet(`SELECT COALESCE(SUM(lp.total_amount),0) AS total FROM loan_payments lp JOIN loans l ON l.id=lp.loan_id WHERE l.company_id=$1`, [companyId]).catch(()=>({total:0})),
+            // Monthly salary paid
+            db.pgGet(`SELECT COALESCE(SUM(sp.amount),0) AS total FROM salary_payments sp JOIN salaries s ON s.id=sp.salary_id WHERE s.company_id=$1`, [companyId]).catch(()=>({total:0})),
+            // Direct receipts (RECEIPT/CUSTOMER_PAYMENT in transactions)
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE company_id=$1 AND type IN ('CUSTOMER_PAYMENT','RECEIPT')`, [companyId]).catch(()=>({total:0})),
+            // Proprietor net (receipts - payouts)
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN transaction_type='PERSONAL_RECEIPT' THEN amount ELSE -amount END),0) AS total FROM proprietor_transactions WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
             // Accounts Receivable = unpaid invoice amounts
             db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS total
                       FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND status!='PAID' AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]).catch(()=>({total:0})),
@@ -320,13 +336,13 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
                         ) AS remaining_balance
                         FROM users u WHERE u.company_id=$1 AND u.role='customer'
                       ) sub WHERE remaining_balance < 0`, [companyId]).catch(()=>({total:0})),
-            // Inventory / Stock value
-            db.pgGet(`SELECT COALESCE(SUM(COALESCE(stock_quantity,0) * COALESCE(purchase_price,selling_price,0)),0) AS total
+            // Inventory / Stock value — use current_stock (actual) × cost_price
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(current_stock,opening_stock,0) * COALESCE(cost_price,selling_price,0)),0) AS total
                       FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
             // Loans given out (if any assets lent)
             db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total
-                      FROM loans WHERE company_id=$1 AND loan_direction='GIVEN' AND status='ACTIVE'`, [companyId]).catch(()=>({total:0})),
-            // Proprietor account receipts not yet settled (money customers paid via proprietor)
+                      FROM loans WHERE company_id=$1 AND UPPER(COALESCE(loan_direction,'')) = 'GIVEN' AND UPPER(COALESCE(status,'')) = 'ACTIVE'`, [companyId]).catch(()=>({total:0})),
+            // Proprietor net receipts (money owed via personal account)
             db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions
                       WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT'`, [companyId]).catch(()=>({total:0})),
         ]);
@@ -337,28 +353,45 @@ router.get('/finance/balance-sheet', authMiddleware, async (req, res) => {
             loansPayable,
             lenderBalance,
         ] = await Promise.all([
-            // Accounts Payable = unpaid purchase bills
-            db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)
-                            - COALESCE(paid_amount,0)),0) AS total
-                      FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
-            // Loans payable (loans taken)
+            // Accounts Payable = purchase bills minus what's been paid via purchase_bill_payments
+            db.pgGet(`SELECT COALESCE(
+                        SUM(COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0))
+                        - COALESCE((SELECT SUM(p.amount) FROM purchase_bill_payments p WHERE p.company_id=$1),0)
+                      ,0) AS total
+                      FROM purchase_bills pb
+                      WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false`, [companyId]).catch(()=>({total:0})),
+            // Loans payable (loans taken = not GIVEN)
             db.pgGet(`SELECT COALESCE(SUM(COALESCE(principal_outstanding,principal_amount)),0) AS total
-                      FROM loans WHERE company_id=$1 AND (loan_direction IS NULL OR loan_direction!='GIVEN') AND status='ACTIVE'`, [companyId]).catch(()=>({total:0})),
-            // Lender balances
-            db.pgGet(`SELECT COALESCE(SUM(balance),0) AS total FROM lenders WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
+                      FROM loans WHERE company_id=$1
+                        AND UPPER(COALESCE(loan_direction,'TAKEN')) != 'GIVEN'
+                        AND UPPER(COALESCE(status,'ACTIVE')) = 'ACTIVE'`, [companyId]).catch(()=>({total:0})),
+            // Lender balances (opening_balance from lenders table)
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(opening_balance,0)),0) AS total FROM lenders WHERE company_id=$1`, [companyId]).catch(()=>({total:0})),
         ]);
 
-        const cashVal    = parseFloat(cashLedger?.total||0);
-        const bankVal    = parseFloat(bankLedger?.total||0);
-        const recVal     = parseFloat(receivables?.total||0);
-        const advVal     = parseFloat(advancePaid?.total||0);
-        const invVal     = parseFloat(inventory?.total||0);
-        const loanGiven  = parseFloat(loansGiven?.total||0);
-        const propRec    = parseFloat(propReceiptBalance?.total||0);
+        // Cash in hand = ledger misc + invoice payments received (cash) + direct receipts - purchases paid - wages - loans repaid - salaries
+        const ledgerMiscCash = parseFloat(cashLedger?.total||0);
+        const ledgerMiscBank = parseFloat(bankLedger?.total||0);
+        const invPayCash     = parseFloat(cashInFromInvPay?.total||0);
+        const purPaid        = parseFloat(cashOutPurchases?.total||0);
+        const wagesPaid      = parseFloat(cashOutWages?.total||0);
+        const loansPaid      = parseFloat(cashOutLoans?.total||0);
+        const salaryPaid     = parseFloat(cashOutSalary?.total||0);
+        const drTotal        = parseFloat(directReceipts?.total||0);
+        const propNet        = parseFloat(propBalance?.total||0);
 
-        const payVal     = parseFloat(payables?.total||0);
-        const loanPay    = parseFloat(loansPayable?.total||0);
-        const lenderVal  = parseFloat(lenderBalance?.total||0);
+        // Net cash position = all money in - all money out
+        const cashVal   = Math.max(0, ledgerMiscCash + invPayCash + drTotal - purPaid - wagesPaid - loansPaid - salaryPaid);
+        const bankVal   = Math.max(0, ledgerMiscBank);
+        const recVal    = parseFloat(receivables?.total||0);
+        const advVal    = parseFloat(advancePaid?.total||0);
+        const invVal    = parseFloat(inventory?.total||0);
+        const loanGiven = parseFloat(loansGiven?.total||0);
+        const propRec   = parseFloat(propReceiptBalance?.total||0);
+
+        const payVal    = Math.max(0, parseFloat(payables?.total||0));
+        const loanPay   = parseFloat(loansPayable?.total||0);
+        const lenderVal = parseFloat(lenderBalance?.total||0);
 
         const totalAssets      = cashVal + bankVal + recVal + advVal + invVal + loanGiven + propRec;
         const totalLiabilities = payVal + loanPay + lenderVal;
