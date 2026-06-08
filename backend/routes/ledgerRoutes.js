@@ -67,10 +67,23 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
     try {
         // Known inflow sources always count as positive regardless of stored direction
         // Self-heal: fix ALL inflow sources stored with wrong direction='out'
-        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         await Promise.all([
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
+            // Auto-sync missing RECEIPT/CUSTOMER_PAYMENT transactions to cash_ledger
+            db.pgRun(`
+                INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+                SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
+                       COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
+                FROM transactions t
+                WHERE t.company_id = $1
+                  AND t.type IN ('RECEIPT','CUSTOMER_PAYMENT')
+                  AND t.amount > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1
+                  )
+            `, [companyId]).catch(()=>{}),
         ]);
 
         const [cashRow, bankRow] = await Promise.all([
@@ -158,14 +171,30 @@ router.get('/cash', authMiddleware, async (req, res) => {
         await db.pgRun(
             `UPDATE cash_ledger SET direction='in'
              WHERE company_id=$1
-               AND source IN ('OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+               AND source IN ('OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
                AND direction='out' AND amount>0`,
             [companyId]
         ).catch(()=>{});
 
+        // Auto-sync: Add RECEIPT/CUSTOMER_PAYMENT transactions that are not yet in cash_ledger
+        // (paymentRoutes.js writes to transactions but not to cash_ledger)
+        await db.pgRun(`
+            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+            SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
+                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
+            FROM transactions t
+            WHERE t.company_id = $1
+              AND t.type IN ('RECEIPT', 'CUSTOMER_PAYMENT')
+              AND t.amount > 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM cash_ledger cl
+                  WHERE cl.reference_id = t.id AND cl.company_id = $1
+              )
+        `, [companyId]).catch(()=>{});
+
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
         // Known inflow sources always count as positive regardless of stored direction
-        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE

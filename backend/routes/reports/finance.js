@@ -103,7 +103,7 @@ router.get('/fund-flow', authMiddleware, async (req, res) => {
     const [salesInflow, purchaseOutflow, salaryOutflow, loanInflow, loanOutflow] = await Promise.all([
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(sp.amount),0) AS total FROM salary_payments sp JOIN salaries s ON s.id=sp.salary_id WHERE s.company_id=$1 AND sp.date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(sp.net_salary),0) AS total FROM salary_payments sp JOIN salaries s ON s.id=sp.salary_id WHERE s.company_id=$1 AND COALESCE(sp.paid_date, sp.created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(principal_amount),0) AS total FROM loans WHERE company_id=$1 AND UPPER(COALESCE(loan_direction,'TAKEN'))='TAKEN' AND created_at::date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(lp.total_amount),0) AS total FROM loan_payments lp JOIN loans l ON l.id=lp.loan_id WHERE l.company_id=$1 AND lp.payment_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
     ]);
@@ -134,7 +134,7 @@ router.get('/profitability', authMiddleware, async (req, res) => {
     const [sales, purchases, salaries, expenses] = await Promise.all([
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(sp.amount),0) AS total FROM salary_payments sp JOIN salaries s ON s.id=sp.salary_id WHERE s.company_id=$1 AND sp.date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(sp.net_salary),0) AS total FROM salary_payments sp JOIN salaries s ON s.id=sp.salary_id WHERE s.company_id=$1 AND COALESCE(sp.paid_date, sp.created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE company_id=$1 AND expense_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
     ]);
     const revenue = parseFloat(sales?.total || 0);
