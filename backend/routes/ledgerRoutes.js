@@ -210,16 +210,11 @@ router.get('/cash', authMiddleware, async (req, res) => {
         ).catch(()=>{});
 
         // Auto-sync: deduplicate and fill cash_ledger from transactions
-        // Step 1a: Remove personal-receipt entries (went to proprietor personal account, not company cash)
+        // Step 1a: Remove ALL CUSTOMER_PAYMENT source entries (personal-account receipts, never company cash)
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.reference_type = 'PERSONAL_RECEIPT'
-              )
+              AND source = 'CUSTOMER_PAYMENT'
         `, [companyId]).catch(()=>{});
 
         // Step 1b: Remove duplicate auto-synced entries for invoice payments already covered by invoice_id rows
@@ -254,15 +249,14 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
-        // Step 3: Sync only truly missing company-cash entries (exclude personal-account receipts)
+        // Step 3: Sync only RECEIPT type (company cash) — CUSTOMER_PAYMENT = personal account, never sync
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
                    COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
             FROM transactions t
             WHERE t.company_id = $1
-              AND t.type IN ('RECEIPT', 'CUSTOMER_PAYMENT')
-              AND COALESCE(t.reference_type,'') != 'PERSONAL_RECEIPT'
+              AND t.type = 'RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (
                   SELECT 1 FROM cash_ledger cl
