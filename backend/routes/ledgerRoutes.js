@@ -72,17 +72,13 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
         ]);
-        // Remove any CUSTOMER_PAYMENT entries wrongly synced to cash_ledger
+        // Remove ALL CUSTOMER_PAYMENT entries from cash_ledger
         // (ALL CUSTOMER_PAYMENT transactions are proprietor personal-account receipts, never company cash)
+        // Use source='CUSTOMER_PAYMENT' to catch both NULL and non-NULL reference_id entries
         await db.pgRun(`
             DELETE FROM cash_ledger
             WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.type = 'CUSTOMER_PAYMENT'
-              )
+              AND source = 'CUSTOMER_PAYMENT'
         `, [companyId]).catch(()=>{});
         // Remove duplicate auto-synced entries for invoice payments already in cash_ledger via invoice_id
         await db.pgRun(`
