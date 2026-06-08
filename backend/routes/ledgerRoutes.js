@@ -65,14 +65,19 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/balance/current', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
+        // OPENING_BALANCE entries always count as positive (they represent starting capital)
+        // Self-heal: fix any OPENING_BALANCE stored with wrong direction='out'
+        await db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+        await db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source='OPENING_BALANCE' AND direction='out' AND amount>0`, [companyId]).catch(()=>{});
+
         const [cashRow, bankRow] = await Promise.all([
             db.pgGet(
-                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+                `SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
                  FROM cash_ledger WHERE company_id = $1`,
                 [companyId]
             ),
             db.pgGet(
-                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+                `SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
                  FROM bank_ledger WHERE company_id = $1`,
                 [companyId]
             ),
@@ -147,9 +152,10 @@ router.get('/cash', authMiddleware, async (req, res) => {
 
     try {
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
+        // OPENING_BALANCE entries always count as positive (starting capital, never debt)
         const openingParams = [companyId];
         let openingSql = `
-            SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
+            SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
             FROM cash_ledger
             WHERE company_id = $1 AND ${branchFilter}
         `;
@@ -191,7 +197,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
         // Opening balance = net of ALL bank transactions strictly BEFORE startDate
         const openingParams = [companyId];
         let openingSql = `
-            SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
+            SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS balance
             FROM bank_ledger
             WHERE company_id = $1 AND ${branchFilter}
         `;
@@ -232,10 +238,10 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     try {
         console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
 
-        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
+        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalCash = Number(cashRows?.balance || 0);
 
-        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
+        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source='OPENING_BALANCE' THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalBank = Number(bankRows?.balance || 0);
 
         const invoiceRows = await db.pgAll(`
