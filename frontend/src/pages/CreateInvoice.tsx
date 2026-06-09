@@ -240,6 +240,7 @@ const CreateInvoice: React.FC = () => {
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
   const [pendingCredits, setPendingCredits] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [nominalTaxPaid, setNominalTaxPaid] = useState(false); // for NOMINAL_TAX_INVOICE only
   const [customerInfo, setCustomerInfo] = useState({
     name: "---",
     address: "---",
@@ -492,10 +493,13 @@ const CreateInvoice: React.FC = () => {
         notes,
         grand_total: totals.grandTotal,
         discount_amount: discount,
-        amount_paid: amountPaid,
-        balance_due: totals.pendingAmount,
-        payment_status: totals.paymentStatus,
-        payments: paymentsList.filter(p => p.amount > 0).map(p => ({
+        // For nominal tax invoice: no cash movement, just track if GST was remitted
+        amount_paid: invoiceType === 'NOMINAL_TAX_INVOICE' ? 0 : amountPaid,
+        balance_due: invoiceType === 'NOMINAL_TAX_INVOICE' ? 0 : totals.pendingAmount,
+        payment_status: invoiceType === 'NOMINAL_TAX_INVOICE'
+          ? (nominalTaxPaid ? 'TAX_PAID' : 'TAX_PENDING')
+          : totals.paymentStatus,
+        payments: invoiceType === 'NOMINAL_TAX_INVOICE' ? [] : paymentsList.filter(p => p.amount > 0).map(p => ({
             amount: p.amount,
             payment_method: p.method,
             payment_date: meta.invoiceDate,
@@ -1293,15 +1297,48 @@ const CreateInvoice: React.FC = () => {
           <div className="ci-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
               <div className="ci-card-title" style={{ marginBottom: 0 }}>Payment Details</div>
-              <button 
-                onClick={() => setPaymentsList([...paymentsList, { amount: 0, method: "CASH", reference: "" }])}
-                style={{ padding: "6px 12px", background: "#f1f5f9", color: "#4f46e5", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
-              >
-                <FaPlus /> Add Split
-              </button>
+              {invoiceType !== 'NOMINAL_TAX_INVOICE' && (
+                <button
+                  onClick={() => setPaymentsList([...paymentsList, { amount: 0, method: "CASH", reference: "" }])}
+                  style={{ padding: "6px 12px", background: "#f1f5f9", color: "#4f46e5", border: "1px solid #cbd5e1", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <FaPlus /> Add Split
+                </button>
+              )}
             </div>
-            
-            {paymentsList.map((payment, index) => (
+
+            {/* ── NOMINAL TAX INVOICE: only ask Tax Paid? ── */}
+            {invoiceType === 'NOMINAL_TAX_INVOICE' ? (
+              <div style={{ background: "#faf5ff", border: "1.5px solid #c4b5fd", borderRadius: "12px", padding: "16px 20px" }}>
+                <p style={{ margin: "0 0 14px 0", fontSize: "13px", color: "#6d28d9", fontWeight: 600 }}>
+                  This is a name-sake bill — no cash movement recorded.
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: "#4c1d95" }}>Tax Paid to Government?</span>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setNominalTaxPaid(true)}
+                      style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid", borderColor: nominalTaxPaid ? "#16a34a" : "#d1d5db", background: nominalTaxPaid ? "#dcfce7" : "white", color: nominalTaxPaid ? "#15803d" : "#6b7280", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                    >
+                      ✓ Yes — Tax Paid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNominalTaxPaid(false)}
+                      style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid", borderColor: !nominalTaxPaid ? "#dc2626" : "#d1d5db", background: !nominalTaxPaid ? "#fee2e2" : "white", color: !nominalTaxPaid ? "#b91c1c" : "#6b7280", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                    >
+                      ✗ No — Tax Pending
+                    </button>
+                  </div>
+                </div>
+                <p style={{ margin: "10px 0 0 0", fontSize: "11px", color: "#8b5cf6" }}>
+                  Status will be saved as: <strong>{nominalTaxPaid ? "TAX PAID" : "TAX PENDING"}</strong>
+                </p>
+              </div>
+            ) : null}
+
+            {invoiceType !== 'NOMINAL_TAX_INVOICE' && paymentsList.map((payment, index) => (
               <div key={index} style={{ background: "#f8fafc", padding: "12px", borderRadius: "8px", border: "1px solid #e2e8f0", marginBottom: "10px", position: "relative" }}>
                 {paymentsList.length > 1 && (
                   <button 
@@ -1356,8 +1393,8 @@ const CreateInvoice: React.FC = () => {
               </div>
             ))}
 
-            {/* Advance Balance Banner */}
-            {customerAdvance > 0 && (
+            {/* Advance Balance Banner + Discount — hidden for nominal (no cash movement) */}
+            {invoiceType !== 'NOMINAL_TAX_INVOICE' && customerAdvance > 0 && (
               <div style={{ marginTop: '12px', padding: '12px 14px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d' }}>Advance Balance Available</div>
@@ -1376,8 +1413,8 @@ const CreateInvoice: React.FC = () => {
               </div>
             )}
 
-            {/* Discount Row */}
-            <div style={{ marginTop: '12px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+            {/* Discount Row — hidden for nominal tax invoice */}
+            {invoiceType !== 'NOMINAL_TAX_INVOICE' && <div style={{ marginTop: '12px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
               <div className="ci-field" style={{ flex: 1 }}>
                 <label>Discount {'/'} Waiver (₹)</label>
                 <input
@@ -1407,8 +1444,8 @@ const CreateInvoice: React.FC = () => {
                   Waive ₹{fmt(totals.pendingAmount)}
                 </button>
               )}
-            </div>
-            
+            </div>}
+
             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginTop: '16px', border: '1px solid #e2e8f0' }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Gross Sale Total</span>
@@ -1430,22 +1467,32 @@ const CreateInvoice: React.FC = () => {
                      <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f59e0b' }}>- ₹{fmt(discount)}</span>
                  </div>
                )}
-               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                   <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Net Payable</span>
-                   <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>₹{fmt(totals.effectiveTotal)}</span>
-               </div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                   <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Amount Paid</span>
-                   <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#16a34a' }}>₹{fmt(amountPaid)}</span>
-               </div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '8px' }}>
-                   <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 800 }}>Pending Balance</span>
-                   <span style={{ fontSize: '1rem', fontWeight: 900, color: totals.pendingAmount > 0 ? '#ef4444' : '#16a34a' }}>₹{fmt(totals.pendingAmount)}</span>
-               </div>
+               {invoiceType !== 'NOMINAL_TAX_INVOICE' && (
+                 <>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                       <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Net Payable</span>
+                       <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>₹{fmt(totals.effectiveTotal)}</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                       <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Amount Paid</span>
+                       <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#16a34a' }}>₹{fmt(amountPaid)}</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '8px' }}>
+                       <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 800 }}>Pending Balance</span>
+                       <span style={{ fontSize: '1rem', fontWeight: 900, color: totals.pendingAmount > 0 ? '#ef4444' : '#16a34a' }}>₹{fmt(totals.pendingAmount)}</span>
+                   </div>
+                 </>
+               )}
                <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                   <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: totals.paymentStatus === 'PAID' ? '#dcfce7' : totals.paymentStatus === 'PENDING' ? '#fee2e2' : '#fef9c3', color: totals.paymentStatus === 'PAID' ? '#166534' : totals.paymentStatus === 'PENDING' ? '#991b1b' : '#854d0e', borderRadius: '4px', fontWeight: 700 }}>
-                     {totals.paymentStatus}
-                   </span>
+                   {invoiceType === 'NOMINAL_TAX_INVOICE' ? (
+                     <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: nominalTaxPaid ? '#dcfce7' : '#fee2e2', color: nominalTaxPaid ? '#166534' : '#991b1b', borderRadius: '4px', fontWeight: 700 }}>
+                       {nominalTaxPaid ? 'TAX PAID' : 'TAX PENDING'}
+                     </span>
+                   ) : (
+                     <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: totals.paymentStatus === 'PAID' ? '#dcfce7' : totals.paymentStatus === 'PENDING' ? '#fee2e2' : '#fef9c3', color: totals.paymentStatus === 'PAID' ? '#166534' : totals.paymentStatus === 'PENDING' ? '#991b1b' : '#854d0e', borderRadius: '4px', fontWeight: 700 }}>
+                       {totals.paymentStatus}
+                     </span>
+                   )}
                    <span style={{ fontSize: '0.7rem', padding: '4px 12px', background: '#eff6ff', color: '#1e40af', borderRadius: '4px', fontWeight: 700 }}>
                      {invoiceType.replaceAll('_', ' ')}
                    </span>
