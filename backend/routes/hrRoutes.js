@@ -9,6 +9,10 @@ import { sendWhatsApp, notifyOwner } from "../utils/whatsapp.js";
 
 const router = express.Router();
 
+// Half-day wage: divide by 2 then round DOWN to nearest ₹50
+// e.g. ₹850 / 2 = ₹425 → ₹400  |  ₹1300 / 2 = ₹650 → ₹650
+const halfDayWage = (rate) => Math.floor(rate / 2 / 50) * 50;
+
 // ==========================================
 // 1. ADVANCE MANAGEMENT
 // ==========================================
@@ -630,15 +634,15 @@ router.post("/attendance/daily", authMiddleware, async (req, res) => {
 
         if (salaryType === 'daily') {
             const rate = Number(emp.daily_rate) || 0;
-            dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
+            dailyWage = s === 'present' ? rate : s === 'half_day' ? halfDayWage(rate) : 0;
         } else if (salaryType === 'weekly') {
             const weeklyDays = Number(emp.working_days_per_week) || 6;
             const rate = (Number(emp.weekly_rate) || 0) / weeklyDays;
-            dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
+            dailyWage = s === 'present' ? rate : s === 'half_day' ? halfDayWage(rate) : 0;
         } else {
             // monthly — divide by 26 standard working days
             const rate = (Number(emp.salary) || 0) / 26;
-            dailyWage = s === 'present' ? rate : s === 'half_day' ? rate / 2 : 0;
+            dailyWage = s === 'present' ? rate : s === 'half_day' ? halfDayWage(rate) : 0;
         }
 
         // Write to daily_attendance (wages table)
@@ -721,19 +725,19 @@ router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
                              THEN CASE LOWER(al.status)
                                     WHEN 'present'  THEN COALESCE(e.daily_rate, 0)
                                     WHEN 'od'       THEN COALESCE(e.daily_rate, 0)
-                                    WHEN 'half_day' THEN COALESCE(e.daily_rate, 0) / 2
+                                    WHEN 'half_day' THEN FLOOR(COALESCE(e.daily_rate, 0) / 2 / 50) * 50
                                     ELSE 0 END
                         WHEN LOWER(e.salary_type) = 'weekly'
                              THEN CASE LOWER(al.status)
                                     WHEN 'present'  THEN COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)
                                     WHEN 'od'       THEN COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)
-                                    WHEN 'half_day' THEN (COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)) / 2
+                                    WHEN 'half_day' THEN FLOOR((COALESCE(e.weekly_rate, 0) / NULLIF(COALESCE(e.working_days_per_week,6),0)) / 2 / 50) * 50
                                     ELSE 0 END
-                        ELSE -- monthly: salary / 26
+                        ELSE -- monthly: salary / 26, half = floor to nearest ₹50
                             CASE LOWER(al.status)
                                 WHEN 'present'  THEN COALESCE(e.salary, 0) / 26
                                 WHEN 'od'       THEN COALESCE(e.salary, 0) / 26
-                                WHEN 'half_day' THEN COALESCE(e.salary, 0) / 52
+                                WHEN 'half_day' THEN FLOOR((COALESCE(e.salary, 0) / 26) / 2 / 50) * 50
                                 ELSE 0 END
                     END
                 ) AS daily_wage,
