@@ -492,86 +492,98 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         }
 
         // ============================================
-        // CREATE LEDGER ENTRIES FOR PURCHASE BILL
+        // CREATE LEDGER ENTRIES FOR PURCHASE BILL (best-effort, inside SAVEPOINT)
         // ============================================
-        // This is now inside the main transaction as requested
-        const apAccount       = await getAccountByCode(companyId, "2000"); // Accounts Payable
-        const gstInputAccount = await getAccountByCode(companyId, "2200"); // GST Input
-        const cashAccount     = await getAccountByCode(companyId, "1000"); // Cash Account
-        const stockAccount    = await getAccountByCode(companyId, "1400") || await getAccountByCode(companyId, "5000"); // Inventory/Purchases
+        await client.query(`SAVEPOINT sp_accounting`);
+        try {
+            const apAccount       = await getAccountByCode(companyId, "2000"); // Accounts Payable
+            const gstInputAccount = await getAccountByCode(companyId, "2200"); // GST Input
+            const stockAccount    = await getAccountByCode(companyId, "1400") || await getAccountByCode(companyId, "5000"); // Inventory/Purchases
 
-        const txLines = [];
+            const txLines = [];
 
-        // 1. STOCK RECEIVED (Debit)
-        if (stockAccount) {
-            txLines.push({ 
-                account_id: stockAccount.id, 
-                debit_amount: subTotal, 
-                credit_amount: 0, 
-                description: `Stock received - Bill #${bill_number}` 
-            });
-        }
-
-        // 2 & 3. INPUT GST (Debit)
-        if (bill_type === 'TAX' && taxTotal > 0 && gstInputAccount) {
-            if (gstType === "INTRA_STATE") {
-                const half = Math.round((taxTotal / 2) * 100) / 100;
-                const remainder = Math.round((taxTotal - half) * 100) / 100;
-                txLines.push({ account_id: gstInputAccount.id, debit_amount: half,      credit_amount: 0, description: `Input CGST - Bill #${bill_number}` });
-                txLines.push({ account_id: gstInputAccount.id, debit_amount: remainder,  credit_amount: 0, description: `Input SGST - Bill #${bill_number}` });
-            } else {
-                txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `Input IGST - Bill #${bill_number}` });
+            // 1. STOCK RECEIVED (Debit)
+            if (stockAccount) {
+                txLines.push({
+                    account_id: stockAccount.id,
+                    debit_amount: subTotal,
+                    credit_amount: 0,
+                    description: `Stock received - Bill #${bill_number}`
+                });
             }
-        }
 
-        // 4. ACCOUNTS PAYABLE (Credit full amount)
-        if (apAccount) {
-            txLines.push({ 
-                account_id: apAccount.id, 
-                debit_amount: 0, 
-                credit_amount: netAmount, 
-                description: `Accounts Payable - Bill #${bill_number}` 
-            });
-        }
+            // 2 & 3. INPUT GST (Debit)
+            if (bill_type === 'TAX' && taxTotal > 0 && gstInputAccount) {
+                if (gstType === "INTRA_STATE") {
+                    const half = Math.round((taxTotal / 2) * 100) / 100;
+                    const remainder = Math.round((taxTotal - half) * 100) / 100;
+                    txLines.push({ account_id: gstInputAccount.id, debit_amount: half,      credit_amount: 0, description: `Input CGST - Bill #${bill_number}` });
+                    txLines.push({ account_id: gstInputAccount.id, debit_amount: remainder,  credit_amount: 0, description: `Input SGST - Bill #${bill_number}` });
+                } else {
+                    txLines.push({ account_id: gstInputAccount.id, debit_amount: taxTotal, credit_amount: 0, description: `Input IGST - Bill #${bill_number}` });
+                }
+            }
 
-        // 5. IF PAID, RECORD PAYMENT (Debit AP, Credit Cash/Bank)
-        if (paid > 0) {
-            if (paymentsArray.length > 0) {
-                for (const p of paymentsArray) {
-                    const pAmount = parseFloat(p.amount || 0);
-                    if (pAmount <= 0) continue;
-                    const pMode = (p.mode || "CASH").toUpperCase();
-                    const payAcct = pMode !== "CASH"
+            // 4. ACCOUNTS PAYABLE (Credit full amount)
+            if (apAccount) {
+                txLines.push({
+                    account_id: apAccount.id,
+                    debit_amount: 0,
+                    credit_amount: netAmount,
+                    description: `Accounts Payable - Bill #${bill_number}`
+                });
+            }
+
+            // 5. IF PAID, RECORD PAYMENT (Debit AP, Credit Cash/Bank)
+            if (paid > 0) {
+                if (paymentsArray.length > 0) {
+                    for (const p of paymentsArray) {
+                        const pAmount = parseFloat(p.amount || 0);
+                        if (pAmount <= 0) continue;
+                        const pMode = (p.mode || "CASH").toUpperCase();
+                        const payAcct = pMode !== "CASH"
+                            ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
+                            : await getAccountByCode(companyId, "1000");
+                        if (apAccount && payAcct) {
+                            txLines.push({ account_id: apAccount.id,  debit_amount: pAmount, credit_amount: 0,      description: `Payment for Bill #${bill_number}` });
+                            txLines.push({ account_id: payAcct.id,    debit_amount: 0,       credit_amount: pAmount, description: `Paid via ${pMode} - Bill #${bill_number}` });
+                        }
+                    }
+                } else {
+                    const payAccount = (payment_mode || "CASH").toUpperCase() !== "CASH"
                         ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
                         : await getAccountByCode(companyId, "1000");
-                    if (apAccount && payAcct) {
-                        txLines.push({ account_id: apAccount.id,  debit_amount: pAmount, credit_amount: 0,      description: `Payment for Bill #${bill_number}` });
-                        txLines.push({ account_id: payAcct.id,    debit_amount: 0,       credit_amount: pAmount, description: `Paid via ${pMode} - Bill #${bill_number}` });
+                    if (apAccount && payAccount) {
+                        txLines.push({ account_id: apAccount.id,  debit_amount: paid, credit_amount: 0,    description: `Payment for Bill #${bill_number}` });
+                        txLines.push({ account_id: payAccount.id, debit_amount: 0,    credit_amount: paid, description: `Paid via ${payment_mode || 'CASH'} - Bill #${bill_number}` });
                     }
                 }
-            } else {
-                const payAccount = (payment_mode || "CASH").toUpperCase() !== "CASH"
-                    ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
-                    : await getAccountByCode(companyId, "1000");
-                if (apAccount && payAccount) {
-                    txLines.push({ account_id: apAccount.id,  debit_amount: paid, credit_amount: 0,    description: `Payment for Bill #${bill_number}` });
-                    txLines.push({ account_id: payAccount.id, debit_amount: 0,    credit_amount: paid, description: `Paid via ${payment_mode || 'CASH'} - Bill #${bill_number}` });
+            }
+
+            // EXECUTE ACCOUNTING — only if lines balance (debit == credit)
+            if (txLines.length > 0) {
+                const totalD = Math.round(txLines.reduce((s, l) => s + parseFloat(l.debit_amount || 0), 0) * 100) / 100;
+                const totalC = Math.round(txLines.reduce((s, l) => s + parseFloat(l.credit_amount || 0), 0) * 100) / 100;
+                if (Math.abs(totalD - totalC) <= 0.01) {
+                    await createTransactionInternal(client, {
+                        company_id: companyId,
+                        branch_id: safeBranchId,
+                        transaction_date: bill_date || new Date(),
+                        reference_type: "PURCHASE_BILL",
+                        reference_id: billId,
+                        description: `Purchase Bill #${bill_number}`,
+                        created_by: userId,
+                        bill_purpose: 'real'
+                    }, txLines);
+                } else {
+                    console.warn(`[purchase-bill] accounting skipped: debit ${totalD} ≠ credit ${totalC} (missing accounts)`);
                 }
             }
-        }
-
-        // EXECUTE ACCOUNTING
-        if (txLines.length > 0) {
-            await createTransactionInternal(client, {
-                company_id: companyId,
-                branch_id: safeBranchId,
-                transaction_date: bill_date || new Date(),
-                reference_type: "PURCHASE_BILL",
-                reference_id: billId,
-                description: `Purchase Bill #${bill_number}`,
-                created_by: userId,
-                bill_purpose: 'real'
-            }, txLines);
+            await client.query(`RELEASE SAVEPOINT sp_accounting`);
+        } catch (acctErr) {
+            await client.query(`ROLLBACK TO SAVEPOINT sp_accounting`);
+            await client.query(`RELEASE SAVEPOINT sp_accounting`);
+            console.warn(`[purchase-bill] accounting savepoint rolled back: ${acctErr.message}`);
         }
 
         // Write initial payment to cash/bank ledger — best-effort (tables may not exist)
