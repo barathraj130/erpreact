@@ -196,9 +196,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         const fileUrl = req.file ? `/uploads/purchase_bills/${req.file.filename}` : null;
 
-        const branchRes  = await client.query(`SELECT state, state_code FROM branches WHERE id = $1`, [branchId]);
+        // Use SELECT * so missing columns (state_code etc.) don't abort the transaction
+        const branchRes  = await client.query(`SELECT * FROM branches WHERE id = $1`, [branchId]);
         const supplierRes = supplier_id
-            ? await client.query(`SELECT name, state, state_code FROM suppliers WHERE id = $1`, [supplier_id])
+            ? await client.query(`SELECT * FROM suppliers WHERE id = $1`, [supplier_id])
             : { rows: [{ name: supplier_name }] };
 
         const branchStateCode   = branchRes.rows[0]?.state_code;
