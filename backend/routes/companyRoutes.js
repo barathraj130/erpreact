@@ -271,7 +271,11 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
         for (const r of invPay) {
             const mode = (r.mode || '').toUpperCase();
             const tbl  = mode === 'BANK' || mode === 'ONLINE' || mode === 'UPI' || mode === 'CHEQUE' ? 'bank_ledger' : 'cash_ledger';
-            const existing = await db.pgGet(`SELECT id FROM ${tbl} WHERE company_id=$1 AND source='INVOICE_PAYMENT' AND date=$2 AND amount=$3 LIMIT 1`, [companyId, r.date, r.amount]);
+            // Check for BOTH 'INVOICE_PAYMENT' and 'Payment' (invoice_id-linked) rows to avoid duplicates
+            const existing = await db.pgGet(
+                `SELECT id FROM ${tbl} WHERE company_id=$1 AND source IN ('INVOICE_PAYMENT','Payment') AND date=$2 AND amount=$3 LIMIT 1`,
+                [companyId, r.date, r.amount]
+            );
             if (!existing) {
                 await db.pgRun(`INSERT INTO ${tbl} (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'INVOICE_PAYMENT',$3,'in',$4)`, [companyId, branchId, r.amount, r.date]);
                 inserted++;

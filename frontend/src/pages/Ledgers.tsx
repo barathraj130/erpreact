@@ -279,6 +279,7 @@ const Ledgers: React.FC = () => {
       EXPENSE: "Expense",
       SALARY: "Salary",
       WAGES: "Wages",
+      INVOICE_PAYMENT: "Invoice Payment",
       GIFT_CONTRIBUTION: "Gift / Contribution",
       LOAN_RECEIVED: "Loan Received",
       LOAN_DISBURSEMENT: "Loan Disbursement",

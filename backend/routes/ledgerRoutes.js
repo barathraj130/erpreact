@@ -419,18 +419,43 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // Self-heal: fix ALL known inflow sources stored with wrong direction='out'
+        // ── Self-heal step 0: fix NULL dates ──
+        await db.pgRun(
+            `UPDATE bank_ledger SET date = created_at::date
+             WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
+            [companyId]
+        ).catch(()=>{});
+
+        // ── Self-heal step 1: fix inflow sources stored with wrong direction='out' ──
         await db.pgRun(
             `UPDATE bank_ledger SET direction='in'
              WHERE company_id=$1
-               AND source IN ('OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+               AND source IN ('OPENING_BALANCE','RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
                AND direction='out' AND amount>0`,
             [companyId]
         ).catch(()=>{});
 
+        // ── Self-heal step 2: remove INVOICE_PAYMENT duplicates ──
+        //    invoiceRoutes.js inserts source='Payment' with invoice_id when a bank payment is recorded.
+        //    companyRoutes sync also inserts source='INVOICE_PAYMENT' for the same invoice_payment row
+        //    without knowing a 'Payment' row already exists → double entry.
+        //    Fix: delete INVOICE_PAYMENT rows where an invoice_id-linked row exists for same date+amount.
+        await db.pgRun(`
+            DELETE FROM bank_ledger
+            WHERE company_id = $1
+              AND source = 'INVOICE_PAYMENT'
+              AND EXISTS (
+                SELECT 1 FROM bank_ledger bl2
+                WHERE bl2.company_id = $1
+                  AND bl2.invoice_id IS NOT NULL
+                  AND bl2.amount = bank_ledger.amount
+                  AND bl2.date = bank_ledger.date
+              )
+        `, [companyId]).catch(()=>{});
+
         // Opening balance = net of ALL bank transactions strictly BEFORE startDate
         // Known inflow sources always count as positive regardless of stored direction
-        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE
@@ -456,12 +481,12 @@ router.get('/bank', authMiddleware, async (req, res) => {
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY date ASC, created_at ASC`;
 
-        const INFLOW_SOURCES = ['OPENING_BALANCE', 'CUSTOMER_PAYMENT', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment'];
+        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'INVOICE_PAYMENT']);
         const rawEntries = await db.pgAll(sql, params);
         // OPENING_BALANCE must always be 'in' regardless of how it was stored
         const entries = rawEntries.map(e => ({
             ...e,
-            direction: INFLOW_SOURCES.includes(e.source) ? 'in' : e.direction
+            direction: INFLOW_SOURCES.has(e.source) ? 'in' : e.direction
         }));
         res.json({ entries, opening_balance });
     } catch (err) {
