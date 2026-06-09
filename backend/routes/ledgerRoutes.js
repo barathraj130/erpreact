@@ -363,9 +363,6 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
     }
 
     try {
-        // ── Self-heal: ensure description column exists (dynamicSchema adds it on restart, but this covers first-run) ──
-        await db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS description TEXT`, []).catch(()=>{});
-
         // Compute computer balance up to and including the given date (exclude existing CASH_RECONCILIATION for that date to avoid double-count)
         const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const balRow = await db.pgGet(
@@ -395,14 +392,11 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
 
         const direction = variance > 0 ? 'in' : 'out';
         const amount    = Math.abs(variance);
-        const description = notes?.trim() || (variance > 0
-            ? `Cash excess on ${date} (actual ₹${actualCash.toFixed(2)}, computer ₹${computerBalance.toFixed(2)})`
-            : `Cash shortage on ${date} (actual ₹${actualCash.toFixed(2)}, computer ₹${computerBalance.toFixed(2)})`);
 
         await db.pgRun(
-            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, description)
-             VALUES ($1, $2, 'CASH_RECONCILIATION', $3, $4, $5, $6)`,
-            [companyId, branchId, amount, direction, date, description]
+            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+             VALUES ($1, $2, 'CASH_RECONCILIATION', $3, $4, $5)`,
+            [companyId, branchId, amount, direction, date]
         );
 
         res.json({
