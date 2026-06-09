@@ -41,6 +41,8 @@ async function generatePurchaseNumber(client) {
         return `PUR/${year}/${paddedMonth}/${ts}`;
     }
 
+    // Wrap INSERT in its own SAVEPOINT so a failure doesn't abort the outer transaction
+    await client.query(`SAVEPOINT sp_series_insert`);
     try {
         const result = await client.query(`
             INSERT INTO invoice_number_series (bill_type, prefix, year, month, last_number)
@@ -49,9 +51,12 @@ async function generatePurchaseNumber(client) {
             DO UPDATE SET last_number = invoice_number_series.last_number + 1
             RETURNING last_number
         `, [year, month]);
+        await client.query(`RELEASE SAVEPOINT sp_series_insert`);
         const num = String(result.rows[0].last_number).padStart(3, '0');
         return `PUR/${year}/${paddedMonth}/${num}`;
     } catch (e) {
+        await client.query(`ROLLBACK TO SAVEPOINT sp_series_insert`);
+        await client.query(`RELEASE SAVEPOINT sp_series_insert`);
         const ts = Date.now().toString().slice(-6);
         console.warn(`[purchaseBill] series INSERT failed, fallback: ${ts}`);
         return `PUR/${year}/${paddedMonth}/${ts}`;
