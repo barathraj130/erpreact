@@ -168,10 +168,11 @@ router.post('/', authMiddleware, async (req, res) => {
         for (const item of processedItems) {
             if (item.product_id && item.qty > 0) {
                 await client.query(
-                    `INSERT INTO branch_inventory (company_id, branch_id, product_id, quantity)
-                     VALUES ($1,$2,$3,$4)
-                     ON CONFLICT (company_id, branch_id, product_id)
-                     DO UPDATE SET quantity = branch_inventory.quantity + EXCLUDED.quantity`,
+                    `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
+                     VALUES ($1,$2,$3,$4,NOW())
+                     ON CONFLICT (branch_id, product_id)
+                     DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock,
+                                   last_updated  = NOW()`,
                     [companyId, branchId, item.product_id, item.qty]
                 );
             }
