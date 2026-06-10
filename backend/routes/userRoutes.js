@@ -394,43 +394,110 @@ router.get("/:id/ledger", authMiddleware, checkPermission("Sales", "view_invoice
     }
 });
 
-// DELETE a single customer ledger entry
+// ── Helper: fully cascade-delete an invoice and all linked records ────────────
+async function cascadeDeleteInvoice(client, invoiceId, companyId) {
+    // 1. Get all transaction IDs linked to this invoice
+    const txRows = await client.query(
+        `SELECT id FROM transactions WHERE reference_id = $1 AND reference_type = 'INVOICE' AND company_id = $2`,
+        [invoiceId, companyId]
+    );
+    const txIds = txRows.rows.map(r => r.id);
+
+    if (txIds.length > 0) {
+        // 2. Delete ledger_entries for those transactions
+        await client.query(`DELETE FROM ledger_entries WHERE transaction_id = ANY($1::int[])`, [txIds]);
+        // 3. Remove from cash/bank ledger
+        await client.query(`DELETE FROM cash_ledger WHERE reference_id = ANY($1::int[]) AND company_id = $2`, [txIds, companyId]).catch(() => {});
+        await client.query(`DELETE FROM bank_ledger WHERE reference_id = ANY($1::int[]) AND company_id = $2`, [txIds, companyId]).catch(() => {});
+        // 4. Delete the transactions themselves
+        await client.query(`DELETE FROM transactions WHERE id = ANY($1::int[])`, [txIds]);
+    }
+
+    // 5. Delete all payments for this invoice + their linked transactions
+    const pmtRows = await client.query(`SELECT id FROM invoice_payments WHERE invoice_id = $1`, [invoiceId]);
+    const pmtIds = pmtRows.rows.map(r => r.id);
+    if (pmtIds.length > 0) {
+        // Also clean up any transactions that reference these payments
+        const pmtTxRows = await client.query(
+            `SELECT id FROM transactions WHERE reference_id = ANY($1::int[]) AND reference_type = 'PAYMENT' AND company_id = $2`,
+            [pmtIds, companyId]
+        );
+        const pmtTxIds = pmtTxRows.rows.map(r => r.id);
+        if (pmtTxIds.length > 0) {
+            await client.query(`DELETE FROM ledger_entries WHERE transaction_id = ANY($1::int[])`, [pmtTxIds]);
+            await client.query(`DELETE FROM cash_ledger WHERE reference_id = ANY($1::int[]) AND company_id = $2`, [pmtTxIds, companyId]).catch(() => {});
+            await client.query(`DELETE FROM bank_ledger WHERE reference_id = ANY($1::int[]) AND company_id = $2`, [pmtTxIds, companyId]).catch(() => {});
+            await client.query(`DELETE FROM transactions WHERE id = ANY($1::int[])`, [pmtTxIds]);
+        }
+        await client.query(`DELETE FROM invoice_payments WHERE invoice_id = $1`, [invoiceId]);
+    }
+
+    // 6. Delete line items
+    await client.query(`DELETE FROM invoice_line_items WHERE invoice_id = $1`, [invoiceId]).catch(() => {});
+
+    // 7. Hard-delete the invoice
+    await client.query(`DELETE FROM invoices WHERE id = $1 AND company_id = $2`, [invoiceId, companyId]);
+}
+
+// DELETE a single customer ledger entry — full cascade
 // entryId uses the same encoded offsets as the ledger service:
-//   < 1 000 000 000  → invoices row (soft-delete)
+//   < 1 000 000 000  → invoice row  (cascade-delete invoice + payments + transactions + ledger entries)
 //   1B – 2B          → invoice_payments row  (real id = entryId - 1B)
-//   2B – 3B          → transactions CUSTOMER_PAYMENT row (real id = entryId - 2B)
-//   ≥ 3B             → transactions ROUND_OFF or sales_returns (real id = entryId - 3B; type disambiguates)
+//   2B – 3B          → transactions CUSTOMER_PAYMENT/RECEIPT row (real id = entryId - 2B)
+//   ≥ 3B             → ROUND_OFF transaction or sales_return (real id = entryId - 3B; type disambiguates)
 router.delete("/:customerId/ledger-entry/:entryId", authMiddleware, checkPermission("Sales", "delete_invoices"), async (req, res) => {
     const companyId  = req.user.active_company_id;
     const customerId = Number(req.params.customerId);
     const entryId    = Number(req.params.entryId);
     const entryType  = req.query.type || '';  // 'INVOICE','RETURN','RECEIPT','ROUND_OFF' etc.
+    let client;
     try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
         if (entryId >= 3_000_000_000) {
             const realId = entryId - 3_000_000_000;
             if (entryType === 'RETURN') {
-                await db.pgRun(`DELETE FROM sales_returns WHERE id = $1 AND company_id = $2`, [realId, companyId]);
+                await client.query(`DELETE FROM sales_returns WHERE id = $1 AND company_id = $2`, [realId, companyId]);
             } else {
-                // ROUND_OFF transaction
-                await db.pgRun(`DELETE FROM transactions WHERE id = $1 AND company_id = $2`, [realId, companyId]);
+                // ROUND_OFF transaction — remove ledger entries then transaction
+                await client.query(`DELETE FROM ledger_entries WHERE transaction_id = $1 AND company_id = $2`, [realId, companyId]);
+                await client.query(`DELETE FROM transactions WHERE id = $1 AND company_id = $2`, [realId, companyId]);
             }
         } else if (entryId >= 2_000_000_000) {
             const realId = entryId - 2_000_000_000;
-            await db.pgRun(`DELETE FROM transactions WHERE id = $1 AND company_id = $2`, [realId, companyId]);
+            // Direct CUSTOMER_PAYMENT or RECEIPT transaction
+            await client.query(`DELETE FROM ledger_entries WHERE transaction_id = $1 AND company_id = $2`, [realId, companyId]);
+            await client.query(`DELETE FROM cash_ledger WHERE reference_id = $1 AND company_id = $2`, [realId, companyId]).catch(() => {});
+            await client.query(`DELETE FROM bank_ledger WHERE reference_id = $1 AND company_id = $2`, [realId, companyId]).catch(() => {});
+            await client.query(`DELETE FROM transactions WHERE id = $1 AND company_id = $2`, [realId, companyId]);
         } else if (entryId >= 1_000_000_000) {
+            // Invoice payment row — delete payment + linked cash/bank entries
             const realId = entryId - 1_000_000_000;
-            await db.pgRun(`DELETE FROM invoice_payments WHERE id = $1`, [realId]);
-        } else {
-            // Invoice row — soft-delete only
-            await db.pgRun(
-                `UPDATE invoices SET is_deleted = true, deleted_at = NOW() WHERE id = $1 AND company_id = $2`,
-                [entryId, companyId]
+            const pmtTxRows = await client.query(
+                `SELECT id FROM transactions WHERE reference_id = $1 AND reference_type = 'PAYMENT' AND company_id = $2`,
+                [realId, companyId]
             );
+            for (const { id: txId } of pmtTxRows.rows) {
+                await client.query(`DELETE FROM ledger_entries WHERE transaction_id = $1 AND company_id = $2`, [txId, companyId]);
+                await client.query(`DELETE FROM cash_ledger WHERE reference_id = $1 AND company_id = $2`, [txId, companyId]).catch(() => {});
+                await client.query(`DELETE FROM bank_ledger WHERE reference_id = $1 AND company_id = $2`, [txId, companyId]).catch(() => {});
+                await client.query(`DELETE FROM transactions WHERE id = $1`, [txId]);
+            }
+            await client.query(`DELETE FROM invoice_payments WHERE id = $1`, [realId]);
+        } else {
+            // Invoice row — cascade-delete everything
+            await cascadeDeleteInvoice(client, entryId, companyId);
         }
-        res.json({ success: true, message: 'Entry deleted' });
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Entry and all related records deleted' });
     } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
         console.error('[customer ledger delete]', err.message);
-        res.status(500).json({ error: 'Failed to delete entry' });
+        res.status(500).json({ error: 'Failed to delete entry: ' + err.message });
+    } finally {
+        if (client) client.release();
     }
 });
 
