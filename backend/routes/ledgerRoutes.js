@@ -126,32 +126,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND t.related_invoice_id = cl.invoice_id AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
-        // ── Self-heal step 4a: remove RECEIPT entries from cash_ledger that were paid via BANK ──
-        //    When an invoice is paid via BANK, invoiceRoutes writes to bank_ledger (source='payment').
-        //    createCustomerLedgerEvent also creates a transactions row (type='RECEIPT').
-        //    Step 4 below would then duplicate that into cash_ledger — this step removes such duplicates.
-        await db.pgRun(`
-            DELETE FROM cash_ledger
-            WHERE company_id = $1
-              AND source = 'RECEIPT'
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.related_invoice_id IS NOT NULL
-                  AND EXISTS (
-                    SELECT 1 FROM bank_ledger bl
-                    WHERE bl.company_id = $1
-                      AND bl.invoice_id = t.related_invoice_id
-                      AND ABS(bl.amount) = ABS(t.amount)
-                      AND bl.direction = 'in'
-                  )
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Self-heal step 4: sync RECEIPT transactions (company CASH receipts only) ──
-        //    Skip RECEIPT transactions that already have a bank_ledger entry for the same invoice
-        //    (those are BANK payments — covered in bank_ledger, not cash_ledger)
+        // ── Self-heal step 4: sync RECEIPT transactions (company cash receipts) ──
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
@@ -161,16 +136,6 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND t.type = 'RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
-              AND NOT (
-                t.related_invoice_id IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM bank_ledger bl
-                  WHERE bl.company_id = $1
-                    AND bl.invoice_id = t.related_invoice_id
-                    AND ABS(bl.amount) = ABS(t.amount)
-                    AND bl.direction = 'in'
-                )
-              )
         `, [companyId]).catch(()=>{});
 
         const [cashRow, bankRow] = await Promise.all([
@@ -319,27 +284,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
-        // ── Step 4a: remove RECEIPT entries from cash_ledger that were paid via BANK ──
-        await db.pgRun(`
-            DELETE FROM cash_ledger
-            WHERE company_id = $1
-              AND source = 'RECEIPT'
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.related_invoice_id IS NOT NULL
-                  AND EXISTS (
-                    SELECT 1 FROM bank_ledger bl
-                    WHERE bl.company_id = $1
-                      AND bl.invoice_id = t.related_invoice_id
-                      AND ABS(bl.amount) = ABS(t.amount)
-                      AND bl.direction = 'in'
-                  )
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 4: Sync RECEIPT transactions (company CASH only — skip BANK-paid invoices) ──
+        // ── Step 4: Sync RECEIPT transactions (company cash) ──
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
@@ -349,16 +294,6 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND t.type = 'RECEIPT'
               AND t.amount > 0
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
-              AND NOT (
-                t.related_invoice_id IS NOT NULL
-                AND EXISTS (
-                  SELECT 1 FROM bank_ledger bl
-                  WHERE bl.company_id = $1
-                    AND bl.invoice_id = t.related_invoice_id
-                    AND ABS(bl.amount) = ABS(t.amount)
-                    AND bl.direction = 'in'
-                )
-              )
         `, [companyId]).catch(()=>{});
 
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
