@@ -757,6 +757,35 @@ router.patch('/:id/archive', authMiddleware, async (req, res) => {
     }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// DELETE /ledger/entry/:table/:id  — permanently remove a cash or bank ledger row
+// table must be 'cash' or 'bank'
+// Only allows deleting entries that are not OPENING_BALANCE
+// ══════════════════════════════════════════════════════════════════════════════
+router.delete('/entry/:table/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { table, id } = req.params;
+    const tbl = table === 'bank' ? 'bank_ledger' : 'cash_ledger';
+    if (table !== 'cash' && table !== 'bank') {
+        return res.status(400).json({ error: 'table must be cash or bank' });
+    }
+    try {
+        const entry = await db.pgGet(
+            `SELECT id, source FROM ${tbl} WHERE id = $1 AND company_id = $2`,
+            [id, companyId]
+        );
+        if (!entry) return res.status(404).json({ error: 'Entry not found' });
+        if (entry.source === 'OPENING_BALANCE') {
+            return res.status(400).json({ error: 'Cannot delete opening balance entry. Use Admin Setup to change it.' });
+        }
+        await db.pgRun(`DELETE FROM ${tbl} WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        res.json({ success: true, message: 'Entry deleted' });
+    } catch (err) {
+        console.error('[ledger delete]', err.message);
+        res.status(500).json({ error: 'Failed to delete entry' });
+    }
+});
+
 // ── helper: fetch ledger data for any party type ─────────────────────────────
 async function fetchPartyLedgerData(companyId, type, id) {
     let partyName = '', phone = '';
