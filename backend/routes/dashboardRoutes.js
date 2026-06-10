@@ -39,9 +39,9 @@ router.get('/summary', authMiddleware, async (req, res) => {
     console.log('Dashboard API called for company_id:', companyId, 'branchFilter:', branchFilter);
 
     try {
-        // Exclude OPENING_BALANCE entries so cash shows only transaction-based movement
-        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1 AND source != 'OPENING_BALANCE'`;
-        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1 AND source != 'OPENING_BALANCE'`;
+        // Include ALL entries (including opening balance) — same source of truth as Ledgers page
+        const cashSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id = $1`;
+        const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1`;
 
         const totalRevSql = `
             SELECT COALESCE(SUM(total_amount), 0) as total_revenue
