@@ -1,6 +1,7 @@
 import express from 'express';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as db from '../database/pg.js';
+import { checkSufficientBalance } from '../utils/balanceCheck.js';
 
 const router = express.Router();
 
@@ -145,6 +146,8 @@ router.post('/', authMiddleware, async (req, res) => {
 
         // BANK_TO_CASH / CASH_TO_BANK: only update ledgers, no branch record needed
         if (tType === 'BANK_TO_CASH') {
+            const chk = await checkSufficientBalance(client, companyId, 'bank', amt);
+            if (!chk.sufficient) { await client.query('ROLLBACK'); return res.status(400).json({ error: chk.message }); }
             await client.query(
                 `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'out','Main Account',$4)`,
                 [companyId, brId, amt, txDate]
@@ -158,6 +161,8 @@ router.post('/', authMiddleware, async (req, res) => {
         }
 
         if (tType === 'CASH_TO_BANK') {
+            const chk = await checkSufficientBalance(client, companyId, 'cash', amt);
+            if (!chk.sufficient) { await client.query('ROLLBACK'); return res.status(400).json({ error: chk.message }); }
             await client.query(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'out',$4)`,
                 [companyId, brId, amt, txDate]

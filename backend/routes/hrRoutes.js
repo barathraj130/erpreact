@@ -75,6 +75,13 @@ router.post("/advance", authMiddleware, async (req, res) => {
         // 2. Record cash/bank ledger outflow — SKIPPED for opening balances
         //    (the cash was given before the system was set up; no ledger impact)
         if (!isOpening) {
+            if (pMethod === 'CASH' || pMethod === 'BANK' || pMethod === 'UPI') {
+                const chk = await checkSufficientBalance(client, companyId, pMethod.toLowerCase(), advanceAmt);
+                if (!chk.sufficient) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: chk.message });
+                }
+            }
             if (pMethod === 'CASH') {
                 await client.query(
                     `INSERT INTO cash_ledger

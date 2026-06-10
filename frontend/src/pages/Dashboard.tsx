@@ -48,6 +48,7 @@ const Dashboard: React.FC = () => {
     loanPayable: 0,
     activeLoans: 0
   });
+  const [ledgerWarnings, setLedgerWarnings] = useState<{ cash?: string; bank?: string }>({});
 
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
   const [expenseData, setExpenseData] = useState<any[]>([]);
@@ -86,6 +87,10 @@ const Dashboard: React.FC = () => {
             namesakeSales: Number(kpiRes.sales_breakdown?.name_sake_sales || 0),
             loanPayable,
             activeLoans: activeLoans.length
+          });
+          setLedgerWarnings({
+            cash: kpiRes.cash_warning || undefined,
+            bank: kpiRes.bank_warning || undefined,
           });
         }
         
@@ -136,6 +141,22 @@ const Dashboard: React.FC = () => {
           <h1 className="db-page-title">Welcome back, <strong>{user?.name || user?.username || 'Admin'}</strong></h1>
           <p className="db-page-sub">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
+
+        {/* ── Ledger warning banners ── */}
+        {(ledgerWarnings.cash || ledgerWarnings.bank) && (
+          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {ledgerWarnings.cash && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px 16px', color: '#dc2626', fontSize: '0.85rem', fontWeight: 500 }}>
+                ⚠️ {ledgerWarnings.cash}
+              </div>
+            )}
+            {ledgerWarnings.bank && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px 16px', color: '#dc2626', fontSize: '0.85rem', fontWeight: 500 }}>
+                ⚠️ {ledgerWarnings.bank}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── KPI Row ── */}
         <div className="db-kpi-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>

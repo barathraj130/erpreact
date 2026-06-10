@@ -146,10 +146,23 @@ router.get('/summary', authMiddleware, async (req, res) => {
             db.pgGet(outstandingCountSql, [companyId])
         ]);
 
-        const availableCash = Number(cashRes?.balance || 0) + Number(bankRes?.balance || 0);
+        const cashBalance = Number(cashRes?.balance || 0);
+        const bankBalance = Number(bankRes?.balance || 0);
+        const availableCash = cashBalance + bankBalance;
+        const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
         const response = {
             available_cash: availableCash,
+            cash_balance: cashBalance,
+            bank_balance: bankBalance,
+            cash_is_negative: cashBalance < 0,
+            bank_is_negative: bankBalance < 0,
+            cash_warning: cashBalance < 0
+                ? `Cash ledger is negative (₹${fmt(cashBalance)}). A payment may have been recorded against cash instead of Proprietor Account. Check Transactions page for wrong entries.`
+                : null,
+            bank_warning: bankBalance < 0
+                ? `Bank ledger is negative (₹${fmt(bankBalance)}). Check Transactions page for wrong entries.`
+                : null,
             total_revenue: parseFloat(totalRevRes?.total_revenue || 0),
             total_monthly_sales: parseFloat(monthRevRes?.month_revenue || 0),
             outstanding_receivables: parseFloat(outstandingRes?.outstanding || 0),

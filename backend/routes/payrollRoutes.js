@@ -2,6 +2,7 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { checkSufficientBalance } from "../utils/balanceCheck.js";
 
 const router = express.Router();
 
@@ -48,7 +49,14 @@ router.post("/process-salary", authMiddleware, async (req, res) => {
             VALUES ($1, 'PAYMENT', 'SALARY', $2, $3, $4, NOW())
         `, [companyId, finalSalary, date || new Date(), desc]);
 
-        // 4. Financial Impact: Cash/Bank Ledger
+        // 4. Financial Impact: Cash/Bank Ledger — with balance guard
+        if (mode === 'Cash' || mode === 'Bank') {
+            const chk = await checkSufficientBalance(client, companyId, mode.toLowerCase(), finalSalary);
+            if (!chk.sufficient) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: chk.message });
+            }
+        }
         if (mode === 'Cash') {
             await client.query(`
                 INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
@@ -101,7 +109,14 @@ router.post("/give-advance", authMiddleware, async (req, res) => {
             VALUES ($1, 'PAYMENT', 'ADVANCE', $2, $3, $4, NOW())
         `, [companyId, amount, date || new Date(), desc]);
 
-        // 3. Financial Impact: Cash/Bank Ledger
+        // 3. Financial Impact: Cash/Bank Ledger — with balance guard
+        if (mode === 'Cash' || mode === 'Bank') {
+            const chk = await checkSufficientBalance(client, companyId, mode.toLowerCase(), amount);
+            if (!chk.sufficient) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: chk.message });
+            }
+        }
         if (mode === 'Cash') {
             await client.query(`
                 INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
