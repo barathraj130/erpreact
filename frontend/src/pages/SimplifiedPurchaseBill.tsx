@@ -38,16 +38,17 @@ interface PaymentEntry {
 }
 
 const PAYMENT_MODES = [
-  { value: "CASH",   label: "Liquid Cash" },
-  { value: "BANK",   label: "Bank Transfer" },
-  { value: "UPI",    label: "UPI" },
-  { value: "CHEQUE", label: "Cheque" },
-  { value: "CREDIT", label: "Credit (Due Later)" },
+  { value: "CASH",       label: "Liquid Cash" },
+  { value: "BANK",       label: "Bank Transfer" },
+  { value: "UPI",        label: "UPI" },
+  { value: "CHEQUE",     label: "Cheque" },
+  { value: "PROPRIETOR", label: "Proprietor Personal Account" },
+  { value: "CREDIT",     label: "Credit (Due Later)" },
 ];
 
 const MODE_COLORS: Record<string, string> = {
   CASH: "#10b981", BANK: "#3b82f6", UPI: "#8b5cf6",
-  CHEQUE: "#f59e0b", CREDIT: "#ef4444",
+  CHEQUE: "#f59e0b", PROPRIETOR: "#7c3aed", CREDIT: "#ef4444",
 };
 
 const SimplifiedPurchaseBill: React.FC = () => {

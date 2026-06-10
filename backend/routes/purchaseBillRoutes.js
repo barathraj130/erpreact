@@ -617,17 +617,19 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     }
                 } else {
                     const pMode = (payment_mode || 'CASH').toUpperCase();
-                    if (pMode === 'BANK') {
+                    if (pMode === 'BANK' || pMode === 'UPI' || pMode === 'CHEQUE') {
                         await client.query(
                             `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                             VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', 'Main Account', $4)`,
-                            [companyId, safeBranchId, paid, bill_date || new Date()]
+                             VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', $4, $5)`,
+                            [companyId, safeBranchId, paid, pMode, bill_date || new Date()]
                         );
                     } else {
+                        // CASH and PROPRIETOR both go to cash_ledger
+                        const src = pMode === 'PROPRIETOR' ? 'PROPRIETOR_PAYMENT' : 'PURCHASE_PAYMENT';
                         await client.query(
                             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                             VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', $4)`,
-                            [companyId, safeBranchId, paid, bill_date || new Date()]
+                             VALUES ($1, $2, $3, $4, 'out', $5)`,
+                            [companyId, safeBranchId, src, paid, bill_date || new Date()]
                         );
                     }
                 }
@@ -717,11 +719,12 @@ Please restock immediately!`);
 // ─────────────────────────────────────────────────────────
 async function recordPaymentSplit(client, { companyId, branchId, billId, billNumber, billPurpose, userId, payment_date, mode, amount, reference, apAccount }) {
     const pMode = (mode || "CASH").toUpperCase();
-    if (pMode === "CASH") {
+    if (pMode === "CASH" || pMode === "PROPRIETOR") {
+        const src = pMode === "PROPRIETOR" ? "PROPRIETOR_PAYMENT" : "BILL_PAYMENT";
         await client.query(
             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-             VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4)`,
-            [companyId, branchId, amount, payment_date || new Date()]
+             VALUES ($1,$2,$3,$4,'out',$5)`,
+            [companyId, branchId, src, amount, payment_date || new Date()]
         );
     } else {
         await client.query(
@@ -734,7 +737,7 @@ async function recordPaymentSplit(client, { companyId, branchId, billId, billNum
     }
 
     if (apAccount) {
-        const isBank = pMode !== "CASH";
+        const isBank = pMode !== "CASH" && pMode !== "PROPRIETOR";
         const payAccount = isBank
             ? (await getAccountByCode(companyId, "1200") || await getAccountByCode(companyId, "1000"))
             : await getAccountByCode(companyId, "1000");
