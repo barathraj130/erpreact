@@ -11,7 +11,8 @@ import {
   FaCheck,
   FaHistory,
   FaMoneyBillWave,
-  FaWhatsapp
+  FaWhatsapp,
+  FaTrash
 } from "react-icons/fa";
 import jsPDF from "jspdf";
 import { apiFetch } from "../utils/api";
@@ -214,6 +215,19 @@ const Transactions: React.FC = () => {
     doc.text('Generated: ' + new Date().toLocaleString('en-IN'), 105, y + 18, { align: 'center' });
 
     doc.save('TXN_' + tx.id + '.pdf');
+  };
+
+  const handleDeleteTransaction = async (tx: Transaction) => {
+    const label = tx.display_party || tx.description || String(tx.id);
+    if (!window.confirm(`Delete "${label}" (₹${Number(tx.amount).toLocaleString('en-IN')})? This cannot be undone.`)) return;
+    try {
+      const res = await apiFetch(`/transactions/${tx.id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) { alert(json.error || 'Failed to delete'); return; }
+      fetchData();
+    } catch {
+      alert('Failed to delete transaction');
+    }
   };
 
   const handleSendWhatsApp = async (tx: Transaction) => {
@@ -421,6 +435,13 @@ const Transactions: React.FC = () => {
                         </td>
                         <td className="text-center">
                           <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                            <button
+                              title="Delete transaction permanently"
+                              onClick={() => handleDeleteTransaction(tx)}
+                              style={{ padding: "6px 8px", border: "none", borderRadius: "6px", cursor: "pointer", background: "#fee2e2", color: "#dc2626", fontSize: "13px", display: "flex", alignItems: "center" }}
+                            >
+                              <FaTrash />
+                            </button>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} title="Download Voucher" onClick={() => downloadTransactionPDF(tx)}><FaFileDownload /></button>
                             <button
                               title="Send Voucher via WhatsApp"

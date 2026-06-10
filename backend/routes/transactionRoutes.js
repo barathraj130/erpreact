@@ -541,4 +541,61 @@ Ph: 8148232205`);
     }
 });
 
+/**
+ * DELETE /api/transactions/:id
+ * id format: CL-18 (cash_ledger) or BL-18 (bank_ledger)
+ * Permanently removes the ledger row, marks the linked transaction excluded
+ * so the self-heal never re-inserts it, and cleans ledger_entries.
+ */
+router.delete('/:id', authMiddleware, async (req, res) => {
+    const txId      = req.params.id;
+    const companyId = req.user.active_company_id;
+
+    const match = txId.match(/^(BL|CL)-(\d+)$/i);
+    if (!match) return res.status(400).json({ error: 'Invalid transaction ID format (expected CL-n or BL-n)' });
+
+    const [, ledgerType, ledgerId] = match;
+    const table = ledgerType.toUpperCase() === 'BL' ? 'bank_ledger' : 'cash_ledger';
+
+    try {
+        // Fetch the ledger row to get reference_id
+        const row = await db.pgGet(
+            `SELECT * FROM ${table} WHERE id = $1 AND company_id = $2`,
+            [ledgerId, companyId]
+        );
+        if (!row) return res.status(404).json({ error: 'Transaction not found' });
+
+        const refId = row.reference_id;
+
+        // Delete the ledger row
+        await db.pgRun(`DELETE FROM ${table} WHERE id = $1 AND company_id = $2`, [ledgerId, companyId]);
+
+        if (refId) {
+            // Mark transaction excluded so self-heal never re-inserts
+            await db.pgRun(
+                `UPDATE transactions SET bill_purpose = 'excluded' WHERE id = $1 AND company_id = $2`,
+                [refId, companyId]
+            ).catch(() => {});
+
+            // Clean ledger_entries for this transaction
+            await db.pgRun(
+                `DELETE FROM ledger_entries WHERE transaction_id = $1`,
+                [refId]
+            ).catch(() => {});
+
+            // Also clean the other ledger table in case it appears there too
+            const otherTable = table === 'cash_ledger' ? 'bank_ledger' : 'cash_ledger';
+            await db.pgRun(
+                `DELETE FROM ${otherTable} WHERE reference_id = $1 AND company_id = $2`,
+                [refId, companyId]
+            ).catch(() => {});
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[DELETE transaction]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;
