@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FaPlus, FaSearch, FaBook, FaFingerprint, FaMoneyBillWave, FaBuilding, FaWallet, FaFilter, FaTimes, FaBalanceScale, FaTrash } from "react-icons/fa";
+import { FaPlus, FaSearch, FaBook, FaFingerprint, FaMoneyBillWave, FaBuilding, FaWallet, FaFilter, FaTimes, FaBalanceScale } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../utils/api";
 import "./finance/Finance.css";
@@ -143,22 +143,7 @@ const Ledgers: React.FC = () => {
   const fmt = (n: number) => `₹${Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
   const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
-  const colSpan = (type: "CASH" | "BANK") => type === "BANK" ? 7 : 6;
-
-  const handleDeleteEntry = async (table: "cash" | "bank", id: number, source: string) => {
-    if (!window.confirm(`Delete this ${source} entry? This cannot be undone.`)) return;
-    try {
-      const res = await apiFetch(`/ledger/entry/${table}/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || "Failed to delete entry");
-        return;
-      }
-      fetchData();
-    } catch {
-      alert("Failed to delete entry");
-    }
-  };
+  const colSpan = (type: "CASH" | "BANK") => type === "BANK" ? 6 : 5;
 
   const renderEntries = (entries: LedgerEntry[], type: "CASH" | "BANK", opening: number) => {
     // Group entries by calendar date (YYYY-MM-DD)
@@ -236,19 +221,6 @@ const Ledgers: React.FC = () => {
             </td>
             <td style={{ padding: "14px 16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#1e293b" }}>
               {fmt(runningBalance)}
-            </td>
-            <td style={{ padding: "8px", textAlign: "center", width: "36px" }}>
-              {entry.source !== "OPENING_BALANCE" && (
-                <button
-                  onClick={() => handleDeleteEntry(type === "BANK" ? "bank" : "cash", entry.id, entry.source)}
-                  title="Delete entry"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#cbd5e1", padding: "4px", borderRadius: "4px", lineHeight: 1 }}
-                  onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "#cbd5e1")}
-                >
-                  <FaTrash size={12} />
-                </button>
-              )}
             </td>
           </tr>
         );

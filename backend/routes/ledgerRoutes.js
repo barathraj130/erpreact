@@ -126,7 +126,20 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND t.related_invoice_id = cl.invoice_id AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
+        // ── Self-heal step 4a: remove cash_ledger entries whose transaction was marked excluded ──
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.bill_purpose = 'excluded'
+              )
+        `, [companyId]).catch(()=>{});
+
         // ── Self-heal step 4: sync RECEIPT transactions (company cash receipts) ──
+        //    Skip transactions marked bill_purpose='excluded' (permanently deleted by user)
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
@@ -135,6 +148,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
             WHERE t.company_id = $1
               AND t.type = 'RECEIPT'
               AND t.amount > 0
+              AND COALESCE(t.bill_purpose, 'real') != 'excluded'
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
@@ -284,7 +298,20 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND ABS(t.amount) = cl.amount
         `, [companyId]).catch(()=>{});
 
+        // ── Step 4a: remove cash_ledger entries whose transaction was marked excluded ──
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND t.bill_purpose = 'excluded'
+              )
+        `, [companyId]).catch(()=>{});
+
         // ── Step 4: Sync RECEIPT transactions (company cash) ──
+        //    Skip transactions marked bill_purpose='excluded' (permanently deleted by user)
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
@@ -293,6 +320,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
             WHERE t.company_id = $1
               AND t.type = 'RECEIPT'
               AND t.amount > 0
+              AND COALESCE(t.bill_purpose, 'real') != 'excluded'
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
@@ -706,15 +734,24 @@ router.delete('/entry/:table/:id', authMiddleware, async (req, res) => {
     }
     try {
         const entry = await db.pgGet(
-            `SELECT id, source FROM ${tbl} WHERE id = $1 AND company_id = $2`,
+            `SELECT id, source, reference_id FROM ${tbl} WHERE id = $1 AND company_id = $2`,
             [id, companyId]
         );
         if (!entry) return res.status(404).json({ error: 'Entry not found' });
         if (entry.source === 'OPENING_BALANCE') {
             return res.status(400).json({ error: 'Cannot delete opening balance entry. Use Admin Setup to change it.' });
         }
+        // Delete the ledger row
         await db.pgRun(`DELETE FROM ${tbl} WHERE id = $1 AND company_id = $2`, [id, companyId]);
-        res.json({ success: true, message: 'Entry deleted' });
+        // If this row was synced from a transaction (reference_id is set), mark that transaction
+        // as bill_purpose='excluded' so self-heal step 4 never re-adds it to cash_ledger
+        if (entry.reference_id) {
+            await db.pgRun(
+                `UPDATE transactions SET bill_purpose = 'excluded' WHERE id = $1 AND company_id = $2`,
+                [entry.reference_id, companyId]
+            ).catch(() => {});
+        }
+        res.json({ success: true, message: 'Entry permanently deleted' });
     } catch (err) {
         console.error('[ledger delete]', err.message);
         res.status(500).json({ error: 'Failed to delete entry' });
