@@ -1,0 +1,544 @@
+// backend/routes/transactionRoutes.js
+import express from 'express';
+import * as db from '../database/pg.js';
+import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+
+const router = express.Router();
+
+/**
+ * Direct transaction routes
+ */
+
+// Helper: convert branch filter alias from 't.' to the given table alias
+const applyAlias = (filter, alias) =>
+    filter.includes('t.') ? filter.replace(/\bt\./g, alias + '.') : filter;
+
+// Helper for branch filtering
+const getBranchFilter = (req) => {
+    const headerBranch = req.headers['x-branch-id'];
+    const role = req.user.role;
+    const userBranch = req.user.branch_id;
+
+    if (headerBranch && headerBranch !== 'all' && headerBranch !== 'null' && !isNaN(Number(headerBranch))) {
+        return 't.branch_id = ' + Number(headerBranch);
+    }
+    if (role === 'admin' && (!headerBranch || headerBranch === 'all')) {
+        return '1=1';
+    }
+    if (userBranch) {
+        return 't.branch_id = ' + userBranch;
+    }
+    return '1=1';
+};
+
+// ── GET /api/transactions ─────────────────────────────────────────────────────
+// Single Source of Truth: reads cash_ledger + bank_ledger (same tables the
+// financial-summary and Ledgers page use), enriched with transactions table
+// metadata where available.  This guarantees the audit trail always matches
+// the summary cards — no fallback logic required.
+router.get('/', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const rawFilter = getBranchFilter(req);
+    const clFilter  = applyAlias(rawFilter, 'cl');
+    const blFilter  = applyAlias(rawFilter, 'bl');
+
+    try {
+        // ── Cash + bank ledger enriched with party names ──────────────────
+        // reference_id column exists on both tables (added via schemaUpdates).
+        // invoice_id column also exists on both tables.
+        // We LEFT JOIN to party tables so display_party is populated for
+        // invoice payments, purchase payments, salary advances and loan repayments.
+        const sql = `
+            SELECT
+                ('CL-' || cl.id::text)  AS id,
+                cl.date,
+                cl.source               AS type,
+                cl.source               AS reference_type,
+                cl.amount,
+                'CASH'                  AS mode,
+                cl.source               AS description,
+                cl.direction            AS ledger_direction,
+                COALESCE(
+                    u.username,
+                    s.name,
+                    emp.name,
+                    ln.lender_name
+                )                       AS display_party,
+                COALESCE(
+                    u.username,
+                    s.name,
+                    emp.name,
+                    ln.lender_name
+                )                       AS party_name,
+                NULL                    AS proof_url,
+                cl.created_at
+            FROM cash_ledger cl
+            -- invoice payment → customer
+            LEFT JOIN invoices      inv ON cl.invoice_id  = inv.id
+            LEFT JOIN users         u   ON inv.customer_id = u.id
+            -- purchase bill payment → supplier
+            LEFT JOIN purchase_bills pb  ON cl.source ILIKE '%purchase%' AND cl.reference_id = pb.id
+            LEFT JOIN suppliers     s    ON pb.supplier_id = s.id
+            -- salary advance → employee
+            LEFT JOIN salary_advances sa  ON cl.source = 'salary_advance' AND cl.reference_id = sa.id
+            LEFT JOIN employees     emp   ON sa.employee_id = emp.id
+            -- loan repayment → lender
+            LEFT JOIN loan_payments lp    ON cl.source ILIKE '%loan%' AND cl.reference_id = lp.id
+            LEFT JOIN loans         lo    ON lp.loan_id = lo.id
+            LEFT JOIN lenders       ln    ON lo.lender_id = ln.id
+            WHERE cl.company_id = $1 AND ${clFilter}
+
+            UNION ALL
+
+            SELECT
+                ('BL-' || bl.id::text)              AS id,
+                bl.date,
+                bl.source                            AS type,
+                bl.source                            AS reference_type,
+                bl.amount,
+                'BANK'                               AS mode,
+                COALESCE(bl.bank_name, bl.source)    AS description,
+                bl.direction                         AS ledger_direction,
+                COALESCE(
+                    u2.username,
+                    s2.name,
+                    emp2.name,
+                    ln2.lender_name,
+                    bl.bank_name
+                )                                    AS display_party,
+                COALESCE(
+                    u2.username,
+                    s2.name,
+                    emp2.name,
+                    ln2.lender_name,
+                    bl.bank_name
+                )                                    AS party_name,
+                NULL                                 AS proof_url,
+                bl.created_at
+            FROM bank_ledger bl
+            LEFT JOIN invoices      inv2 ON bl.invoice_id   = inv2.id
+            LEFT JOIN users         u2   ON inv2.customer_id = u2.id
+            LEFT JOIN purchase_bills pb2  ON bl.source ILIKE '%purchase%' AND bl.reference_id = pb2.id
+            LEFT JOIN suppliers     s2    ON pb2.supplier_id = s2.id
+            LEFT JOIN salary_advances sa2  ON bl.source = 'salary_advance' AND bl.reference_id = sa2.id
+            LEFT JOIN employees     emp2   ON sa2.employee_id = emp2.id
+            LEFT JOIN loan_payments lp2    ON bl.source ILIKE '%loan%' AND bl.reference_id = lp2.id
+            LEFT JOIN loans         lo2    ON lp2.loan_id = lo2.id
+            LEFT JOIN lenders       ln2    ON lo2.lender_id = ln2.id
+            WHERE bl.company_id = $1 AND ${blFilter}
+
+            ORDER BY date DESC, created_at DESC
+        `;
+
+        const rows = await db.pgAll(sql, [companyId]);
+        console.log(`📊 Transactions (cash+bank ledger) returned: ${rows.length} rows`);
+
+        const normalised = rows.map(r => ({
+            ...r,
+            date:         r.date,
+            amount:       Number(r.amount) || 0,
+            type:         r.type || r.reference_type || 'GENERAL',
+            display_party: r.display_party || null,
+            party_name:   r.display_party || r.party_name || null,
+        }));
+
+        res.json(normalised);
+    } catch (err) {
+        console.error('Fetch Transactions Error:', err);
+        res.status(500).json({ error: 'Failed to fetch transactions' });
+    }
+});
+
+// ── FINANCIAL SUMMARY ────────────────────────────────────────────────────────
+// Single source of truth for inflow/outflow stats — reads directly from
+// cash_ledger + bank_ledger (same tables the Ledgers page uses).
+// This ensures Transactions stats cards always match the Ledgers page.
+router.get('/financial-summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const rawFilter = getBranchFilter(req);
+    const clFilter  = applyAlias(rawFilter, 'cl');
+    const blFilter  = applyAlias(rawFilter, 'bl');
+
+    try {
+        const row = await db.pgGet(`
+            SELECT
+                COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount ELSE 0 END), 0) AS total_inflow,
+                COALESCE(SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END), 0) AS total_outflow
+            FROM (
+                SELECT amount, direction FROM cash_ledger cl WHERE cl.company_id = $1 AND ${clFilter}
+                UNION ALL
+                SELECT amount, direction FROM bank_ledger bl WHERE bl.company_id = $1 AND ${blFilter}
+            ) combined
+        `, [companyId]);
+
+        const inflow  = Number(row?.total_inflow  || 0);
+        const outflow = Number(row?.total_outflow || 0);
+        res.json({ total_inflow: inflow, total_outflow: outflow, net_balance: inflow - outflow });
+    } catch (err) {
+        console.error("Financial summary error:", err);
+        res.status(500).json({ error: "Failed to fetch financial summary" });
+    }
+});
+
+// ── DEBUG ENDPOINT ────────────────────────────────────────────────────────────
+// GET /api/transactions/debug — raw DB counts so we can diagnose empty tables.
+// Admin only. Does NOT filter by branch so you see everything.
+router.get('/debug', authMiddleware, async (req, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const cid = req.user.active_company_id;
+    try {
+        const [txCount, clCount, blCount, latestTx, latestCl, latestBl] = await Promise.all([
+            db.pgGet(`SELECT COUNT(*) AS cnt FROM transactions WHERE company_id = $1`, [cid]),
+            db.pgGet(`SELECT COUNT(*) AS cnt FROM cash_ledger  WHERE company_id = $1`, [cid]),
+            db.pgGet(`SELECT COUNT(*) AS cnt FROM bank_ledger  WHERE company_id = $1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, created_at FROM transactions WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, source, amount, direction, date, created_at FROM cash_ledger  WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+            db.pgGet(`SELECT id, company_id, branch_id, source, amount, direction, date, created_at FROM bank_ledger  WHERE company_id = $1 ORDER BY id DESC LIMIT 1`, [cid]),
+        ]);
+        res.json({
+            company_id: cid,
+            user_branch_id: req.user.branch_id,
+            user_role: req.user.role,
+            counts: {
+                transactions: Number(txCount?.cnt || 0),
+                cash_ledger:  Number(clCount?.cnt || 0),
+                bank_ledger:  Number(blCount?.cnt || 0),
+            },
+            latest: {
+                transaction: latestTx || null,
+                cash_ledger: latestCl || null,
+                bank_ledger: latestBl || null,
+            }
+        });
+    } catch (err) {
+        console.error('Debug endpoint error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+import multer from 'multer';
+import path from 'path';
+import { processTransaction } from '../services/transactionService.js';
+
+// Multer Storage for Proofs
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/proofs/'),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        const allowed = /jpeg|jpg|png|pdf/;
+        const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+        const mime = allowed.test(file.mimetype);
+        if (ext && mime) return cb(null, true);
+        cb(new Error("Only Image (JPG/PNG) and PDF files are allowed."));
+    }
+});
+
+// POST /api/transactions - Create a general transaction with optional proof
+router.post('/', authMiddleware, upload.single('proof'), async (req, res) => {
+    try {
+        const txData = { 
+            ...req.body, 
+            proof_url: req.file ? `/uploads/proofs/${req.file.filename}` : null 
+        };
+        
+        const result = await processTransaction(txData, req.user);
+        res.status(201).json({ 
+            success: true, 
+            id: result.transactionId, 
+            message: "Transaction recorded and ledgers updated successfully." 
+        });
+    } catch (error) {
+        console.error("Error creating transaction:", error.message);
+        res.status(500).json({ error: error.message || "Failed to record transaction." });
+    }
+});
+
+// GET /api/transactions/:id/pdf - Generate Cash Voucher PDF
+import * as puppeteer from 'puppeteer';
+
+router.get('/:id/pdf', authMiddleware, async (req, res) => {
+    const transactionId = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+
+    try {
+        const txResult = await db.pgGet(`
+            SELECT t.*,
+                   COALESCE(NULLIF(t.amount, 0),
+                       (SELECT SUM(tl.credit_amount) FROM transaction_lines tl WHERE tl.transaction_id = t.id)
+                   ) AS display_amount,
+                   l.lender_name
+            FROM transactions t
+            LEFT JOIN lenders l ON t.lender_id = l.id
+            WHERE t.id = $1 AND t.company_id = $2
+        `, [transactionId, companyId]);
+        if (!txResult) return res.status(404).json({ error: "Transaction not found" });
+        // Use display_amount for the PDF
+        txResult.amount = txResult.display_amount || txResult.amount || 0;
+
+        const companyResult = await db.pgGet('SELECT * FROM companies WHERE id = $1', [companyId]);
+        let companyName = companyResult ? companyResult.company_name : "RIDGE GREEN CORPORATION";
+        
+        // Auto wrap for 2+ word company name
+        const words = companyName.split(' ');
+        if (words.length > 1) {
+            const mid = Math.ceil(words.length / 2);
+            companyName = words.slice(0, mid).join(' ') + '<br/>' + words.slice(mid).join(' ');
+        }
+
+        // Parse description dynamically
+        let partyName = txResult.lender_name || "";
+        let purpose = txResult.description || "";
+        if (!partyName && purpose.startsWith("Cash Receipt - ")) {
+            const stripped = purpose.replace("Cash Receipt - ", "");
+            const parts = stripped.split(": ");
+            if (parts.length > 1) {
+                partyName = parts[0];
+                purpose = parts.slice(1).join(": ");
+            } else {
+                partyName = stripped;
+            }
+        } else if (!partyName && purpose.includes(" from ")) {
+            // e.g. "Loan received from MOHAN"
+            partyName = purpose.split(" from ").slice(1).join(" from ");
+        }
+
+        const dateStr = new Date(txResult.date || txResult.created_at).toLocaleDateString('en-IN');
+
+        const html = `
+        <html>
+        <head>
+            <style>
+                body { margin: 0; padding: 40px; font-family: 'Helvetica', Arial, sans-serif; display: flex; justify-content: center; background: white; }
+                .receipt-container { 
+                    width: 250mm; 
+                    min-height: 120mm; 
+                    border: 10px solid #0f6e3c; 
+                    padding: 30px 50px; 
+                    box-sizing: border-box; 
+                    position: relative;
+                }
+                .title { font-size: 38px; font-weight: 800; color: #0f6e3c; text-align: center; margin-top: 10px; margin-bottom: 0px; letter-spacing: 1px; }
+                .company-name { position: absolute; right: 50px; top: 40px; font-size: 16px; font-weight: 800; color: #0f6e3c; text-align: right; line-height: 1.2; }
+                table { width: 100%; border-collapse: collapse; margin-top: 40px; font-size: 18px; border: 1px solid #444; }
+                td { border: 1px solid #444; padding: 14px 20px; }
+                .label { color: #444; display: inline-block; vertical-align: top; margin-right: 10px; font-weight: 500; }
+                .val { font-weight: 700; color: #111; display: inline-block; }
+                .box-row { height: 120px; vertical-align: top; }
+                .footer-row td { width: 50%; height: 80px; vertical-align: bottom; padding: 14px 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="receipt-container">
+                <div class="title">CASH VOUCHER</div>
+                <div class="company-name">${companyName}</div>
+                
+                <table>
+                    <tr>
+                        <td colspan="2">
+                            <span class="label">Transaction Type:</span> <span class="val">CASH RECEIPT (#${txResult.id})</span>
+                            <span style="float: right; margin-right: 20px;"><span class="label">Date:</span> <span class="val">${dateStr}</span></span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2"><span class="label">Amount:</span> <span class="val">Rs. ${Number(txResult.amount).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2"><span class="label">To:</span> <span class="val">${partyName}</span></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" class="box-row">
+                            <span class="label" style="display:block; margin-bottom: 8px;">Purpose:</span> 
+                            <span class="val" style="font-weight: 500;">${purpose}</span>
+                        </td>
+                    </tr>
+                    <tr class="footer-row">
+                        <td><span class="label">Approved By:</span></td>
+                        <td><span class="label">Signature:</span></td>
+                    </tr>
+                </table>
+            </div>
+        </body>
+        </html>
+        `;
+
+        const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        const pdfBuffer = await page.pdf({ 
+            format: 'A4', 
+            landscape: true, 
+            printBackground: true,
+            margin: { top: '0', right: '0', bottom: '0', left: '0' }
+        });
+        await browser.close();
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="Cash_Voucher_${transactionId}.pdf"`);
+        res.send(pdfBuffer);
+
+    } catch (err) {
+        console.error("Receipt PDF Error:", err);
+        res.status(500).json({ error: "Failed to generate PDF voucher" });
+    }
+});
+
+/**
+ * POST /api/transactions/:id/send-whatsapp
+ * id format: BL-18 (bank_ledger) or CL-18 (cash_ledger)
+ * Generates a TRANSACTION VOUCHER PDF and sends it via WhatsApp.
+ */
+router.post('/:id/send-whatsapp', authMiddleware, async (req, res) => {
+    const txId      = req.params.id;                         // e.g. "BL-18"
+    const companyId = req.user.active_company_id;
+
+    // --- Parse ID ---
+    const match = txId.match(/^(BL|CL)-(\d+)$/i);
+    if (!match) return res.status(400).json({ success: false, error: 'Invalid transaction ID format' });
+
+    const [, ledgerType, ledgerId] = match;
+    const table = ledgerType.toUpperCase() === 'BL' ? 'bank_ledger' : 'cash_ledger';
+
+    try {
+        // --- Fetch ledger row ---
+        const ledger = await db.pgGet(
+            `SELECT * FROM ${table} WHERE id = $1 AND company_id = $2`,
+            [ledgerId, companyId]
+        );
+        if (!ledger) return res.status(404).json({ success: false, error: 'Transaction not found' });
+
+        // --- Resolve party name and phone ---
+        let partyName = ledger.bank_name || ledger.source || '-';
+        let phone     = null;
+
+        // invoice → customer phone
+        if (ledger.invoice_id) {
+            const inv = await db.pgGet(
+                `SELECT u.username, u.phone FROM invoices i JOIN users u ON i.customer_id = u.id WHERE i.id = $1`,
+                [ledger.invoice_id]
+            ).catch(() => null);
+            if (inv) { partyName = inv.username || partyName; phone = inv.phone; }
+        }
+
+        // loan → lender phone
+        if (!phone && ledger.reference_id && (ledger.source || '').toUpperCase().includes('LOAN')) {
+            const lender = await db.pgGet(
+                `SELECT l.lender_name, l.phone FROM loan_payments lp JOIN loans lo ON lp.loan_id = lo.id JOIN lenders l ON lo.lender_id = l.id WHERE lp.id = $1`,
+                [ledger.reference_id]
+            ).catch(() => null);
+            if (lender) { partyName = lender.lender_name || partyName; phone = lender.phone; }
+        }
+
+        // fallback to owner
+        if (!phone) phone = '8148232205';
+
+        // --- Build voucher data ---
+        const dateStr   = new Date(ledger.date || ledger.created_at).toLocaleDateString('en-IN');
+        const category  = (ledger.source || 'GENERAL').replace(/_/g, ' ');
+        const isInflow  = ledger.direction === 'in';
+        const flowLabel = isInflow ? 'Inflow (Credit)' : 'Outflow (Debit)';
+        const modeLabel = ledgerType.toUpperCase() === 'BL' ? 'Bank Transfer' : 'Cash';
+        const amountStr = 'Rs.' + Number(ledger.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+        const voucherId = `TXN-${txId}`;
+
+        // Acknowledge immediately so UI doesn't hang
+        res.json({ success: true, message: `Voucher sending to ${phone}` });
+
+        // --- Generate PDF ---
+        try {
+            const { generateLedgerPdf } = await import('../utils/generateLedgerPDF.js');
+
+            // Build simple HTML matching the jsPDF layout
+            const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    @page { size: A4; margin: 15mm; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #111; background: white; }
+    .header { text-align: center; margin-bottom: 12px; }
+    .header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+    .header p { font-size: 11px; color: #444; margin-top: 3px; }
+    hr { border: none; border-top: 1px solid #444; margin: 10px 0; }
+    .title { text-align: center; font-size: 14px; font-weight: 700; letter-spacing: 1px; margin: 10px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    td { padding: 10px 14px; font-size: 12px; }
+    td:first-child { font-weight: 700; width: 45%; }
+    tr:nth-child(odd) { background: #f9f9f9; }
+    .footer { text-align: center; margin-top: 30px; font-size: 10px; color: #888; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>JBS KNIT WEAR</h1>
+    <p>3/2B Nesavalar Colony, TNK Puram, Tiruppur 641602</p>
+    <p>Ph: 8148232205</p>
+  </div>
+  <hr/>
+  <div class="title">TRANSACTION VOUCHER</div>
+  <hr/>
+  <table>
+    <tr><td>Transaction ID:</td><td>${voucherId}</td></tr>
+    <tr><td>Date:</td><td>${dateStr}</td></tr>
+    <tr><td>Category:</td><td>${category}</td></tr>
+    <tr><td>Party:</td><td>${partyName}</td></tr>
+    <tr><td>Description:</td><td>${ledger.bank_name || ledger.source || '-'}</td></tr>
+    <tr><td>Mode:</td><td>${modeLabel}</td></tr>
+    <tr><td>Type:</td><td>${flowLabel}</td></tr>
+    <tr><td>Amount:</td><td>${amountStr}</td></tr>
+  </table>
+  <hr style="margin-top:30px"/>
+  <div class="footer">
+    System generated voucher - Fluxora ERP<br/>
+    Generated: ${new Date().toLocaleString('en-IN')}
+  </div>
+</body>
+</html>`;
+
+            // Use same Puppeteer helper
+            const puppeteerMod = await import('puppeteer');
+            const browser = await puppeteerMod.default.launch({
+                headless: 'new',
+                args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-zygote','--single-process'],
+            });
+            const page = await browser.newPage();
+            await page.setContent(html, { waitUntil: 'networkidle0' });
+            const pdfBuf = await page.pdf({ format: 'A4', printBackground: true });
+            await page.close();
+            await browser.close();
+
+            // Send via WhatsApp as base64
+            const { sendWhatsApp, sendWhatsAppFile } = await import('../utils/whatsapp.js');
+            const filename = `Voucher_${voucherId}.pdf`;
+
+            // Text summary first
+            await sendWhatsApp(phone,
+`Transaction Voucher: ${voucherId}
+
+Date:     ${dateStr}
+Type:     ${category}
+Party:    ${partyName}
+Amount:   ${amountStr}
+Flow:     ${flowLabel}
+
+JBS Knit Wear, Tiruppur
+Ph: 8148232205`);
+
+            // Then PDF
+            await sendWhatsAppFile(phone, Buffer.from(pdfBuf), filename, `Voucher ${voucherId} — JBS Knit Wear`);
+            console.log(`[TXN Voucher] sent to ${phone}: ${voucherId}`);
+        } catch (pdfErr) {
+            console.log('[TXN WhatsApp] silent fail:', pdfErr.message);
+        }
+
+    } catch (err) {
+        console.error('[TXN send-whatsapp]', err.message);
+        if (!res.headersSent) res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+export default router;
