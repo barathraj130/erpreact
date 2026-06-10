@@ -711,6 +711,47 @@ router.get('/supplier/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// DELETE /ledger/party/entry/:entryId
+// Permanently delete a party ledger entry (customer / supplier / lender / employee)
+// Deletes the ledger_entry row + the entire parent transaction + all sibling entries
+// ══════════════════════════════════════════════════════════════════════════════
+router.delete('/party/entry/:entryId', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const entryId   = parseInt(req.params.entryId);
+    try {
+        // Find the ledger_entry and its parent transaction
+        const entry = await db.pgGet(
+            `SELECT le.id, le.transaction_id, t.reference_type
+             FROM ledger_entries le
+             LEFT JOIN transactions t ON t.id = le.transaction_id
+             WHERE le.id = $1 AND le.company_id = $2`,
+            [entryId, companyId]
+        );
+        if (!entry) return res.status(404).json({ error: 'Entry not found' });
+
+        const txId = entry.transaction_id;
+
+        if (txId) {
+            // Delete ALL ledger_entries for this transaction (double-entry siblings)
+            await db.pgRun(`DELETE FROM ledger_entries WHERE transaction_id = $1 AND company_id = $2`, [txId, companyId]);
+            // Remove from cash/bank ledger if synced
+            await db.pgRun(`DELETE FROM cash_ledger WHERE reference_id = $1 AND company_id = $2`, [txId, companyId]).catch(() => {});
+            await db.pgRun(`DELETE FROM bank_ledger WHERE reference_id = $1 AND company_id = $2`, [txId, companyId]).catch(() => {});
+            // Mark transaction excluded to prevent self-heal re-sync
+            await db.pgRun(`UPDATE transactions SET bill_purpose = 'excluded' WHERE id = $1 AND company_id = $2`, [txId, companyId]);
+        } else {
+            // Orphan entry — delete just this row
+            await db.pgRun(`DELETE FROM ledger_entries WHERE id = $1 AND company_id = $2`, [entryId, companyId]);
+        }
+
+        res.json({ success: true, message: 'Entry permanently deleted' });
+    } catch (err) {
+        console.error('[party ledger delete]', err.message);
+        res.status(500).json({ error: 'Failed to delete entry' });
+    }
+});
+
 router.patch('/:id/archive', authMiddleware, async (req, res) => {
     try {
         await db.pgRun('UPDATE ledgers SET is_deleted = true, deleted_at = NOW() WHERE id = $1 AND company_id = $2', [req.params.id, req.user.active_company_id]);

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
-import { FaFileInvoice, FaArrowLeft, FaPrint, FaFileExcel, FaFilePdf, FaWhatsapp } from 'react-icons/fa';
+import { FaFileInvoice, FaArrowLeft, FaPrint, FaFileExcel, FaFilePdf, FaWhatsapp, FaTrash } from 'react-icons/fa';
 import './LedgerViewer.css';
 
 interface LedgerEntry {
@@ -59,6 +59,18 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
       }
     } catch (e: any) { setWaStatus('error'); setWaMsg('Network error'); }
     finally { setWaLoading(false); }
+  };
+
+  const handleDeleteEntry = async (entryId: number, desc: string) => {
+    if (!window.confirm(`Delete "${desc}" entry? This cannot be undone.`)) return;
+    try {
+      const res = await apiFetch(`/ledgers/party/entry/${entryId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) { alert(json.error || 'Failed to delete entry'); return; }
+      fetchLedger();
+    } catch {
+      alert('Failed to delete entry');
+    }
   };
 
   const fetchLedger = async () => {
@@ -186,11 +198,12 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
               <th>Debit (DR)</th>
               <th>Credit (CR)</th>
               <th>Balance</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {data.transactions.length === 0 ? (
-              <tr><td colSpan={6} className="text-center">No transactions found</td></tr>
+              <tr><td colSpan={7} className="text-center">No transactions found</td></tr>
             ) : (
               data.transactions.map((row: LedgerEntry) => (
                 <tr key={row.id}>
@@ -204,6 +217,17 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
                   <td className="amount credit">{row.credit > 0 ? `₹${parseFloat(row.credit.toString()).toLocaleString()}` : '-'}</td>
                   <td className={`amount balance ${row.running_balance >= 0 ? 'pos' : 'neg'}`}>
                     ₹{Math.abs(row.running_balance).toLocaleString()}
+                  </td>
+                  <td style={{ textAlign: 'center', width: '36px', padding: '4px 8px' }}>
+                    <button
+                      onClick={() => handleDeleteEntry(row.id, row.tx_desc || row.reference_type)}
+                      title="Delete entry"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '4px', borderRadius: '4px', lineHeight: 1 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}
+                    >
+                      <FaTrash size={12} />
+                    </button>
                   </td>
                 </tr>
               ))
