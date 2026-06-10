@@ -617,19 +617,28 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     }
                 } else {
                     const pMode = (payment_mode || 'CASH').toUpperCase();
-                    if (pMode === 'BANK' || pMode === 'UPI' || pMode === 'CHEQUE') {
+                    if (pMode === 'PROPRIETOR') {
+                        // Proprietor personal account — no impact on business cash/bank
+                    } else if (pMode === 'BANK' || pMode === 'UPI' || pMode === 'CHEQUE') {
                         await client.query(
                             `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
                              VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', $4, $5)`,
                             [companyId, safeBranchId, paid, pMode, bill_date || new Date()]
                         );
                     } else {
-                        // CASH and PROPRIETOR both go to cash_ledger
-                        const src = pMode === 'PROPRIETOR' ? 'PROPRIETOR_PAYMENT' : 'PURCHASE_PAYMENT';
+                        // CASH — check balance first to prevent negative cash
+                        const cashRow = await client.query(
+                            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1`,
+                            [companyId]
+                        );
+                        const cashBal = parseFloat(cashRow.rows[0]?.bal || 0);
+                        if (cashBal < paid) {
+                            throw new Error(`Insufficient cash balance (₹${cashBal.toLocaleString('en-IN')}) for payment of ₹${paid.toLocaleString('en-IN')}. Use Proprietor Account or Bank Transfer instead.`);
+                        }
                         await client.query(
                             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                             VALUES ($1, $2, $3, $4, 'out', $5)`,
-                            [companyId, safeBranchId, src, paid, bill_date || new Date()]
+                             VALUES ($1, $2, 'PURCHASE_PAYMENT', $3, 'out', $4)`,
+                            [companyId, safeBranchId, paid, bill_date || new Date()]
                         );
                     }
                 }
@@ -719,12 +728,23 @@ Please restock immediately!`);
 // ─────────────────────────────────────────────────────────
 async function recordPaymentSplit(client, { companyId, branchId, billId, billNumber, billPurpose, userId, payment_date, mode, amount, reference, apAccount }) {
     const pMode = (mode || "CASH").toUpperCase();
-    if (pMode === "CASH" || pMode === "PROPRIETOR") {
-        const src = pMode === "PROPRIETOR" ? "PROPRIETOR_PAYMENT" : "BILL_PAYMENT";
+
+    if (pMode === "PROPRIETOR") {
+        // Proprietor pays from personal account — does NOT touch business cash/bank ledger
+    } else if (pMode === "CASH") {
+        // Check available cash before deducting to prevent negative balance
+        const cashRow = await client.query(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1`,
+            [companyId]
+        );
+        const cashBal = parseFloat(cashRow.rows[0]?.bal || 0);
+        if (cashBal < amount) {
+            throw new Error(`Insufficient cash balance (₹${cashBal.toLocaleString('en-IN')}) for payment of ₹${amount.toLocaleString('en-IN')}. Use Proprietor Account or Bank Transfer instead.`);
+        }
         await client.query(
             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-             VALUES ($1,$2,$3,$4,'out',$5)`,
-            [companyId, branchId, src, amount, payment_date || new Date()]
+             VALUES ($1,$2,'BILL_PAYMENT',$3,'out',$4)`,
+            [companyId, branchId, amount, payment_date || new Date()]
         );
     } else {
         await client.query(
