@@ -1375,6 +1375,7 @@ import gstNewReports from './reports/gst.js';
 import hrNewReports from './reports/hr.js';
 import executiveNewReports from './reports/executive.js';
 import savedReports from './reports/saved.js';
+import proprietorReports from './reports/proprietor.js';
 
 router.use('/sales', salesReports);
 router.use('/purchase', purchaseReports);
@@ -1383,6 +1384,7 @@ router.use('/finance', financeNewReports);
 router.use('/gst', gstNewReports);
 router.use('/hr', hrNewReports);
 router.use('/executive', executiveNewReports);
+router.use('/proprietor', proprietorReports);
 router.use('/', savedReports);
 
 export default router;

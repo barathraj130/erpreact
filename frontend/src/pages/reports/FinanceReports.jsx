@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LineChart, Line, ComposedChart, Area } from 'recharts';
 import { apiFetch } from '../../utils/api';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
@@ -9,15 +9,44 @@ import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
 
 const fmt = v => Number(v || 0).toLocaleString('en-IN');
+const fmtRs = v => '₹' + fmt(v);
 const nowMonth = () => {
   const now = new Date();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   return { from: `${now.getFullYear()}-${m}-01`, to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0] };
 };
 
-const TABS = ['Fund Flow', 'Profitability', 'Financial Ratios', 'Budget vs Actual'];
+const TABS = [
+  'P&L Statement',
+  'Cash Flow',
+  'Fund Flow',
+  'Profitability',
+  'Balance Sheet',
+  'Income Trend',
+  'True Performance',
+  'Proprietor A/C',
+  'Proprietor Txns',
+  'Financial Ratios',
+  'Budget vs Actual',
+];
 
-const PROFIT_COLORS = { income: '#10b981', expense: '#ef4444', subtotal: '#6366f1', total: '#0ea5e9' };
+const INFLOW_COLOR = '#10b981';
+const OUTFLOW_COLOR = '#ef4444';
+const NEUTRAL_COLOR = '#6366f1';
+const PROP_COLOR = '#7c3aed';
+
+const SectionHeader = ({ children }) => (
+  <div style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#374151', marginBottom: 8, marginTop: 16, borderLeft: '3px solid #6366f1' }}>
+    {children}
+  </div>
+);
+
+const LineItem = ({ label, value, indent = false, bold = false, color, borderTop }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 14px', borderTop: borderTop ? '2px solid #e5e7eb' : undefined, marginLeft: indent ? 20 : 0 }}>
+    <span style={{ fontSize: '0.85rem', color: '#374151', fontWeight: bold ? 700 : 400 }}>{label}</span>
+    <span style={{ fontSize: '0.85rem', fontWeight: bold ? 700 : 500, color: color || '#1e293b' }}>{fmtRs(value)}</span>
+  </div>
+);
 
 const FinanceReports = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -26,16 +55,25 @@ const FinanceReports = () => {
   const [summary, setSummary] = useState({});
   const defaults = nowMonth();
   const [filters, setFilters] = useState({ from: defaults.from, to: defaults.to });
+  const [propTxnType, setPropTxnType] = useState('all');
+  const [year, setYear] = useState(String(new Date().getFullYear()));
 
   const fetchTab = useCallback(async (tab, f) => {
     setLoading(true);
     try {
       const qs = new URLSearchParams(f).toString();
       const endpoints = {
-        0: `/reports/finance/fund-flow?${qs}`,
-        1: `/reports/finance/profitability?${qs}`,
-        2: `/reports/finance/ratios?${qs}`,
-        3: `/reports/finance/budget-vs-actual?year=${new Date().getFullYear()}&month=${new Date().getMonth() + 1}`,
+        0:  `/reports/finance/profit-loss?${qs}`,
+        1:  `/reports/finance/cash-flow?${qs}`,
+        2:  `/reports/finance/fund-flow?${qs}`,
+        3:  `/reports/finance/profitability?${qs}`,
+        4:  `/reports/finance/balance-sheet?as_of_date=${f.to}`,
+        5:  `/reports/finance/income-expense-trend?year=${year}`,
+        6:  `/reports/finance/true-performance?${qs}`,
+        7:  `/reports/finance/proprietor-capital?${qs}`,
+        8:  `/reports/proprietor/transactions?${qs}&type=${propTxnType}`,
+        9:  `/reports/finance/ratios?${qs}`,
+        10: `/reports/finance/budget-vs-actual?year=${new Date().getFullYear()}&month=${new Date().getMonth() + 1}`,
       };
       const res = await apiFetch(endpoints[tab]);
       if (res.ok) {
@@ -45,128 +83,337 @@ const FinanceReports = () => {
       }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [year, propTxnType]);
 
   useEffect(() => { fetchTab(activeTab, filters); }, [activeTab, fetchTab]);
 
-  const tabData = data[activeTab] || [];
+  const tabData    = data[activeTab] || [];
   const tabSummary = summary[activeTab] || {};
 
+  /* ── KPI rows ── */
   const renderKPIs = () => {
-    if (activeTab === 0) return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Inflow" value={'₹' + fmt(tabSummary.total_inflow)} color="#10b981" prefix="" />
-        <KPICard label="Total Outflow" value={'₹' + fmt(tabSummary.total_outflow)} color="#ef4444" prefix="" />
-        <KPICard label="Net Flow" value={'₹' + fmt(tabSummary.net_flow)} color="#6366f1" prefix="" trend={tabSummary.net_flow > 0 ? 'up' : 'down'} />
+    if (activeTab === 0) {
+      const d = tabData;
+      const rev   = d?.income?.total_revenue    || 0;
+      const gp    = d?.profit?.gross_profit     || 0;
+      const np    = d?.profit?.net_profit       || 0;
+      const ci    = d?.proprietor_equity?.capital_introduced || 0;
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+          <KPICard label="Total Revenue"     value={fmtRs(rev)} color={INFLOW_COLOR} prefix="" />
+          <KPICard label="Gross Profit"      value={fmtRs(gp)}  color={gp > 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={gp > 0 ? 'up' : 'down'} />
+          <KPICard label="Net Profit"        value={fmtRs(np)}  color={np > 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={np > 0 ? 'up' : 'down'} />
+          <KPICard label="Capital Introduced" value={fmtRs(ci)} color={PROP_COLOR} prefix="" />
+        </div>
+      );
+    }
+    if (activeTab === 1) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPICard label="Total Inflow"  value={fmtRs(tabSummary.total_inflow)}  color={INFLOW_COLOR}  prefix="" />
+        <KPICard label="Total Outflow" value={fmtRs(tabSummary.total_outflow)} color={OUTFLOW_COLOR} prefix="" />
+        <KPICard label="Net Cash Flow" value={fmtRs(tabSummary.net_cash_flow)} color={tabSummary.net_cash_flow >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={tabSummary.net_cash_flow >= 0 ? 'up' : 'down'} />
+        <KPICard label="Closing Cash"  value={fmtRs(tabSummary.closing_cash)}  color={NEUTRAL_COLOR} prefix="" />
       </div>
     );
-    if (activeTab === 1) return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Revenue" value={'₹' + fmt(tabSummary.revenue)} color="#10b981" prefix="" />
-        <KPICard label="Gross Profit" value={'₹' + fmt(tabSummary.gross_profit)} color="#6366f1" prefix="" />
-        <KPICard label="Net Profit" value={'₹' + fmt(tabSummary.net_profit)} color={tabSummary.net_profit > 0 ? '#10b981' : '#ef4444'} prefix="" trend={tabSummary.net_profit > 0 ? 'up' : 'down'} />
-        <KPICard label="Gross Margin" value={tabSummary.gross_margin + '%'} color="#6366f1" prefix="" />
+    if (activeTab === 2) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPICard label="Total Inflow"  value={fmtRs(tabSummary.total_inflow)}  color={INFLOW_COLOR}  prefix="" />
+        <KPICard label="Total Outflow" value={fmtRs(tabSummary.total_outflow)} color={OUTFLOW_COLOR} prefix="" />
+        <KPICard label="Net Flow"      value={fmtRs(tabSummary.net_flow)}      color={NEUTRAL_COLOR} prefix="" trend={tabSummary.net_flow >= 0 ? 'up' : 'down'} />
       </div>
-    );
-    return null;
-  };
-
-  const renderChart = () => {
-    if (tabData.length === 0) return null;
-    if (activeTab === 0) return (
-      <ChartCard title="Fund Flow Analysis" height={300}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="category" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
-            <Legend />
-            <Bar dataKey="amount" name="Amount" radius={[4,4,0,0]}>
-              {tabData.map((entry, idx) => (
-                <Cell key={idx} fill={entry.type === 'inflow' ? '#10b981' : '#ef4444'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-    );
-    if (activeTab === 1) return (
-      <ChartCard title="Profitability Breakdown" height={300}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={tabData.filter(d => d.type !== 'expense' || d.label !== 'Operating Expenses')} margin={{ left: 20, right: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(Math.abs(v)).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(Math.abs(v))} />
-            <Bar dataKey="value" name="Amount" radius={[4,4,0,0]}>
-              {tabData.map((entry, idx) => (
-                <Cell key={idx} fill={PROFIT_COLORS[entry.type] || '#6366f1'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
     );
     if (activeTab === 3) return (
-      <ChartCard title="Budget vs Actual" height={300}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="category" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
-            <Legend />
-            <Bar dataKey="budget" fill="#c7d2fe" name="Budget" radius={[4,4,0,0]} />
-            <Bar dataKey="actual" fill="#6366f1" name="Actual" radius={[4,4,0,0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPICard label="Revenue"      value={fmtRs(tabSummary.revenue)}     color={INFLOW_COLOR}  prefix="" />
+        <KPICard label="Gross Profit" value={fmtRs(tabSummary.gross_profit)} color={NEUTRAL_COLOR} prefix="" />
+        <KPICard label="Net Profit"   value={fmtRs(tabSummary.net_profit)}   color={tabSummary.net_profit >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={tabSummary.net_profit >= 0 ? 'up' : 'down'} />
+        <KPICard label="Gross Margin" value={(tabSummary.gross_margin || 0) + '%'} color={NEUTRAL_COLOR} prefix="" />
+      </div>
+    );
+    if (activeTab === 6) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPICard label="Total Inflow"   value={fmtRs(tabSummary.total_inflow)}   color={INFLOW_COLOR}  prefix="" />
+        <KPICard label="Total Outflow"  value={fmtRs(tabSummary.total_outflow)}  color={OUTFLOW_COLOR} prefix="" />
+        <KPICard label="Net Position"   value={fmtRs(tabSummary.net_position)}   color={tabSummary.net_position >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={tabSummary.net_position >= 0 ? 'up' : 'down'} />
+        <KPICard label="Cash+Bank Bal"  value={fmtRs(tabSummary.cash_bank_balance)} color={NEUTRAL_COLOR} prefix="" />
+        <KPICard label="Receivables"    value={fmtRs(tabSummary.outstanding_receivables)} color="#f59e0b" prefix="" />
+        <KPICard label="Business Value" value={fmtRs(tabSummary.total_business_value)}    color={PROP_COLOR} prefix="" />
+      </div>
+    );
+    if (activeTab === 7) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPICard label="Opening Balance"  value={fmtRs(tabSummary.opening_balance)}  color={NEUTRAL_COLOR} prefix="" />
+        <KPICard label="Capital Intro"    value={fmtRs(tabSummary.capital_intro)}    color={INFLOW_COLOR}  prefix="" />
+        <KPICard label="Drawings"         value={fmtRs(tabSummary.drawings)}         color={OUTFLOW_COLOR} prefix="" />
+        <KPICard label="Closing Balance"  value={fmtRs(tabSummary.closing_balance)}  color={tabSummary.closing_balance >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={tabSummary.closing_balance >= 0 ? 'up' : 'down'} />
+      </div>
+    );
+    if (activeTab === 8) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <KPICard label="Capital Intro"  value={fmtRs(tabSummary.total_capital_intro)} color={INFLOW_COLOR}  prefix="" />
+        <KPICard label="Drawings"       value={fmtRs(tabSummary.total_drawings)}       color={OUTFLOW_COLOR} prefix="" />
+        <KPICard label="Net Capital"    value={fmtRs(tabSummary.net_capital)}          color={tabSummary.net_capital >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} prefix="" trend={tabSummary.net_capital >= 0 ? 'up' : 'down'} />
+        <KPICard label="Personal Rcpts" value={fmtRs(tabSummary.total_personal_receipts)} color={PROP_COLOR} prefix="" />
+      </div>
     );
     return null;
   };
 
-  const COLUMNS = [
-    [
-      { key: 'category', label: 'Category' },
-      { key: 'type', label: 'Type' },
-      { key: 'amount', label: 'Amount', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'label', label: 'Item' },
-      { key: 'type', label: 'Type' },
-      { key: 'value', label: 'Amount', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'ratio', label: 'Financial Ratio' },
-      { key: 'value', label: 'Value', align: 'right' },
-      { key: 'description', label: 'Description' },
-    ],
-    [
-      { key: 'category', label: 'Category' },
-      { key: 'budget', label: 'Budget', type: 'amount', align: 'right' },
-      { key: 'actual', label: 'Actual', type: 'amount', align: 'right' },
-      { key: 'variance', label: 'Variance', type: 'amount', align: 'right' },
-      { key: 'variance_pct', label: 'Variance %', align: 'right' },
-    ],
-  ];
+  /* ── Charts ── */
+  const renderChart = () => {
+    // P&L — bar of revenue vs cost
+    if (activeTab === 0 && tabData?.income) {
+      const chartData = [
+        { name: 'Invoice Revenue',      value: tabData.income.invoice_revenue,   type: 'income' },
+        { name: 'Personal Receipts',    value: tabData.income.personal_receipts, type: 'income' },
+        { name: 'Purchases',            value: tabData.cogs?.total_purchases,     type: 'expense' },
+        { name: 'Salary (Cash/Bank)',   value: tabData.expenses?.salary_cash_bank,type: 'expense' },
+        { name: 'Salary (Personal)',    value: tabData.expenses?.salary_personal, type: 'prop' },
+      ].filter(d => d.value > 0);
+      return (
+        <ChartCard title="P&L Overview" height={280}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ left: 20, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+              <Tooltip formatter={fmtRs} />
+              <Bar dataKey="value" radius={[4,4,0,0]}>
+                {chartData.map((d, i) => <Cell key={i} fill={d.type === 'income' ? INFLOW_COLOR : d.type === 'prop' ? PROP_COLOR : OUTFLOW_COLOR} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      );
+    }
+    // Cash flow / Fund flow — inflow green / outflow red
+    if ((activeTab === 1 || activeTab === 2) && Array.isArray(tabData) && tabData.length > 0) {
+      return (
+        <ChartCard title={activeTab === 1 ? 'Cash Flow Breakdown' : 'Fund Flow Analysis'} height={280}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="category" tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+              <Tooltip formatter={fmtRs} />
+              <Bar dataKey="amount" radius={[4,4,0,0]}>
+                {tabData.map((d, i) => <Cell key={i} fill={d.type === 'inflow' ? INFLOW_COLOR : d.type === 'financing' ? PROP_COLOR : OUTFLOW_COLOR} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      );
+    }
+    // Income trend — grouped bar + lines
+    if (activeTab === 5 && Array.isArray(tabData) && tabData.length > 0) {
+      return (
+        <ChartCard title={`Income vs Expense Trend ${year}`} height={300}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={tabData} margin={{ left: 20, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+              <Tooltip formatter={fmtRs} />
+              <Legend />
+              <Bar dataKey="total_income"  fill={INFLOW_COLOR}  name="Income"  radius={[4,4,0,0]} />
+              <Bar dataKey="total_expense" fill={OUTFLOW_COLOR} name="Expense" radius={[4,4,0,0]} />
+              <Line type="monotone" dataKey="capital_intro" stroke={PROP_COLOR}  name="Capital Intro" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="drawings"      stroke="#f59e0b"     name="Drawings"      strokeWidth={2} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      );
+    }
+    // True performance inflows vs outflows
+    if (activeTab === 6 && tabData?.inflows) {
+      const all = [
+        ...tabData.inflows.map(d => ({ ...d, type: 'inflow' })),
+        ...tabData.outflows.map(d => ({ ...d, type: 'outflow' })),
+      ].filter(d => d.amount > 0);
+      return (
+        <ChartCard title="True Business Performance" height={300}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={all} layout="vertical" margin={{ left: 160, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis type="number" tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+              <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={155} />
+              <Tooltip formatter={fmtRs} />
+              <Bar dataKey="amount" radius={[0,4,4,0]}>
+                {all.map((d, i) => <Cell key={i} fill={d.type === 'inflow' ? INFLOW_COLOR : OUTFLOW_COLOR} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      );
+    }
+    // Budget vs actual
+    if (activeTab === 10 && Array.isArray(tabData) && tabData.length > 0) {
+      return (
+        <ChartCard title="Budget vs Actual" height={280}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="category" tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+              <Tooltip formatter={fmtRs} />
+              <Legend />
+              <Bar dataKey="budget" fill="#c7d2fe" name="Budget" radius={[4,4,0,0]} />
+              <Bar dataKey="actual" fill="#6366f1" name="Actual" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      );
+    }
+    return null;
+  };
+
+  /* ── Special rendering for structured reports ── */
+  const renderPL = () => {
+    if (!tabData?.income) return null;
+    const { income, cogs, expenses, profit, proprietor_equity } = tabData;
+    return (
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', marginBottom: 20 }}>
+        <SectionHeader>INCOME</SectionHeader>
+        <LineItem label="Invoice Revenue"        value={income.invoice_revenue}   indent />
+        <LineItem label="Personal Account Receipts" value={income.personal_receipts} indent />
+        <LineItem label="Total Revenue"          value={income.total_revenue}     bold color={INFLOW_COLOR} borderTop />
+
+        <SectionHeader>COST OF GOODS SOLD</SectionHeader>
+        <LineItem label="Purchases (Cash/Bank)"   value={cogs.purchases_cash_bank}  indent />
+        <LineItem label="Purchases (Personal A/C)" value={cogs.purchases_personal}   indent />
+        <LineItem label="Total COGS"              value={cogs.total_purchases}      bold color={OUTFLOW_COLOR} borderTop />
+
+        <LineItem label="GROSS PROFIT"            value={profit.gross_profit}       bold color={profit.gross_profit >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} borderTop />
+
+        <SectionHeader>OPERATING EXPENSES</SectionHeader>
+        <LineItem label="Salaries (Cash/Bank)"   value={expenses.salary_cash_bank} indent />
+        <LineItem label="Salaries (Personal A/C)" value={expenses.salary_personal}  indent />
+        <LineItem label="Total Expenses"          value={expenses.total_expenses}   bold color={OUTFLOW_COLOR} borderTop />
+
+        <LineItem label="NET PROFIT"              value={profit.net_profit}         bold color={profit.net_profit >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} borderTop />
+
+        <SectionHeader>PROPRIETOR EQUITY IMPACT</SectionHeader>
+        <LineItem label="Capital Introduced"  value={proprietor_equity.capital_introduced} indent color={INFLOW_COLOR} />
+        <LineItem label="Drawings Taken"      value={proprietor_equity.drawings_taken}     indent color={OUTFLOW_COLOR} />
+        <LineItem label="Net Equity Change"   value={proprietor_equity.net_equity_change}  bold color={proprietor_equity.net_equity_change >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} borderTop />
+      </div>
+    );
+  };
+
+  const renderBalanceSheet = () => {
+    if (!tabData?.assets) return null;
+    const { assets, liabilities, equity, check } = tabData;
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <SectionHeader>ASSETS</SectionHeader>
+          <LineItem label="Cash in Hand"        value={assets.cash_in_hand}       indent />
+          <LineItem label="Bank Balance"         value={assets.bank_balance}        indent />
+          <LineItem label="Accounts Receivable"  value={assets.accounts_receivable} indent />
+          <LineItem label="Inventory Value"      value={assets.inventory_value}     indent />
+          <LineItem label="TOTAL ASSETS"         value={assets.total_assets}        bold color={INFLOW_COLOR} borderTop />
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <SectionHeader>LIABILITIES</SectionHeader>
+          <LineItem label="Accounts Payable" value={liabilities.accounts_payable} indent />
+          <LineItem label="Loan Payable"     value={liabilities.loan_payable}     indent />
+          <LineItem label="Chit Liability"   value={liabilities.chit_liability}   indent />
+          <LineItem label="TOTAL LIABILITIES" value={liabilities.total_liabilities} bold color={OUTFLOW_COLOR} borderTop />
+          <SectionHeader>EQUITY</SectionHeader>
+          <LineItem label="Proprietor Capital" value={equity.proprietor_capital} indent />
+          <LineItem label="Retained Earnings"  value={equity.retained_earnings}  indent />
+          <LineItem label="TOTAL EQUITY"       value={equity.total_equity}       bold color={NEUTRAL_COLOR} borderTop />
+          {!check?.balanced && (
+            <div style={{ padding: '8px 14px', background: '#fef2f2', color: '#dc2626', fontSize: '0.8rem', fontWeight: 600 }}>
+              ⚠️ Unreconciled: {fmtRs(check?.difference)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderProprietorCapital = () => {
+    if (!tabData?.debit) return null;
+    const { debit, credit } = tabData;
+    const totalDebit  = debit.reduce((s, r) => s + r.amount, 0);
+    const totalCredit = credit.reduce((s, r) => s + r.amount, 0);
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <div style={{ background: '#fee2e2', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#dc2626' }}>DEBIT (Outflow)</div>
+          {debit.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
+          <LineItem label="TOTAL" value={totalDebit} bold color={OUTFLOW_COLOR} borderTop />
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <div style={{ background: '#dcfce7', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#15803d' }}>CREDIT (Inflow)</div>
+          {credit.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
+          <LineItem label="TOTAL" value={totalCredit} bold color={INFLOW_COLOR} borderTop />
+        </div>
+      </div>
+    );
+  };
+
+  const renderTruePerformance = () => {
+    if (!tabData?.inflows) return null;
+    const { inflows, outflows } = tabData;
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <div style={{ background: '#dcfce7', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#15803d' }}>TOTAL MONEY IN</div>
+          {inflows.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
+          <LineItem label="TOTAL INFLOW" value={tabSummary.total_inflow} bold color={INFLOW_COLOR} borderTop />
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <div style={{ background: '#fee2e2', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#dc2626' }}>TOTAL MONEY OUT</div>
+          {outflows.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
+          <LineItem label="TOTAL OUTFLOW" value={tabSummary.total_outflow} bold color={OUTFLOW_COLOR} borderTop />
+        </div>
+      </div>
+    );
+  };
+
+  const typeLabel = t => ({ CAPITAL_INTRO: 'Capital Intro', DRAWINGS: 'Drawings', PERSONAL_RECEIPT: 'Personal Receipt', PERSONAL_PAYMENT: 'Personal Payment' })[t] || t;
+
+  const COLUMNS_BY_TAB = {
+    1:  [{ key: 'category', label: 'Category' }, { key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'amount', align: 'right' }],
+    2:  [{ key: 'category', label: 'Category' }, { key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'amount', align: 'right' }],
+    3:  [{ key: 'label', label: 'Item' }, { key: 'type', label: 'Type' }, { key: 'value', label: 'Amount', type: 'amount', align: 'right' }],
+    5:  [{ key: 'month', label: 'Month' }, { key: 'total_income', label: 'Income', type: 'amount', align: 'right' }, { key: 'total_expense', label: 'Expense', type: 'amount', align: 'right' }, { key: 'capital_intro', label: 'Capital Intro', type: 'amount', align: 'right' }, { key: 'drawings', label: 'Drawings', type: 'amount', align: 'right' }],
+    8:  [{ key: 'date', label: 'Date' }, { key: 'type', label: 'Type', render: r => typeLabel(r.type) }, { key: 'reference_type', label: 'Reference' }, { key: 'amount', label: 'Amount', type: 'amount', align: 'right' }, { key: 'payment_mode', label: 'Mode' }, { key: 'notes', label: 'Notes' }],
+    9:  [{ key: 'ratio', label: 'Financial Ratio' }, { key: 'value', label: 'Value', align: 'right' }, { key: 'description', label: 'Description' }],
+    10: [{ key: 'category', label: 'Category' }, { key: 'budget', label: 'Budget', type: 'amount', align: 'right' }, { key: 'actual', label: 'Actual', type: 'amount', align: 'right' }, { key: 'variance', label: 'Variance', type: 'amount', align: 'right' }, { key: 'variance_pct', label: 'Variance %', align: 'right' }],
+  };
+
+  const getTableData = () => {
+    if (activeTab === 8)  return Array.isArray(tabData) ? tabData : [];
+    if (activeTab === 2)  return Array.isArray(tabData) ? tabData : [];
+    if (activeTab === 1)  return Array.isArray(tabData) ? tabData : [];
+    if ([3, 5, 9, 10].includes(activeTab)) return Array.isArray(tabData) ? tabData : [];
+    return [];
+  };
+
+  const showTable = [1, 2, 3, 5, 8, 9, 10].includes(activeTab);
+  const showFilter = ![5, 10].includes(activeTab);
 
   return (
     <ReportShell
       title="Finance Reports"
-      subtitle="Cash flow, profitability, financial ratios and budget tracking"
+      subtitle="P&L, Cash Flow, Balance Sheet, Proprietor Account and more"
       breadcrumb={[{ label: 'Home', path: '/dashboard' }, { label: 'Reports', path: '/reports' }, { label: 'Finance' }]}
     >
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', borderBottom: '1px solid #e5e7eb' }}>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
         {TABS.map((t, i) => (
           <button key={i} onClick={() => setActiveTab(i)}
-            style={{ padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: activeTab === i ? 600 : 400, color: activeTab === i ? '#3b82f6' : '#6b7280', borderBottom: activeTab === i ? '2px solid #3b82f6' : '2px solid transparent', transition: 'all 0.2s' }}>
+            style={{ padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: activeTab === i ? 600 : 400, color: activeTab === i ? '#3b82f6' : '#6b7280', borderBottom: activeTab === i ? '2px solid #3b82f6' : '2px solid transparent', whiteSpace: 'nowrap' }}>
             {t}
           </button>
         ))}
       </div>
 
-      {[0, 1, 2].includes(activeTab) && (
+      {/* Filters */}
+      {showFilter && (
         <FilterBar
           filters={[{ key: 'from', label: 'From', type: 'date' }, { key: 'to', label: 'To', type: 'date' }]}
           values={filters} onChange={setFilters}
@@ -175,13 +422,49 @@ const FinanceReports = () => {
         />
       )}
 
+      {/* Year picker for trend */}
+      {activeTab === 5 && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+          <label style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>Year:</label>
+          <input type="number" value={year} onChange={e => setYear(e.target.value)}
+            style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 10px', fontSize: '13px', width: 90 }} />
+          <button onClick={() => fetchTab(5, filters)} style={{ background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: '13px' }}>Load</button>
+        </div>
+      )}
+
+      {/* Proprietor txn type filter */}
+      {activeTab === 8 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {['all', 'capital_intro', 'drawing', 'personal_receipt', 'personal_payment'].map(t => (
+            <button key={t} onClick={() => { setPropTxnType(t); fetchTab(8, { ...filters, type: t }); }}
+              style={{ padding: '6px 14px', borderRadius: 20, border: '1px solid', cursor: 'pointer', fontSize: '12px', fontWeight: propTxnType === t ? 700 : 400, background: propTxnType === t ? '#7c3aed' : '#f5f3ff', color: propTxnType === t ? '#fff' : '#7c3aed', borderColor: '#7c3aed' }}>
+              {t === 'all' ? 'All' : t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+      )}
+
       {renderKPIs()}
-      <div style={{ marginBottom: '20px' }}>{renderChart()}</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#374151', margin: 0 }}>Detail View</h3>
-        <ExportButtons data={tabData} filename={`finance-${TABS[activeTab].toLowerCase().replace(/\s+/g, '-')}`} />
-      </div>
-      <ReportTable columns={COLUMNS[activeTab] || []} data={tabData} loading={loading} />
+
+      {/* Special structured views */}
+      {activeTab === 0 && renderPL()}
+      {activeTab === 4 && renderBalanceSheet()}
+      {activeTab === 7 && renderProprietorCapital()}
+      {activeTab === 6 && renderTruePerformance()}
+
+      {/* Chart */}
+      <div style={{ marginBottom: 20 }}>{renderChart()}</div>
+
+      {/* Table */}
+      {showTable && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#374151', margin: 0 }}>Detail View</h3>
+            <ExportButtons data={getTableData()} filename={`finance-${TABS[activeTab].toLowerCase().replace(/[\s/&]+/g, '-')}`} />
+          </div>
+          <ReportTable columns={COLUMNS_BY_TAB[activeTab] || []} data={getTableData()} loading={loading} />
+        </>
+      )}
     </ReportShell>
   );
 };

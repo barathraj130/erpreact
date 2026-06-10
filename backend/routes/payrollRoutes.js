@@ -56,6 +56,7 @@ router.post("/process-salary", authMiddleware, async (req, res) => {
             await recordProprietorCapital(client, {
                 companyId, branchId, userId: req.user?.id, amount: finalSalary,
                 description: `Salary – ${emp.rows[0].name} (${month})`,
+                referenceType: 'SALARY',
             });
         } else {
             if (mode === 'Cash' || mode === 'Bank') {
@@ -124,6 +125,7 @@ router.post("/give-advance", authMiddleware, async (req, res) => {
             await recordProprietorCapital(client, {
                 companyId, branchId, userId: req.user?.id, amount,
                 description: `Salary Advance – ${emp.rows[0].name}`,
+                referenceType: 'SALARY_ADVANCE',
             });
         } else {
             if (mode === 'Cash' || mode === 'Bank') {

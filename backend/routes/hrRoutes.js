@@ -81,6 +81,7 @@ router.post("/advance", authMiddleware, async (req, res) => {
                 await recordProprietorCapital(client, {
                     companyId, branchId, userId: req.user?.id, amount: advanceAmt,
                     description: `Salary Advance – employee #${employee_id}`,
+                    referenceType: 'SALARY_ADVANCE',
                 });
             } else {
                 if (pMethod === 'CASH' || pMethod === 'BANK' || pMethod === 'UPI') {
@@ -849,6 +850,7 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                 await recordProprietorCapital(client, {
                     companyId, branchId, userId: req.user?.id, amount: wage,
                     description: `Daily Wage – ${emp.name} (${date})`,
+                    referenceType: 'DAILY_WAGE',
                 });
             } else {
                 // Balance check only for cash/bank
@@ -1145,6 +1147,7 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
                     await recordProprietorCapital(client, {
                         companyId, branchId, userId: req.user?.id, amount: netSalary,
                         description: `Weekly Salary – ${emp.name} (${weStr})`,
+                        referenceType: 'WEEKLY_SALARY',
                     });
                 } else if (pMode === 'CASH') {
                     await client.query(

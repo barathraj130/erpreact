@@ -623,6 +623,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         await recordProprietorCapital(client, {
                             companyId, branchId: safeBranchId, userId: req.user.id, amount: paid,
                             description: `Purchase Bill #${bill_number}`,
+                            referenceType: 'PURCHASE_BILL',
                         });
                     } else if (pMode === 'BANK' || pMode === 'UPI' || pMode === 'CHEQUE') {
                         await client.query(
@@ -739,6 +740,7 @@ async function recordPaymentSplit(client, { companyId, branchId, billId, billNum
         await recordProprietorCapital(client, {
             companyId, branchId, userId, amount,
             description: `Purchase Bill #${billNumber}`,
+            referenceType: 'PURCHASE_BILL',
         });
     } else if (pMode === "CASH") {
         // Check available cash before deducting to prevent negative balance

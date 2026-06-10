@@ -19,7 +19,8 @@ router.get('/kpis', authMiddleware, async (req, res) => {
     const [
       salesData, purchaseData, receivablesData,
       customerCount, productCount, attendanceData,
-      salaryData, prevSalesData
+      salaryData, prevSalesData,
+      propData, propAllTime,
     ] = await Promise.all([
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total, COUNT(id) AS count FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
@@ -29,13 +30,25 @@ router.get('/kpis', authMiddleware, async (req, res) => {
       db.pgGet(`SELECT COUNT(CASE WHEN UPPER(status) IN ('PRESENT','OD') THEN 1 END) AS present, COUNT(id) AS total FROM attendance_logs WHERE company_id=$1 AND date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
       db.pgGet(`SELECT COALESCE(SUM(sp.amount),0) AS total FROM salary_payments sp JOIN salaries s ON s.id=sp.salary_id WHERE s.company_id=$1 AND sp.date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN (($2::date) - INTERVAL '1 month') AND (($3::date) - INTERVAL '1 month')`, [companyId, startDate, endDate]),
+      // Proprietor period data
+      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN transaction_type='CAPITAL_INTRO' THEN amount ELSE 0 END),0) AS capital_intro, COALESCE(SUM(CASE WHEN transaction_type='DRAWINGS' THEN amount ELSE 0 END),0) AS drawings, COALESCE(SUM(CASE WHEN transaction_type='PERSONAL_RECEIPT' THEN amount ELSE 0 END),0) AS personal_receipts FROM proprietor_transactions WHERE company_id=$1 AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ capital_intro: 0, drawings: 0, personal_receipts: 0 })),
+      // Proprietor all-time capital invested
+      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN transaction_type='CAPITAL_INTRO' THEN amount ELSE 0 END),0) AS capital_invested, COALESCE(SUM(CASE WHEN transaction_type='DRAWINGS' THEN amount ELSE 0 END),0) AS drawings_ytd FROM proprietor_transactions WHERE company_id=$1`, [companyId]).catch(() => ({ capital_invested: 0, drawings_ytd: 0 })),
     ]);
 
-    const currentRevenue = parseFloat(salesData?.total || 0);
-    const prevRevenue = parseFloat(prevSalesData?.total || 0);
-    const revenueGrowth = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue * 100).toFixed(1) : null;
-    const totalPurchases = parseFloat(purchaseData?.total || 0);
-    const grossProfit = currentRevenue - totalPurchases;
+    const currentRevenue  = parseFloat(salesData?.total || 0);
+    const prevRevenue     = parseFloat(prevSalesData?.total || 0);
+    const revenueGrowth   = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue * 100).toFixed(1) : null;
+    const totalPurchases  = parseFloat(purchaseData?.total || 0);
+    const grossProfit     = currentRevenue - totalPurchases;
+    const propCapitalPeriod = parseFloat(propData?.capital_intro || 0);
+    const propDrawingsPeriod = parseFloat(propData?.drawings || 0);
+    const propPersonalRec   = parseFloat(propData?.personal_receipts || 0);
+    const trueRevenue       = currentRevenue + propPersonalRec;
+    const capitalInvested   = parseFloat(propAllTime?.capital_invested || 0);
+    const drawingsYTD       = parseFloat(propAllTime?.drawings_ytd || 0);
+    const netEquity         = capitalInvested - drawingsYTD;
+    const fundedByPropPct   = trueRevenue > 0 ? ((propCapitalPeriod / trueRevenue) * 100).toFixed(1) : 0;
 
     res.json({
       data: {
@@ -51,6 +64,14 @@ router.get('/kpis', authMiddleware, async (req, res) => {
           value: attendanceData?.total > 0 ? ((attendanceData.present / attendanceData.total) * 100).toFixed(1) : 0,
           label: 'Attendance Rate',
         },
+        // Proprietor metrics
+        true_revenue: { value: trueRevenue, label: 'True Total Revenue' },
+        proprietor_capital_period: { value: propCapitalPeriod, label: 'Capital Introduced (Period)' },
+        proprietor_drawings_period: { value: propDrawingsPeriod, label: 'Drawings (Period)' },
+        proprietor_capital_invested: { value: capitalInvested, label: 'Capital Invested (All Time)' },
+        proprietor_drawings_ytd: { value: drawingsYTD, label: 'Drawings (All Time)' },
+        proprietor_net_equity: { value: netEquity, label: 'Net Proprietor Equity' },
+        business_funded_by_proprietor_pct: { value: fundedByPropPct, label: '% Funded by Proprietor' },
       },
       summary: { from: startDate, to: endDate },
     });
