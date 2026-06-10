@@ -4,6 +4,7 @@ import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
+import { recordProprietorCapital } from "../utils/proprietorLedger.js";
 import { sendWelcomeWhatsApp } from "../utils/sendWelcomeWhatsApp.js";
 import { sendWhatsApp, notifyOwner } from "../utils/whatsapp.js";
 
@@ -75,31 +76,39 @@ router.post("/advance", authMiddleware, async (req, res) => {
         // 2. Record cash/bank ledger outflow — SKIPPED for opening balances
         //    (the cash was given before the system was set up; no ledger impact)
         if (!isOpening) {
-            if (pMethod === 'CASH' || pMethod === 'BANK' || pMethod === 'UPI') {
-                const chk = await checkSufficientBalance(client, companyId, pMethod.toLowerCase(), advanceAmt);
-                if (!chk.sufficient) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({ error: chk.message });
-                }
-            }
-            if (pMethod === 'CASH') {
-                await client.query(
-                    `INSERT INTO cash_ledger
-                     (company_id, branch_id, source, amount, direction, date, reference_id)
-                     VALUES ($1,$2,'salary_advance',$3,'out',$4,$5)`,
-                    [companyId, branchId, advanceAmt, advanceDate, advanceId]
-                );
+            if (pMethod === 'PROPRIETOR') {
+                // Proprietor personal account — no business ledger impact
+                await recordProprietorCapital(client, {
+                    companyId, branchId, userId: req.user?.id, amount: advanceAmt,
+                    description: `Salary Advance – employee #${employee_id}`,
+                });
             } else {
-                // BANK or UPI
-                await client.query(
-                    `INSERT INTO bank_ledger
-                     (company_id, branch_id, source, amount, direction,
-                      bank_name, transaction_id, date, reference_id)
-                     VALUES ($1,$2,'salary_advance',$3,'out',$4,$5,$6,$7)`,
-                    [companyId, branchId, advanceAmt,
-                     bank_name || pMethod, reference_no || `ADV-${advanceId}`,
-                     advanceDate, advanceId]
-                );
+                if (pMethod === 'CASH' || pMethod === 'BANK' || pMethod === 'UPI') {
+                    const chk = await checkSufficientBalance(client, companyId, pMethod.toLowerCase(), advanceAmt);
+                    if (!chk.sufficient) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ error: chk.message });
+                    }
+                }
+                if (pMethod === 'CASH') {
+                    await client.query(
+                        `INSERT INTO cash_ledger
+                         (company_id, branch_id, source, amount, direction, date, reference_id)
+                         VALUES ($1,$2,'salary_advance',$3,'out',$4,$5)`,
+                        [companyId, branchId, advanceAmt, advanceDate, advanceId]
+                    );
+                } else {
+                    // BANK or UPI
+                    await client.query(
+                        `INSERT INTO bank_ledger
+                         (company_id, branch_id, source, amount, direction,
+                          bank_name, transaction_id, date, reference_id)
+                         VALUES ($1,$2,'salary_advance',$3,'out',$4,$5,$6,$7)`,
+                        [companyId, branchId, advanceAmt,
+                         bank_name || pMethod, reference_no || `ADV-${advanceId}`,
+                         advanceDate, advanceId]
+                    );
+                }
             }
         }
 
@@ -826,15 +835,6 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
             if (wage <= 0) continue; // skip absent / zero-wage
 
-            // Balance check
-            const { checkSufficientBalance } = await import('../utils/balanceCheck.js');
-            const bal = await checkSufficientBalance(client, companyId, pMode, wage);
-            if (!bal.sufficient) {
-                await client.query('ROLLBACK');
-                client.release(); client = null;
-                return res.status(422).json({ error: `Insufficient ${pMode} balance for ${emp.name}. Available: ₹${bal.currentBalance}` });
-            }
-
             // Record payment
             await client.query(`
                 INSERT INTO daily_salary_payments (company_id, employee_id, payment_date, daily_wage, gross_wage, deduction, extra_pay, payment_mode, status)
@@ -843,17 +843,33 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                   SET gross_wage=$5, deduction=$6, extra_pay=$7, daily_wage=$4, payment_mode=$8, status='paid', created_at=NOW()
             `, [companyId, p.employee_id, date, wage, grossWage, deduction, extraPay, pMode.toLowerCase()]);
 
-            // Ledger deduction (net wage out of cash/bank)
-            if (pMode === 'CASH') {
-                await client.query(
-                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                     VALUES ($1,$2,'daily_wage',$3,'out',$4)`,
-                    [companyId, branchId, wage, date]);
+            // Ledger deduction (net wage out of cash/bank/proprietor)
+            if (pMode === 'PROPRIETOR') {
+                const { recordProprietorCapital } = await import('../utils/proprietorLedger.js');
+                await recordProprietorCapital(client, {
+                    companyId, branchId, userId: req.user?.id, amount: wage,
+                    description: `Daily Wage – ${emp.name} (${date})`,
+                });
             } else {
-                await client.query(
-                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                     VALUES ($1,$2,'daily_wage',$3,'out','Main Account',$4)`,
-                    [companyId, branchId, wage, date]);
+                // Balance check only for cash/bank
+                const { checkSufficientBalance } = await import('../utils/balanceCheck.js');
+                const bal = await checkSufficientBalance(client, companyId, pMode, wage);
+                if (!bal.sufficient) {
+                    await client.query('ROLLBACK');
+                    client.release(); client = null;
+                    return res.status(422).json({ error: `Insufficient ${pMode} balance for ${emp.name}. Available: ₹${bal.currentBalance}` });
+                }
+                if (pMode === 'CASH') {
+                    await client.query(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                         VALUES ($1,$2,'daily_wage',$3,'out',$4)`,
+                        [companyId, branchId, wage, date]);
+                } else {
+                    await client.query(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                         VALUES ($1,$2,'daily_wage',$3,'out','Main Account',$4)`,
+                        [companyId, branchId, wage, date]);
+                }
             }
 
             // If deduction > 0, record it as advance repayment in the employee ledger
@@ -1095,8 +1111,8 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
             const advDeducted = p.deduct_advance ? Math.min(advanceBalance, grossSalary) : 0;
             const netSalary   = Math.max(0, grossSalary - advDeducted);
 
-            // Balance check
-            if (netSalary > 0) {
+            // Balance check (skip for proprietor)
+            if (netSalary > 0 && pMode !== 'PROPRIETOR') {
                 const balCheck = await checkSufficientBalance(client, companyId, pMode, netSalary);
                 if (!balCheck.sufficient) {
                     await client.query('ROLLBACK');
@@ -1122,9 +1138,15 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
 
             const wkId = wkRow.rows[0].id;
 
-            // Ledger: cash or bank out
+            // Ledger: cash, bank, or proprietor out
             if (netSalary > 0) {
-                if (pMode === 'CASH') {
+                if (pMode === 'PROPRIETOR') {
+                    const { recordProprietorCapital } = await import('../utils/proprietorLedger.js');
+                    await recordProprietorCapital(client, {
+                        companyId, branchId, userId: req.user?.id, amount: netSalary,
+                        description: `Weekly Salary – ${emp.name} (${weStr})`,
+                    });
+                } else if (pMode === 'CASH') {
                     await client.query(
                         `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
                          VALUES ($1,$2,'weekly_salary',$3,'out',CURRENT_DATE,$4)`,

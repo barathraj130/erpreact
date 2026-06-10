@@ -19,7 +19,7 @@ interface DailyRow {
   status: "present" | "absent" | "half_day";
   working_hours: number;
   daily_wage: number;
-  payment_mode: "cash" | "bank";
+  payment_mode: "cash" | "bank" | "proprietor";
   already_paid?: boolean;
 }
 
@@ -30,7 +30,7 @@ interface PayItem {
   deduction: number;
   extra_pay: number;
   net_wage: number;
-  payment_mode: "cash" | "bank";
+  payment_mode: "cash" | "bank" | "proprietor";
 }
 
 const fmt = (n: number) =>
@@ -112,7 +112,8 @@ const DailySalary: React.FC = () => {
   const toggleMode = (idx: number) => {
     setRows(prev => {
       const copy = [...prev];
-      copy[idx] = { ...copy[idx], payment_mode: copy[idx].payment_mode === "cash" ? "bank" : "cash" };
+      const cycle: Record<string, "cash" | "bank" | "proprietor"> = { cash: "bank", bank: "proprietor", proprietor: "cash" };
+      copy[idx] = { ...copy[idx], payment_mode: cycle[copy[idx].payment_mode] ?? "cash" };
       return copy;
     });
   };
@@ -154,7 +155,8 @@ const DailySalary: React.FC = () => {
   const togglePayMode = (idx: number) => {
     setPayItems(prev => {
       const copy = [...prev];
-      copy[idx]  = { ...copy[idx], payment_mode: copy[idx].payment_mode === "cash" ? "bank" : "cash" };
+      const cycle: Record<string, "cash" | "bank" | "proprietor"> = { cash: "bank", bank: "proprietor", proprietor: "cash" };
+      copy[idx]  = { ...copy[idx], payment_mode: cycle[copy[idx].payment_mode] ?? "cash" };
       return copy;
     });
   };
@@ -307,13 +309,13 @@ const DailySalary: React.FC = () => {
                         </td>
                         <td style={{ padding: "13px 14px" }}>
                           {isPaid ? (
-                            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: row.payment_mode === "bank" ? "#2563eb" : "#15803d", background: row.payment_mode === "bank" ? "#eff6ff" : "#f0fdf4", padding: "4px 10px", borderRadius: "8px" }}>
-                              {row.payment_mode === "bank" ? <><FaUniversity style={{ marginRight: 4 }} />Bank</> : <><FaWallet style={{ marginRight: 4 }} />Cash</>}
+                            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: row.payment_mode === "bank" ? "#2563eb" : row.payment_mode === "proprietor" ? "#7c3aed" : "#15803d", background: row.payment_mode === "bank" ? "#eff6ff" : row.payment_mode === "proprietor" ? "#f5f3ff" : "#f0fdf4", padding: "4px 10px", borderRadius: "8px" }}>
+                              {row.payment_mode === "bank" ? <><FaUniversity style={{ marginRight: 4 }} />Bank</> : row.payment_mode === "proprietor" ? <>👤 Proprietor</> : <><FaWallet style={{ marginRight: 4 }} />Cash</>}
                             </span>
                           ) : (row.status === "present" || row.status === "half_day") && row.daily_wage > 0 ? (
-                            <button onClick={() => toggleMode(idx)} style={{ display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem", background: row.payment_mode === "bank" ? "#eff6ff" : "#f0fdf4", color: row.payment_mode === "bank" ? "#2563eb" : "#15803d" }}>
-                              {row.payment_mode === "bank" ? <FaUniversity /> : <FaWallet />}
-                              {row.payment_mode === "bank" ? "Bank" : "Cash"}
+                            <button onClick={() => toggleMode(idx)} style={{ display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem", background: row.payment_mode === "bank" ? "#eff6ff" : row.payment_mode === "proprietor" ? "#f5f3ff" : "#f0fdf4", color: row.payment_mode === "bank" ? "#2563eb" : row.payment_mode === "proprietor" ? "#7c3aed" : "#15803d" }}>
+                              {row.payment_mode === "bank" ? <FaUniversity /> : row.payment_mode === "proprietor" ? <>👤</> : <FaWallet />}
+                              {row.payment_mode === "bank" ? "Bank" : row.payment_mode === "proprietor" ? "Proprietor" : "Cash"}
                             </button>
                           ) : <span style={{ color: "#cbd5e1", fontSize: "0.8rem" }}>—</span>}
                         </td>
@@ -398,10 +400,10 @@ const DailySalary: React.FC = () => {
                       <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "0.95rem" }}>{p.employee_name}</div>
                       <div style={{ fontSize: "0.78rem", color: "#64748b" }}>Gross Wage: <strong style={{ color: "#10b981" }}>{fmt(p.gross_wage)}</strong></div>
                     </div>
-                    {/* Cash / Bank toggle */}
-                    <button onClick={() => togglePayMode(idx)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", background: p.payment_mode === "bank" ? "#eff6ff" : "#f0fdf4", color: p.payment_mode === "bank" ? "#2563eb" : "#15803d" }}>
-                      {p.payment_mode === "bank" ? <FaUniversity /> : <FaWallet />}
-                      {p.payment_mode === "bank" ? "Bank" : "Cash"}
+                    {/* Cash / Bank / Proprietor toggle */}
+                    <button onClick={() => togglePayMode(idx)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", background: p.payment_mode === "bank" ? "#eff6ff" : p.payment_mode === "proprietor" ? "#f5f3ff" : "#f0fdf4", color: p.payment_mode === "bank" ? "#2563eb" : p.payment_mode === "proprietor" ? "#7c3aed" : "#15803d" }}>
+                      {p.payment_mode === "bank" ? <FaUniversity /> : p.payment_mode === "proprietor" ? <>👤</> : <FaWallet />}
+                      {p.payment_mode === "bank" ? "Bank" : p.payment_mode === "proprietor" ? "Proprietor" : "Cash"}
                     </button>
                   </div>
 

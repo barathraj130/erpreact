@@ -64,12 +64,15 @@ const EMPTY_ITEM: ReturnItem = { product_id: null, description: "", qty: 1, rate
 const SalesReturns: React.FC = () => {
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [customers, setCustomers] = useState<{ id: number; username: string; nickname?: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
   // Form state
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split("T")[0]);
   const [refundType, setRefundType] = useState("CREDIT_NOTE");
   const [notes, setNotes] = useState("");
@@ -79,12 +82,14 @@ const SalesReturns: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [retRes, invRes] = await Promise.all([
+      const [retRes, invRes, custRes] = await Promise.all([
         apiFetch("/sales-returns").then(r => r.json()),
         apiFetch("/sales-returns/invoices-for-return").then(r => r.json()).catch(() => []),
+        apiFetch("/users").then(r => r.json()).catch(() => []),
       ]);
       setReturns(Array.isArray(retRes) ? retRes : []);
       setInvoices(Array.isArray(invRes) ? invRes : []);
+      setCustomers(Array.isArray(custRes) ? custRes : []);
     } catch {
       setReturns([]);
     } finally {

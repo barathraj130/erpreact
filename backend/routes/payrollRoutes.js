@@ -3,6 +3,7 @@ import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
+import { recordProprietorCapital } from "../utils/proprietorLedger.js";
 
 const router = express.Router();
 
@@ -50,23 +51,31 @@ router.post("/process-salary", authMiddleware, async (req, res) => {
         `, [companyId, finalSalary, date || new Date(), desc]);
 
         // 4. Financial Impact: Cash/Bank Ledger — with balance guard
-        if (mode === 'Cash' || mode === 'Bank') {
-            const chk = await checkSufficientBalance(client, companyId, mode.toLowerCase(), finalSalary);
-            if (!chk.sufficient) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ error: chk.message });
+        const modeUpper = (mode || '').toUpperCase();
+        if (modeUpper === 'PROPRIETOR' || modeUpper === 'PROPRIETOR PERSONAL ACCOUNT') {
+            await recordProprietorCapital(client, {
+                companyId, branchId, userId: req.user?.id, amount: finalSalary,
+                description: `Salary – ${emp.rows[0].name} (${month})`,
+            });
+        } else {
+            if (mode === 'Cash' || mode === 'Bank') {
+                const chk = await checkSufficientBalance(client, companyId, mode.toLowerCase(), finalSalary);
+                if (!chk.sufficient) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: chk.message });
+                }
             }
-        }
-        if (mode === 'Cash') {
-            await client.query(`
-                INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                VALUES ($1, $2, 'SALARY_PAYMENT', $3, 'out', $4)
-            `, [companyId, branchId, finalSalary, date || new Date()]);
-        } else if (mode === 'Bank') {
-            await client.query(`
-                INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                VALUES ($1, $2, 'SALARY_PAYMENT', $3, 'out', $4, $5, $6)
-            `, [companyId, branchId, finalSalary, bank_name, transaction_id, date || new Date()]);
+            if (mode === 'Cash') {
+                await client.query(`
+                    INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                    VALUES ($1, $2, 'SALARY_PAYMENT', $3, 'out', $4)
+                `, [companyId, branchId, finalSalary, date || new Date()]);
+            } else if (mode === 'Bank') {
+                await client.query(`
+                    INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
+                    VALUES ($1, $2, 'SALARY_PAYMENT', $3, 'out', $4, $5, $6)
+                `, [companyId, branchId, finalSalary, bank_name, transaction_id, date || new Date()]);
+            }
         }
 
         await client.query('COMMIT');
@@ -110,23 +119,31 @@ router.post("/give-advance", authMiddleware, async (req, res) => {
         `, [companyId, amount, date || new Date(), desc]);
 
         // 3. Financial Impact: Cash/Bank Ledger — with balance guard
-        if (mode === 'Cash' || mode === 'Bank') {
-            const chk = await checkSufficientBalance(client, companyId, mode.toLowerCase(), amount);
-            if (!chk.sufficient) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ error: chk.message });
+        const modeUpper2 = (mode || '').toUpperCase();
+        if (modeUpper2 === 'PROPRIETOR' || modeUpper2 === 'PROPRIETOR PERSONAL ACCOUNT') {
+            await recordProprietorCapital(client, {
+                companyId, branchId, userId: req.user?.id, amount,
+                description: `Salary Advance – ${emp.rows[0].name}`,
+            });
+        } else {
+            if (mode === 'Cash' || mode === 'Bank') {
+                const chk = await checkSufficientBalance(client, companyId, mode.toLowerCase(), amount);
+                if (!chk.sufficient) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: chk.message });
+                }
             }
-        }
-        if (mode === 'Cash') {
-            await client.query(`
-                INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                VALUES ($1, $2, 'ADVANCE_PAYMENT', $3, 'out', $4)
-            `, [companyId, branchId, amount, date || new Date()]);
-        } else if (mode === 'Bank') {
-            await client.query(`
-                INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
-                VALUES ($1, $2, 'ADVANCE_PAYMENT', $3, 'out', $4, $5, $6)
-            `, [companyId, branchId, amount, bank_name, transaction_id, date || new Date()]);
+            if (mode === 'Cash') {
+                await client.query(`
+                    INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                    VALUES ($1, $2, 'ADVANCE_PAYMENT', $3, 'out', $4)
+                `, [companyId, branchId, amount, date || new Date()]);
+            } else if (mode === 'Bank') {
+                await client.query(`
+                    INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
+                    VALUES ($1, $2, 'ADVANCE_PAYMENT', $3, 'out', $4, $5, $6)
+                `, [companyId, branchId, amount, bank_name, transaction_id, date || new Date()]);
+            }
         }
 
         await client.query('COMMIT');

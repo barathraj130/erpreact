@@ -24,7 +24,7 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   const [type, setType]               = useState("ONE_TIME");
   const [installment, setInstallment] = useState("");
   const [reason, setReason]           = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK" | "UPI">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK" | "UPI" | "PROPRIETOR">("CASH");
   const [bankName, setBankName]       = useState("");
   const [refNo, setRefNo]             = useState("");
   const [loading, setLoading]         = useState(false);
@@ -37,6 +37,7 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   const [balLoading, setBalLoading] = useState(true);
 
   const isBank = paymentMethod === "BANK" || paymentMethod === "UPI";
+  const isProprietor = paymentMethod === "PROPRIETOR";
 
   // Fetch live balances on mount
   useEffect(() => {
@@ -57,9 +58,9 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   // Which balance applies to the selected payment method
   const activeBalance = paymentMethod === "CASH" ? cashBal : bankBal;
   const amountNum = Number(amount) || 0;
-  // No insufficient-balance block for opening advances — cash was already given
+  // No insufficient-balance block for opening advances or proprietor payments
   const insufficient =
-    !isOpening && activeBalance !== null && amountNum > 0 && amountNum > activeBalance;
+    !isOpening && !isProprietor && activeBalance !== null && amountNum > 0 && amountNum > activeBalance;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -286,7 +287,17 @@ const AdvanceSalaryModal: React.FC<Props> = ({
                   </div>
                 )}
               </button>
+              <button type="button" style={pmBtn(paymentMethod === "PROPRIETOR", "#7c3aed")}
+                onClick={() => { setPaymentMethod("PROPRIETOR"); setErrorMsg(""); }}>
+                👤 Proprietor
+                <div style={{ fontSize: "0.72rem", marginTop: "2px", opacity: 0.85 }}>Personal A/C</div>
+              </button>
             </div>
+            {isProprietor && (
+              <div style={{ marginTop: "8px", background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: "6px", padding: "8px 12px", fontSize: "0.8rem", color: "#6d28d9" }}>
+                This advance will be recorded as Capital Introduction in Proprietor Account. No cash or bank balance affected.
+              </div>
+            )}
           </div>}
 
           {/* Bank/UPI details */}

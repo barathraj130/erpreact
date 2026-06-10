@@ -30,7 +30,7 @@ interface WeeklyEmployee {
   advance_balance: number;
   deduct_advance: boolean;
   net_salary: number;
-  payment_mode: "cash" | "bank";
+  payment_mode: "cash" | "bank" | "proprietor";
 }
 
 interface HistoryRow {
@@ -133,10 +133,8 @@ const WeeklySalary: React.FC = () => {
   const toggleMode = (idx: number) => {
     setEmployees(prev => {
       const copy = [...prev];
-      copy[idx] = {
-        ...copy[idx],
-        payment_mode: copy[idx].payment_mode === "cash" ? "bank" : "cash",
-      };
+      const cycle: Record<string, "cash" | "bank" | "proprietor"> = { cash: "bank", bank: "proprietor", proprietor: "cash" };
+      copy[idx] = { ...copy[idx], payment_mode: cycle[copy[idx].payment_mode] ?? "cash" };
       return copy;
     });
   };
@@ -331,12 +329,12 @@ const WeeklySalary: React.FC = () => {
                               style={{
                                 display: "flex", alignItems: "center", gap: "6px",
                                 padding: "6px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem",
-                                background: emp.payment_mode === "bank" ? "#eff6ff" : "#f0fdf4",
-                                color: emp.payment_mode === "bank" ? "#2563eb" : "#15803d",
+                                background: emp.payment_mode === "bank" ? "#eff6ff" : emp.payment_mode === "proprietor" ? "#f5f3ff" : "#f0fdf4",
+                                color: emp.payment_mode === "bank" ? "#2563eb" : emp.payment_mode === "proprietor" ? "#7c3aed" : "#15803d",
                               }}
                             >
-                              {emp.payment_mode === "bank" ? <FaUniversity /> : <FaWallet />}
-                              {emp.payment_mode === "bank" ? "Bank" : "Cash"}
+                              {emp.payment_mode === "bank" ? <FaUniversity /> : emp.payment_mode === "proprietor" ? <>👤</> : <FaWallet />}
+                              {emp.payment_mode === "bank" ? "Bank" : emp.payment_mode === "proprietor" ? "Proprietor" : "Cash"}
                             </button>
                           </td>
                         </tr>

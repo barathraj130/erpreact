@@ -7,6 +7,7 @@ import fs from "fs";
 import * as brokerService from "../services/brokerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
+import { recordProprietorCapital } from "../utils/proprietorLedger.js";
 
 const router = express.Router();
 
@@ -618,7 +619,11 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 } else {
                     const pMode = (payment_mode || 'CASH').toUpperCase();
                     if (pMode === 'PROPRIETOR') {
-                        // Proprietor personal account — no impact on business cash/bank
+                        // Proprietor personal account — no business ledger impact
+                        await recordProprietorCapital(client, {
+                            companyId, branchId: safeBranchId, userId: req.user.id, amount: paid,
+                            description: `Purchase Bill #${bill_number}`,
+                        });
                     } else if (pMode === 'BANK' || pMode === 'UPI' || pMode === 'CHEQUE') {
                         await client.query(
                             `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
@@ -730,7 +735,11 @@ async function recordPaymentSplit(client, { companyId, branchId, billId, billNum
     const pMode = (mode || "CASH").toUpperCase();
 
     if (pMode === "PROPRIETOR") {
-        // Proprietor pays from personal account — does NOT touch business cash/bank ledger
+        // Proprietor pays from personal account — no business ledger impact
+        await recordProprietorCapital(client, {
+            companyId, branchId, userId, amount,
+            description: `Purchase Bill #${billNumber}`,
+        });
     } else if (pMode === "CASH") {
         // Check available cash before deducting to prevent negative balance
         const cashRow = await client.query(
