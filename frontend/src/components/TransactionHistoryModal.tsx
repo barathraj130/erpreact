@@ -9,6 +9,7 @@ import {
     FaReceipt,
     FaTimesCircle,
     FaTimes,
+    FaTrash,
     FaUndo,
     FaWallet,
 } from "react-icons/fa";
@@ -214,6 +215,18 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
     }
   };
 
+  const handleDeleteEntry = async (entryId: number, entryType: string, description: string) => {
+    if (!window.confirm(`Delete "${description}" entry? This cannot be undone.`)) return;
+    try {
+      const res = await apiFetch(`/users/${entityId}/ledger-entry/${entryId}?type=${encodeURIComponent(entryType)}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) { alert(json.error || 'Failed to delete entry'); return; }
+      await loadData();
+    } catch {
+      alert('Failed to delete entry');
+    }
+  };
+
   const summaryCards = entityType === "customer" ? [
     { label: "Total Billed", value: customerSummary?.total_billed || 0, color: "#0f766e", bg: "#f0fdfa", icon: <FaFileInvoiceDollar size={14} /> },
     { label: "Total Paid", value: customerSummary?.total_paid || 0, color: "#2563eb", bg: "#eff6ff", icon: <FaCheckCircle size={14} /> },
@@ -412,6 +425,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                           <th className="right">Debit</th>
                           <th className="right">Credit</th>
                           <th className="right">Balance</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -443,6 +457,19 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                                 </span>
                               ) : fmt(row.running_balance)}
                             </td>
+                            {entityType === 'customer' && (
+                              <td style={{ textAlign: 'center', width: 32, padding: '4px 8px' }}>
+                                <button
+                                  onClick={() => handleDeleteEntry(row.id, row.type, row.description)}
+                                  title="Delete entry"
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: '4px', borderRadius: '4px', lineHeight: 1 }}
+                                  onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                                  onMouseLeave={e => (e.currentTarget.style.color = '#cbd5e1')}
+                                >
+                                  <FaTrash size={11} />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>

@@ -394,6 +394,46 @@ router.get("/:id/ledger", authMiddleware, checkPermission("Sales", "view_invoice
     }
 });
 
+// DELETE a single customer ledger entry
+// entryId uses the same encoded offsets as the ledger service:
+//   < 1 000 000 000  → invoices row (soft-delete)
+//   1B – 2B          → invoice_payments row  (real id = entryId - 1B)
+//   2B – 3B          → transactions CUSTOMER_PAYMENT row (real id = entryId - 2B)
+//   ≥ 3B             → transactions ROUND_OFF or sales_returns (real id = entryId - 3B; type disambiguates)
+router.delete("/:customerId/ledger-entry/:entryId", authMiddleware, checkPermission("Sales", "delete_invoices"), async (req, res) => {
+    const companyId  = req.user.active_company_id;
+    const customerId = Number(req.params.customerId);
+    const entryId    = Number(req.params.entryId);
+    const entryType  = req.query.type || '';  // 'INVOICE','RETURN','RECEIPT','ROUND_OFF' etc.
+    try {
+        if (entryId >= 3_000_000_000) {
+            const realId = entryId - 3_000_000_000;
+            if (entryType === 'RETURN') {
+                await db.pgRun(`DELETE FROM sales_returns WHERE id = $1 AND company_id = $2`, [realId, companyId]);
+            } else {
+                // ROUND_OFF transaction
+                await db.pgRun(`DELETE FROM transactions WHERE id = $1 AND company_id = $2`, [realId, companyId]);
+            }
+        } else if (entryId >= 2_000_000_000) {
+            const realId = entryId - 2_000_000_000;
+            await db.pgRun(`DELETE FROM transactions WHERE id = $1 AND company_id = $2`, [realId, companyId]);
+        } else if (entryId >= 1_000_000_000) {
+            const realId = entryId - 1_000_000_000;
+            await db.pgRun(`DELETE FROM invoice_payments WHERE id = $1`, [realId]);
+        } else {
+            // Invoice row — soft-delete only
+            await db.pgRun(
+                `UPDATE invoices SET is_deleted = true, deleted_at = NOW() WHERE id = $1 AND company_id = $2`,
+                [entryId, companyId]
+            );
+        }
+        res.json({ success: true, message: 'Entry deleted' });
+    } catch (err) {
+        console.error('[customer ledger delete]', err.message);
+        res.status(500).json({ error: 'Failed to delete entry' });
+    }
+});
+
 // DELETE USER (Customer or Staff)
 // Pass ?force=true to cascade-clear all related data before deleting
 router.delete("/:id", authMiddleware, checkPermission("Sales", "delete_invoices"), async (req, res) => {
