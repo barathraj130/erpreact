@@ -98,6 +98,19 @@ const Ledgers: React.FC = () => {
     fetchData();
   }, [startDate, endDate, activeTab]);
 
+  const handleDeleteEntry = async (entryId: number, tableType: "CASH" | "BANK") => {
+    if (!window.confirm("Delete this ledger entry permanently? This cannot be undone.")) return;
+    const tbl = tableType === "BANK" ? "bank" : "cash";
+    try {
+      const res = await apiFetch(`/ledger/entry/${tbl}/${entryId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete");
+      fetchData();
+    } catch (err: any) {
+      alert("Delete failed: " + err.message);
+    }
+  };
+
   const handleSaveAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -221,6 +234,21 @@ const Ledgers: React.FC = () => {
             </td>
             <td style={{ padding: "14px 16px", fontWeight: 800, textAlign: "right", color: runningBalance < 0 ? "#ef4444" : "#1e293b" }}>
               {fmt(runningBalance)}
+            </td>
+            <td style={{ padding: "8px 10px", textAlign: "center" }}>
+              {entry.source !== 'OPENING_BALANCE' && (
+                <button
+                  onClick={() => handleDeleteEntry(entry.id, type)}
+                  title="Delete this entry"
+                  style={{
+                    padding: "4px 8px", borderRadius: "6px", border: "none",
+                    background: "#fee2e2", color: "#dc2626", cursor: "pointer",
+                    fontSize: "13px", lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </td>
           </tr>
         );
