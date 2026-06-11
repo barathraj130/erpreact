@@ -762,6 +762,41 @@ router.patch('/:id/archive', authMiddleware, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// POST /ledger/set-opening-balance  — upsert the OPENING_BALANCE entry
+// Deletes any existing OPENING_BALANCE row and inserts a new one.
+// All other transactions remain untouched.
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/set-opening-balance', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { ledger_type, amount, date } = req.body;
+    if (!['CASH', 'BANK'].includes(ledger_type)) {
+        return res.status(400).json({ error: 'ledger_type must be CASH or BANK' });
+    }
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt < 0) {
+        return res.status(400).json({ error: 'amount must be a non-negative number' });
+    }
+    const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
+    const balDate = date || '2020-01-01';
+    try {
+        await db.pgRun(
+            `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        if (amt > 0) {
+            await db.pgRun(
+                `INSERT INTO ${tbl} (company_id, source, amount, direction, date) VALUES ($1, 'OPENING_BALANCE', $2, 'in', $3)`,
+                [companyId, amt, balDate]
+            );
+        }
+        res.json({ success: true, message: `Opening balance set to ₹${amt.toFixed(2)}` });
+    } catch (err) {
+        console.error('[set-opening-balance]', err.message);
+        res.status(500).json({ error: 'Failed to set opening balance' });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // DELETE /ledger/entry/:table/:id  — permanently remove a cash or bank ledger row
 // table must be 'cash' or 'bank'
 // Only allows deleting entries that are not OPENING_BALANCE

@@ -59,6 +59,14 @@ const Ledgers: React.FC = () => {
   const [reconcileLoading, setReconcileLoading] = useState(false);
   const [reconcileMsg, setReconcileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // ── Opening Balance ──
+  const [showObModal, setShowObModal] = useState(false);
+  const [obLedgerType, setObLedgerType] = useState<"CASH" | "BANK">("CASH");
+  const [obAmount, setObAmount] = useState("");
+  const [obDate, setObDate] = useState("2024-04-01");
+  const [obLoading, setObLoading] = useState(false);
+  const [obMsg, setObMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
@@ -298,6 +306,33 @@ const Ledgers: React.FC = () => {
     }
   };
 
+  // ── Opening Balance handler ──
+  const handleSetOpeningBalance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(obAmount);
+    if (isNaN(amt) || amt < 0) {
+      setObMsg({ type: "error", text: "Enter a valid amount (≥ 0)" });
+      return;
+    }
+    setObLoading(true);
+    setObMsg(null);
+    try {
+      const res = await apiFetch("/ledger/set-opening-balance", {
+        method: "POST",
+        body: { ledger_type: obLedgerType, amount: amt, date: obDate },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setObMsg({ type: "success", text: data.message });
+      setObAmount("");
+      await fetchData();
+    } catch (err: any) {
+      setObMsg({ type: "error", text: err.message });
+    } finally {
+      setObLoading(false);
+    }
+  };
+
   // ── Source label helper ──
   const sourceLabel = (source: string) => {
     const map: Record<string, string> = {
@@ -346,6 +381,14 @@ const Ledgers: React.FC = () => {
                   style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "12px", background: showReconcile ? "#7c3aed" : "#ede9fe", color: showReconcile ? "white" : "#7c3aed", border: "1.5px solid #c4b5fd", fontWeight: 700, fontSize: "13px", cursor: "pointer", transition: "all 0.2s" }}
                 >
                   <FaBalanceScale size={13} /> Reconcile Cash
+                </button>
+              )}
+              {(activeTab === "CASH" || activeTab === "BANK") && (
+                <button
+                  onClick={() => { setObLedgerType(activeTab as "CASH" | "BANK"); setShowObModal(true); setObMsg(null); }}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "12px", background: "#ecfdf5", color: "#059669", border: "1.5px solid #6ee7b7", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                >
+                  <FaWallet size={13} /> Set Opening Balance
                 </button>
               )}
             </div>
@@ -615,6 +658,67 @@ const Ledgers: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── Opening Balance Modal ── */}
+      {showObModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#fff", borderRadius: "16px", padding: "28px 32px", width: "100%", maxWidth: "420px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#0f172a" }}>Set Opening Balance</h3>
+              <button onClick={() => setShowObModal(false)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#94a3b8" }}>×</button>
+            </div>
+
+            <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "20px", lineHeight: 1.5 }}>
+              Sets the starting balance for the selected ledger. All existing transactions are kept — only the opening balance figure changes.
+            </p>
+
+            <form onSubmit={handleSetOpeningBalance}>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "6px" }}>LEDGER</label>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  {(["CASH", "BANK"] as const).map(t => (
+                    <button key={t} type="button"
+                      onClick={() => setObLedgerType(t)}
+                      style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1.5px solid", fontWeight: 700, fontSize: "13px", cursor: "pointer", background: obLedgerType === t ? "#059669" : "#f0fdf4", color: obLedgerType === t ? "#fff" : "#059669", borderColor: "#6ee7b7" }}>
+                      {t === "CASH" ? "Cash Ledger" : "Bank Ledger"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "6px" }}>AS OF DATE</label>
+                <input type="date" value={obDate} onChange={e => setObDate(e.target.value)} required
+                  style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "14px", boxSizing: "border-box" }} />
+                <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0 0" }}>Use the start date of your business / financial year (e.g. 01/04/2024)</p>
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "6px" }}>OPENING AMOUNT (₹)</label>
+                <input type="number" min="0" step="0.01" placeholder="e.g. 10000" value={obAmount} onChange={e => setObAmount(e.target.value)} required
+                  style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "14px", boxSizing: "border-box" }} />
+              </div>
+
+              {obMsg && (
+                <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "14px", fontSize: "13px", fontWeight: 600, background: obMsg.type === "success" ? "#dcfce7" : "#fee2e2", color: obMsg.type === "success" ? "#15803d" : "#dc2626" }}>
+                  {obMsg.text}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button type="button" onClick={() => setShowObModal(false)}
+                  style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={obLoading}
+                  style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, fontSize: "13px", cursor: "pointer", opacity: obLoading ? 0.7 : 1 }}>
+                  {obLoading ? "Saving…" : "Save Opening Balance"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
