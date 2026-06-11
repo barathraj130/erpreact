@@ -17,7 +17,23 @@ import { useNavigate } from "react-router-dom";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { useInvoices } from "../hooks/useInvoices";
 import { apiFetch } from "../utils/api";
+import MarkNSBGSTPaidModal from "./MarkNSBGSTPaidModal";
 import "./PageShared.css";
+
+function getStatusBadgeClass(status: string | undefined): string {
+  const s = (status || "").toLowerCase();
+  if (s === "paid" || s === "gst_paid") return "type-badge-green";
+  if (s === "gst_pending") return "type-badge-orange";
+  if (s === "partial") return "type-badge-yellow";
+  return "type-badge-red";
+}
+
+function getStatusLabel(status: string | undefined): string {
+  const s = (status || "").toLowerCase();
+  if (s === "gst_pending") return "GST PENDING";
+  if (s === "gst_paid")    return "GST PAID";
+  return (status || "DRAFT").toUpperCase();
+}
 
 const Invoices: React.FC = () => {
   const navigate = useNavigate();
@@ -28,6 +44,7 @@ const Invoices: React.FC = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [sendingPdfId, setSendingPdfId] = useState<number | null>(null);
   const [sentPdfIds, setSentPdfIds] = useState<Set<number>>(new Set());
+  const [nsbModal, setNsbModal] = useState<any | null>(null);
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -187,8 +204,8 @@ const Invoices: React.FC = () => {
                     <div className="tx-desc" style={{ fontSize: "14.5px" }}>{inv.invoice_number}</div>
                     <div className="tx-poster">{inv.customer_name}</div>
                   </div>
-                  <span className={`type-badge ${inv.status?.toLowerCase() === 'paid' ? 'type-badge-green' : 'type-badge-red'}`}>
-                    {inv.status || "DRAFT"}
+                  <span className={`type-badge ${getStatusBadgeClass(inv.status)}`}>
+                    {getStatusLabel(inv.status)}
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-soft)" }}>
@@ -220,6 +237,14 @@ const Invoices: React.FC = () => {
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => navigate(`/invoices/edit/${inv.id}`)}>
                     <FaEdit size={12} /> Edit
                   </button>
+                  {inv.status?.toLowerCase() === 'gst_pending' && (
+                    <button
+                      onClick={() => setNsbModal(inv)}
+                      style={{ flex: 1, padding: "7px 10px", borderRadius: "8px", border: "none", background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                    >
+                      Pay GST
+                    </button>
+                  )}
                   {canDelete && (
                     <button className="page-btn-round-danger" onClick={() => handleDelete(inv.id)} aria-label="Delete invoice">
                       <FaTrash size={12} />
@@ -294,6 +319,20 @@ const Invoices: React.FC = () => {
                         <button className="page-btn-round-sm" onClick={() => navigate(`/invoices/edit/${inv.id}`)} aria-label="Edit invoice">
                           <FaEdit size={13} />
                         </button>
+                        {inv.status?.toLowerCase() === 'gst_pending' && (
+                          <button
+                            onClick={() => setNsbModal(inv)}
+                            title="Mark GST as paid to government"
+                            style={{
+                              padding: "5px 8px", borderRadius: "7px", border: "none",
+                              background: "#f59e0b", color: "#fff",
+                              cursor: "pointer", fontSize: "11px", fontWeight: 700,
+                              display: "flex", alignItems: "center", gap: "4px",
+                            }}
+                          >
+                            GST
+                          </button>
+                        )}
                         {canDelete && (
                           <button className="page-btn-round-danger" onClick={() => handleDelete(inv.id)} aria-label="Delete invoice">
                             <FaTrash size={13} />
@@ -313,6 +352,18 @@ const Invoices: React.FC = () => {
           <div style={{ fontSize: "14px", fontWeight: 500 }}>No invoices generated</div>
           <p style={{ margin: "4px 0 0", color: "var(--text-3)", fontSize: "12px" }}>Start billing your customers to see records here.</p>
         </div>
+      )}
+
+      {nsbModal && (
+        <MarkNSBGSTPaidModal
+          invoice={nsbModal}
+          onClose={() => setNsbModal(null)}
+          onSuccess={(msg: string) => {
+            alert(msg);
+            setNsbModal(null);
+            refresh();
+          }}
+        />
       )}
     </div>
   );

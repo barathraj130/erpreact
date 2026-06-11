@@ -493,11 +493,11 @@ const CreateInvoice: React.FC = () => {
         notes,
         grand_total: totals.grandTotal,
         discount_amount: discount,
-        // For nominal tax invoice: no cash movement, just track if GST was remitted
+        // NSB: customer owes nothing; GST liability tracked separately via mark-gst-paid flow
         amount_paid: invoiceType === 'NOMINAL_TAX_INVOICE' ? 0 : amountPaid,
         balance_due: invoiceType === 'NOMINAL_TAX_INVOICE' ? 0 : totals.pendingAmount,
         payment_status: invoiceType === 'NOMINAL_TAX_INVOICE'
-          ? (nominalTaxPaid ? 'TAX_PAID' : 'TAX_PENDING')
+          ? 'gst_pending'
           : totals.paymentStatus,
         payments: invoiceType === 'NOMINAL_TAX_INVOICE' ? [] : paymentsList.filter(p => p.amount > 0).map(p => ({
             amount: p.amount,
@@ -516,7 +516,15 @@ const CreateInvoice: React.FC = () => {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        alert("Invoice saved successfully.");
+        const saved = await res.json();
+        if (invoiceType === 'NOMINAL_TAX_INVOICE') {
+          const gstAmt = (totals.totalGst).toFixed(2);
+          alert(
+            `NSB Invoice saved!\n\nGST Liability: ₹${gstAmt}\nStatus: GST PENDING\n\nGo to Invoices list → find this invoice → click "Mark GST Paid" when you remit to government.`
+          );
+        } else {
+          alert("Invoice saved successfully.");
+        }
         navigate("/invoices");
       } else {
         const error = await res.json();
@@ -1307,34 +1315,18 @@ const CreateInvoice: React.FC = () => {
               )}
             </div>
 
-            {/* ── NOMINAL TAX INVOICE: only ask Tax Paid? ── */}
+            {/* ── NOMINAL TAX INVOICE: info banner ── */}
             {invoiceType === 'NOMINAL_TAX_INVOICE' ? (
               <div style={{ background: "#faf5ff", border: "1.5px solid #c4b5fd", borderRadius: "12px", padding: "16px 20px" }}>
-                <p style={{ margin: "0 0 14px 0", fontSize: "13px", color: "#6d28d9", fontWeight: 600 }}>
-                  This is a name-sake bill — no cash movement recorded.
+                <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: "#6d28d9", fontWeight: 700 }}>
+                  Name-Sake Bill (NSB) — How it works
                 </p>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: "#4c1d95" }}>Tax Paid to Government?</span>
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <button
-                      type="button"
-                      onClick={() => setNominalTaxPaid(true)}
-                      style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid", borderColor: nominalTaxPaid ? "#16a34a" : "#d1d5db", background: nominalTaxPaid ? "#dcfce7" : "white", color: nominalTaxPaid ? "#15803d" : "#6b7280", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-                    >
-                      ✓ Yes — Tax Paid
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNominalTaxPaid(false)}
-                      style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid", borderColor: !nominalTaxPaid ? "#dc2626" : "#d1d5db", background: !nominalTaxPaid ? "#fee2e2" : "white", color: !nominalTaxPaid ? "#b91c1c" : "#6b7280", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
-                    >
-                      ✗ No — Tax Pending
-                    </button>
-                  </div>
-                </div>
-                <p style={{ margin: "10px 0 0 0", fontSize: "11px", color: "#8b5cf6" }}>
-                  Status will be saved as: <strong>{nominalTaxPaid ? "TAX PAID" : "TAX PENDING"}</strong>
-                </p>
+                <ul style={{ margin: 0, padding: "0 0 0 16px", fontSize: "12px", color: "#7c3aed", lineHeight: 1.7 }}>
+                  <li>No cash or bank movement — customer owes nothing</li>
+                  <li>GST liability is recorded for government remittance tracking</li>
+                  <li>Status saved as <strong>GST PENDING</strong> — mark paid separately from Invoices list</li>
+                  <li>Use <em>Mark GST Paid</em> button after filing/paying to government</li>
+                </ul>
               </div>
             ) : null}
 

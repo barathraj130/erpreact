@@ -454,6 +454,8 @@ body { font-family: 'Satoshi', sans-serif; }
 .type-badge-purple { background: #fdf4ff; color: #7e22ce; }
 .type-badge-green { background: var(--green-bg); color: var(--green); }
 .type-badge-amber { background: var(--amber-bg); color: var(--amber); }
+.type-badge-orange { background: #fff7ed; color: #c2410c; }
+.type-badge-yellow { background: #fefce8; color: #a16207; }
 .type-badge-slate { background: var(--bg); color: var(--text-2); }
 
 /* ─── Transaction Cards ─── */

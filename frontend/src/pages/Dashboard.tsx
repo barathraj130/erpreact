@@ -49,6 +49,7 @@ const Dashboard: React.FC = () => {
     activeLoans: 0
   });
   const [ledgerWarnings, setLedgerWarnings] = useState<{ cash?: string; bank?: string }>({});
+  const [nsbPending, setNsbPending] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
 
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
   const [expenseData, setExpenseData] = useState<any[]>([]);
@@ -60,13 +61,14 @@ const Dashboard: React.FC = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [kpiRes, trendRes, expenseRes, outstandingRes, txRes, loansRes] = await Promise.all([
+        const [kpiRes, trendRes, expenseRes, outstandingRes, txRes, loansRes, nsbRes] = await Promise.all([
           apiFetch("/dashboard/summary").then(r => r.json()),
           apiFetch("/dashboard/monthly-sales-trend").then(r => r.json()),
           apiFetch("/dashboard/expense-breakdown").then(r => r.json()),
           apiFetch("/dashboard/outstanding-by-customer").then(r => r.json()),
           apiFetch("/transactions?limit=5").then(r => r.json()),
-          apiFetch("/loans").then(r => r.json()).catch(() => [])
+          apiFetch("/loans").then(r => r.json()).catch(() => []),
+          apiFetch("/invoice/nsb/gst-pending").then(r => r.json()).catch(() => ({ summary: {} })),
         ]);
 
         if (kpiRes) {
@@ -106,6 +108,12 @@ const Dashboard: React.FC = () => {
 
         if (Array.isArray(expenseRes)) setExpenseData(expenseRes.map(e => ({ name: e.category, amount: parseFloat(e.amount) })));
         if (Array.isArray(txRes)) setTransactions(txRes);
+        if (nsbRes?.summary) {
+          setNsbPending({
+            count: nsbRes.summary.pending_count || 0,
+            total: nsbRes.summary.pending_gst_total || 0,
+          });
+        }
 
       } catch (err) {
         console.error("Dashboard fetch error:", err);
@@ -197,6 +205,36 @@ const Dashboard: React.FC = () => {
             color="rose"
           />
         </div>
+
+        {/* ── NSB GST Liability Banner ── */}
+        {nsbPending.count > 0 && (
+          <div style={{
+            background: "#fff7ed", border: "1.5px solid #fb923c", borderRadius: "12px",
+            padding: "14px 20px", marginBottom: "16px",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", flexWrap: "wrap",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={{ fontSize: "22px" }}>🧾</span>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "14px", color: "#c2410c" }}>
+                  NSB GST Pending — {nsbPending.count} invoice{nsbPending.count !== 1 ? 's' : ''}
+                </div>
+                <div style={{ fontSize: "12px", color: "#9a3412", marginTop: "2px" }}>
+                  Total GST liability: ₹{nsbPending.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })} not yet remitted to government
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate("/invoices")}
+              style={{
+                padding: "8px 18px", borderRadius: "8px", border: "none",
+                background: "#ea580c", color: "#fff", fontWeight: 700, fontSize: "12px", cursor: "pointer",
+              }}
+            >
+              View NSB Invoices
+            </button>
+          </div>
+        )}
 
         {/* ── Main Charts ── */}
         <div className="db-charts-row" style={{ gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '20px' }}>

@@ -26,6 +26,37 @@ const INVOICES_DIR = path.join(__dirname, '../uploads/invoices');
 
 const router = express.Router();
 
+// One-time lazy migration for NSB GST tracking columns
+let _nsbSchemaDone = false;
+async function ensureNSBSchema(client) {
+    if (_nsbSchemaDone) return;
+    try {
+        await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_nominal BOOLEAN DEFAULT false`);
+        await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_liability_amount NUMERIC(10,2) DEFAULT 0`);
+        await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_paid BOOLEAN DEFAULT false`);
+        await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_paid_date DATE`);
+        await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_paid_mode VARCHAR(20)`);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS nsb_gst_payments (
+                id SERIAL PRIMARY KEY,
+                invoice_id INTEGER NOT NULL,
+                invoice_number VARCHAR(50),
+                gst_amount NUMERIC(10,2) DEFAULT 0,
+                cgst_amount NUMERIC(10,2) DEFAULT 0,
+                sgst_amount NUMERIC(10,2) DEFAULT 0,
+                igst_amount NUMERIC(10,2) DEFAULT 0,
+                payment_mode VARCHAR(20),
+                payment_date DATE,
+                payment_reference VARCHAR(100),
+                notes TEXT,
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        _nsbSchemaDone = true;
+    } catch(e) { console.warn('[NSB] schema migration warning:', e.message); }
+}
+
 /* ============================================================
    HELPER: Invoice Number Series
    Format: PREFIX/YEAR/MM/NNN  e.g. TAX/2026/05/001
@@ -341,6 +372,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
     try {
         client = await db.getClient();
+        await ensureNSBSchema(client);
         await client.query("BEGIN");
 
         const sanitizeInt = (val) => {
@@ -539,9 +571,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let result;
         const buildParams = (invNum) => [
             companyId, safeCustomerId, invNum, invoice_type || 'TAX_INVOICE',
-            financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(), payment_status || 'PENDING',
+            financial_month, req.body.invoice_date || new Date(), req.body.due_date || new Date(),
+            isNameOnly ? 'gst_pending' : (payment_status || 'PENDING'),
             totalTaxable, totalGST, totalCGST, totalSGST, totalIGST, netInvoiceAmount,
-            gstType, finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
+            gstType, isNameOnly ? 0 : finalAmountPaid, discountAmt, totalReturnAmount, notes || '', Number(bundles_count) || 0,
             transport_details?.vehicle_number || '', transport_details?.mode || '', transport_details?.supply_date || null, transport_details?.reverse_charge || 'No',
             safeBrokerId, safeBrokerCommission,
             branchId,
@@ -578,6 +611,14 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
         const invoiceId = result.rows[0].id;
+
+        // For NSB: mark is_nominal and store GST liability amount
+        if (isNameOnly) {
+            await client.query(
+                `UPDATE invoices SET is_nominal=true, gst_liability_amount=$1 WHERE id=$2`,
+                [totalGST, invoiceId]
+            );
+        }
 
         // isNameOnly already set above from bill_purpose / invoice_type
 
@@ -1011,6 +1052,183 @@ JBS Knit Wear, Tiruppur
         if (client) await client.query("ROLLBACK");
         console.error("❌ Critical Invoice Error:", err.message);
         res.status(500).json({ error: "Failed to create invoice: " + err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+/* ============================================================
+   NSB GST PAYMENT ROUTES
+============================================================ */
+
+/**
+ * GET /invoice/nsb/gst-pending
+ * List all NSB invoices (both pending and paid GST)
+ */
+router.get("/nsb/gst-pending", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    let client;
+    try {
+        client = await db.getClient();
+        await ensureNSBSchema(client);
+        client.release();
+        client = null;
+
+        const rows = await db.pgAll(`
+            SELECT i.id, i.invoice_number, i.invoice_date, i.total_amount,
+                   i.tax_total, i.cgst_total, i.sgst_total, i.igst_total,
+                   COALESCE(i.gst_liability_amount, i.tax_total, 0) AS gst_liability_amount,
+                   COALESCE(i.gst_paid, false) AS gst_paid,
+                   i.gst_paid_date, i.gst_paid_mode, i.status,
+                   COALESCE(u.nickname, u.username) AS customer_name
+            FROM invoices i
+            LEFT JOIN users u ON u.id = i.customer_id
+            WHERE i.company_id = $1
+              AND (COALESCE(i.is_nominal, false) = true OR i.bill_purpose = 'name_only' OR i.invoice_type = 'NOMINAL_TAX_INVOICE')
+              AND COALESCE(i.is_deleted, false) = false
+            ORDER BY COALESCE(i.gst_paid, false) ASC, i.invoice_date DESC
+        `, [companyId]);
+
+        const pending = rows.filter(r => !r.gst_paid);
+        const paid    = rows.filter(r => r.gst_paid);
+        const pendingTotal = pending.reduce((s, r) => s + parseFloat(r.gst_liability_amount || 0), 0);
+
+        res.json({
+            data: rows,
+            summary: {
+                pending_count: pending.length,
+                paid_count: paid.length,
+                pending_gst_total: pendingTotal,
+            },
+        });
+    } catch (err) {
+        if (client) client.release();
+        console.error('[nsb/gst-pending] error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * POST /invoice/nsb/:id/mark-gst-paid
+ * Mark GST as paid for an NSB invoice; deducts from cash/bank/proprietor
+ */
+router.post("/nsb/:id/mark-gst-paid", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const userId    = req.user.id;
+    const invoiceId = parseInt(req.params.id);
+    const { payment_mode, payment_date, payment_reference, notes } = req.body;
+
+    let client;
+    try {
+        client = await db.getClient();
+        await ensureNSBSchema(client);
+        await client.query('BEGIN');
+
+        const inv = await client.query(
+            `SELECT * FROM invoices WHERE id=$1 AND company_id=$2
+             AND (COALESCE(is_nominal,false)=true OR bill_purpose='name_only' OR invoice_type='NOMINAL_TAX_INVOICE')`,
+            [invoiceId, companyId]
+        );
+        if (!inv.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'NSB invoice not found' });
+        }
+        const invoice = inv.rows[0];
+        if (invoice.gst_paid) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'GST already marked as paid for this invoice' });
+        }
+
+        const gstAmount = parseFloat(invoice.gst_liability_amount || invoice.tax_total || 0);
+        if (gstAmount <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'No GST liability found on this invoice' });
+        }
+
+        const pMode = (payment_mode || 'CASH').toUpperCase();
+        const pDate = payment_date || new Date().toISOString().split('T')[0];
+
+        // Balance check for cash/bank
+        if (pMode === 'CASH') {
+            const bal = await client.query(
+                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS balance
+                 FROM cash_ledger WHERE company_id=$1`,
+                [companyId]
+            );
+            const cashBal = parseFloat(bal.rows[0]?.balance || 0);
+            if (cashBal < gstAmount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: `Insufficient cash balance. Available: ₹${cashBal.toFixed(2)}, Required: ₹${gstAmount.toFixed(2)}` });
+            }
+        } else if (pMode === 'BANK' || pMode === 'UPI') {
+            const bal = await client.query(
+                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS balance
+                 FROM bank_ledger WHERE company_id=$1`,
+                [companyId]
+            );
+            const bankBal = parseFloat(bal.rows[0]?.balance || 0);
+            if (bankBal < gstAmount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: `Insufficient bank balance. Available: ₹${bankBal.toFixed(2)}, Required: ₹${gstAmount.toFixed(2)}` });
+            }
+        }
+
+        // Mark invoice as GST paid
+        await client.query(
+            `UPDATE invoices SET gst_paid=true, gst_paid_date=$1, gst_paid_mode=$2, status='gst_paid' WHERE id=$3`,
+            [pDate, pMode, invoiceId]
+        );
+
+        // Record in nsb_gst_payments
+        await client.query(
+            `INSERT INTO nsb_gst_payments
+                (invoice_id, invoice_number, gst_amount, cgst_amount, sgst_amount, igst_amount,
+                 payment_mode, payment_date, payment_reference, notes, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [
+                invoiceId, invoice.invoice_number, gstAmount,
+                invoice.cgst_total || 0, invoice.sgst_total || 0, invoice.igst_total || 0,
+                pMode, pDate, payment_reference || null, notes || null, userId,
+            ]
+        );
+
+        // Deduct from appropriate ledger
+        if (pMode === 'CASH') {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1,$2,'nsb_gst',$3,'out',$4)`,
+                [companyId, branchId, gstAmount, pDate]
+            );
+        } else if (pMode === 'BANK' || pMode === 'UPI') {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
+                 VALUES ($1,$2,'nsb_gst',$3,'out','Business Account',$4,$5)`,
+                [companyId, branchId, gstAmount, payment_reference || `NSB-${invoiceId}`, pDate]
+            );
+        } else if (pMode === 'PROPRIETOR') {
+            const { recordProprietorCapital } = await import('../utils/proprietorLedger.js');
+            await recordProprietorCapital(client, {
+                companyId, branchId, userId, amount: gstAmount,
+                description: `GST payment for NSB Invoice #${invoice.invoice_number}`,
+                referenceType: 'NSB_GST',
+                referenceId: invoiceId,
+            });
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            message: `GST of ₹${gstAmount.toFixed(2)} marked as paid via ${pMode} for invoice ${invoice.invoice_number}`,
+            invoice_id: invoiceId,
+            gst_amount: gstAmount,
+            payment_mode: pMode,
+            payment_date: pDate,
+        });
+    } catch (err) {
+        if (client) { try { await client.query('ROLLBACK'); } catch(_) {} }
+        console.error('[nsb/mark-gst-paid] error:', err.message);
+        res.status(500).json({ error: err.message });
     } finally {
         if (client) client.release();
     }
