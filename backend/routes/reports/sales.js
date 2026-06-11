@@ -69,6 +69,11 @@ router.get('/top-customers', authMiddleware, async (req, res) => {
             WHERE t.reference_id = u.id AND t.company_id = $1
               AND t.type = 'CUSTOMER_PAYMENT'
           ), 0)
+          - COALESCE((
+            SELECT SUM(t.amount) FROM transactions t
+            WHERE t.user_id = u.id AND t.company_id = $1
+              AND t.type = 'ROUND_OFF'
+          ), 0)
         ) AS outstanding,
         MAX(i.invoice_date) AS last_purchase
       FROM users u
@@ -242,6 +247,7 @@ router.get('/aging-receivables', authMiddleware, async (req, res) => {
           - COALESCE((SELECT SUM(ip.amount) FROM invoice_payments ip JOIN invoices i3 ON i3.id=ip.invoice_id WHERE i3.customer_id=u.id AND i3.company_id=$1 AND COALESCE(i3.is_deleted,false)=false), 0)
           - COALESCE((SELECT SUM(sr.total_amount) FROM sales_returns sr WHERE sr.customer_id=u.id AND sr.company_id=$1), 0)
           - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.reference_id=u.id AND t.company_id=$1 AND t.type='CUSTOMER_PAYMENT'), 0)
+          - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.user_id=u.id AND t.company_id=$1 AND t.type='ROUND_OFF'), 0)
         ) AS total_outstanding
       FROM users u
       JOIN invoices i ON i.customer_id = u.id
@@ -256,6 +262,7 @@ router.get('/aging-receivables', authMiddleware, async (req, res) => {
         - COALESCE((SELECT SUM(ip.amount) FROM invoice_payments ip JOIN invoices i3 ON i3.id=ip.invoice_id WHERE i3.customer_id=u.id AND i3.company_id=$1 AND COALESCE(i3.is_deleted,false)=false), 0)
         - COALESCE((SELECT SUM(sr.total_amount) FROM sales_returns sr WHERE sr.customer_id=u.id AND sr.company_id=$1), 0)
         - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.reference_id=u.id AND t.company_id=$1 AND t.type='CUSTOMER_PAYMENT'), 0)
+        - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.user_id=u.id AND t.company_id=$1 AND t.type='ROUND_OFF'), 0)
       ) > 0
       ORDER BY total_outstanding DESC
     `;
