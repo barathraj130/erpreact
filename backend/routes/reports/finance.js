@@ -176,17 +176,17 @@ router.get('/cash-flow', authMiddleware, async (req, res) => {
       loansIn, loanRepay,
       openingCash,
     ] = await Promise.all([
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_PAYMENT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='DRAWINGS' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(principal_amount),0) AS total FROM loans WHERE company_id=$1 AND UPPER(COALESCE(loan_direction,'TAKEN'))='TAKEN' AND created_at::date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(lp.total_amount),0) AS total FROM loan_payments lp JOIN loans l ON l.id=lp.loan_id WHERE l.company_id=$1 AND lp.payment_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1 AND date < $2::date`, [companyId, startDate]),
+      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1 AND COALESCE(date, created_at::date) < $2::date`, [companyId, startDate]).catch(() => ({ bal: 0 })),
     ]);
 
     const opInflow  = parseFloat(cashInflows?.total||0) + parseFloat(bankInflows?.total||0);
@@ -289,9 +289,9 @@ router.get('/balance-sheet', authMiddleware, async (req, res) => {
       payables, loans, chits,
       proprietorCapital, retainedEarnings,
     ] = await Promise.all([
-      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1 AND date <= $2::date`, [companyId, asOf]),
-      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM bank_ledger WHERE company_id=$1 AND date <= $2::date`, [companyId, asOf]),
-      db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date <= $2::date`, [companyId, asOf]),
+      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1 AND COALESCE(date, created_at::date) <= $2::date`, [companyId, asOf]).catch(() => ({ bal: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM bank_ledger WHERE company_id=$1 AND COALESCE(date, created_at::date) <= $2::date`, [companyId, asOf]).catch(() => ({ bal: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date <= $2::date`, [companyId, asOf]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(current_stock * COALESCE(cost_price,selling_price,0)),0) AS total FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date <= $2::date`, [companyId, asOf]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(remaining_principal),0) AS total FROM loans WHERE company_id=$1 AND status='ACTIVE'`, [companyId]).catch(() => ({ total: 0 })),

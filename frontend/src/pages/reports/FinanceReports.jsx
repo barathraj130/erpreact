@@ -301,7 +301,11 @@ const FinanceReports = () => {
   };
 
   const renderBalanceSheet = () => {
-    if (!tabData?.assets) return null;
+    if (!tabData?.assets) return (
+      <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6b7280', fontSize: '0.9rem' }}>
+        No balance sheet data available for the selected date. Try adjusting the date filter and applying.
+      </div>
+    );
     const { assets, liabilities, equity, check } = tabData;
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
