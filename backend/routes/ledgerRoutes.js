@@ -325,12 +325,13 @@ router.get('/cash', authMiddleware, async (req, res) => {
         `, [companyId]).catch(()=>{});
 
         // Opening balance = net of ALL cash transactions strictly BEFORE startDate
-        // Known inflow sources always count as positive regardless of stored direction
-        // NOTE: CUSTOMER_PAYMENT excluded — those entries are purged in Step 1
-        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // OPENING_BALANCE honours its stored direction (can be 'out' when back-calculated)
+        // Other known inflow sources always count as positive regardless of stored direction
+        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE
+                WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
                 WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
                 WHEN direction = 'in' THEN amount
                 ELSE -amount
@@ -482,11 +483,12 @@ router.get('/bank', authMiddleware, async (req, res) => {
         `, [companyId]).catch(()=>{});
 
         // Opening balance = net of ALL bank transactions strictly BEFORE startDate
-        // Known inflow sources always count as positive regardless of stored direction
-        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // OPENING_BALANCE honours its stored direction (can be 'out' when back-calculated)
+        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE
+                WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
                 WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
                 WHEN direction = 'in' THEN amount
                 ELSE -amount
@@ -772,24 +774,33 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     if (!['CASH', 'BANK'].includes(ledger_type)) {
         return res.status(400).json({ error: 'ledger_type must be CASH or BANK' });
     }
-    const amt = parseFloat(amount);
-    if (isNaN(amt) || amt < 0) {
-        return res.status(400).json({ error: 'amount must be a non-negative number' });
+    const desired = parseFloat(amount);
+    if (isNaN(desired)) {
+        return res.status(400).json({ error: 'amount must be a number' });
     }
     const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
     const balDate = date || '2020-01-01';
     try {
+        // net of all non-OPENING_BALANCE entries so closing = desired
+        const othersRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+             FROM ${tbl} WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        const netOthers = parseFloat(othersRow?.net || 0);
+        const needed = desired - netOthers;
+
         await db.pgRun(
             `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
-        if (amt > 0) {
+        if (Math.abs(needed) > 0.001) {
             await db.pgRun(
-                `INSERT INTO ${tbl} (company_id, source, amount, direction, date) VALUES ($1, 'OPENING_BALANCE', $2, 'in', $3)`,
-                [companyId, amt, balDate]
+                `INSERT INTO ${tbl} (company_id, source, amount, direction, date) VALUES ($1, 'OPENING_BALANCE', $2, $3, $4)`,
+                [companyId, Math.abs(needed), needed >= 0 ? 'in' : 'out', balDate]
             );
         }
-        res.json({ success: true, message: `Opening balance set to ₹${amt.toFixed(2)}` });
+        res.json({ success: true, message: `Closing balance set to ₹${desired.toFixed(2)}` });
     } catch (err) {
         console.error('[set-opening-balance]', err.message);
         res.status(500).json({ error: 'Failed to set opening balance' });

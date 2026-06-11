@@ -169,24 +169,21 @@ router.delete('/bank-accounts/:id', authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// GET /company/opening-balance  — fetch current opening balances
+// GET /company/opening-balance  — fetch CURRENT total balances (for display in Admin Setup)
 // ─────────────────────────────────────────────
 router.get('/opening-balance', authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     if (!companyId) return res.status(401).json({ error: 'Unauthorized.' });
     try {
-        // Return the OPENING_BALANCE entry amounts — after a hard reset,
-        // these ARE the total balances.
+        // Return current TOTAL balance (all entries) so Admin Setup shows the real closing balance
         const cash = await db.pgGet(
             `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS amount
-             FROM cash_ledger
-             WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
+             FROM cash_ledger WHERE company_id = $1`,
             [companyId]
         );
         const bankRow = await db.pgGet(
             `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS amount
-             FROM bank_ledger
-             WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
+             FROM bank_ledger WHERE company_id = $1`,
             [companyId]
         );
         res.json({
@@ -211,27 +208,45 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
     const { cash_opening, bank_openings = [] } = req.body;
 
     try {
-        // ── CASH: only replace the OPENING_BALANCE entry — never touch real transactions ──
+        // ── CASH: back-calculate opening so that closing = desired amount ──
+        // net_others = sum of all non-OPENING_BALANCE entries
+        // needed_opening = desired_closing - net_others
         const desiredCash = Number(cash_opening) || 0;
+        const cashOthers = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+             FROM cash_ledger WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        const netCash = parseFloat(cashOthers?.net || 0);
+        const neededCash = desiredCash - netCash;
+
         await db.pgRun(`DELETE FROM cash_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`, [companyId]);
-        if (desiredCash > 0) {
+        if (Math.abs(neededCash) > 0.001) {
             await db.pgRun(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                 VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', '2000-01-01')`,
-                [companyId, branchId, desiredCash]
+                 VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, '2000-01-01')`,
+                [companyId, branchId, Math.abs(neededCash), neededCash >= 0 ? 'in' : 'out']
             );
         }
 
-        // ── BANK: only replace the OPENING_BALANCE entry — never touch real transactions ──
+        // ── BANK: same back-calculation ──
         await db.pgRun(`DELETE FROM bank_ledger WHERE company_id = $1 AND source = 'OPENING_BALANCE'`, [companyId]);
         for (const b of bank_openings) {
             const bankName = b.bank_name || 'Bank';
             const desiredBank = Number(b.amount) || 0;
-            if (desiredBank > 0) {
+            const bankOthers = await db.pgGet(
+                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+                 FROM bank_ledger WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+                [companyId]
+            );
+            const netBank = parseFloat(bankOthers?.net || 0);
+            const neededBank = desiredBank - netBank;
+
+            if (Math.abs(neededBank) > 0.001) {
                 await db.pgRun(
                     `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                     VALUES ($1, $2, 'OPENING_BALANCE', $3, 'in', $4, '2000-01-01')`,
-                    [companyId, branchId, desiredBank, bankName]
+                     VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, $5, '2000-01-01')`,
+                    [companyId, branchId, Math.abs(neededBank), neededBank >= 0 ? 'in' : 'out', bankName]
                 );
             }
             if (b.bank_detail_id) {
@@ -242,7 +257,7 @@ router.post('/opening-balance', authMiddleware, async (req, res) => {
             }
         }
 
-        res.json({ success: true, message: 'Opening balances saved successfully.' });
+        res.json({ success: true, message: 'Balances updated successfully.' });
     } catch (err) {
         console.error('Set opening balance error:', err.message);
         res.status(500).json({ error: err.message });

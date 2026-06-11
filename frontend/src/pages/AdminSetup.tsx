@@ -747,15 +747,15 @@ const AdminSetup: React.FC = () => {
                     <div style={{ margin: "28px 0 0", padding: "0 32px 28px" }}>
                       <div style={{ borderTop: "1px dashed var(--border)", paddingTop: "24px" }}>
                         <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
-                          💰 Opening Balances
+                          💰 Set Current Balances
                         </div>
                         <div style={{ fontSize: "12px", color: "var(--text-3)", marginBottom: "20px" }}>
-                          Set the starting cash and bank balances. These are applied once and reflected in the dashboard Cash Available figure.
+                          Enter your actual cash and bank balance right now. The system will adjust the opening entry so the closing balance matches exactly.
                         </div>
 
                         {/* Cash in Hand */}
                         <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "16px 20px", marginBottom: "14px" }}>
-                          <div style={{ fontWeight: 700, fontSize: "13px", color: "#15803d", marginBottom: "10px" }}>🏦 Cash in Hand (Opening)</div>
+                          <div style={{ fontWeight: 700, fontSize: "13px", color: "#15803d", marginBottom: "10px" }}>🏦 Cash in Hand (Closing Balance)</div>
                           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                             <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#16a34a" }}>₹</span>
                             <input
@@ -775,7 +775,7 @@ const AdminSetup: React.FC = () => {
 
                         {/* Bank Balance — always visible, no need to add bank account first */}
                         <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "12px", padding: "16px 20px", marginBottom: "14px" }}>
-                          <div style={{ fontWeight: 700, fontSize: "13px", color: "#0369a1", marginBottom: "10px" }}>🏛️ Bank Balance (Opening)</div>
+                          <div style={{ fontWeight: 700, fontSize: "13px", color: "#0369a1", marginBottom: "10px" }}>🏛️ Bank Balance (Closing Balance)</div>
                           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                             <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#0284c7" }}>₹</span>
                             <input
@@ -812,7 +812,7 @@ const AdminSetup: React.FC = () => {
                             cursor: savingOB ? "not-allowed" : "pointer"
                           }}
                         >
-                          {savingOB ? "Saving…" : "💾 Save Opening Balances"}
+                          {savingOB ? "Saving…" : "💾 Save Balances"}
                         </button>
                       </div>
                     </div>
