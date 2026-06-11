@@ -1394,6 +1394,30 @@ router.get("/:id", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
+   3b. POST /invoices/:id/mark-nominal — mark a real invoice as nominal (name_only)
+        so it is excluded from outstanding / Sales Reports
+============================================================ */
+router.post("/:id/mark-nominal", authMiddleware, async (req, res) => {
+    const id = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+    try {
+        const inv = await db.pgGet(
+            `SELECT id, bill_purpose FROM invoices WHERE id=$1 AND company_id=$2 AND COALESCE(is_deleted,false)=false`,
+            [id, companyId]
+        );
+        if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+        await db.pgRun(
+            `UPDATE invoices SET bill_purpose='name_only', is_nominal=true WHERE id=$1 AND company_id=$2`,
+            [id, companyId]
+        );
+        res.json({ success: true, message: 'Invoice marked as nominal — excluded from outstanding reports' });
+    } catch (err) {
+        console.error('mark-nominal error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/* ============================================================
    4. UPDATE INVOICE
 ============================================================ */
 router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async (req, res) => {

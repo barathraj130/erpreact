@@ -66,6 +66,19 @@ const Invoices: React.FC = () => {
     }
   };
 
+  const handleMarkNominal = async (inv: any) => {
+    if (!window.confirm(`Mark invoice ${inv.invoice_number} as nominal? It will be excluded from outstanding reports.`)) return;
+    try {
+      const res = await apiFetch(`/invoice/${inv.id}/mark-nominal`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      alert("Invoice marked as nominal.");
+      refresh();
+    } catch (err: any) {
+      alert(`Failed: ${err.message}`);
+    }
+  };
+
   const handleSendPdf = async (inv: any) => {
     setSendingPdfId(inv.id);
     try {
@@ -245,6 +258,18 @@ const Invoices: React.FC = () => {
                       Pay GST
                     </button>
                   )}
+                  {inv.bill_purpose !== 'name_only' && canDelete && (
+                    <button
+                      onClick={() => handleMarkNominal(inv)}
+                      title="Mark as nominal — excludes from outstanding"
+                      style={{ flex: 1, padding: "7px 10px", borderRadius: "8px", border: "1.5px solid #94a3b8", background: "#f1f5f9", color: "#475569", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                    >
+                      Nominal
+                    </button>
+                  )}
+                  {inv.bill_purpose === 'name_only' && (
+                    <span style={{ flex: 1, textAlign: "center", fontSize: "11px", color: "#64748b", fontWeight: 600, padding: "7px 0" }}>NOMINAL</span>
+                  )}
                   {canDelete && (
                     <button className="page-btn-round-danger" onClick={() => handleDelete(inv.id)} aria-label="Delete invoice">
                       <FaTrash size={12} />
@@ -333,6 +358,17 @@ const Invoices: React.FC = () => {
                             GST
                           </button>
                         )}
+                        {inv.bill_purpose === 'name_only' ? (
+                          <span title="This invoice is nominal — excluded from outstanding" style={{ padding: "3px 7px", borderRadius: "6px", background: "#f1f5f9", color: "#94a3b8", fontSize: "10px", fontWeight: 700 }}>NOM</span>
+                        ) : canDelete ? (
+                          <button
+                            onClick={() => handleMarkNominal(inv)}
+                            title="Mark as nominal — excludes from outstanding reports"
+                            style={{ padding: "5px 8px", borderRadius: "7px", border: "1.5px solid #cbd5e1", background: "#f8fafc", color: "#64748b", cursor: "pointer", fontSize: "10px", fontWeight: 700 }}
+                          >
+                            NOM
+                          </button>
+                        ) : null}
                         {canDelete && (
                           <button className="page-btn-round-danger" onClick={() => handleDelete(inv.id)} aria-label="Delete invoice">
                             <FaTrash size={13} />
