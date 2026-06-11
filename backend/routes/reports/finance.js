@@ -115,8 +115,8 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       // Purchases specifically paid via proprietor personal account
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND reference_type='PURCHASE_BILL' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // Salary from cash/bank ledger
-      db.pgGet(`SELECT COALESCE(SUM(cl.amount),0)+COALESCE(SUM(bl.amount),0) AS total FROM (SELECT amount FROM cash_ledger WHERE company_id=$1 AND source IN ('SALARY_PAYMENT','daily_wage','weekly_salary','ADVANCE_PAYMENT') AND direction='out' AND date BETWEEN $2::date AND $3::date) cl, (SELECT amount FROM bank_ledger WHERE company_id=$1 AND source IN ('SALARY_PAYMENT','daily_wage','weekly_salary','ADVANCE_PAYMENT') AND direction='out' AND date BETWEEN $2::date AND $3::date) bl`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Salary from cash/bank ledger — LOWER() handles 'Daily_wage' vs 'daily_wage'
+      db.pgGet(`SELECT COALESCE((SELECT SUM(amount) FROM cash_ledger WHERE company_id=$1 AND LOWER(source) IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary') AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0) + COALESCE((SELECT SUM(amount) FROM bank_ledger WHERE company_id=$1 AND LOWER(source) IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary') AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0) AS total`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       // Salary paid via proprietor personal account
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND reference_type IN ('SALARY','SALARY_ADVANCE','DAILY_WAGE','WEEKLY_SALARY') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       // All capital introduced this period
@@ -168,52 +168,80 @@ router.get('/cash-flow', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
   const { from, to } = req.query;
   const { from: startDate, to: endDate } = getDateRange(from, to);
+
+  // Source sets — must match what ledger routes actually store
+  const SALARY_SOURCES = `'Daily_wage','daily_wage','SALARY_PAYMENT','salary_payment','salary_advance','ADVANCE_PAYMENT','weekly_salary','WEEKLY_SALARY'`;
+  const PURCHASE_SOURCES = `'PURCHASE_PAYMENT','purchase_payment','PURCHASE','BILL_PAYMENT','bill_payment'`;
+  const INFLOW_SOURCES   = `'INVOICE','Payment','payment','INVOICE_PAYMENT','RECEIPT','CUSTOMER_PAYMENT','GIFT_CONTRIBUTION','LOAN_DISBURSEMENT'`;
+
   try {
     const [
-      cashInflows, bankInflows, personalInflows,
-      cashOutflows, bankOutflows, personalOutflows,
-      capitalIntro, drawings,
+      salesInflow, bankSalesInflow,
+      personalInflows, capitalIntro, drawings,
       loansIn, loanRepay,
+      salaryOut, bankSalaryOut,
+      purchaseOut, bankPurchaseOut,
+      otherCashOut, otherBankOut,
+      propOutflow,
       openingCash,
     ] = await Promise.all([
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Sales inflows — cash ledger inflow sources
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='in' AND source IN (${INFLOW_SOURCES}) AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='in' AND source IN (${INFLOW_SOURCES}) AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Proprietor personal receipts
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_PAYMENT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Capital introduced
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Drawings
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='DRAWINGS' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Loans received
       db.pgGet(`SELECT COALESCE(SUM(principal_amount),0) AS total FROM loans WHERE company_id=$1 AND UPPER(COALESCE(loan_direction,'TAKEN'))='TAKEN' AND created_at::date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Loan repayments
       db.pgGet(`SELECT COALESCE(SUM(lp.total_amount),0) AS total FROM loan_payments lp JOIN loans l ON l.id=lp.loan_id WHERE l.company_id=$1 AND lp.payment_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Salary / wages (cash) — case-insensitive to handle 'Daily_wage' vs 'daily_wage'
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND LOWER(source) IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary') AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND LOWER(source) IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary') AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Purchase payments (cash)
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND source IN (${PURCHASE_SOURCES}) AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND source IN (${PURCHASE_SOURCES}) AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Other cash outflows (not salary, not purchase, not loan)
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND direction='out' AND LOWER(source) NOT IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary','purchase_payment','purchase','bill_payment','loan_repayment','opening_balance') AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND direction='out' AND LOWER(source) NOT IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary','purchase_payment','purchase','bill_payment','loan_repayment','opening_balance') AND COALESCE(date, created_at::date) BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Proprietor personal payments
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_PAYMENT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Opening cash (before period)
       db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1 AND COALESCE(date, created_at::date) < $2::date`, [companyId, startDate]).catch(() => ({ bal: 0 })),
     ]);
 
-    const opInflow  = parseFloat(cashInflows?.total||0) + parseFloat(bankInflows?.total||0);
-    const propInflow = parseFloat(personalInflows?.total||0);
-    const opOutflow = parseFloat(cashOutflows?.total||0) + parseFloat(bankOutflows?.total||0);
-    const propOutflow = parseFloat(personalOutflows?.total||0);
-    const capIntro  = parseFloat(capitalIntro?.total||0);
-    const drawOut   = parseFloat(drawings?.total||0);
-    const loanIn    = parseFloat(loansIn?.total||0);
-    const loanOut   = parseFloat(loanRepay?.total||0);
-    const opening   = parseFloat(openingCash?.bal||0);
+    const salesRev    = parseFloat(salesInflow?.total||0) + parseFloat(bankSalesInflow?.total||0);
+    const propInflow  = parseFloat(personalInflows?.total||0);
+    const capIntro    = parseFloat(capitalIntro?.total||0);
+    const drawOut     = parseFloat(drawings?.total||0);
+    const loanIn      = parseFloat(loansIn?.total||0);
+    const loanOut     = parseFloat(loanRepay?.total||0);
+    const salary      = parseFloat(salaryOut?.total||0) + parseFloat(bankSalaryOut?.total||0);
+    const purchases   = parseFloat(purchaseOut?.total||0) + parseFloat(bankPurchaseOut?.total||0);
+    const otherOut    = parseFloat(otherCashOut?.total||0) + parseFloat(otherBankOut?.total||0);
+    const propOut     = parseFloat(propOutflow?.total||0);
+    const opening     = parseFloat(openingCash?.bal||0);
 
-    const totalInflow  = opInflow + propInflow + capIntro + loanIn;
-    const totalOutflow = opOutflow + propOutflow + drawOut + loanOut;
+    const totalInflow  = salesRev + propInflow + capIntro + loanIn;
+    const totalOutflow = salary + purchases + otherOut + propOut + drawOut + loanOut;
     const netCashFlow  = totalInflow - totalOutflow;
     const closingCash  = opening + netCashFlow;
 
     res.json({
       data: [
-        { category: 'Operating Inflows (Cash+Bank)', type: 'inflow', amount: opInflow },
-        { category: 'Personal Account Receipts', type: 'inflow', amount: propInflow },
-        { category: 'Capital Introduced', type: 'financing', amount: capIntro },
-        { category: 'Loans Received', type: 'financing', amount: loanIn },
-        { category: 'Operating Outflows (Cash+Bank)', type: 'outflow', amount: opOutflow },
-        { category: 'Proprietor Business Payments', type: 'outflow', amount: propOutflow },
-        { category: 'Drawings', type: 'outflow', amount: drawOut },
-        { category: 'Loan Repayments', type: 'outflow', amount: loanOut },
+        { category: 'Sales Revenue',              type: 'inflow',    amount: salesRev },
+        { category: 'Personal Account Receipts',  type: 'inflow',    amount: propInflow },
+        { category: 'Capital Introduced',         type: 'financing', amount: capIntro },
+        { category: 'Loans Received',             type: 'financing', amount: loanIn },
+        { category: 'Purchases',                  type: 'outflow',   amount: purchases },
+        { category: 'Salary & Wages',             type: 'outflow',   amount: salary },
+        { category: 'Other Expenses',             type: 'outflow',   amount: otherOut },
+        { category: 'Proprietor Payments',        type: 'outflow',   amount: propOut },
+        { category: 'Drawings',                   type: 'outflow',   amount: drawOut },
+        { category: 'Loan Repayments',            type: 'outflow',   amount: loanOut },
       ],
       summary: { total_inflow: totalInflow, total_outflow: totalOutflow, net_cash_flow: netCashFlow, opening_cash: opening, closing_cash: closingCash, from: startDate, to: endDate },
     });
