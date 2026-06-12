@@ -697,3 +697,130 @@
     display: none !important;
   }
 }
+
+/* ═══════════ MOBILE RESPONSIVE ═══════════ */
+@media (max-width: 768px) {
+
+  /* Full-screen form on mobile — no split */
+  .ci-split {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+    gap: 0;
+  }
+
+  .ci-form-pane {
+    border-right: none;
+    height: auto;
+    overflow: visible;
+  }
+
+  .ci-form-body {
+    padding: 14px;
+    overflow: visible;
+    gap: 14px;
+  }
+
+  /* Topbar */
+  .db-topbar {
+    padding: 0 12px 0 56px; /* room for hamburger */
+    height: 52px;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .db-topbar-title,
+  .db-topbar-sep,
+  .db-topbar-sub { font-size: 12px; }
+
+  .db-topbar-right { gap: 6px; }
+
+  .page-btn-round-ghost {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  /* Cards */
+  .ci-card { padding: 14px; border-radius: 12px; }
+  .ci-card-title { font-size: 0.65rem; margin-bottom: 12px; }
+
+  /* Fields */
+  .ci-field label { font-size: 0.65rem; }
+
+  .ci-field input,
+  .ci-field select,
+  .ci-field textarea {
+    font-size: 16px !important; /* prevents iOS zoom */
+    padding: 11px 13px;
+    min-height: 48px;
+    border-radius: 10px;
+  }
+
+  /* Row grids → single column */
+  .ci-row-2,
+  .ci-row-3 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  /* Invoice number row stays 2-col on mobile */
+  .ci-row-3.ci-invoice-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Item cards */
+  .ci-item-card {
+    flex-direction: column;
+    padding: 12px;
+    gap: 6px;
+  }
+
+  .ci-item-num { display: none; }
+
+  /* Show delete button always on mobile (no hover) */
+  .ci-item-delete {
+    opacity: 1;
+    transform: scale(1);
+    width: 28px;
+    height: 28px;
+    top: -8px;
+    right: -8px;
+  }
+
+  .ci-amount-display {
+    font-size: 0.88rem;
+    padding: 10px 12px;
+  }
+
+  /* Footer */
+  .ci-form-footer {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .ci-footer-total { font-size: 1.2rem; }
+
+  /* Page header */
+  .db-page-header { margin-bottom: 14px; }
+  .db-page-title { font-size: 1.1rem; }
+  .db-page-sub { font-size: 12px; }
+
+  /* Save btn */
+  .page-btn-round-primary {
+    padding: 12px 18px;
+    font-size: 14px;
+  }
+}
+
+/* Tablet */
+@media (min-width: 769px) and (max-width: 1100px) {
+  .ci-form-body { padding: 20px 24px; }
+  .ci-split {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  .ci-preview-pane { display: none !important; }
+  .ci-form-pane { border-right: none; height: auto; overflow: visible; }
+}

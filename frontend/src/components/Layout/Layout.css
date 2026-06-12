@@ -80,3 +80,43 @@ html, body {
   .sidebar-container { display: none !important; }
   .shell-main { margin-left: 0 !important; }
 }
+
+/* ── Mobile Global ── */
+@media (max-width: 768px) {
+  /* Prevent horizontal scroll */
+  html, body { overflow-x: hidden; }
+
+  /* Global touch-friendly inputs */
+  input, select, textarea, button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Inputs: 16px font prevents iOS auto-zoom */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="date"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="password"] {
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  select {
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  /* Shell: no left margin on mobile */
+  .shell-main {
+    margin-left: 0 !important;
+  }
+}
+
+/* ── Tablet ── */
+@media (min-width: 769px) and (max-width: 1023px) {
+  .shell-main {
+    margin-left: 0 !important;
+  }
+}

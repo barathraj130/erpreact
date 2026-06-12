@@ -159,14 +159,15 @@ const EnterpriseLayout: React.FC<{
           <button
             onClick={() => setSidebarOpen(true)}
             style={{
-              position: "fixed", top: "16px", left: "16px",
+              position: "fixed", top: "12px", left: "12px",
               background: "white", border: "1px solid #e8e8e5",
-              width: "36px", height: "36px", borderRadius: "8px",
+              width: "42px", height: "42px", borderRadius: "10px",
               display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer", zIndex: 300,
+              cursor: "pointer", zIndex: 400,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
             }}
           >
-            <FaBars size={16} />
+            <FaBars size={17} />
           </button>
         )}
 
