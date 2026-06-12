@@ -43,9 +43,9 @@ const SectionHeader = ({ children }) => (
 );
 
 const LineItem = ({ label, value, indent = false, bold = false, color, borderTop }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 14px', borderTop: borderTop ? '2px solid #e5e7eb' : undefined, marginLeft: indent ? 20 : 0 }}>
-    <span style={{ fontSize: '0.85rem', color: '#374151', fontWeight: bold ? 700 : 400 }}>{label}</span>
-    <span style={{ fontSize: '0.85rem', fontWeight: bold ? 700 : 500, color: color || '#1e293b' }}>{fmtRs(value)}</span>
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '7px 16px', borderTop: borderTop ? '2px solid #e5e7eb' : undefined, marginLeft: indent ? 20 : 0 }}>
+    <span style={{ fontSize: '0.85rem', color: '#374151', fontWeight: bold ? 700 : 400, flex: 1, minWidth: 0 }}>{label}</span>
+    <span style={{ fontSize: '0.85rem', fontWeight: bold ? 700 : 600, color: color || '#1e293b', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums', minWidth: 110, textAlign: 'right' }}>{fmtRs(value)}</span>
   </div>
 );
 
@@ -273,7 +273,7 @@ const FinanceReports = () => {
     if (!tabData?.income) return null;
     const { income, cogs, expenses, profit, proprietor_equity } = tabData;
     return (
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', marginBottom: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip', marginBottom: 20 }}>
         <SectionHeader>INCOME</SectionHeader>
         <LineItem label="Invoice Revenue"        value={income.invoice_revenue}   indent />
         <LineItem label="Personal Account Receipts" value={income.personal_receipts} indent />
@@ -310,7 +310,7 @@ const FinanceReports = () => {
     const { assets, liabilities, equity, check } = tabData;
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
           <SectionHeader>ASSETS</SectionHeader>
           <LineItem label="Cash in Hand"        value={assets.cash_in_hand}       indent />
           <LineItem label="Bank Balance"         value={assets.bank_balance}        indent />
@@ -318,7 +318,7 @@ const FinanceReports = () => {
           <LineItem label="Inventory Value"      value={assets.inventory_value}     indent />
           <LineItem label="TOTAL ASSETS"         value={assets.total_assets}        bold color={INFLOW_COLOR} borderTop />
         </div>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
           <SectionHeader>LIABILITIES</SectionHeader>
           <LineItem label="Accounts Payable" value={liabilities.accounts_payable} indent />
           <LineItem label="Loan Payable"     value={liabilities.loan_payable}     indent />
@@ -345,12 +345,12 @@ const FinanceReports = () => {
     const totalCredit = credit.reduce((s, r) => s + r.amount, 0);
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
           <div style={{ background: '#fee2e2', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#dc2626' }}>DEBIT (Outflow)</div>
           {debit.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
           <LineItem label="TOTAL" value={totalDebit} bold color={OUTFLOW_COLOR} borderTop />
         </div>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
           <div style={{ background: '#dcfce7', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#15803d' }}>CREDIT (Inflow)</div>
           {credit.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
           <LineItem label="TOTAL" value={totalCredit} bold color={INFLOW_COLOR} borderTop />
@@ -364,12 +364,12 @@ const FinanceReports = () => {
     const { inflows, outflows } = tabData;
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
           <div style={{ background: '#dcfce7', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#15803d' }}>TOTAL MONEY IN</div>
           {inflows.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
           <LineItem label="TOTAL INFLOW" value={tabSummary.total_inflow} bold color={INFLOW_COLOR} borderTop />
         </div>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
           <div style={{ background: '#fee2e2', padding: '10px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#dc2626' }}>TOTAL MONEY OUT</div>
           {outflows.map((r, i) => <LineItem key={i} label={r.label} value={r.amount} indent />)}
           <LineItem label="TOTAL OUTFLOW" value={tabSummary.total_outflow} bold color={OUTFLOW_COLOR} borderTop />

@@ -56,7 +56,7 @@ const ReportTable = ({ columns = [], data = [], loading = false, emptyText = 'No
       ) : (
         <>
           <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <table style={{ width: '100%', minWidth: '480px', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'auto' }}>
               <thead>
                 <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                   {columns.map(col => (
@@ -71,6 +71,9 @@ const ReportTable = ({ columns = [], data = [], loading = false, emptyText = 'No
                         cursor: 'pointer',
                         whiteSpace: 'nowrap',
                         userSelect: 'none',
+                        /* amount/right cols: shrink-wrap so Category gets the extra space */
+                        width: (col.type === 'amount' || col.align === 'right') ? '1%' : undefined,
+                        minWidth: col.type === 'amount' ? '130px' : undefined,
                       }}
                     >
                       {col.label}
@@ -92,6 +95,8 @@ const ReportTable = ({ columns = [], data = [], loading = false, emptyText = 'No
                           color: '#374151',
                           textAlign: col.align || 'left',
                           whiteSpace: col.type === 'amount' || col.align === 'right' ? 'nowrap' : undefined,
+                          width: (col.type === 'amount' || col.align === 'right') ? '1%' : undefined,
+                          minWidth: col.type === 'amount' ? '130px' : undefined,
                           fontWeight: col.type === 'amount' ? 500 : undefined,
                           fontVariantNumeric: col.type === 'amount' ? 'tabular-nums' : undefined,
                         }}
