@@ -224,20 +224,24 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
     try {
         const sql = `
             SELECT
-                TO_CHAR(DATE_TRUNC('month', invoice_date), 'Mon YY') as month,
-                COALESCE(SUM(total_amount), 0)
-                - COALESCE((
-                    SELECT SUM(sr.total_amount) FROM sales_returns sr
-                    WHERE sr.company_id = $1
-                      AND DATE_TRUNC('month', sr.return_date) = DATE_TRUNC('month', invoice_date)
-                  ), 0) as revenue
-            FROM invoices
-            WHERE company_id = $1
-              AND COALESCE(is_deleted, false) = false
-              AND COALESCE(bill_purpose, '') != 'name_only'
-              AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
-            GROUP BY DATE_TRUNC('month', invoice_date)
-            ORDER BY DATE_TRUNC('month', invoice_date) ASC
+                TO_CHAR(ym, 'Mon YY') AS month,
+                COALESCE(sales, 0) - COALESCE(returns, 0) AS revenue
+            FROM (
+                SELECT DATE_TRUNC('month', invoice_date) AS ym, SUM(total_amount) AS sales
+                FROM invoices
+                WHERE company_id = $1
+                  AND COALESCE(is_deleted, false) = false
+                  AND COALESCE(bill_purpose, '') != 'name_only'
+                  AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
+                GROUP BY DATE_TRUNC('month', invoice_date)
+            ) inv
+            LEFT JOIN (
+                SELECT DATE_TRUNC('month', return_date) AS ym, SUM(total_amount) AS returns
+                FROM sales_returns
+                WHERE company_id = $1
+                GROUP BY DATE_TRUNC('month', return_date)
+            ) ret USING (ym)
+            ORDER BY ym ASC
         `;
         const trend = await db.pgAll(sql, [companyId]);
         res.json(trend || []);
