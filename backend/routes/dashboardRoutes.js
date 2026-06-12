@@ -44,24 +44,37 @@ router.get('/summary', authMiddleware, async (req, res) => {
         const bankSql = `SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id = $1`;
 
         const totalRevSql = `
-            SELECT COALESCE(SUM(total_amount), 0) as total_revenue
+            SELECT
+              COALESCE(SUM(total_amount), 0)
+              - COALESCE((SELECT SUM(total_amount) FROM sales_returns WHERE company_id = $1), 0)
+              AS total_revenue
             FROM invoices
             WHERE company_id = $1
               AND COALESCE(is_deleted, false) = false
               AND COALESCE(bill_purpose, '') != 'name_only'
+              AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
         `;
 
         const monthRevSql = `
-            SELECT COALESCE(SUM(total_amount), 0) as month_revenue
+            SELECT
+              COALESCE(SUM(total_amount), 0)
+              - COALESCE((
+                  SELECT SUM(total_amount) FROM sales_returns
+                  WHERE company_id = $1
+                    AND return_date >= DATE_TRUNC('month', CURRENT_DATE)
+                    AND return_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
+              ), 0)
+              AS month_revenue
             FROM invoices
             WHERE company_id = $1
               AND COALESCE(is_deleted, false) = false
               AND COALESCE(bill_purpose, '') != 'name_only'
+              AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
               AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
               AND invoice_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
         `;
 
-        // True outstanding: opening balance + invoices − invoice_payments − sales_returns − CUSTOMER_PAYMENT transactions
+        // True outstanding: opening balance + invoices − invoice_payments − sales_returns − CUSTOMER_PAYMENT − ROUND_OFF
         const outstandingSql = `
             SELECT COALESCE(SUM(GREATEST(0,
                 COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
@@ -88,6 +101,11 @@ router.get('/summary', authMiddleware, async (req, res) => {
                     WHERE t.reference_id = u.id AND t.company_id = $1
                       AND t.type = 'CUSTOMER_PAYMENT'
                 ), 0)
+                - COALESCE((
+                    SELECT SUM(t.amount) FROM transactions t
+                    WHERE t.user_id = u.id AND t.company_id = $1
+                      AND t.type = 'ROUND_OFF'
+                ), 0)
             )), 0) as outstanding
             FROM users u
             WHERE u.role IN ('user','customer') AND u.company_id = $1
@@ -96,11 +114,12 @@ router.get('/summary', authMiddleware, async (req, res) => {
         const salesBreakdownSql = `
             SELECT
                 COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) IN ('TAX_INVOICE','TAX INVOICE','GST','TAXABLE','TAX') THEN total_amount ELSE 0 END), 0) as tax_sales,
-                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) NOT IN ('TAX_INVOICE','TAX INVOICE','GST','TAXABLE','TAX') THEN total_amount ELSE 0 END), 0) as anon_sales
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(invoice_type,''))) NOT IN ('TAX_INVOICE','TAX INVOICE','GST','TAXABLE','TAX','SALES_RETURN') THEN total_amount ELSE 0 END), 0) as anon_sales
             FROM invoices
             WHERE company_id = $1
               AND COALESCE(is_deleted, false) = false
               AND COALESCE(bill_purpose, '') != 'name_only'
+              AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
         `;
 
         // Count customers with positive outstanding balance
@@ -129,6 +148,11 @@ router.get('/summary', authMiddleware, async (req, res) => {
                         SELECT SUM(t.amount) FROM transactions t
                         WHERE t.reference_id = u.id AND t.company_id = $1
                           AND t.type = 'CUSTOMER_PAYMENT'
+                    ), 0)
+                    - COALESCE((
+                        SELECT SUM(t.amount) FROM transactions t
+                        WHERE t.user_id = u.id AND t.company_id = $1
+                          AND t.type = 'ROUND_OFF'
                     ), 0)
                 ) AS bal
                 FROM users u
@@ -201,11 +225,17 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
         const sql = `
             SELECT
                 TO_CHAR(DATE_TRUNC('month', invoice_date), 'Mon YY') as month,
-                COALESCE(SUM(total_amount), 0) as revenue
+                COALESCE(SUM(total_amount), 0)
+                - COALESCE((
+                    SELECT SUM(sr.total_amount) FROM sales_returns sr
+                    WHERE sr.company_id = $1
+                      AND DATE_TRUNC('month', sr.return_date) = DATE_TRUNC('month', invoice_date)
+                  ), 0) as revenue
             FROM invoices
             WHERE company_id = $1
               AND COALESCE(is_deleted, false) = false
               AND COALESCE(bill_purpose, '') != 'name_only'
+              AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
             GROUP BY DATE_TRUNC('month', invoice_date)
             ORDER BY DATE_TRUNC('month', invoice_date) ASC
         `;
@@ -245,9 +275,18 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
                               AND COALESCE(i3.is_deleted, false) = false
                         ), 0)
                         - COALESCE((
+                            SELECT SUM(sr.total_amount) FROM sales_returns sr
+                            WHERE sr.customer_id = u.id AND sr.company_id = $1
+                        ), 0)
+                        - COALESCE((
                             SELECT SUM(t.amount) FROM transactions t
                             WHERE t.reference_id = u.id AND t.company_id = $1
                               AND t.type = 'CUSTOMER_PAYMENT'
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(t.amount) FROM transactions t
+                            WHERE t.user_id = u.id AND t.company_id = $1
+                              AND t.type = 'ROUND_OFF'
                         ), 0)
                     ) as amount
                 FROM users u
