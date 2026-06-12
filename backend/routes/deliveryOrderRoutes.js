@@ -114,6 +114,79 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// PUT /api/delivery-orders/:id  (edit — draft only)
+router.put('/:id', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  const { customer_id, order_date, items } = req.body;
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      `SELECT status FROM delivery_orders WHERE id = $1 AND company_id = $2`,
+      [req.params.id, companyId]
+    );
+    if (!existing.rows.length) {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, error: 'Not found' });
+    }
+    if (existing.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, error: 'Only draft orders can be edited' });
+    }
+
+    await client.query(
+      `UPDATE delivery_orders SET customer_id = $1, order_date = $2, updated_at = NOW() WHERE id = $3`,
+      [customer_id || null, order_date, req.params.id]
+    );
+
+    // Replace items
+    await client.query(`DELETE FROM delivery_order_items WHERE delivery_order_id = $1`, [req.params.id]);
+    for (const item of (items || [])) {
+      const bundleLines = JSON.stringify(item.bundle_lines || []);
+      const totalPieces = (item.bundle_lines || []).reduce((sum, b) => sum + (Number(b.total) || 0), 0);
+      const totalBundles = (item.bundle_lines || []).reduce((sum, b) => sum + (Number(b.bundles) || 0), 0);
+      await client.query(`
+        INSERT INTO delivery_order_items
+          (delivery_order_id, product_id, product_name, bundle_lines, total_bundles, total_pieces, is_confirmed, is_cancelled)
+        VALUES ($1, $2, $3, $4::jsonb, $5, $6, false, false)
+      `, [req.params.id, item.product_id || null, item.product_name, bundleLines, totalBundles, totalPieces]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('delivery-orders update error:', e.message);
+    res.json({ success: false, error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /api/delivery-orders/:id  (not allowed if invoiced)
+router.delete('/:id', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  try {
+    const existing = await db.pgGet(
+      `SELECT status FROM delivery_orders WHERE id = $1 AND company_id = $2`,
+      [req.params.id, companyId]
+    );
+    if (!existing) return res.json({ success: false, error: 'Not found' });
+    if (existing.status === 'invoiced') {
+      return res.json({ success: false, error: 'Invoiced orders cannot be deleted' });
+    }
+    await db.pgRun(
+      `DELETE FROM delivery_orders WHERE id = $1 AND company_id = $2`,
+      [req.params.id, companyId]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error('delivery-orders delete error:', e.message);
+    res.json({ success: false, error: e.message });
+  }
+});
+
 // POST /api/delivery-orders/:id/confirm-item
 router.post('/:id/confirm-item', authMiddleware, async (req, res) => {
   const { item_id } = req.body;

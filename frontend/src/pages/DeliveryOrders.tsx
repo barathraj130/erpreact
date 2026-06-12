@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaSync, FaEye, FaBox, FaFileInvoice } from "react-icons/fa";
+import { FaPlus, FaSync, FaEye, FaBox, FaFileInvoice, FaEdit, FaTrash } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import "./PageShared.css";
 
@@ -26,6 +26,14 @@ const DeliveryOrders: React.FC = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -42,6 +50,24 @@ const DeliveryOrders: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
+  const handleDelete = async (o: DeliveryOrder) => {
+    if (!window.confirm(`Delete ${o.order_number}? This cannot be undone.`)) return;
+    setDeletingId(o.id);
+    try {
+      const res = await apiFetch(`/delivery-orders/${o.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setOrders(prev => prev.filter(x => x.id !== o.id));
+      } else {
+        alert(data.error || "Delete failed.");
+      }
+    } catch (e: any) {
+      alert(e.message || "Network error.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const badge = (status: string) => {
     const b = STATUS_BADGE[status] || STATUS_BADGE.draft;
     return (
@@ -51,6 +77,53 @@ const DeliveryOrders: React.FC = () => {
       }}>{b.label}</span>
     );
   };
+
+  const ActionButtons = ({ o }: { o: DeliveryOrder }) => (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {/* View */}
+      <button
+        className="page-btn-round-sm"
+        onClick={() => navigate(`/delivery-orders/${o.id}`)}
+        title="View / Confirm"
+      >
+        <FaEye size={13} />
+      </button>
+      {/* Edit — only draft */}
+      {o.status === "draft" && (
+        <button
+          className="page-btn-round-sm"
+          onClick={() => navigate(`/delivery-orders/${o.id}/edit`)}
+          title="Edit"
+          style={{ color: "#6366f1" }}
+        >
+          <FaEdit size={13} />
+        </button>
+      )}
+      {/* View Invoice — invoiced */}
+      {o.status === "invoiced" && o.converted_invoice_id && (
+        <button
+          className="page-btn-round-sm"
+          onClick={() => navigate(`/invoices/${o.converted_invoice_id}`)}
+          title="View Invoice"
+          style={{ color: "#3b82f6" }}
+        >
+          <FaFileInvoice size={13} />
+        </button>
+      )}
+      {/* Delete — not invoiced */}
+      {o.status !== "invoiced" && (
+        <button
+          className="page-btn-round-sm"
+          onClick={() => handleDelete(o)}
+          title="Delete"
+          disabled={deletingId === o.id}
+          style={{ color: "#dc2626", opacity: deletingId === o.id ? 0.5 : 1 }}
+        >
+          <FaTrash size={13} />
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="page-container">
@@ -72,7 +145,11 @@ const DeliveryOrders: React.FC = () => {
         </div>
       </div>
 
-      {orders.length === 0 && !loading ? (
+      {loading && orders.length === 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[1, 2, 3].map(i => <div key={i} className="skeleton-row" />)}
+        </div>
+      ) : orders.length === 0 ? (
         <div className="page-empty">
           <FaBox size={32} style={{ marginBottom: 12, opacity: 0.3 }} />
           <div style={{ fontSize: 14, fontWeight: 500 }}>No delivery orders yet</div>
@@ -80,7 +157,56 @@ const DeliveryOrders: React.FC = () => {
             Create a delivery order to track bundle quantities before invoicing.
           </p>
         </div>
+      ) : isMobile ? (
+        /* ── Mobile card layout ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {orders.map(o => (
+            <div key={o.id} style={{
+              background: "var(--surface)", border: "1px solid var(--border)",
+              borderRadius: 14, padding: "16px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                    <FaBox size={11} style={{ opacity: 0.4 }} />
+                    {o.order_number}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    {o.order_date ? new Date(o.order_date).toLocaleDateString("en-IN") : "---"}
+                  </div>
+                </div>
+                {badge(o.status)}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Customer</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{o.customer_name || "---"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Pieces</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{Number(o.total_pieces).toLocaleString()} pcs</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Items</div>
+                  <div style={{ fontSize: 13, marginTop: 2 }}>{o.item_count} product{Number(o.item_count) !== 1 ? "s" : ""}</div>
+                </div>
+                {o.status === "invoiced" && o.converted_invoice_number && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Invoice</div>
+                    <div style={{ fontSize: 13, color: "#3b82f6", marginTop: 2 }}>{o.converted_invoice_number}</div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 10 }}>
+                <ActionButtons o={o} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
+        /* ── Desktop table layout ── */
         <div className="page-table-wrapper">
           <table className="page-table">
             <thead>
@@ -120,25 +246,7 @@ const DeliveryOrders: React.FC = () => {
                     )}
                   </td>
                   <td className="text-center">
-                    <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
-                      <button
-                        className="page-btn-round-sm"
-                        onClick={() => navigate(`/delivery-orders/${o.id}`)}
-                        title="View / Confirm"
-                      >
-                        <FaEye size={13} />
-                      </button>
-                      {o.status === "invoiced" && o.converted_invoice_id && (
-                        <button
-                          className="page-btn-round-sm"
-                          onClick={() => navigate(`/invoices/${o.converted_invoice_id}`)}
-                          title="View Invoice"
-                          style={{ color: "#3b82f6" }}
-                        >
-                          <FaFileInvoice size={13} />
-                        </button>
-                      )}
-                    </div>
+                    <ActionButtons o={o} />
                   </td>
                 </tr>
               ))}

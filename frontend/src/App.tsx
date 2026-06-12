@@ -100,6 +100,7 @@ import SystemTester from "./pages/SystemTester";
 import DeliveryOrders from "./pages/DeliveryOrders";
 import CreateDeliveryOrder from "./pages/CreateDeliveryOrder";
 import DeliveryOrderDetail from "./pages/DeliveryOrderDetail";
+import EditDeliveryOrder from "./pages/EditDeliveryOrder";
 import LedgerViewer from "./pages/LedgerViewer";
 
 
@@ -291,6 +292,7 @@ const App: React.FC = () => {
             <Route path="/invoices/edit/:id" element={<EditInvoice />} />
             <Route path="/delivery-orders" element={<DeliveryOrders />} />
             <Route path="/delivery-orders/new" element={<CreateDeliveryOrder />} />
+            <Route path="/delivery-orders/:id/edit" element={<EditDeliveryOrder />} />
             <Route path="/delivery-orders/:id" element={<DeliveryOrderDetail />} />
             <Route path="/sales/returns" element={<SalesReturns />} />
             <Route path="/products" element={<Inventory />} />
