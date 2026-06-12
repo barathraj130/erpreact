@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import './Reports.css';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { apiFetch } from '../../utils/api';
 import ReportShell from '../../components/reports/ReportShell';
@@ -162,10 +163,10 @@ const HRReports = () => {
       subtitle="Employee productivity, attendance trends and salary analysis"
       breadcrumb={[{ label: 'Home', path: '/dashboard' }, { label: 'Reports', path: '/reports' }, { label: 'HR' }]}
     >
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', borderBottom: '1px solid #e5e7eb' }}>
+      <div className="report-tabs">
         {TABS.map((t, i) => (
           <button key={i} onClick={() => setActiveTab(i)}
-            style={{ padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: activeTab === i ? 600 : 400, color: activeTab === i ? '#ef4444' : '#6b7280', borderBottom: activeTab === i ? '2px solid #ef4444' : '2px solid transparent', transition: 'all 0.2s' }}>
+            style={{ padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '14px', whiteSpace: 'nowrap', fontWeight: activeTab === i ? 600 : 400, color: activeTab === i ? '#ef4444' : '#6b7280', borderBottom: activeTab === i ? '2px solid #ef4444' : '2px solid transparent', transition: 'all 0.2s' }}>
             {t}
           </button>
         ))}

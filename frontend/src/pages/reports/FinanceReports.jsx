@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import './Reports.css';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, LineChart, Line, ComposedChart, Area } from 'recharts';
 import { apiFetch } from '../../utils/api';
 import ReportShell from '../../components/reports/ReportShell';
@@ -407,7 +408,7 @@ const FinanceReports = () => {
       breadcrumb={[{ label: 'Home', path: '/dashboard' }, { label: 'Reports', path: '/reports' }, { label: 'Finance' }]}
     >
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 2, marginBottom: 20, borderBottom: '1px solid #e5e7eb', flexWrap: 'wrap' }}>
+      <div className="report-tabs">
         {TABS.map((t, i) => (
           <button key={i} onClick={() => setActiveTab(i)}
             style={{ padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: activeTab === i ? 600 : 400, color: activeTab === i ? '#3b82f6' : '#6b7280', borderBottom: activeTab === i ? '2px solid #3b82f6' : '2px solid transparent', whiteSpace: 'nowrap' }}>

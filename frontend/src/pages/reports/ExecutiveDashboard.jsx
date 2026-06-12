@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import './Reports.css';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 import { apiFetch } from '../../utils/api';
 import ReportShell from '../../components/reports/ReportShell';

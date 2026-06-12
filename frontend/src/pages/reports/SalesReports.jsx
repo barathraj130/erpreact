@@ -205,22 +205,12 @@ const SalesReports = () => {
       breadcrumb={[{ label: 'Home', path: '/dashboard' }, { label: 'Reports', path: '/reports' }, { label: 'Sales' }]}
     >
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', borderBottom: '1px solid #e5e7eb', paddingBottom: '0' }}>
+      <div className="report-tabs">
         {TABS.map((t, i) => (
           <button
             key={i}
             onClick={() => setActiveTab(i)}
-            style={{
-              padding: '10px 18px',
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: activeTab === i ? 600 : 400,
-              color: activeTab === i ? '#6366f1' : '#6b7280',
-              borderBottom: activeTab === i ? '2px solid #6366f1' : '2px solid transparent',
-              transition: 'all 0.2s',
-            }}
+            className={`report-tab-btn${activeTab === i ? ' report-tab-btn-active' : ''}`}
           >
             {t}
           </button>
