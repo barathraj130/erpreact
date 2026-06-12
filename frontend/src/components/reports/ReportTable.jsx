@@ -55,8 +55,8 @@ const ReportTable = ({ columns = [], data = [], loading = false, emptyText = 'No
         <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af' }}>{emptyText}</div>
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', minWidth: '480px', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                   {columns.map(col => (
@@ -85,8 +85,18 @@ const ReportTable = ({ columns = [], data = [], loading = false, emptyText = 'No
                 {paged.map((row, ri) => (
                   <tr key={ri} style={{ borderBottom: '1px solid #f3f4f6', background: ri % 2 === 0 ? 'white' : '#fafafa' }}>
                     {columns.map(col => (
-                      <td key={col.key} style={{ padding: '10px 16px', color: '#374151', textAlign: col.align || 'left' }}>
-                        {formatCell(col, row)}
+                      <td
+                        key={col.key}
+                        style={{
+                          padding: '10px 16px',
+                          color: '#374151',
+                          textAlign: col.align || 'left',
+                          whiteSpace: col.type === 'amount' || col.align === 'right' ? 'nowrap' : undefined,
+                          fontWeight: col.type === 'amount' ? 500 : undefined,
+                          fontVariantNumeric: col.type === 'amount' ? 'tabular-nums' : undefined,
+                        }}
+                      >
+                        {col.render ? col.render(row) : formatCell(col, row)}
                       </td>
                     ))}
                   </tr>
