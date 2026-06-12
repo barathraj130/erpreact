@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaPlus, FaTrash, FaSave } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
@@ -21,6 +21,93 @@ interface DOItem {
 
 const emptyBundleLine = (): BundleLine => ({ bundles: 1, pieces_per_bundle: 0, total: 0 });
 
+// ── Typeahead product input ─────────────────────────────────────────────────
+interface ProductInputProps {
+  value: string;
+  productId: number | null;
+  products: Product[];
+  onChange: (name: string, productId: number | null) => void;
+}
+
+const ProductInput: React.FC<ProductInputProps> = ({ value, products, onChange }) => {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Sync external value changes (e.g. on reset)
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const filtered = query.trim()
+    ? products.filter(p => p.name.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
+    : products.slice(0, 8);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleInput = (val: string) => {
+    setQuery(val);
+    setOpen(true);
+    // If text matches a product exactly (case-insensitive), link it; otherwise free text
+    const exact = products.find(p => p.name.toLowerCase() === val.toLowerCase());
+    onChange(val, exact ? exact.id : null);
+  };
+
+  const selectProduct = (p: Product) => {
+    setQuery(p.name);
+    setOpen(false);
+    onChange(p.name, p.id);
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={query}
+        onChange={e => handleInput(e.target.value)}
+        onFocus={() => setOpen(true)}
+        placeholder="Type product name..."
+        autoComplete="off"
+        style={{
+          width: "100%", padding: "9px 12px", borderRadius: 8,
+          border: "1px solid var(--border-1)", background: "var(--surface-1)",
+          color: "var(--text-1)", fontSize: 13, boxSizing: "border-box",
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          background: "var(--surface-1)", border: "1px solid var(--border-1)",
+          borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          zIndex: 100, maxHeight: 220, overflowY: "auto",
+        }}>
+          {filtered.map(p => (
+            <div
+              key={p.id}
+              onMouseDown={() => selectProduct(p)}
+              style={{
+                padding: "9px 14px", cursor: "pointer", fontSize: 13,
+                borderBottom: "1px solid var(--border-1)",
+                color: "var(--text-1)",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              {p.name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+// ───────────────────────────────────────────────────────────────────────────
+
 const CreateDeliveryOrder: React.FC = () => {
   const navigate = useNavigate();
   const { customers } = useUsers();
@@ -41,19 +128,16 @@ const CreateDeliveryOrder: React.FC = () => {
     bundleLines.reduce((s, b) => s + (b.total || 0), 0);
 
   const updateBundleLine = (itemIdx: number, lineIdx: number, key: keyof BundleLine, val: number) => {
-    setItems(prev => {
-      const next = prev.map((item, i) => {
-        if (i !== itemIdx) return item;
-        const lines = item.bundle_lines.map((l, j) => {
-          if (j !== lineIdx) return l;
-          const updated = { ...l, [key]: val };
-          updated.total = (updated.bundles || 0) * (updated.pieces_per_bundle || 0);
-          return updated;
-        });
-        return { ...item, bundle_lines: lines };
+    setItems(prev => prev.map((item, i) => {
+      if (i !== itemIdx) return item;
+      const lines = item.bundle_lines.map((l, j) => {
+        if (j !== lineIdx) return l;
+        const updated = { ...l, [key]: val };
+        updated.total = (updated.bundles || 0) * (updated.pieces_per_bundle || 0);
+        return updated;
       });
-      return next;
-    });
+      return { ...item, bundle_lines: lines };
+    }));
   };
 
   const addBundleLine = (itemIdx: number) => {
@@ -72,12 +156,9 @@ const CreateDeliveryOrder: React.FC = () => {
     }));
   };
 
-  const updateItemProduct = (itemIdx: number, productId: number) => {
-    const prod = products.find(p => p.id === productId);
+  const updateItemProduct = (itemIdx: number, name: string, productId: number | null) => {
     setItems(prev => prev.map((item, i) =>
-      i === itemIdx
-        ? { ...item, product_id: productId, product_name: prod?.name || "" }
-        : item
+      i === itemIdx ? { ...item, product_id: productId, product_name: name } : item
     ));
   };
 
@@ -96,8 +177,8 @@ const CreateDeliveryOrder: React.FC = () => {
 
   const handleSave = async () => {
     if (!customerId) return setError("Select a customer.");
-    const validItems = items.filter(i => i.product_id && totalPieces(i.bundle_lines) > 0);
-    if (validItems.length === 0) return setError("Add at least one product with bundle lines.");
+    const validItems = items.filter(i => i.product_name.trim() && totalPieces(i.bundle_lines) > 0);
+    if (validItems.length === 0) return setError("Add at least one product with bundle quantities.");
     setError(null);
     setSaving(true);
     try {
@@ -108,7 +189,7 @@ const CreateDeliveryOrder: React.FC = () => {
           order_date: orderDate,
           items: validItems.map(item => ({
             product_id: item.product_id,
-            product_name: item.product_name,
+            product_name: item.product_name.trim(),
             bundle_lines: item.bundle_lines,
             total_bundles: item.bundle_lines.reduce((s, b) => s + (b.bundles || 0), 0),
           })),
@@ -201,7 +282,7 @@ const CreateDeliveryOrder: React.FC = () => {
         </div>
       </div>
 
-      {/* Items */}
+      {/* Products */}
       <div style={{
         background: "var(--surface-1)", border: "1px solid var(--border-1)",
         borderRadius: 12, padding: 20, marginBottom: 20,
@@ -231,29 +312,21 @@ const CreateDeliveryOrder: React.FC = () => {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
               <div style={{ flex: 1, marginRight: 12 }}>
                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", display: "block", marginBottom: 5 }}>
-                  Product
+                  Product name
                 </label>
-                <select
-                  value={item.product_id || ""}
-                  onChange={e => updateItemProduct(itemIdx, Number(e.target.value))}
-                  style={{
-                    width: "100%", padding: "8px 12px", borderRadius: 8,
-                    border: "1px solid var(--border-1)", background: "var(--surface-1)",
-                    color: "var(--text-1)", fontSize: 13,
-                  }}
-                >
-                  <option value="">Select product...</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <ProductInput
+                  value={item.product_name}
+                  productId={item.product_id}
+                  products={products}
+                  onChange={(name, pid) => updateItemProduct(itemIdx, name, pid)}
+                />
               </div>
               {items.length > 1 && (
                 <button
                   onClick={() => removeItem(itemIdx)}
                   style={{
                     padding: "6px 8px", borderRadius: 7, border: "none",
-                    background: "#fee2e2", color: "#dc2626", cursor: "pointer", marginTop: 18,
+                    background: "#fee2e2", color: "#dc2626", cursor: "pointer", marginTop: 20,
                   }}
                   title="Remove product"
                 >
@@ -264,10 +337,7 @@ const CreateDeliveryOrder: React.FC = () => {
 
             {/* Bundle Lines */}
             <div style={{ marginBottom: 8 }}>
-              <div style={{
-                display: "grid", gridTemplateColumns: "1fr 1fr 1fr 36px",
-                gap: 8, marginBottom: 6,
-              }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 36px", gap: 8, marginBottom: 6 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)" }}>Bundles</div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)" }}>Pcs / Bundle</div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)" }}>Total Pcs</div>
@@ -276,10 +346,7 @@ const CreateDeliveryOrder: React.FC = () => {
               {item.bundle_lines.map((line, lineIdx) => (
                 <div
                   key={lineIdx}
-                  style={{
-                    display: "grid", gridTemplateColumns: "1fr 1fr 1fr 36px",
-                    gap: 8, marginBottom: 6,
-                  }}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 36px", gap: 8, marginBottom: 6 }}
                 >
                   <input
                     type="number"
@@ -336,7 +403,7 @@ const CreateDeliveryOrder: React.FC = () => {
               >
                 <FaPlus size={9} /> Add Line
               </button>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>
                 Total: <span style={{ color: "#059669" }}>{totalPieces(item.bundle_lines)} pcs</span>
               </div>
             </div>
