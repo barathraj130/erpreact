@@ -364,6 +364,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         bill_purpose, // 'real' or 'name_only'
         points_to_redeem, // Points to redeem on this invoice
         tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST from frontend
+        delivery_order_id, // Links back to the delivery order that spawned this invoice
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
@@ -952,6 +953,18 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
         await client.query("COMMIT");
+
+        // Mark the source delivery order as invoiced (non-blocking)
+        if (delivery_order_id) {
+            db.pgRun(`
+                UPDATE delivery_orders
+                SET status = 'invoiced', converted_invoice_id = $1, converted_at = NOW(), updated_at = NOW()
+                WHERE id = $2 AND company_id = $3 AND status != 'invoiced'
+            `, [invoiceId, delivery_order_id, companyId]).catch(e =>
+                console.error('Failed to mark delivery order as invoiced:', e.message)
+            );
+        }
+
         res.status(201).json({
             message: "Invoice saved",
             id: invoiceId,

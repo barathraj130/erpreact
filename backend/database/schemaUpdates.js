@@ -4,6 +4,38 @@ import * as db from "./pg.js";
 export const runSchemaUpdates = async () => {
     console.log("🚀 Running Schema Updates...");
 
+    // ── Delivery Orders ───────────────────────────────────────────────────────
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS delivery_orders (
+            id                   SERIAL PRIMARY KEY,
+            company_id           INTEGER NOT NULL,
+            customer_id          INTEGER,
+            order_number         VARCHAR(50) NOT NULL,
+            order_date           DATE NOT NULL,
+            status               VARCHAR(20) DEFAULT 'draft',
+            converted_invoice_id INTEGER,
+            converted_at         TIMESTAMP,
+            created_at           TIMESTAMP DEFAULT NOW(),
+            updated_at           TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS delivery_order_items (
+            id                   SERIAL PRIMARY KEY,
+            delivery_order_id    INTEGER NOT NULL REFERENCES delivery_orders(id) ON DELETE CASCADE,
+            product_id           INTEGER,
+            product_name         VARCHAR(255),
+            bundle_lines         JSONB DEFAULT '[]',
+            total_bundles        INTEGER DEFAULT 0,
+            total_pieces         INTEGER DEFAULT 0,
+            is_confirmed         BOOLEAN DEFAULT false,
+            is_cancelled         BOOLEAN DEFAULT false,
+            confirmed_at         TIMESTAMP,
+            created_at           TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+
     // ── Critical standalone migrations (each isolated — never blocks others) ──
     // customer_points table — required by pointsService / invoiceRoutes
     await db.query(`

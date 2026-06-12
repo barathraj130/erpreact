@@ -9,7 +9,7 @@ import {
     FaTimes,
     FaTrash
 } from "react-icons/fa";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { fetchProfile } from "../api/companyApi";
 import { fetchProducts, Product } from "../api/productApi";
 import { Customer } from "../api/userApi";
@@ -200,6 +200,7 @@ type BillTypeValue = typeof BILL_TYPES[number]['value'];
 
 const CreateInvoice: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { customers } = useUsers();
   const { user: authUser } = useAuthUser();
   const { activeBranch } = useTenant();
@@ -268,6 +269,12 @@ const CreateInvoice: React.FC = () => {
   });
   const [useShippedSame, setUseShippedSame] = useState(true);
 
+  // Delivery order pre-fill state
+  const [fromDeliveryOrderId, setFromDeliveryOrderId] = useState<number | null>(null);
+  const [deliveryOrderNumber, setDeliveryOrderNumber] = useState<string>("");
+  const [deliveryOrderBanner, setDeliveryOrderBanner] = useState(false);
+  const [doItemBundleSummary, setDoItemBundleSummary] = useState<Record<number, string>>({});
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -296,6 +303,76 @@ const CreateInvoice: React.FC = () => {
     };
     load();
   }, []);
+
+  // Load delivery order data when delivery_order_id is in URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const doId = params.get("delivery_order_id");
+    if (!doId) return;
+
+    const fetchDO = async () => {
+      try {
+        const res = await apiFetch(`/delivery-orders/${doId}`);
+        const data = await res.json();
+        if (!data.success || !data.order) return;
+        const order = data.order;
+
+        setFromDeliveryOrderId(Number(doId));
+        setDeliveryOrderNumber(order.order_number);
+        setDeliveryOrderBanner(true);
+
+        // Pre-fill customer
+        setCustomerId(order.customer_id);
+        const c = customers.find((x: Customer) => x.id === order.customer_id);
+        if (c) {
+          setCustomerInfo({
+            name: c.username.toUpperCase(),
+            address: `${c.address_line1 || ""}, ${c.city_pincode || ""}`.toUpperCase(),
+            gstin: c.gstin || "---",
+            state: c.state?.toUpperCase() || "---",
+            code: resolveCode(c.state, c.state_code) || "---",
+          });
+        }
+
+        // Pre-fill items from confirmed, non-cancelled items
+        const confirmedItems = (order.items || []).filter(
+          (i: any) => i.is_confirmed && !i.is_cancelled
+        );
+
+        const bundleSummaryMap: Record<number, string> = {};
+        const prefilledItems = confirmedItems.map((item: any, idx: number) => {
+          const lines: any[] = Array.isArray(item.bundle_lines)
+            ? item.bundle_lines
+            : (typeof item.bundle_lines === 'string' ? JSON.parse(item.bundle_lines) : []);
+
+          const summary = lines.map((b: any) => `${b.bundles}×${b.pieces_per_bundle}`).join(", ");
+          bundleSummaryMap[idx] = summary;
+
+          return {
+            id: Date.now() + idx,
+            product_id: item.product_id || null,
+            desc: (item.product_name || "").toUpperCase(),
+            hsn: "",
+            uom: "Pcs",
+            qty: item.total_pieces || 0,
+            rate: 0, // user must fill
+            gst_rate: item.gst_percent || null,
+            _bundle_summary: summary,
+            _from_delivery_order: true,
+            _delivery_item_id: item.id,
+          };
+        });
+
+        setDoItemBundleSummary(bundleSummaryMap);
+        if (prefilledItems.length > 0) setItems(prefilledItems as any);
+      } catch (e) {
+        console.error("Failed to load delivery order:", e);
+      }
+    };
+
+    fetchDO();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, customers.length]);
 
   // Fetch the preview of the next auto-generated invoice number whenever bill type changes
   useEffect(() => {
@@ -468,6 +545,14 @@ const CreateInvoice: React.FC = () => {
         return alert(`Please select a customer — ${billTypeCfg.label} requires a customer.`);
     }
 
+    // Delivery order: every item must have a rate > 0
+    if (fromDeliveryOrderId) {
+      const missingRates = items.filter(i => i.desc && i.qty > 0 && !(i.rate > 0));
+      if (missingRates.length > 0) {
+        return alert(`Enter rate for: ${missingRates.map(i => i.desc).join(", ")}`);
+      }
+    }
+
     if (invoiceType !== "GIFTED_ITEM" && (amountPaid + discount) > totals.grandTotal) {
         // Allow overpayment if they really want, but warn.
         // Actually, usually we don't want overpayment on a single invoice unless it creates a credit.
@@ -510,6 +595,7 @@ const CreateInvoice: React.FC = () => {
         broker_id: brokerId || null,
         broker_commission_rate: brokerCommRate || null,
         branch_id: (activeBranch && (activeBranch as any).id !== 'all') ? (activeBranch as any).id : null,
+        ...(fromDeliveryOrderId ? { delivery_order_id: fromDeliveryOrderId } : {}),
       };
       const res = await apiFetch("/invoice", {
         method: "POST",
@@ -579,6 +665,36 @@ const CreateInvoice: React.FC = () => {
           <div className="ci-form-pane" style={{ background: '#transparent' }}>
             {/* Form Inner Body (Scrolled) */}
             <div className="ci-form-body">
+              {/* Delivery Order Banner */}
+              {deliveryOrderBanner && (
+                <div style={{
+                  background: "#eff6ff", border: "1.5px solid #93c5fd", borderRadius: 10,
+                  padding: "12px 16px", marginBottom: 16,
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>
+                      Pre-filled from Delivery Order {deliveryOrderNumber}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#3b82f6", marginTop: 2 }}>
+                      Quantities confirmed — enter rate for each product to complete the invoice.
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const doId = new URLSearchParams(location.search).get("delivery_order_id");
+                      if (doId) navigate(`/delivery-orders/${doId}`);
+                    }}
+                    style={{
+                      padding: "6px 14px", borderRadius: 8, border: "1px solid #93c5fd",
+                      background: "#dbeafe", color: "#1e40af", fontWeight: 600,
+                      fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+                    }}
+                  >
+                    ← Back to Delivery Order
+                  </button>
+                </div>
+              )}
               <div className="db-page-header" style={{ marginBottom: '24px' }}>
                 <h1 className="db-page-title">Create <strong>New Invoice</strong></h1>
                 <p className="db-page-sub">Fill in the details below to generate a professional transaction record.</p>
@@ -1097,15 +1213,33 @@ const CreateInvoice: React.FC = () => {
                           }
                         />
                       </div>
-                      <div className="ci-field">
-                        <label>Rate ₹</label>
+                      <div className="ci-field" style={{ position: "relative" }}>
+                        <label style={{ color: (it as any)._from_delivery_order && !it.rate ? "#ef4444" : undefined }}>
+                          Rate ₹{(it as any)._from_delivery_order && !it.rate ? " *" : ""}
+                        </label>
+                        {(it as any)._from_delivery_order && !it.rate && (
+                          <div style={{ position: "absolute", top: 0, right: 0, fontSize: 10, color: "#ef4444", fontWeight: 600 }}>
+                            Enter rate ↓
+                          </div>
+                        )}
                         <input
                           type="number"
                           value={it.rate || ""}
                           onChange={(e) =>
                             updateItem(i, "rate", Number(e.target.value))
                           }
+                          style={{
+                            border: (it as any)._from_delivery_order && !it.rate
+                              ? "1.5px solid #ef4444"
+                              : undefined,
+                          }}
+                          placeholder={(it as any)._from_delivery_order ? "Enter rate" : ""}
                         />
+                        {(it as any)._bundle_summary && (
+                          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>
+                            {(it as any)._bundle_summary} = {it.qty} pcs
+                          </div>
+                        )}
                       </div>
                       <div className="ci-field">
                         <label>Amount</label>
