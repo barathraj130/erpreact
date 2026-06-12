@@ -753,17 +753,16 @@ body { font-family: 'Satoshi', sans-serif; }
   .page-search-bar { height: 48px; border-radius: 10px; }
   .page-search-bar input { font-size: 15px; }
 
-  /* ── TABLE → CARD on mobile ── */
+  /* ── TABLE: horizontal scroll on mobile (simpler, works for all tables) ── */
   .page-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     border-radius: 12px;
-    overflow: visible;
-    border: none;
-    background: transparent;
   }
 
-  .page-table thead { display: none; }
-
-  .page-table tbody tr {
+  /* Tables with data-label: convert to cards */
+  .page-table.has-labels thead { display: none; }
+  .page-table.has-labels tbody tr {
     display: block;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -772,10 +771,7 @@ body { font-family: 'Satoshi', sans-serif; }
     padding: 14px 16px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   }
-
-  .page-table tbody tr:hover { background: var(--surface); }
-
-  .page-table td {
+  .page-table.has-labels td {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -783,12 +779,9 @@ body { font-family: 'Satoshi', sans-serif; }
     border-bottom: 1px solid var(--border-soft);
     font-size: 13.5px;
   }
-
-  .page-table td:last-child { border-bottom: none; padding-bottom: 0; }
-  .page-table td:first-child { padding-top: 0; }
-
-  /* Add column label before each cell (using data-label) */
-  .page-table td[data-label]::before {
+  .page-table.has-labels td:last-child { border-bottom: none; padding-bottom: 0; }
+  .page-table.has-labels td:first-child { padding-top: 0; }
+  .page-table.has-labels td[data-label]::before {
     content: attr(data-label);
     font-size: 10px;
     font-weight: 700;
@@ -799,39 +792,23 @@ body { font-family: 'Satoshi', sans-serif; }
     margin-right: 8px;
   }
 
-  .page-table td.text-center,
-  .page-table td.text-right {
-    text-align: left;
-    justify-content: space-between;
+  /* Compact all table cells on mobile */
+  .page-table th, .page-table td {
+    padding: 10px 10px;
+    font-size: 12.5px;
+    white-space: nowrap;
   }
 
   /* data-table (reconciliation etc) */
   .app-section .table-container {
-    border: none;
-    background: transparent;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
-
-  .data-table thead { display: none; }
-
-  .data-table tbody tr {
-    display: block;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    margin-bottom: 10px;
-    padding: 14px 16px;
+  .data-table th, .data-table td {
+    padding: 10px 10px;
+    font-size: 12.5px;
+    white-space: nowrap;
   }
-
-  .data-table td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 7px 0;
-    border-bottom: 1px solid var(--border-soft);
-    font-size: 13.5px;
-  }
-
-  .data-table td:last-child { border-bottom: none; }
 
   /* ── Transaction Cards ── */
   .tx-card {

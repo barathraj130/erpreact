@@ -723,15 +723,17 @@
 
   /* Topbar */
   .db-topbar {
-    padding: 0 12px 0 56px; /* room for hamburger */
-    height: 52px;
+    padding: 0 12px 0 62px; /* room for hamburger */
+    height: auto;
+    min-height: 52px;
     flex-wrap: nowrap;
     gap: 8px;
   }
 
-  .db-topbar-title,
   .db-topbar-sep,
-  .db-topbar-sub { font-size: 12px; }
+  .db-topbar-sub { display: none !important; }
+
+  .db-topbar-title { font-size: 13px; }
 
   .db-topbar-right { gap: 6px; }
 

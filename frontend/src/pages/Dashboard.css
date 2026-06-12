@@ -457,5 +457,64 @@
 }
 @media (max-width: 640px) {
   .db-content { padding: 16px; }
-  .db-kpi-grid { grid-template-columns: 1fr !important; }
+  .db-kpi-grid { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* ── Mobile (≤768px) ── */
+@media (max-width: 768px) {
+  /* Topbar: push content right so hamburger button doesn't overlap */
+  .db-topbar {
+    padding: 0 12px 0 62px;
+    height: auto;
+    min-height: 52px;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  /* Hide breadcrumb separator and subtitle on mobile */
+  .db-topbar-sep,
+  .db-topbar-sub { display: none !important; }
+  .db-topbar-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Topbar right: compact buttons */
+  .db-topbar-right { gap: 6px; flex-shrink: 0; }
+  .db-topbar-right .db-btn:not(:first-child) { display: none; } /* hide Download/secondary */
+  .db-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; min-height: 36px; }
+
+  /* Content */
+  .db-content { padding: 14px 14px 24px; }
+  .db-page-header { margin-bottom: 18px; }
+  .db-page-title { font-size: 19px; letter-spacing: -0.3px; }
+  .db-page-sub { font-size: 12.5px; }
+
+  /* KPI Grid: 2 columns on mobile */
+  .db-kpi-grid { grid-template-columns: 1fr 1fr !important; gap: 10px; margin-bottom: 14px; }
+  .db-kpi-card { padding: 16px 14px; border-radius: 14px; gap: 8px; }
+  .db-kpi-value { font-size: 20px; }
+  .db-kpi-cur { font-size: 15px; }
+  .db-kpi-label { font-size: 11px; }
+  .db-kpi-footer { font-size: 11px; padding-top: 8px; }
+
+  /* Charts: full width, avoid overflow */
+  .db-charts-row { grid-template-columns: 1fr !important; gap: 12px; margin-bottom: 14px; }
+  .db-card { border-radius: 14px; }
+  .db-card-header { padding: 14px 14px 0; }
+  .db-card-body { padding: 10px 14px 12px; overflow-x: auto; }
+
+  /* Tables inside dashboard cards */
+  .db-card table { min-width: 400px; } /* allow horizontal scroll */
+
+  /* Badges */
+  .db-badge { font-size: 10px; padding: 3px 7px; }
+
+  /* Trend indicators */
+  .db-trend { font-size: 11px; }
+}
+
+/* ── Very small phones (≤390px) ── */
+@media (max-width: 390px) {
+  .db-kpi-grid { grid-template-columns: 1fr !important; gap: 8px; }
+  .db-topbar-right { display: none; }
+  .db-content { padding: 10px 10px 20px; }
+  .db-kpi-card { padding: 12px; }
+  .db-kpi-value { font-size: 18px; }
 }
