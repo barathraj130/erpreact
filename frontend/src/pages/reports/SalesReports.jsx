@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import './Reports.css';
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { apiFetch } from '../../utils/api';
+import { formatINR, formatDate, formatNum, yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ReportTable from '../../components/reports/ReportTable';
@@ -11,7 +13,6 @@ import ChartCard from '../../components/reports/ChartCard';
 import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
 
-const fmt = v => Number(v || 0).toLocaleString('en-IN');
 const nowMonth = () => {
   const now = new Date();
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -56,19 +57,24 @@ const SalesReports = () => {
   const tabData = data[activeTab] || [];
   const tabSummary = summary[activeTab] || {};
 
+  // Pre-process data to add rank for top customers and product performance
+  const rankedData = (activeTab === 0 || activeTab === 4)
+    ? tabData.map((r, i) => ({ ...r, rank: i + 1 }))
+    : tabData;
+
   const renderKPIs = () => {
     if (activeTab === 0) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Customers" value={tabSummary.total_customers || 0} color="#6366f1" prefix="" />
-        <KPICard label="Total Revenue" value={'₹' + fmt(tabSummary.total_revenue)} color="#10b981" prefix="" />
+        <KPICard label="Total Customers" value={String(tabSummary.total_customers || 0)} color="#6366f1" isAmount={false} />
+        <KPICard label="Total Revenue" value={tabSummary.total_revenue || 0} color="#10b981" isAmount={true} />
       </div>
     );
     if (activeTab === 2) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Outstanding" value={'₹' + fmt(tabSummary.total_outstanding)} color="#ef4444" prefix="" />
-        <KPICard label="0-30 days" value={'₹' + fmt(tabSummary.days_0_30)} color="#10b981" prefix="" />
-        <KPICard label="31-60 days" value={'₹' + fmt(tabSummary.days_31_60)} color="#f59e0b" prefix="" />
-        <KPICard label="90+ days" value={'₹' + fmt(tabSummary.days_90_plus)} color="#ef4444" prefix="" />
+        <KPICard label="Total Outstanding" value={tabSummary.total_outstanding || 0} color="#ef4444" isAmount={true} />
+        <KPICard label="0-30 days" value={tabSummary.days_0_30 || 0} color="#10b981" isAmount={true} />
+        <KPICard label="31-60 days" value={tabSummary.days_31_60 || 0} color="#f59e0b" isAmount={true} />
+        <KPICard label="90+ days" value={tabSummary.days_90_plus || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     return null;
@@ -83,8 +89,8 @@ const SalesReports = () => {
           <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="customer_name" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Bar dataKey="total_sales" fill="#6366f1" radius={[4,4,0,0]} name="Total Sales" />
           </BarChart>
         </ResponsiveContainer>
@@ -103,8 +109,8 @@ const SalesReports = () => {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Area type="monotone" dataKey="revenue" stroke="#6366f1" fill="url(#colorRev)" name="Revenue" />
           </AreaChart>
         </ResponsiveContainer>
@@ -117,8 +123,8 @@ const SalesReports = () => {
           <BarChart data={tabData.slice(0, 10)} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="customer_name" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Legend />
             <Bar dataKey="days_0_30" fill="#10b981" name="0-30 days" stackId="a" />
             <Bar dataKey="days_31_60" fill="#f59e0b" name="31-60 days" stackId="a" />
@@ -135,8 +141,8 @@ const SalesReports = () => {
           <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Bar dataKey="revenue" fill="#6366f1" radius={[4,4,0,0]} name="Revenue" />
           </BarChart>
         </ResponsiveContainer>
@@ -148,9 +154,9 @@ const SalesReports = () => {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={tabData.slice(0, 10)} layout="vertical" margin={{ left: 80, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis type="number" tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+            <XAxis type="number" tickFormatter={yAxisFormatter} />
             <YAxis dataKey="product_name" type="category" tick={{ fontSize: 11 }} width={80} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <Tooltip formatter={tooltipFormatter} />
             <Bar dataKey="revenue" fill="#6366f1" name="Revenue" radius={[0,4,4,0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -160,43 +166,50 @@ const SalesReports = () => {
     return null;
   };
 
-  const COLUMNS = [
-    [
-      { key: 'customer_name', label: 'Customer' },
-      { key: 'invoice_count', label: 'Invoices' },
-      { key: 'total_sales', label: 'Total Sales', type: 'amount', align: 'right' },
-      { key: 'total_paid', label: 'Paid', type: 'amount', align: 'right' },
-      { key: 'outstanding', label: 'Outstanding', type: 'amount', align: 'right' },
-      { key: 'last_purchase', label: 'Last Purchase', type: 'date' },
-    ],
-    [
-      { key: 'period', label: 'Period' },
-      { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right' },
-      { key: 'invoice_count', label: 'Invoices' },
-      { key: 'collected', label: 'Collected', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'customer_name', label: 'Customer' },
-      { key: 'days_0_30', label: '0-30 Days', type: 'amount', align: 'right' },
-      { key: 'days_31_60', label: '31-60 Days', type: 'amount', align: 'right' },
-      { key: 'days_61_90', label: '61-90 Days', type: 'amount', align: 'right' },
-      { key: 'days_90_plus', label: '90+ Days', type: 'amount', align: 'right' },
-      { key: 'total_outstanding', label: 'Total', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'month', label: 'Month' },
-      { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right' },
-      { key: 'invoice_count', label: 'Invoices' },
-    ],
-    [
-      { key: 'product_name', label: 'Product' },
-      { key: 'qty_sold', label: 'Qty Sold' },
-      { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right' },
-      { key: 'cost', label: 'Cost', type: 'amount', align: 'right' },
-      { key: 'profit', label: 'Profit', type: 'amount', align: 'right' },
-      { key: 'margin_pct', label: 'Margin %', align: 'right' },
-    ],
+  const topCustomerCols = [
+    { key: 'rank', label: 'Rank', width: '6%', align: 'center' },
+    { key: 'customer_name', label: 'Customer', wrap: true },
+    { key: 'invoice_count', label: 'Invoices', align: 'right' },
+    { key: 'total_sales', label: 'Total Billed', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'total_paid', label: 'Total Paid', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: () => '#065f46' },
+    { key: 'outstanding', label: 'Outstanding', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#065f46' },
+    { key: 'last_purchase', label: 'Last Purchase', align: 'center', render: v => formatDate(v) },
   ];
+
+  const trendCols = [
+    { key: 'period', label: 'Period' },
+    { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'invoice_count', label: 'Invoices', align: 'right' },
+    { key: 'collected', label: 'Collected', type: 'amount', align: 'right', render: v => formatINR(v) },
+  ];
+
+  const agingCols = [
+    { key: 'customer_name', label: 'Customer', wrap: true },
+    { key: 'days_0_30', label: '0-30 Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#f59e0b' : '#9ca3af' },
+    { key: 'days_31_60', label: '31-60 Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#f97316' : '#9ca3af' },
+    { key: 'days_61_90', label: '61-90 Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#ef4444' : '#9ca3af' },
+    { key: 'days_90_plus', label: '90+ Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#9ca3af' },
+    { key: 'total_outstanding', label: 'Total Due', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#9ca3af' },
+  ];
+
+  const monthlyGrowthCols = [
+    { key: 'month', label: 'Month' },
+    { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'invoice_count', label: 'Invoices', align: 'right' },
+  ];
+
+  const productCols = [
+    { key: 'rank', label: 'Rank', width: '6%', align: 'center' },
+    { key: 'product_name', label: 'Product', wrap: true },
+    { key: 'qty_sold', label: 'Qty Sold', align: 'right', render: v => formatNum(v) },
+    { key: 'avg_price', label: 'Avg Rate', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: () => '#065f46' },
+    { key: 'cost', label: 'Cost', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'profit', label: 'Profit', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) >= 0 ? '#065f46' : '#dc2626' },
+    { key: 'margin_pct', label: 'Margin %', align: 'right', render: v => parseFloat(v || 0).toFixed(1) + '%' },
+  ];
+
+  const COLUMNS = [topCustomerCols, trendCols, agingCols, monthlyGrowthCols, productCols];
 
   return (
     <ReportShell
@@ -242,9 +255,9 @@ const SalesReports = () => {
       {/* Table */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
         <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#374151', margin: 0 }}>Detail View</h3>
-        <ExportButtons data={tabData} filename={`sales-${TABS[activeTab].toLowerCase().replace(/\s+/g, '-')}`} />
+        <ExportButtons data={rankedData} filename={`sales-${TABS[activeTab].toLowerCase().replace(/\s+/g, '-')}`} />
       </div>
-      <ReportTable columns={COLUMNS[activeTab] || []} data={tabData} loading={loading} />
+      <ReportTable columns={COLUMNS[activeTab] || []} data={rankedData} loading={loading} />
     </ReportShell>
   );
 };

@@ -2,13 +2,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import './Reports.css';
 import { BarChart, Bar, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import { apiFetch } from '../../utils/api';
+import { formatINR, formatNum, yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ReportTable from '../../components/reports/ReportTable';
 import ChartCard from '../../components/reports/ChartCard';
 import ExportButtons from '../../components/reports/ExportButtons';
 
-const fmt = v => Number(v || 0).toLocaleString('en-IN');
 const ABC_COLORS = { A: '#10b981', B: '#f59e0b', C: '#ef4444' };
 
 const TABS = ['ABC Analysis', 'Fast Moving', 'Slow Moving', 'Reorder Alerts'];
@@ -50,22 +50,22 @@ const InventoryReports = () => {
   const renderKPIs = () => {
     if (activeTab === 0) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Class A (80% revenue)" value={tabSummary.a_count || 0} color="#10b981" prefix="" />
-        <KPICard label="Class B" value={tabSummary.b_count || 0} color="#f59e0b" prefix="" />
-        <KPICard label="Class C" value={tabSummary.c_count || 0} color="#ef4444" prefix="" />
+        <KPICard label="Class A (80% revenue)" value={String(tabSummary.a_count || 0)} color="#10b981" isAmount={false} />
+        <KPICard label="Class B" value={String(tabSummary.b_count || 0)} color="#f59e0b" isAmount={false} />
+        <KPICard label="Class C" value={String(tabSummary.c_count || 0)} color="#ef4444" isAmount={false} />
       </div>
     );
     if (activeTab === 2) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Slow Items" value={tabSummary.total_items || 0} color="#f59e0b" prefix="" />
-        <KPICard label="Value at Risk" value={'₹' + fmt(tabSummary.total_value)} color="#ef4444" prefix="" />
+        <KPICard label="Slow Items" value={String(tabSummary.total_items || 0)} color="#f59e0b" isAmount={false} />
+        <KPICard label="Value at Risk" value={tabSummary.total_value || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     if (activeTab === 3) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Out of Stock" value={tabSummary.out_of_stock || 0} color="#ef4444" prefix="" />
-        <KPICard label="Critical" value={tabSummary.critical || 0} color="#f59e0b" prefix="" />
-        <KPICard label="Low Stock" value={tabSummary.low || 0} color="#6366f1" prefix="" />
+        <KPICard label="Out of Stock" value={String(tabSummary.out_of_stock || 0)} color="#ef4444" isAmount={false} />
+        <KPICard label="Critical" value={String(tabSummary.critical || 0)} color="#f59e0b" isAmount={false} />
+        <KPICard label="Low Stock" value={String(tabSummary.low || 0)} color="#6366f1" isAmount={false} />
       </div>
     );
     return null;
@@ -81,9 +81,9 @@ const InventoryReports = () => {
             <ComposedChart data={top20} margin={{ left: 20, right: 40 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="product_name" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" height={60} />
-              <YAxis yAxisId="left" tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+              <YAxis yAxisId="left" tickFormatter={yAxisFormatter} />
               <YAxis yAxisId="right" orientation="right" tickFormatter={v => v + '%'} domain={[0, 100]} />
-              <Tooltip formatter={v => typeof v === 'number' && v > 100 ? '₹' + fmt(v) : v + '%'} />
+              <Tooltip formatter={(v, name) => name === 'Cumulative %' ? v + '%' : tooltipFormatter(v)[0]} />
               <Legend />
               <Bar yAxisId="left" dataKey="revenue" name="Revenue" radius={[4,4,0,0]}>
                 {top20.map((entry, idx) => (
@@ -127,38 +127,52 @@ const InventoryReports = () => {
     return null;
   };
 
-  const COLUMNS = [
-    [
-      { key: 'product_name', label: 'Product' },
-      { key: 'abc_class', label: 'Class' },
-      { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right' },
-      { key: 'revenue_pct', label: 'Rev %', align: 'right' },
-      { key: 'cumulative_pct', label: 'Cumulative %', align: 'right' },
-      { key: 'qty_sold', label: 'Qty Sold' },
-    ],
-    [
-      { key: 'product_name', label: 'Product' },
-      { key: 'qty_sold', label: 'Qty Sold' },
-      { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right' },
-      { key: 'order_count', label: 'Orders' },
-      { key: 'current_stock', label: 'Stock' },
-    ],
-    [
-      { key: 'product_name', label: 'Product' },
-      { key: 'current_stock', label: 'Stock' },
-      { key: 'stock_value', label: 'Value', type: 'amount', align: 'right' },
-      { key: 'days_since_sale', label: 'Days Since Sale' },
-      { key: 'last_sale_date', label: 'Last Sale', type: 'date' },
-    ],
-    [
-      { key: 'product_name', label: 'Product' },
-      { key: 'alert_level', label: 'Alert' },
-      { key: 'current_stock', label: 'Current Stock' },
-      { key: 'min_stock_level', label: 'Min Level' },
-      { key: 'cost_price', label: 'Cost Price', type: 'amount', align: 'right' },
-    ],
+  const abcCols = [
+    { key: 'product_name', label: 'Product', wrap: true },
+    { key: 'abc_class', label: 'Class', align: 'center', render: v => {
+      const colors = { A: ['#dcfce7','#166534'], B: ['#fef3c7','#92400e'], C: ['#fee2e2','#dc2626'] };
+      const [bg, c] = colors[v] || colors.C;
+      return <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: bg, color: c }}>{v || '—'}</span>;
+    }},
+    { key: 'qty_sold', label: 'Qty Sold', align: 'right', render: v => formatNum(v) },
+    { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'revenue_pct', label: 'Rev %', align: 'right', render: v => parseFloat(v||0).toFixed(1) + '%' },
+    { key: 'cumulative_pct', label: 'Cumulative %', align: 'right', render: v => parseFloat(v||0).toFixed(1) + '%' },
   ];
 
+  const fastMovingCols = [
+    { key: 'product_name', label: 'Product', wrap: true },
+    { key: 'qty_sold', label: 'Qty Sold', align: 'right', render: v => formatNum(v) },
+    { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'order_count', label: 'Orders', align: 'right' },
+    { key: 'current_stock', label: 'Stock', align: 'right', render: v => formatNum(v) },
+  ];
+
+  const slowMovingCols = [
+    { key: 'product_name', label: 'Product', wrap: true },
+    { key: 'current_stock', label: 'Stock', align: 'right', render: v => formatNum(v) },
+    { key: 'stock_value', label: 'Value', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'days_since_sale', label: 'Days Since Sale', align: 'right' },
+    { key: 'last_sale_date', label: 'Last Sale', align: 'center', render: v => v ? new Date(v).toLocaleDateString('en-IN') : '—' },
+  ];
+
+  const reorderCols = [
+    { key: 'product_name', label: 'Product', wrap: true },
+    { key: 'min_stock_level', label: 'Min Level', align: 'right', render: v => formatNum(v) },
+    { key: 'current_stock', label: 'Current Stock', align: 'right', render: v => formatNum(v), colorFn: v => parseFloat(v) === 0 ? '#dc2626' : '#f59e0b' },
+    { key: 'alert_level', label: 'Alert', align: 'center', render: v => {
+      const map = {
+        OUT_OF_STOCK: ['OUT OF STOCK', '#fee2e2', '#dc2626'],
+        CRITICAL: ['CRITICAL', '#fef3c7', '#92400e'],
+        LOW: ['LOW', '#eff6ff', '#1e40af'],
+      };
+      const [label, bg, c] = map[v] || ['OK', '#f0fdf4', '#166534'];
+      return <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: bg, color: c }}>{label}</span>;
+    }},
+    { key: 'cost_price', label: 'Cost Price', type: 'amount', align: 'right', render: v => formatINR(v) },
+  ];
+
+  const COLUMNS = [abcCols, fastMovingCols, slowMovingCols, reorderCols];
   const TAB_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
 
   return (

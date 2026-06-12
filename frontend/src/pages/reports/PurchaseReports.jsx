@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import './Reports.css';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { apiFetch } from '../../utils/api';
+import { formatINR, formatDate, yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ReportTable from '../../components/reports/ReportTable';
@@ -9,7 +10,6 @@ import ChartCard from '../../components/reports/ChartCard';
 import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
 
-const fmt = v => Number(v || 0).toLocaleString('en-IN');
 const nowMonth = () => {
   const now = new Date();
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -53,14 +53,14 @@ const PurchaseReports = () => {
   const renderKPIs = () => {
     if (activeTab === 0) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Vendors" value={tabSummary.total_vendors || 0} color="#10b981" prefix="" />
-        <KPICard label="Total Purchased" value={'₹' + fmt(tabSummary.total_purchased)} color="#6366f1" prefix="" />
-        <KPICard label="Total Outstanding" value={'₹' + fmt(tabSummary.total_outstanding)} color="#ef4444" prefix="" />
+        <KPICard label="Vendors" value={String(tabSummary.total_vendors || 0)} color="#10b981" isAmount={false} />
+        <KPICard label="Total Purchased" value={tabSummary.total_purchased || 0} color="#6366f1" isAmount={true} />
+        <KPICard label="Total Outstanding" value={tabSummary.total_outstanding || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     if (activeTab === 1) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Payable" value={'₹' + fmt(tabSummary.total_payable)} color="#ef4444" prefix="" />
+        <KPICard label="Total Payable" value={tabSummary.total_payable || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     return null;
@@ -74,8 +74,8 @@ const PurchaseReports = () => {
           <BarChart data={tabData.slice(0, 10)} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="vendor_name" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Legend />
             <Bar dataKey="total_purchased" fill="#10b981" name="Total Purchased" />
             <Bar dataKey="outstanding" fill="#ef4444" name="Outstanding" />
@@ -89,8 +89,8 @@ const PurchaseReports = () => {
           <BarChart data={tabData.slice(0, 10)} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="vendor_name" tick={{ fontSize: 10 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Legend />
             <Bar dataKey="days_0_30" fill="#10b981" name="0-30 Days" stackId="a" />
             <Bar dataKey="days_31_60" fill="#f59e0b" name="31-60 Days" stackId="a" />
@@ -105,8 +105,8 @@ const PurchaseReports = () => {
           <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Bar dataKey="amount" fill="#10b981" radius={[4,4,0,0]} name="Amount" />
           </BarChart>
         </ResponsiveContainer>
@@ -115,28 +115,30 @@ const PurchaseReports = () => {
     return null;
   };
 
-  const COLUMNS = [
-    [
-      { key: 'vendor_name', label: 'Vendor' },
-      { key: 'bill_count', label: 'Bills' },
-      { key: 'total_purchased', label: 'Total Purchased', type: 'amount', align: 'right' },
-      { key: 'total_paid', label: 'Paid', type: 'amount', align: 'right' },
-      { key: 'outstanding', label: 'Outstanding', type: 'amount', align: 'right' },
-      { key: 'last_purchase', label: 'Last Purchase', type: 'date' },
-    ],
-    [
-      { key: 'vendor_name', label: 'Vendor' },
-      { key: 'days_0_30', label: '0-30 Days', type: 'amount', align: 'right' },
-      { key: 'days_31_60', label: '31-60 Days', type: 'amount', align: 'right' },
-      { key: 'days_60_plus', label: '60+ Days', type: 'amount', align: 'right' },
-      { key: 'total_outstanding', label: 'Total', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'period', label: 'Period' },
-      { key: 'amount', label: 'Amount', type: 'amount', align: 'right' },
-      { key: 'bill_count', label: 'Bills' },
-    ],
+  const vendorCols = [
+    { key: 'vendor_name', label: 'Supplier', wrap: true },
+    { key: 'bill_count', label: 'Orders', align: 'right' },
+    { key: 'total_purchased', label: 'Total Purchased', type: 'amount', align: 'right', bold: true, render: v => formatINR(v) },
+    { key: 'total_paid', label: 'Paid', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: () => '#065f46' },
+    { key: 'outstanding', label: 'Outstanding', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#065f46' },
+    { key: 'last_purchase', label: 'Last Order', align: 'center', render: v => formatDate(v) },
   ];
+
+  const agingCols = [
+    { key: 'vendor_name', label: 'Vendor', wrap: true },
+    { key: 'days_0_30', label: '0-30 Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#f59e0b' : '#9ca3af' },
+    { key: 'days_31_60', label: '31-60 Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#f97316' : '#9ca3af' },
+    { key: 'days_60_plus', label: '60+ Days', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#9ca3af' },
+    { key: 'total_outstanding', label: 'Total', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#9ca3af' },
+  ];
+
+  const trendCols = [
+    { key: 'period', label: 'Period' },
+    { key: 'amount', label: 'Amount', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'bill_count', label: 'Bills', align: 'right' },
+  ];
+
+  const COLUMNS = [vendorCols, agingCols, trendCols];
 
   return (
     <ReportShell

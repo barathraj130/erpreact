@@ -40,14 +40,22 @@ router.get('/audit', authMiddleware, async (req, res) => {
       ORDER BY i.invoice_date DESC
       LIMIT 500
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      total_amount: parseFloat(r.total_amount || 0),
+      cgst: parseFloat(r.cgst || 0),
+      sgst: parseFloat(r.sgst || 0),
+      igst: parseFloat(r.igst || 0),
+      total_gst: parseFloat(r.total_gst || 0),
+    }));
     const summary = {
       total_invoices: data.length,
-      total_taxable: data.reduce((a, b) => a + parseFloat(b.total_amount || 0) - parseFloat(b.total_gst || 0), 0),
-      total_cgst: data.reduce((a, b) => a + parseFloat(b.cgst || 0), 0),
-      total_sgst: data.reduce((a, b) => a + parseFloat(b.sgst || 0), 0),
-      total_igst: data.reduce((a, b) => a + parseFloat(b.igst || 0), 0),
-      total_gst: data.reduce((a, b) => a + parseFloat(b.total_gst || 0), 0),
+      total_taxable: data.reduce((a, b) => a + (b.total_amount || 0) - (b.total_gst || 0), 0),
+      total_cgst: data.reduce((a, b) => a + (b.cgst || 0), 0),
+      total_sgst: data.reduce((a, b) => a + (b.sgst || 0), 0),
+      total_igst: data.reduce((a, b) => a + (b.igst || 0), 0),
+      total_gst: data.reduce((a, b) => a + (b.total_gst || 0), 0),
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -134,7 +142,14 @@ router.get('/collection-trend', authMiddleware, async (req, res) => {
       GROUP BY month, month_num
       ORDER BY month_num ASC
     `;
-    const data = await db.pgAll(sql, [companyId, targetYear]);
+    const rawData = await db.pgAll(sql, [companyId, targetYear]);
+    const data = rawData.map(r => ({
+      ...r,
+      cgst: parseFloat(r.cgst || 0),
+      sgst: parseFloat(r.sgst || 0),
+      igst: parseFloat(r.igst || 0),
+      total_gst: parseFloat(r.total_gst || 0),
+    }));
     res.json({ data: data || [], summary: { year: targetYear } });
   } catch (err) {
     console.error('collection-trend error:', err.message);

@@ -38,11 +38,18 @@ router.get('/vendor-performance', authMiddleware, async (req, res) => {
       ORDER BY total_purchased DESC
       LIMIT 20
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      bill_count: parseFloat(r.bill_count || 0),
+      total_purchased: parseFloat(r.total_purchased || 0),
+      total_paid: parseFloat(r.total_paid || 0),
+      outstanding: parseFloat(r.outstanding || 0),
+    }));
     const summary = {
       total_vendors: data.length,
-      total_purchased: data.reduce((a, b) => a + parseFloat(b.total_purchased || 0), 0),
-      total_outstanding: data.reduce((a, b) => a + parseFloat(b.outstanding || 0), 0),
+      total_purchased: data.reduce((a, b) => a + (b.total_purchased || 0), 0),
+      total_outstanding: data.reduce((a, b) => a + (b.outstanding || 0), 0),
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -84,9 +91,16 @@ router.get('/payment-aging', authMiddleware, async (req, res) => {
       ), 0) > 0
       ORDER BY total_outstanding DESC
     `;
-    const data = await db.pgAll(sql, [companyId]);
+    const rawData = await db.pgAll(sql, [companyId]);
+    const data = rawData.map(r => ({
+      ...r,
+      days_0_30: parseFloat(r.days_0_30 || 0),
+      days_31_60: parseFloat(r.days_31_60 || 0),
+      days_60_plus: parseFloat(r.days_60_plus || 0),
+      total_outstanding: parseFloat(r.total_outstanding || 0),
+    }));
     const summary = {
-      total_payable: data.reduce((a, b) => a + parseFloat(b.total_outstanding || 0), 0),
+      total_payable: data.reduce((a, b) => a + (b.total_outstanding || 0), 0),
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -116,7 +130,12 @@ router.get('/monthly-trend', authMiddleware, async (req, res) => {
       GROUP BY period_sort, period
       ORDER BY period_sort ASC
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      amount: parseFloat(r.amount || 0),
+      bill_count: parseFloat(r.bill_count || 0),
+    }));
     res.json({ data: data || [], summary: {} });
   } catch (err) {
     console.error('purchase/monthly-trend error:', err.message);

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import './Reports.css';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { apiFetch } from '../../utils/api';
+import { formatINR, formatDate, yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ReportTable from '../../components/reports/ReportTable';
@@ -9,7 +10,6 @@ import ChartCard from '../../components/reports/ChartCard';
 import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
 
-const fmt = v => Number(v || 0).toLocaleString('en-IN');
 const nowMonth = () => {
   const now = new Date();
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -53,17 +53,17 @@ const GSTReports = () => {
   const renderKPIs = () => {
     if (activeTab === 0) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Invoices" value={tabSummary.total_invoices || 0} color="#f59e0b" prefix="" />
-        <KPICard label="CGST" value={'₹' + fmt(tabSummary.total_cgst)} color="#6366f1" prefix="" />
-        <KPICard label="SGST" value={'₹' + fmt(tabSummary.total_sgst)} color="#6366f1" prefix="" />
-        <KPICard label="Total GST" value={'₹' + fmt(tabSummary.total_gst)} color="#ef4444" prefix="" />
+        <KPICard label="Total Invoices" value={String(tabSummary.total_invoices || 0)} color="#f59e0b" isAmount={false} />
+        <KPICard label="CGST" value={tabSummary.total_cgst || 0} color="#6366f1" isAmount={true} />
+        <KPICard label="SGST" value={tabSummary.total_sgst || 0} color="#6366f1" isAmount={true} />
+        <KPICard label="Total GST" value={tabSummary.total_gst || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     if (activeTab === 1) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Output GST" value={'₹' + fmt(tabSummary.total_output)} color="#ef4444" prefix="" />
-        <KPICard label="Input Tax Credit" value={'₹' + fmt(tabSummary.total_input)} color="#10b981" prefix="" />
-        <KPICard label="Net Liability" value={'₹' + fmt(tabSummary.net_liability)} color={tabSummary.net_liability > 0 ? '#ef4444' : '#10b981'} prefix="" />
+        <KPICard label="Output GST" value={tabSummary.total_output || 0} color="#ef4444" isAmount={true} />
+        <KPICard label="Input Tax Credit" value={tabSummary.total_input || 0} color="#10b981" isAmount={true} />
+        <KPICard label="Net Liability" value={tabSummary.net_liability || 0} color={tabSummary.net_liability > 0 ? '#ef4444' : '#10b981'} isAmount={true} />
       </div>
     );
     return null;
@@ -77,8 +77,8 @@ const GSTReports = () => {
           <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="tax_type" tick={{ fontSize: 13 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Legend />
             <Bar dataKey="output" fill="#ef4444" name="Output Tax" radius={[4,4,0,0]} />
             <Bar dataKey="input" fill="#10b981" name="Input Credit" radius={[4,4,0,0]} />
@@ -99,8 +99,8 @@ const GSTReports = () => {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-            <Tooltip formatter={v => '₹' + fmt(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
             <Legend />
             <Area type="monotone" dataKey="cgst" stroke="#6366f1" fill="none" name="CGST" strokeWidth={2} />
             <Area type="monotone" dataKey="sgst" stroke="#10b981" fill="none" name="SGST" strokeWidth={2} />
@@ -112,30 +112,33 @@ const GSTReports = () => {
     return null;
   };
 
-  const COLUMNS = [
-    [
-      { key: 'date', label: 'Date', type: 'date' },
-      { key: 'invoice_no', label: 'Invoice No' },
-      { key: 'customer_name', label: 'Customer' },
-      { key: 'cgst', label: 'CGST', type: 'amount', align: 'right' },
-      { key: 'sgst', label: 'SGST', type: 'amount', align: 'right' },
-      { key: 'igst', label: 'IGST', type: 'amount', align: 'right' },
-      { key: 'total_gst', label: 'Total GST', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'tax_type', label: 'Tax Type' },
-      { key: 'output', label: 'Output Tax', type: 'amount', align: 'right' },
-      { key: 'input', label: 'Input Credit', type: 'amount', align: 'right' },
-      { key: 'net_liability', label: 'Net Liability', type: 'amount', align: 'right' },
-    ],
-    [
-      { key: 'month', label: 'Month' },
-      { key: 'cgst', label: 'CGST', type: 'amount', align: 'right' },
-      { key: 'sgst', label: 'SGST', type: 'amount', align: 'right' },
-      { key: 'igst', label: 'IGST', type: 'amount', align: 'right' },
-      { key: 'total_gst', label: 'Total GST', type: 'amount', align: 'right' },
-    ],
+  const gstAuditCols = [
+    { key: 'invoice_no', label: 'Invoice No' },
+    { key: 'date', label: 'Date', align: 'center', render: v => formatDate(v) },
+    { key: 'customer_name', label: 'Customer', wrap: true },
+    { key: 'total_amount', label: 'Taxable', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'cgst', label: 'CGST', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'sgst', label: 'SGST', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'igst', label: 'IGST', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'total_gst', label: 'Total Tax', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: () => '#dc2626' },
   ];
+
+  const taxLiabilityCols = [
+    { key: 'tax_type', label: 'Tax Type' },
+    { key: 'output', label: 'Output Tax', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'input', label: 'Input Credit', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'net_liability', label: 'Net Liability', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: v => parseFloat(v) > 0 ? '#dc2626' : '#065f46' },
+  ];
+
+  const collectionCols = [
+    { key: 'month', label: 'Month' },
+    { key: 'cgst', label: 'CGST', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'sgst', label: 'SGST', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'igst', label: 'IGST', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'total_gst', label: 'Total GST', type: 'amount', align: 'right', bold: true, render: v => formatINR(v) },
+  ];
+
+  const COLUMNS = [gstAuditCols, taxLiabilityCols, collectionCols];
 
   return (
     <ReportShell

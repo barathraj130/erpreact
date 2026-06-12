@@ -57,7 +57,16 @@ router.get('/abc-analysis', authMiddleware, async (req, res) => {
       FROM ranked
       ORDER BY revenue DESC
     `;
-    const data = await db.pgAll(sql, [companyId]);
+    const rawData = await db.pgAll(sql, [companyId]);
+    const data = rawData.map(r => ({
+      ...r,
+      revenue: parseFloat(r.revenue || 0),
+      qty_sold: parseFloat(r.qty_sold || 0),
+      revenue_pct: parseFloat(r.revenue_pct || 0),
+      cumulative_pct: parseFloat(r.cumulative_pct || 0),
+      current_stock: parseFloat(r.current_stock || 0),
+      cost_price: parseFloat(r.cost_price || 0),
+    }));
     const summary = {
       a_count: data.filter(d => d.abc_class === 'A').length,
       b_count: data.filter(d => d.abc_class === 'B').length,
@@ -96,7 +105,14 @@ router.get('/fast-moving', authMiddleware, async (req, res) => {
       ORDER BY qty_sold DESC
       LIMIT $4
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate, parseInt(limit)]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate, parseInt(limit)]);
+    const data = rawData.map(r => ({
+      ...r,
+      qty_sold: parseFloat(r.qty_sold || 0),
+      revenue: parseFloat(r.revenue || 0),
+      current_stock: parseFloat(r.current_stock || 0),
+      order_count: parseFloat(r.order_count || 0),
+    }));
     res.json({ data: data || [], summary: {} });
   } catch (err) {
     console.error('fast-moving error:', err.message);
@@ -129,10 +145,16 @@ router.get('/slow-moving', authMiddleware, async (req, res) => {
           OR MAX(i.invoice_date) IS NULL
       ORDER BY days_since_sale DESC
     `;
-    const data = await db.pgAll(sql, [companyId, parseInt(days)]);
+    const rawData = await db.pgAll(sql, [companyId, parseInt(days)]);
+    const data = rawData.map(r => ({
+      ...r,
+      current_stock: parseFloat(r.current_stock || 0),
+      stock_value: parseFloat(r.stock_value || 0),
+      days_since_sale: parseFloat(r.days_since_sale || 0),
+    }));
     const summary = {
       total_items: data.length,
-      total_value: data.reduce((a, b) => a + parseFloat(b.stock_value || 0), 0),
+      total_value: data.reduce((a, b) => a + (b.stock_value || 0), 0),
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -169,7 +191,14 @@ router.get('/reorder-alerts', authMiddleware, async (req, res) => {
              ELSE 2 END ASC,
         p.name ASC
     `;
-    const data = await db.pgAll(sql, [companyId]);
+    const rawData = await db.pgAll(sql, [companyId]);
+    const data = rawData.map(r => ({
+      ...r,
+      current_stock: parseFloat(r.current_stock || 0),
+      min_stock_level: parseFloat(r.min_stock_level || 0),
+      cost_price: parseFloat(r.cost_price || 0),
+      shortage: Math.max(0, parseFloat(r.min_stock_level || 0) - parseFloat(r.current_stock || 0)),
+    }));
     const summary = {
       out_of_stock: data.filter(d => d.alert_level === 'OUT_OF_STOCK').length,
       critical: data.filter(d => d.alert_level === 'CRITICAL').length,

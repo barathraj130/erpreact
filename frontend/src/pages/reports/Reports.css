@@ -462,3 +462,5 @@
     .report-filter-field { flex: 1 1 100%; }
     .reports-stats-grid { grid-template-columns: 1fr; }
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }

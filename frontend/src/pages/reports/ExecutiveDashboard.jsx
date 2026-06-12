@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 import './Reports.css';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from 'recharts';
 import { apiFetch } from '../../utils/api';
+import { yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ChartCard from '../../components/reports/ChartCard';
-
-const fmt = v => Number(v || 0).toLocaleString('en-IN');
 
 const ALERT_STYLES = {
   alert: { bg: '#fef2f2', border: '#fecaca', icon: '🔴', color: '#dc2626' },
@@ -45,14 +44,14 @@ const ExecutiveDashboard = () => {
   }, []);
 
   const KPIs = kpis ? [
-    { label: 'Revenue', value: '₹' + fmt(kpis.revenue?.value), color: '#10b981', trend: kpis.revenue?.trend ? (kpis.revenue.trend > 0 ? 'up' : 'down') : null, subtext: kpis.revenue?.trend ? `${kpis.revenue.trend > 0 ? '+' : ''}${kpis.revenue.trend}% vs last month` : 'Current month' },
-    { label: 'Purchases', value: '₹' + fmt(kpis.purchases?.value), color: '#6366f1' },
-    { label: 'Gross Profit', value: '₹' + fmt(kpis.gross_profit?.value), color: kpis.gross_profit?.value > 0 ? '#10b981' : '#ef4444', trend: kpis.gross_profit?.value > 0 ? 'up' : 'down' },
-    { label: 'Receivables', value: '₹' + fmt(kpis.receivables?.value), color: '#f59e0b' },
-    { label: 'Customers', value: kpis.customers?.value || 0, color: '#8b5cf6', prefix: '' },
-    { label: 'Invoices', value: kpis.invoice_count?.value || 0, color: '#6366f1', prefix: '' },
-    { label: 'Salary Cost', value: '₹' + fmt(kpis.salary_cost?.value), color: '#ef4444' },
-    { label: 'Attendance Rate', value: (kpis.attendance_rate?.value || 0) + '%', color: '#10b981', prefix: '' },
+    { label: 'Revenue', value: kpis.revenue?.value || 0, color: '#10b981', trend: kpis.revenue?.trend || null, subtext: kpis.revenue?.trend ? `${kpis.revenue.trend > 0 ? '+' : ''}${kpis.revenue.trend}% vs last month` : 'Current month', isAmount: true },
+    { label: 'Purchases', value: kpis.purchases?.value || 0, color: '#6366f1', isAmount: true },
+    { label: 'Gross Profit', value: kpis.gross_profit?.value || 0, color: kpis.gross_profit?.value > 0 ? '#10b981' : '#ef4444', trend: kpis.gross_profit?.value > 0 ? 1 : -1, isAmount: true },
+    { label: 'Receivables', value: kpis.receivables?.value || 0, color: '#f59e0b', isAmount: true },
+    { label: 'Customers', value: String(kpis.customers?.value || 0), color: '#8b5cf6', isAmount: false },
+    { label: 'Invoices', value: String(kpis.invoice_count?.value || 0), color: '#6366f1', isAmount: false },
+    { label: 'Salary Cost', value: kpis.salary_cost?.value || 0, color: '#ef4444', isAmount: true },
+    { label: 'Attendance Rate', value: String((kpis.attendance_rate?.value || 0) + '%'), color: '#10b981', isAmount: false },
   ] : [];
 
   return (
@@ -75,7 +74,7 @@ const ExecutiveDashboard = () => {
                 color={kpi.color}
                 trend={kpi.trend}
                 subtext={kpi.subtext}
-                prefix={kpi.prefix !== undefined ? kpi.prefix : ''}
+                isAmount={kpi.isAmount}
               />
             ))}
           </div>
@@ -87,8 +86,8 @@ const ExecutiveDashboard = () => {
                 <LineChart data={forecast} margin={{ left: 20, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="period" tick={{ fontSize: 10 }} />
-                  <YAxis tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
-                  <Tooltip formatter={v => '₹' + fmt(v)} />
+                  <YAxis tickFormatter={yAxisFormatter} />
+                  <Tooltip formatter={tooltipFormatter} />
                   <Legend />
                   <Line
                     type="monotone"

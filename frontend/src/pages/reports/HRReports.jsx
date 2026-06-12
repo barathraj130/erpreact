@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import './Reports.css';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { apiFetch } from '../../utils/api';
+import { formatINR, yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ReportTable from '../../components/reports/ReportTable';
@@ -9,7 +10,6 @@ import ChartCard from '../../components/reports/ChartCard';
 import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
 
-const fmt = v => Number(v || 0).toLocaleString('en-IN');
 const nowMonth = () => {
   const now = new Date();
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -54,15 +54,15 @@ const HRReports = () => {
   const renderKPIs = () => {
     if (activeTab === 0) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Employees" value={tabSummary.total_employees || 0} color="#6366f1" prefix="" />
-        <KPICard label="Avg Attendance" value={(tabSummary.avg_attendance || 0) + '%'} color="#10b981" prefix="" />
+        <KPICard label="Total Employees" value={String(tabSummary.total_employees || 0)} color="#6366f1" isAmount={false} />
+        <KPICard label="Avg Attendance" value={String((tabSummary.avg_attendance || 0) + '%')} color="#10b981" isAmount={false} />
       </div>
     );
     if (activeTab === 2) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Monthly Salary" value={'₹' + fmt(tabSummary.total_monthly_salary)} color="#6366f1" prefix="" />
-        <KPICard label="Daily Wages" value={'₹' + fmt(tabSummary.total_daily_wages)} color="#f59e0b" prefix="" />
-        <KPICard label="Total Cost" value={'₹' + fmt(tabSummary.total_cost)} color="#ef4444" prefix="" />
+        <KPICard label="Monthly Salary" value={tabSummary.total_monthly_salary || 0} color="#6366f1" isAmount={true} />
+        <KPICard label="Daily Wages" value={tabSummary.total_daily_wages || 0} color="#f59e0b" isAmount={true} />
+        <KPICard label="Total Cost" value={tabSummary.total_cost || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     return null;
@@ -113,7 +113,7 @@ const HRReports = () => {
                 <Pie data={pieData} dataKey="salary" nameKey="department" cx="50%" cy="50%" outerRadius={100} label={e => e.department}>
                   {pieData.map((_, idx) => <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />)}
                 </Pie>
-                <Tooltip formatter={v => '₹' + fmt(v)} />
+                <Tooltip formatter={v => formatINR(v)} />
               </PieChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -121,9 +121,9 @@ const HRReports = () => {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={tabData.slice(0, 8)} layout="vertical" margin={{ left: 80, right: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis type="number" tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN', { notation: 'compact' })} />
+                <XAxis type="number" tickFormatter={yAxisFormatter} />
                 <YAxis dataKey="employee_name" type="category" tick={{ fontSize: 11 }} width={80} />
-                <Tooltip formatter={v => '₹' + fmt(v)} />
+                <Tooltip formatter={tooltipFormatter} />
                 <Bar dataKey="salary_paid" fill="#6366f1" name="Salary" radius={[0,4,4,0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -134,28 +134,30 @@ const HRReports = () => {
     return null;
   };
 
-  const COLUMNS = [
-    [
-      { key: 'employee_name', label: 'Employee' },
-      { key: 'designation', label: 'Designation' },
-      { key: 'department', label: 'Department' },
-      { key: 'days_present', label: 'Present' },
-      { key: 'total_days', label: 'Total Days' },
-      { key: 'attendance_pct', label: 'Attendance %', align: 'right' },
-    ],
-    [
-      { key: 'period', label: 'Week' },
-      { key: 'present_count', label: 'Present' },
-      { key: 'absent_count', label: 'Absent' },
-      { key: 'attendance_rate', label: 'Rate %', align: 'right' },
-    ],
-    [
-      { key: 'employee_name', label: 'Employee' },
-      { key: 'department', label: 'Department' },
-      { key: 'salary_paid', label: 'Salary Paid', type: 'amount', align: 'right' },
-      { key: 'payment_count', label: 'Payments' },
-    ],
+  const productivityCols = [
+    { key: 'employee_name', label: 'Employee', wrap: true },
+    { key: 'designation', label: 'Designation' },
+    { key: 'department', label: 'Department' },
+    { key: 'days_present', label: 'Present', align: 'right', colorFn: () => '#065f46' },
+    { key: 'total_days', label: 'Total Days', align: 'right' },
+    { key: 'attendance_pct', label: 'Attendance %', align: 'right', render: v => parseFloat(v||0).toFixed(1) + '%', colorFn: v => parseFloat(v) >= 90 ? '#10b981' : parseFloat(v) >= 75 ? '#f59e0b' : '#ef4444' },
   ];
+
+  const attendanceTrendCols = [
+    { key: 'period', label: 'Week' },
+    { key: 'present_count', label: 'Present', align: 'right', colorFn: () => '#065f46' },
+    { key: 'absent_count', label: 'Absent', align: 'right', colorFn: v => parseFloat(v) > 3 ? '#dc2626' : '#374151' },
+    { key: 'attendance_rate', label: 'Rate %', align: 'right', render: v => parseFloat(v||0).toFixed(1) + '%', colorFn: v => parseFloat(v) >= 90 ? '#10b981' : parseFloat(v) >= 75 ? '#f59e0b' : '#ef4444' },
+  ];
+
+  const salaryCols = [
+    { key: 'employee_name', label: 'Employee', wrap: true },
+    { key: 'department', label: 'Department' },
+    { key: 'salary_paid', label: 'Salary Paid', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'payment_count', label: 'Payments', align: 'right' },
+  ];
+
+  const COLUMNS = [productivityCols, attendanceTrendCols, salaryCols];
 
   return (
     <ReportShell

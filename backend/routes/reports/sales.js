@@ -88,10 +88,17 @@ router.get('/top-customers', authMiddleware, async (req, res) => {
       ORDER BY total_sales DESC
       LIMIT $4
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate, parseInt(limit)]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate, parseInt(limit)]);
+    const data = rawData.map(r => ({
+      ...r,
+      invoice_count: parseFloat(r.invoice_count || 0),
+      total_sales: parseFloat(r.total_sales || 0),
+      total_paid: parseFloat(r.total_paid || 0),
+      outstanding: parseFloat(r.outstanding || 0),
+    }));
     const summary = {
       total_customers: data.length,
-      total_revenue: data.reduce((a, b) => a + parseFloat(b.total_sales || 0), 0),
+      total_revenue: data.reduce((a, b) => a + (b.total_sales || 0), 0),
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -169,10 +176,16 @@ router.get('/trend', authMiddleware, async (req, res) => {
       GROUP BY period_sort, period
       ORDER BY period_sort ASC
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate, truncate, format]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate, truncate, format]);
+    const data = rawData.map(r => ({
+      ...r,
+      revenue: parseFloat(r.revenue || 0),
+      invoice_count: parseFloat(r.invoice_count || 0),
+      collected: parseFloat(r.collected || 0),
+    }));
     const summary = {
-      total_revenue: data.reduce((a, b) => a + parseFloat(b.revenue || 0), 0),
-      avg_monthly: data.length > 0 ? data.reduce((a, b) => a + parseFloat(b.revenue || 0), 0) / data.length : 0,
+      total_revenue: data.reduce((a, b) => a + (b.revenue || 0), 0),
+      avg_monthly: data.length > 0 ? data.reduce((a, b) => a + (b.revenue || 0), 0) / data.length : 0,
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -266,13 +279,21 @@ router.get('/aging-receivables', authMiddleware, async (req, res) => {
       ) > 0
       ORDER BY total_outstanding DESC
     `;
-    const data = await db.pgAll(sql, [companyId]);
+    const rawData = await db.pgAll(sql, [companyId]);
+    const data = rawData.map(r => ({
+      ...r,
+      days_0_30: parseFloat(r.days_0_30 || 0),
+      days_31_60: parseFloat(r.days_31_60 || 0),
+      days_61_90: parseFloat(r.days_61_90 || 0),
+      days_90_plus: parseFloat(r.days_90_plus || 0),
+      total_outstanding: parseFloat(r.total_outstanding || 0),
+    }));
     const summary = {
-      total_outstanding: data.reduce((a, b) => a + parseFloat(b.total_outstanding || 0), 0),
-      days_0_30: data.reduce((a, b) => a + parseFloat(b.days_0_30 || 0), 0),
-      days_31_60: data.reduce((a, b) => a + parseFloat(b.days_31_60 || 0), 0),
-      days_61_90: data.reduce((a, b) => a + parseFloat(b.days_61_90 || 0), 0),
-      days_90_plus: data.reduce((a, b) => a + parseFloat(b.days_90_plus || 0), 0),
+      total_outstanding: data.reduce((a, b) => a + (b.total_outstanding || 0), 0),
+      days_0_30: data.reduce((a, b) => a + (b.days_0_30 || 0), 0),
+      days_31_60: data.reduce((a, b) => a + (b.days_31_60 || 0), 0),
+      days_61_90: data.reduce((a, b) => a + (b.days_61_90 || 0), 0),
+      days_90_plus: data.reduce((a, b) => a + (b.days_90_plus || 0), 0),
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -303,7 +324,12 @@ router.get('/monthly-growth', authMiddleware, async (req, res) => {
       GROUP BY month, month_num
       ORDER BY month_num ASC
     `;
-    const data = await db.pgAll(sql, [companyId, targetYear]);
+    const rawData = await db.pgAll(sql, [companyId, targetYear]);
+    const data = rawData.map(r => ({
+      ...r,
+      revenue: parseFloat(r.revenue || 0),
+      invoice_count: parseFloat(r.invoice_count || 0),
+    }));
     res.json({ data: data || [], summary: { year: targetYear } });
   } catch (err) {
     console.error('monthly-growth error:', err.message);
@@ -341,7 +367,16 @@ router.get('/product-performance', authMiddleware, async (req, res) => {
       ORDER BY revenue DESC
       LIMIT 20
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      qty_sold: parseFloat(r.qty_sold || 0),
+      revenue: parseFloat(r.revenue || 0),
+      avg_price: parseFloat(r.avg_price || 0),
+      cost: parseFloat(r.cost || 0),
+      profit: parseFloat(r.profit || 0),
+      margin_pct: parseFloat(r.margin_pct || 0),
+    }));
     res.json({ data: data || [], summary: {} });
   } catch (err) {
     console.error('product-performance error:', err.message);

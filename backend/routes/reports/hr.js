@@ -39,10 +39,16 @@ router.get('/productivity', authMiddleware, async (req, res) => {
       GROUP BY e.id, e.name, e.designation, e.department
       ORDER BY attendance_pct DESC
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      days_present: parseFloat(r.days_present || 0),
+      total_days: parseFloat(r.total_days || 0),
+      attendance_pct: parseFloat(r.attendance_pct || 0),
+    }));
     const summary = {
       total_employees: data.length,
-      avg_attendance: data.length > 0 ? (data.reduce((a, b) => a + parseFloat(b.attendance_pct || 0), 0) / data.length).toFixed(1) : 0,
+      avg_attendance: data.length > 0 ? (data.reduce((a, b) => a + (b.attendance_pct || 0), 0) / data.length).toFixed(1) : 0,
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -75,7 +81,13 @@ router.get('/attendance-trends', authMiddleware, async (req, res) => {
       GROUP BY period_sort, period
       ORDER BY period_sort ASC
     `;
-    const data = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      present_count: parseFloat(r.present_count || 0),
+      absent_count: parseFloat(r.absent_count || 0),
+      attendance_rate: parseFloat(r.attendance_rate || 0),
+    }));
     res.json({ data: data || [], summary: {} });
   } catch (err) {
     console.error('attendance-trends error:', err.message);
@@ -113,12 +125,17 @@ router.get('/salary-cost', authMiddleware, async (req, res) => {
           AND payment_date BETWEEN $2::date AND $3::date
       `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
     ]);
+    const data = (monthlySalary || []).map(r => ({
+      ...r,
+      salary_paid: parseFloat(r.salary_paid || 0),
+      payment_count: parseFloat(r.payment_count || 0),
+    }));
     const summary = {
-      total_monthly_salary: monthlySalary.reduce((a, b) => a + parseFloat(b.salary_paid || 0), 0),
+      total_monthly_salary: data.reduce((a, b) => a + (b.salary_paid || 0), 0),
       total_daily_wages: parseFloat(dailyWages?.total || 0),
-      total_cost: monthlySalary.reduce((a, b) => a + parseFloat(b.salary_paid || 0), 0) + parseFloat(dailyWages?.total || 0),
+      total_cost: data.reduce((a, b) => a + (b.salary_paid || 0), 0) + parseFloat(dailyWages?.total || 0),
     };
-    res.json({ data: monthlySalary || [], summary });
+    res.json({ data: data || [], summary });
   } catch (err) {
     console.error('salary-cost error:', err.message);
     res.json({ data: [], summary: {} });
