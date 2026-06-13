@@ -94,69 +94,98 @@ router.post('/budget', authMiddleware, async (req, res) => {
 
 /**
  * GET /api/reports/finance/profit-loss
- * Enhanced P&L including proprietor personal account flows
+ * Full P&L: revenue, COGS, salary/chit/broker/interest expenses, equity
  */
 router.get('/profit-loss', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
   const { from, to } = req.query;
   const { from: startDate, to: endDate } = getDateRange(from, to);
+
+  const cashBankSum = (sources) =>
+    `COALESCE((SELECT SUM(amount) FROM cash_ledger WHERE company_id=$1 AND LOWER(source) IN (${sources}) AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0)
+   + COALESCE((SELECT SUM(amount) FROM bank_ledger WHERE company_id=$1 AND LOWER(source) IN (${sources}) AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0)`;
+
+  const propPersonal = (refTypes) =>
+    `SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND UPPER(reference_type) IN (${refTypes}) AND transaction_date BETWEEN $2::date AND $3::date`;
+
   try {
     const [
       invoiceRev, personalReceipts,
       purchases, purchasesPersonal,
-      salaryCash, salaryPersonal,
+      salaryCashRow, salaryPersonalRow,
+      chitCashRow,   chitPersonalRow,
+      brokerCashRow, brokerPersonalRow,
+      interestCashRow, interestPersonalRow,
       capitalIntro, drawings,
     ] = await Promise.all([
-      // Invoice revenue (billed amounts)
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
-      // Personal account receipts (customer paid to proprietor personally)
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // Total purchases (all modes — already captured in purchase_bills)
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // Purchases specifically paid via proprietor personal account
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND reference_type='PURCHASE_BILL' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // Salary from cash/bank ledger — LOWER() handles 'Daily_wage' vs 'daily_wage'
-      db.pgGet(`SELECT COALESCE((SELECT SUM(amount) FROM cash_ledger WHERE company_id=$1 AND LOWER(source) IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary') AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0) + COALESCE((SELECT SUM(amount) FROM bank_ledger WHERE company_id=$1 AND LOWER(source) IN ('daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary') AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0) AS total`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // Salary paid via proprietor personal account
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND reference_type IN ('SALARY','SALARY_ADVANCE','DAILY_WAGE','WEEKLY_SALARY') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // All capital introduced this period
+      db.pgGet(propPersonal(`'PURCHASE_BILL','PURCHASE'`), [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Salary — cash/bank
+      db.pgGet(`SELECT ${cashBankSum(`'daily_wage','salary_payment','salary_advance','advance_payment','weekly_salary'`)} AS total`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(propPersonal(`'SALARY','SALARY_ADVANCE','DAILY_WAGE','WEEKLY_SALARY'`), [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Chit payments — cash/bank
+      db.pgGet(`SELECT ${cashBankSum(`'chit_payment','chit_fund_payment','chit'`)} AS total`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(propPersonal(`'CHIT','CHIT_FUND','CHIT_PAYMENT'`), [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Broker commission — cash/bank
+      db.pgGet(`SELECT ${cashBankSum(`'broker_payment','broker_commission','broker'`)} AS total`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(propPersonal(`'BROKER','BROKER_PAYMENT','BROKER_COMMISSION'`), [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Loan interest — cash/bank
+      db.pgGet(`SELECT ${cashBankSum(`'loan_interest','interest_payment','loan_repayment'`)} AS total`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(propPersonal(`'LOAN_INTEREST','INTEREST','INTEREST_PAYMENT'`), [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Capital intro & drawings
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
-      // Drawings taken this period
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='DRAWINGS' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
     ]);
 
-    const invoiceRevenue    = parseFloat(invoiceRev?.total || 0);
-    const personalReceiptRev= parseFloat(personalReceipts?.total || 0);
-    const totalRevenue      = invoiceRevenue + personalReceiptRev;
+    const n = (r) => parseFloat(r?.total || 0);
 
-    const totalPurchases    = parseFloat(purchases?.total || 0);
-    const purchasesViaPersonal = parseFloat(purchasesPersonal?.total || 0);
-    const purchasesViaCashBank = totalPurchases - purchasesViaPersonal;
-    const grossProfit       = totalRevenue - totalPurchases;
+    const invoice_revenue          = n(invoiceRev);
+    const personal_receipt_revenue = n(personalReceipts);
+    const total_revenue            = invoice_revenue + personal_receipt_revenue;
 
-    const salaryCashBank    = parseFloat(salaryCash?.total || 0);
-    const salaryViaPersonal = parseFloat(salaryPersonal?.total || 0);
-    const totalSalary       = salaryCashBank + salaryViaPersonal;
+    const totalPurchases   = n(purchases);
+    const purchases_personal = n(purchasesPersonal);
+    const purchases_cash   = Math.max(0, totalPurchases - purchases_personal);
+    const total_cogs       = totalPurchases;
+    const gross_profit     = total_revenue - total_cogs;
 
-    const capitalIntroTotal = parseFloat(capitalIntro?.total || 0);
-    const drawingsTotal     = parseFloat(drawings?.total || 0);
+    const salary_cash      = n(salaryCashRow);
+    const salary_personal  = n(salaryPersonalRow);
+    const chit_cash        = n(chitCashRow);
+    const chit_personal    = n(chitPersonalRow);
+    const broker_cash      = n(brokerCashRow);
+    const broker_personal  = n(brokerPersonalRow);
+    const interest_cash    = n(interestCashRow);
+    const interest_personal= n(interestPersonalRow);
 
-    const totalExpenses     = totalSalary;
-    const netProfit         = grossProfit - totalExpenses;
+    const total_expenses   = salary_cash + salary_personal + chit_cash + chit_personal +
+                             broker_cash + broker_personal + interest_cash + interest_personal;
+    const net_profit       = gross_profit - total_expenses;
+
+    const capital_invested = n(capitalIntro);
+    const drawings_taken   = n(drawings);
+    const net_equity_change= capital_invested - drawings_taken;
 
     res.json({
       data: {
-        income: { invoice_revenue: invoiceRevenue, personal_receipts: personalReceiptRev, total_revenue: totalRevenue },
-        cogs:   { purchases_cash_bank: purchasesViaCashBank, purchases_personal: purchasesViaPersonal, total_purchases: totalPurchases },
-        expenses: { salary_cash_bank: salaryCashBank, salary_personal: salaryViaPersonal, total_salary: totalSalary, total_expenses: totalExpenses },
-        profit: { gross_profit: grossProfit, net_profit: netProfit },
-        proprietor_equity: { capital_introduced: capitalIntroTotal, drawings_taken: drawingsTotal, net_equity_change: capitalIntroTotal - drawingsTotal },
+        invoice_revenue, personal_receipt_revenue, total_revenue,
+        purchases_cash, purchases_personal, total_cogs,
+        gross_profit,
+        salary_cash, salary_personal,
+        chit_cash, chit_personal,
+        broker_cash, broker_personal,
+        interest_cash, interest_personal,
+        total_expenses,
+        net_profit,
+        capital_invested, drawings_taken, net_equity_change,
       },
-      summary: { total_revenue: totalRevenue, gross_profit: grossProfit, net_profit: netProfit, from: startDate, to: endDate },
+      summary: { total_revenue, gross_profit, net_profit, from: startDate, to: endDate },
     });
   } catch (err) {
     console.error('profit-loss error:', err.message);
-    res.json({ data: {}, summary: {} });
+    res.json({ data: { invoice_revenue:0, personal_receipt_revenue:0, total_revenue:0, purchases_cash:0, purchases_personal:0, total_cogs:0, gross_profit:0, salary_cash:0, salary_personal:0, chit_cash:0, chit_personal:0, broker_cash:0, broker_personal:0, interest_cash:0, interest_personal:0, total_expenses:0, net_profit:0, capital_invested:0, drawings_taken:0, net_equity_change:0 }, summary: {} });
   }
 });
 

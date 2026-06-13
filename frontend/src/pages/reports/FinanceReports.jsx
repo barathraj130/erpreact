@@ -37,15 +37,55 @@ const OUTFLOW_COLOR = '#ef4444';
 const NEUTRAL_COLOR = '#6366f1';
 const PROP_COLOR = '#7c3aed';
 
+/* ── P&L specific components ── */
+const PLRow = ({ label, amount, indent = false, bold = false, isTotal = false, color }) => {
+  const num = parseFloat(amount || 0);
+  const displayColor = color || (num < 0 ? '#ef4444' : '#1e293b');
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: isTotal ? '10px 20px' : '9px 20px', paddingLeft: indent ? 36 : 20, borderBottom: '0.5px solid #f1f5f9', background: isTotal ? '#f8fafc' : 'transparent', minWidth: 0 }}>
+      <span style={{ fontSize: isTotal ? 14 : 13, fontWeight: bold || isTotal ? 600 : 400, color: isTotal ? '#1e293b' : '#6b7280', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 16 }}>
+        {label}
+      </span>
+      <span style={{ fontSize: isTotal ? 15 : 13, fontWeight: bold || isTotal ? 700 : 400, color: displayColor, flexShrink: 0, whiteSpace: 'nowrap', minWidth: 130, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+        ₹{Math.abs(num).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+      </span>
+    </div>
+  );
+};
+
+const PLSectionHeader = ({ title, color = '#6366f1' }) => (
+  <div style={{ padding: '10px 20px', background: '#f8fafc', borderBottom: '0.5px solid #e5e7eb', borderLeft: `4px solid ${color}`, display: 'flex', alignItems: 'center' }}>
+    <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+      {title}
+    </span>
+  </div>
+);
+
+const ProfitBand = ({ label, value, color }) => {
+  const num = parseFloat(value || 0);
+  const isPos = num >= 0;
+  const bg = isPos ? '#f0fdf4' : '#fef2f2';
+  const textColor = color || (isPos ? '#16a34a' : '#dc2626');
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: bg }}>
+      <span style={{ fontSize: 15, fontWeight: 700, color: textColor }}>{label}</span>
+      <span style={{ fontSize: 16, fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap', color: textColor, fontVariantNumeric: 'tabular-nums' }}>
+        ₹{Math.abs(num).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+      </span>
+    </div>
+  );
+};
+
+/* ── Generic line item used in Balance Sheet, Proprietor, True Performance ── */
 const SectionHeader = ({ children }) => (
-  <div style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#374151', marginBottom: 8, marginTop: 16, borderLeft: '3px solid #6366f1' }}>
+  <div style={{ background: '#f8fafc', borderRadius: 0, padding: '8px 14px', fontWeight: 700, fontSize: '0.85rem', color: '#374151', borderLeft: '3px solid #6366f1' }}>
     {children}
   </div>
 );
 
 const LineItem = ({ label, value, indent = false, bold = false, color, borderTop }) => (
   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, paddingTop: 7, paddingBottom: 7, paddingLeft: indent ? 36 : 16, paddingRight: 16, borderTop: borderTop ? '2px solid #e5e7eb' : undefined }}>
-    <span style={{ fontSize: '0.85rem', color: '#374151', fontWeight: bold ? 700 : 400, flex: 1, minWidth: 0 }}>{label}</span>
+    <span style={{ fontSize: '0.85rem', color: '#374151', fontWeight: bold ? 700 : 400, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{label}</span>
     <span style={{ fontSize: '0.85rem', fontWeight: bold ? 700 : 600, color: color || '#1e293b', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums', minWidth: 150, textAlign: 'right' }}>{fmtRs(value)}</span>
   </div>
 );
@@ -96,16 +136,27 @@ const FinanceReports = () => {
   const renderKPIs = () => {
     if (activeTab === 0) {
       const d = tabData;
-      const rev   = d?.income?.total_revenue    || 0;
-      const gp    = d?.profit?.gross_profit     || 0;
-      const np    = d?.profit?.net_profit       || 0;
-      const ci    = d?.proprietor_equity?.capital_introduced || 0;
+      const kpis = [
+        { label: 'TOTAL REVENUE',      value: d?.total_revenue    || 0, color: '#10b981', border: '#bbf7d0' },
+        { label: 'GROSS PROFIT',       value: d?.gross_profit     || 0, color: '#3b82f6', border: '#bfdbfe' },
+        { label: 'NET PROFIT',         value: d?.net_profit       || 0, color: parseFloat(d?.net_profit||0) >= 0 ? '#10b981' : '#ef4444', border: parseFloat(d?.net_profit||0) >= 0 ? '#bbf7d0' : '#fecaca' },
+        { label: 'CAPITAL INTRODUCED', value: d?.capital_invested || 0, color: '#8b5cf6', border: '#ddd6fe' },
+      ];
       return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
-          <KPICard label="Total Revenue"     value={rev} color={INFLOW_COLOR} isAmount={true} />
-          <KPICard label="Gross Profit"      value={gp}  color={gp > 0 ? INFLOW_COLOR : OUTFLOW_COLOR} isAmount={true} trend={gp > 0 ? 1 : -1} />
-          <KPICard label="Net Profit"        value={np}  color={np > 0 ? INFLOW_COLOR : OUTFLOW_COLOR} isAmount={true} trend={np > 0 ? 1 : -1} />
-          <KPICard label="Capital Introduced" value={ci} color={PROP_COLOR} isAmount={true} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+          {kpis.map((card, i) => {
+            const n = parseFloat(card.value || 0);
+            const display = n >= 10000000 ? '₹' + (n/10000000).toFixed(2) + ' Cr'
+                          : n >= 100000   ? '₹' + (n/100000).toFixed(2) + ' L'
+                          : n >= 1000     ? '₹' + (n/1000).toFixed(1) + 'K'
+                          : '₹' + n.toLocaleString('en-IN');
+            return (
+              <div key={i} title={`₹${n.toLocaleString('en-IN')}`} style={{ background: '#fff', border: `0.5px solid ${card.border}`, borderRadius: 10, padding: '14px 16px', borderTop: `3px solid ${card.color}` }}>
+                <div style={{ fontSize: 10, fontWeight: 500, color: '#6b7280', letterSpacing: '0.05em', marginBottom: 8 }}>{card.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: card.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{display}</div>
+              </div>
+            );
+          })}
         </div>
       );
     }
@@ -164,13 +215,17 @@ const FinanceReports = () => {
   /* ── Charts ── */
   const renderChart = () => {
     // P&L — bar of revenue vs cost
-    if (activeTab === 0 && tabData?.income) {
+    if (activeTab === 0 && tabData?.total_revenue !== undefined) {
+      const d = tabData;
       const chartData = [
-        { name: 'Invoice Revenue',      value: tabData.income.invoice_revenue,   type: 'income' },
-        { name: 'Personal Receipts',    value: tabData.income.personal_receipts, type: 'income' },
-        { name: 'Purchases',            value: tabData.cogs?.total_purchases,     type: 'expense' },
-        { name: 'Salary (Cash/Bank)',   value: tabData.expenses?.salary_cash_bank,type: 'expense' },
-        { name: 'Salary (Personal)',    value: tabData.expenses?.salary_personal, type: 'prop' },
+        { name: 'Invoice Revenue',    value: d.invoice_revenue,          type: 'income' },
+        { name: 'Personal Receipts',  value: d.personal_receipt_revenue, type: 'income' },
+        { name: 'Purchases',          value: d.total_cogs,               type: 'expense' },
+        { name: 'Salary (Cash)',      value: d.salary_cash,              type: 'expense' },
+        { name: 'Salary (Personal)',  value: d.salary_personal,          type: 'prop' },
+        { name: 'Chit Payments',      value: (d.chit_cash||0) + (d.chit_personal||0), type: 'expense' },
+        { name: 'Broker',             value: (d.broker_cash||0) + (d.broker_personal||0), type: 'expense' },
+        { name: 'Loan Interest',      value: (d.interest_cash||0) + (d.interest_personal||0), type: 'expense' },
       ].filter(d => d.value > 0);
       return (
         <ChartCard title="P&L Overview" height={280}>
@@ -271,33 +326,58 @@ const FinanceReports = () => {
 
   /* ── Special rendering for structured reports ── */
   const renderPL = () => {
-    if (!tabData?.income) return null;
-    const { income, cogs, expenses, profit, proprietor_equity } = tabData;
+    const d = tabData;
+    if (!d || typeof d !== 'object' || d.total_revenue === undefined) return null;
+    const gp = parseFloat(d.gross_profit || 0);
+    const np = parseFloat(d.net_profit   || 0);
+    const eq = parseFloat(d.net_equity_change || 0);
     return (
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden', marginBottom: 20 }}>
-        <SectionHeader>INCOME</SectionHeader>
-        <LineItem label="Invoice Revenue"        value={income.invoice_revenue}   indent />
-        <LineItem label="Personal Account Receipts" value={income.personal_receipts} indent />
-        <LineItem label="Total Revenue"          value={income.total_revenue}     bold color={INFLOW_COLOR} borderTop />
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', marginBottom: 20, background: '#fff' }}>
+        <PLSectionHeader title="Income" color="#10b981" />
+        <PLRow label="Invoice Revenue"             amount={d.invoice_revenue}           indent />
+        <PLRow label="Personal Account Receipts"   amount={d.personal_receipt_revenue}  indent />
+        <PLRow label="Total Revenue"               amount={d.total_revenue}             isTotal bold color="#10b981" />
 
-        <SectionHeader>COST OF GOODS SOLD</SectionHeader>
-        <LineItem label="Purchases (Cash/Bank)"   value={cogs.purchases_cash_bank}  indent />
-        <LineItem label="Purchases (Personal A/C)" value={cogs.purchases_personal}   indent />
-        <LineItem label="Total COGS"              value={cogs.total_purchases}      bold color={OUTFLOW_COLOR} borderTop />
+        <div style={{ height: 8, background: '#f8fafc' }} />
 
-        <LineItem label="GROSS PROFIT"            value={profit.gross_profit}       bold color={profit.gross_profit >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} borderTop />
+        <PLSectionHeader title="Cost of Goods Sold" color="#f59e0b" />
+        <PLRow label="Purchases (Cash / Bank)"     amount={d.purchases_cash}     indent />
+        <PLRow label="Purchases (Personal A/C)"    amount={d.purchases_personal} indent />
+        <PLRow label="Total COGS"                  amount={d.total_cogs}         isTotal bold />
 
-        <SectionHeader>OPERATING EXPENSES</SectionHeader>
-        <LineItem label="Salaries (Cash/Bank)"   value={expenses.salary_cash_bank} indent />
-        <LineItem label="Salaries (Personal A/C)" value={expenses.salary_personal}  indent />
-        <LineItem label="Total Expenses"          value={expenses.total_expenses}   bold color={OUTFLOW_COLOR} borderTop />
+        <div style={{ height: 8, background: '#f8fafc' }} />
 
-        <LineItem label="NET PROFIT"              value={profit.net_profit}         bold color={profit.net_profit >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} borderTop />
+        <ProfitBand label="GROSS PROFIT" value={d.gross_profit} color={gp >= 0 ? '#16a34a' : '#dc2626'} />
 
-        <SectionHeader>PROPRIETOR EQUITY IMPACT</SectionHeader>
-        <LineItem label="Capital Introduced"  value={proprietor_equity.capital_introduced} indent color={INFLOW_COLOR} />
-        <LineItem label="Drawings Taken"      value={proprietor_equity.drawings_taken}     indent color={OUTFLOW_COLOR} />
-        <LineItem label="Net Equity Change"   value={proprietor_equity.net_equity_change}  bold color={proprietor_equity.net_equity_change >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR} borderTop />
+        <div style={{ height: 8, background: '#f8fafc' }} />
+
+        <PLSectionHeader title="Operating Expenses" color="#ef4444" />
+        <PLRow label="Salaries (Cash / Bank)"            amount={d.salary_cash}      indent />
+        <PLRow label="Salaries (Personal A/C)"           amount={d.salary_personal}  indent />
+        {(d.chit_cash > 0 || d.chit_personal > 0) && <>
+          <PLRow label="Chit Payments (Cash / Bank)"     amount={d.chit_cash}        indent />
+          <PLRow label="Chit Payments (Personal A/C)"    amount={d.chit_personal}    indent />
+        </>}
+        {(d.broker_cash > 0 || d.broker_personal > 0) && <>
+          <PLRow label="Broker Commission (Cash / Bank)" amount={d.broker_cash}      indent />
+          <PLRow label="Broker Commission (Personal A/C)"amount={d.broker_personal}  indent />
+        </>}
+        {(d.interest_cash > 0 || d.interest_personal > 0) && <>
+          <PLRow label="Loan Interest (Cash / Bank)"     amount={d.interest_cash}    indent />
+          <PLRow label="Loan Interest (Personal A/C)"    amount={d.interest_personal}indent />
+        </>}
+        <PLRow label="Total Expenses" amount={d.total_expenses} isTotal bold color="#dc2626" />
+
+        <div style={{ height: 8, background: '#f8fafc' }} />
+
+        <ProfitBand label="NET PROFIT" value={d.net_profit} color={np >= 0 ? '#16a34a' : '#dc2626'} />
+
+        <div style={{ height: 8, background: '#f8fafc' }} />
+
+        <PLSectionHeader title="Proprietor Equity Impact" color="#8b5cf6" />
+        <PLRow label="Capital Introduced" amount={d.capital_invested} indent color="#10b981" />
+        <PLRow label="Drawings Taken"     amount={d.drawings_taken}   indent color="#ef4444" />
+        <PLRow label="Net Equity Change"  amount={d.net_equity_change} isTotal bold color={eq >= 0 ? '#10b981' : '#ef4444'} />
       </div>
     );
   };
