@@ -250,6 +250,28 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          t.created_at AS sort_created_at
        FROM transactions t
        WHERE ${roConditions.join(" AND ")}
+
+       UNION ALL
+
+       SELECT
+         4000000000 + i.id AS id,
+         i.invoice_date AS date,
+         'DISCOUNT' AS type,
+         'DISCOUNT' AS category,
+         COALESCE(i.discount_amount, 0) AS amount,
+         'Discount / Waiver on Invoice #' || i.invoice_number AS description,
+         i.id AS related_invoice_id,
+         i.invoice_number,
+         NULL::TEXT AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         i.created_at AS sort_created_at
+       FROM invoices i
+       WHERE i.company_id = $1 AND i.customer_id = $2
+         AND COALESCE(i.is_deleted, false) = false
+         AND COALESCE(i.discount_amount, 0) > 0
+         AND UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
@@ -285,7 +307,9 @@ async function getCustomerTotals(companyId, customerId) {
          END ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN'
          THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
-         ELSE 0 END), 0) AS total_returns
+         ELSE 0 END), 0) AS total_returns,
+       COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
+         THEN COALESCE(i.discount_amount, 0) ELSE 0 END), 0) AS total_discount
      FROM invoices i
      WHERE i.company_id = $1 AND i.customer_id = $2 AND COALESCE(i.is_deleted, false) = false`,
     [companyId, customerId],
@@ -331,7 +355,8 @@ async function getCustomerTotals(companyId, customerId) {
   return {
     total_billed: toNumber(invoiceTotals?.total_billed),
     total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
-    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal,
+    // Discount/waiver reduces what the customer owes — treated as a credit alongside payments
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount),
   };
 }
 
@@ -356,7 +381,9 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
          END ELSE 0 END), 0) AS total_billed,
        COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) = 'SALES_RETURN'
          THEN COALESCE((SELECT SUM(li.line_total) FROM invoice_line_items li WHERE li.invoice_id = i.id), i.total_amount)
-         ELSE 0 END), 0) AS total_returns
+         ELSE 0 END), 0) AS total_returns,
+       COALESCE(SUM(CASE WHEN UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
+         THEN COALESCE(i.discount_amount, 0) ELSE 0 END), 0) AS total_discount
      FROM invoices i
      WHERE i.company_id = $1 AND i.customer_id = $2 AND COALESCE(i.is_deleted, false) = false`,
     [companyId, customerId],
@@ -373,6 +400,7 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
   const billed = toNumber(invoiceTotals.rows[0]?.total_billed);
   let returned = toNumber(invoiceTotals.rows[0]?.total_returns);
   const paid = toNumber(paymentTotals.rows[0]?.total_paid);
+  const discount = toNumber(invoiceTotals.rows[0]?.total_discount);
 
   // Add sales_returns table totals
   try {
@@ -383,7 +411,7 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     returned += toNumber(srTotals.rows[0]?.sr_total);
   } catch (e) { /* table may not exist yet */ }
 
-  // Add round-off / discount adjustments
+  // Add round-off / discount adjustments from transactions table
   let roundOff = 0;
   try {
     const roTotals = await client.query(
@@ -395,14 +423,15 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     roundOff = toNumber(roTotals.rows[0]?.total_round_off);
   } catch (e) { /* no round-offs yet */ }
 
-  const outstanding = openingBalance + billed - paid - returned - roundOff;
+  // Discount/waiver from invoices.discount_amount reduces outstanding balance
+  const outstanding = openingBalance + billed - paid - returned - roundOff - discount;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);
 
   return {
     opening_balance: openingBalance,
     total_billed: billed,
-    total_paid: paid + roundOff,   // surface round-offs inside total_paid for display
+    total_paid: paid + roundOff + discount,  // surface discounts inside total_paid for display
     total_returns: returned,
     pending_amount: outstanding,
     ledger_id: snapshot.ledgerId,
@@ -520,6 +549,8 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
     const amount = toNumber(row.amount);
     const returnEntry = row.type === "RETURN";
     const invoiceEntry = row.type === "INVOICE";
+    // INVOICE = debit (increases what customer owes)
+    // RECEIPT, ROUND_OFF, DISCOUNT = credit (reduces what customer owes)
     const debit = invoiceEntry ? amount : 0;
     const credit = invoiceEntry ? 0 : amount;
 
@@ -544,6 +575,8 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
       bank_timestamp: row.bank_timestamp || null,
       description: returnEntry && row.invoice_number
         ? `Return / Credit note for Invoice #${row.invoice_number}`
+        : row.type === 'DISCOUNT' && row.invoice_number
+        ? `Discount / Waiver on Invoice #${row.invoice_number}`
         : row.description,
     };
   });
