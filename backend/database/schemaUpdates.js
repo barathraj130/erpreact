@@ -1004,6 +1004,28 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS transport_cost NUMERIC(10,2) DEFAULT 0`).catch(() => {});
         await db.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
 
+        // ── Inventory stock-type integration ──────────────────────────────────
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30) DEFAULT 'fresh'`).catch(() => {});
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS lot_id INTEGER`).catch(() => {});
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS total_cost NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.query(`UPDATE inventory SET stock_type = 'fresh' WHERE stock_type IS NULL`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_surplus BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`).catch(() => {});
+        // Drop old single-column unique, create multi-column one with stock_type
+        await db.query(`
+            DO $$ BEGIN
+              IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_product_id_branch_id_key') THEN
+                ALTER TABLE inventory DROP CONSTRAINT inventory_product_id_branch_id_key;
+              END IF;
+            END $$
+        `).catch(() => {});
+        await db.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS inventory_unique_idx
+            ON inventory (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+        `).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

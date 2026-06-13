@@ -116,6 +116,9 @@ interface InvoiceItem {
   qty: number;
   rate: number;
   gst_rate?: number | null;
+  stock_type?: string;
+  lot_id?: string;
+  avg_cost?: number;
 }
 
 /** Derive GST state code from state name when DB value is missing */
@@ -1245,6 +1248,46 @@ const CreateInvoice: React.FC = () => {
                         ))}
                       </CustomSelect>
                     </div>
+                    {it.product_id && (
+                      <div className="ci-row-2" style={{ marginBottom: "8px" }}>
+                        <div className="ci-field">
+                          <label>Stock Type</label>
+                          <select value={it.stock_type || ""} onChange={async (e) => {
+                            const st = e.target.value;
+                            updateItem(i, "stock_type" as any, st);
+                            if (st && it.product_id) {
+                              try {
+                                const lotParam = it.lot_id ? `&lot_id=${it.lot_id}` : "";
+                                const res = await apiFetch(`/inventory/avg-cost?product_id=${it.product_id}&stock_type=${st}${lotParam}`);
+                                if (res.ok) { const d = await res.json(); updateItem(i, "avg_cost" as any, d.avg_cost); }
+                              } catch (_) {}
+                            }
+                          }}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "0.85rem", background: "#fff" }}>
+                            <option value="">— Normal Stock —</option>
+                            <option value="fresh">Fresh</option>
+                            <option value="mistake">Mistake</option>
+                            <option value="fresh_repaired">Repaired</option>
+                          </select>
+                        </div>
+                        {it.stock_type && it.avg_cost != null && (
+                          <div className="ci-field">
+                            <label>Profit/pc</label>
+                            <div style={{
+                              padding: "8px 10px", borderRadius: "8px", border: "1px solid #e2e8f0",
+                              fontSize: "0.85rem", fontWeight: 700,
+                              color: (it.rate - (it.avg_cost || 0)) >= 0 ? "#059669" : "#dc2626",
+                              background: (it.rate - (it.avg_cost || 0)) >= 0 ? "#f0fdf4" : "#fef2f2",
+                            }}>
+                              {(it.rate - (it.avg_cost || 0)) >= 0 ? "+" : ""}₹{(it.rate - (it.avg_cost || 0)).toFixed(2)}
+                              <span style={{ fontSize: "0.72rem", fontWeight: 400, color: "#64748b", marginLeft: "6px" }}>
+                                (cost ₹{it.avg_cost?.toFixed(2)})
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="ci-row-2" style={{ marginBottom: "8px" }}>
                       <div className="ci-field">
                         <label>Description</label>

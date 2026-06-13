@@ -52,6 +52,7 @@ const Dashboard: React.FC = () => {
   const [nsbPending, setNsbPending] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
   const [stockSummary, setStockSummary] = useState<{ total_fresh: number; total_mistake: number; total_inventory_value: number; active_lots: number } | null>(null);
   const [lotPipeline, setLotPipeline] = useState<Record<string, number> | null>(null);
+  const [invStockSummary, setInvStockSummary] = useState<{ fresh_qty: number; mistake_qty: number; repaired_qty: number; total_value: number } | null>(null);
 
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
   const [expenseData, setExpenseData] = useState<any[]>([]);
@@ -75,6 +76,7 @@ const Dashboard: React.FC = () => {
 
         if (kpiRes?.stock_summary) setStockSummary(kpiRes.stock_summary);
         if (kpiRes?.lot_pipeline)  setLotPipeline(kpiRes.lot_pipeline);
+        apiFetch("/inventory/stock-summary").then(r => r.ok ? r.json() : null).then(d => { if (d) setInvStockSummary(d); }).catch(() => {});
 
         if (kpiRes) {
           console.log('DASHBOARD DEBUG - KPI Response:', kpiRes);
@@ -339,6 +341,24 @@ const Dashboard: React.FC = () => {
               </div>
             ))}
           </div>
+          {invStockSummary && (Number(invStockSummary.fresh_qty) + Number(invStockSummary.mistake_qty) + Number(invStockSummary.repaired_qty)) > 0 && (
+            <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 20px", marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 12, textTransform: "uppercase" }}>Inventory by Type</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                {[
+                  { label: "Fresh", value: invStockSummary.fresh_qty, color: "#059669", bg: "#d1fae5" },
+                  { label: "Mistake", value: invStockSummary.mistake_qty, color: "#dc2626", bg: "#fee2e2" },
+                  { label: "Repaired", value: invStockSummary.repaired_qty, color: "#2563eb", bg: "#dbeafe" },
+                ].map(c => (
+                  <div key={c.label} style={{ background: c.bg, borderRadius: 8, padding: "10px 14px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: c.color, textTransform: "uppercase", marginBottom: 4 }}>{c.label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: c.color }}>{Number(c.value).toLocaleString("en-IN")}</div>
+                    <div style={{ fontSize: 10, color: c.color, opacity: 0.7 }}>pcs</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {lotPipeline && (
             <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 20px" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 12, textTransform: "uppercase" }}>Lot Pipeline</div>

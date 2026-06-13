@@ -82,6 +82,15 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [brokerId, setBrokerId] = useState<string>("");
   const [brokerCommRate, setBrokerCommRate] = useState<number>(0);
 
+  // Surplus stock fields
+  const [isSurplus, setIsSurplus] = useState(false);
+  const [surplusLotNumber, setSurplusLotNumber] = useState("");
+  const [surplusFreshQty, setSurplusFreshQty] = useState(0);
+  const [surplusFreshRate, setSurplusFreshRate] = useState(0);
+  const [surplusMistakeQty, setSurplusMistakeQty] = useState(0);
+  const [surplusMistakeRate, setSurplusMistakeRate] = useState(0);
+  const [surplusTransportCost, setSurplusTransportCost] = useState(0);
+
   // UI State
   const [loading, setLoading] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -202,7 +211,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
     setLoading(true);
     try {
       const formData = new FormData();
-      const payload = {
+      const payload: any = {
         supplier_id: selectedSupplierId,
         bill_number: billNumber,
         bill_date: billDate,
@@ -223,6 +232,15 @@ const SimplifiedPurchaseBill: React.FC = () => {
         broker_id: brokerId || null,
         broker_commission_rate: brokerCommRate || 0
       };
+      if (isSurplus) {
+        payload.is_surplus = true;
+        payload.lot_number = surplusLotNumber;
+        payload.fresh_qty = surplusFreshQty;
+        payload.fresh_rate = surplusFreshRate;
+        payload.mistake_qty = surplusMistakeQty;
+        payload.mistake_rate = surplusMistakeRate;
+        payload.transport_cost = surplusTransportCost;
+      }
 
       formData.append("data", JSON.stringify(payload));
       if (billFile) formData.append("bill_file", billFile);
@@ -348,6 +366,81 @@ const SimplifiedPurchaseBill: React.FC = () => {
                    <FaFileInvoice /> Expense Bill
                 </button>
              </div>
+          </section>
+
+          {/* Surplus T-shirt Stock Toggle */}
+          <section style={{ background: "#fff", borderRadius: "16px", padding: "16px 24px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer" }}>
+              <div
+                onClick={() => setIsSurplus(!isSurplus)}
+                style={{ width: "44px", height: "24px", borderRadius: "12px", background: isSurplus ? "#4f46e5" : "#e2e8f0", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+              >
+                <div style={{ position: "absolute", top: "3px", left: isSurplus ? "22px" : "3px", width: "18px", height: "18px", borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+              </div>
+              <div>
+                <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0f172a" }}>Surplus T-shirt Purchase</span>
+                <span style={{ fontSize: "0.78rem", color: "#64748b", marginLeft: "10px" }}>Splits into Fresh + Mistake inventory</span>
+              </div>
+            </label>
+
+            <AnimatePresence>
+              {isSurplus && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} style={{ overflow: "hidden" }}>
+                  <div style={{ paddingTop: "20px", borderTop: "1px solid #f1f5f9", marginTop: "16px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px" }}>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Lot Number</label>
+                      <input value={surplusLotNumber} onChange={e => setSurplusLotNumber(e.target.value)}
+                        placeholder="e.g. JBS/2025/06/001"
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box", fontSize: "0.9rem" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#059669", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Fresh Qty (pcs)</label>
+                      <input type="number" min="0" value={surplusFreshQty || ""}
+                        onChange={e => setSurplusFreshQty(Number(e.target.value))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #d1fae5", boxSizing: "border-box", background: "#f0fdf4" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#059669", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Fresh Rate (₹/pc)</label>
+                      <input type="number" min="0" value={surplusFreshRate || ""}
+                        onChange={e => setSurplusFreshRate(Number(e.target.value))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #d1fae5", boxSizing: "border-box", background: "#f0fdf4" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#dc2626", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Mistake Qty (pcs)</label>
+                      <input type="number" min="0" value={surplusMistakeQty || ""}
+                        onChange={e => setSurplusMistakeQty(Number(e.target.value))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #fee2e2", boxSizing: "border-box", background: "#fff5f5" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#dc2626", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Mistake Rate (₹/pc)</label>
+                      <input type="number" min="0" value={surplusMistakeRate || ""}
+                        onChange={e => setSurplusMistakeRate(Number(e.target.value))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #fee2e2", boxSizing: "border-box", background: "#fff5f5" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Transport Cost (₹)</label>
+                      <input type="number" min="0" value={surplusTransportCost || ""}
+                        onChange={e => setSurplusTransportCost(Number(e.target.value))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
+                    </div>
+                  </div>
+                  {(surplusFreshQty > 0 || surplusMistakeQty > 0) && (
+                    <div style={{ marginTop: "16px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      {surplusFreshQty > 0 && (
+                        <div style={{ background: "#d1fae5", borderRadius: "10px", padding: "10px 16px", fontSize: "0.82rem", color: "#065f46", fontWeight: 700 }}>
+                          Fresh: {surplusFreshQty} pcs × ₹{surplusFreshRate} = ₹{(surplusFreshQty * surplusFreshRate).toLocaleString("en-IN")}
+                        </div>
+                      )}
+                      {surplusMistakeQty > 0 && (
+                        <div style={{ background: "#fee2e2", borderRadius: "10px", padding: "10px 16px", fontSize: "0.82rem", color: "#991b1b", fontWeight: 700 }}>
+                          Mistake: {surplusMistakeQty} pcs × ₹{surplusMistakeRate} = ₹{(surplusMistakeQty * surplusMistakeRate).toLocaleString("en-IN")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </section>
 
           {/* Section 2: Product Entry Table / Expense Table */}

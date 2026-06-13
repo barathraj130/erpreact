@@ -656,6 +656,81 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             }
         }
 
+        // ── Surplus T-shirt stock (is_surplus=true) ─────────────────────────
+        if (data.is_surplus) {
+            await client.query(`SAVEPOINT sp_surplus`);
+            try {
+                const freshQty    = parseInt(data.fresh_qty) || 0;
+                const mistakeQty  = parseInt(data.mistake_qty) || 0;
+                const freshRate   = parseFloat(data.fresh_rate) || 0;
+                const mistakeRate = parseFloat(data.mistake_rate) || 0;
+                const transport   = parseFloat(data.transport_cost) || 0;
+                const lotNum      = (data.lot_number || '').trim();
+
+                // Save surplus fields to purchase_bills
+                await client.query(
+                    `UPDATE purchase_bills SET is_surplus=true, lot_number=$1, fresh_qty=$2, fresh_rate=$3, mistake_qty=$4, mistake_rate=$5, transport_cost=$6 WHERE id=$7`,
+                    [lotNum || null, freshQty, freshRate, mistakeQty, mistakeRate, transport, billId]
+                );
+
+                // Find first product_id from items (surplus bills typically have one product)
+                const surplusProductId = processedItems[0]?.product_id || null;
+
+                if (surplusProductId && freshQty > 0) {
+                    const freshTotal = freshQty * freshRate + (transport * freshQty / Math.max(freshQty + mistakeQty, 1));
+                    const freshAvg   = freshTotal / freshQty;
+                    await client.query(`
+                        INSERT INTO inventory (product_id, branch_id, stock_type, lot_id, quantity, avg_cost, total_cost, last_updated)
+                        SELECT $1, $2, 'fresh', sl.id, $3, $4, $5, NOW()
+                        FROM (SELECT id FROM stock_lots WHERE lot_number=$6 LIMIT 1) sl
+                        ON CONFLICT (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+                        DO UPDATE SET
+                            quantity   = inventory.quantity + $3,
+                            avg_cost   = ($4*$3 + inventory.avg_cost*inventory.quantity) / NULLIF(inventory.quantity+$3,0),
+                            total_cost = inventory.total_cost + $5,
+                            last_updated = NOW()
+                    `, [surplusProductId, safeBranchId, freshQty, freshAvg, freshTotal, lotNum]).catch(() => {
+                        // No lot found — insert without lot_id
+                        return client.query(`
+                            INSERT INTO inventory (product_id, branch_id, stock_type, quantity, avg_cost, total_cost, last_updated)
+                            VALUES ($1, $2, 'fresh', $3, $4, $5, NOW())
+                            ON CONFLICT (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+                            DO UPDATE SET quantity=inventory.quantity+$3, avg_cost=($4*$3+inventory.avg_cost*inventory.quantity)/NULLIF(inventory.quantity+$3,0), total_cost=inventory.total_cost+$5, last_updated=NOW()
+                        `, [surplusProductId, safeBranchId, freshQty, freshRate, freshQty * freshRate]);
+                    });
+                }
+
+                if (surplusProductId && mistakeQty > 0) {
+                    const mistakeTotal = mistakeQty * mistakeRate + (transport * mistakeQty / Math.max((freshQty || 0) + mistakeQty, 1));
+                    const mistakeAvg   = mistakeTotal / mistakeQty;
+                    await client.query(`
+                        INSERT INTO inventory (product_id, branch_id, stock_type, lot_id, quantity, avg_cost, total_cost, last_updated)
+                        SELECT $1, $2, 'mistake', sl.id, $3, $4, $5, NOW()
+                        FROM (SELECT id FROM stock_lots WHERE lot_number=$6 LIMIT 1) sl
+                        ON CONFLICT (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+                        DO UPDATE SET
+                            quantity   = inventory.quantity + $3,
+                            avg_cost   = ($4*$3 + inventory.avg_cost*inventory.quantity) / NULLIF(inventory.quantity+$3,0),
+                            total_cost = inventory.total_cost + $5,
+                            last_updated = NOW()
+                    `, [surplusProductId, safeBranchId, mistakeQty, mistakeAvg, mistakeTotal, lotNum]).catch(() => {
+                        return client.query(`
+                            INSERT INTO inventory (product_id, branch_id, stock_type, quantity, avg_cost, total_cost, last_updated)
+                            VALUES ($1, $2, 'mistake', $3, $4, $5, NOW())
+                            ON CONFLICT (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+                            DO UPDATE SET quantity=inventory.quantity+$3, avg_cost=($4*$3+inventory.avg_cost*inventory.quantity)/NULLIF(inventory.quantity+$3,0), total_cost=inventory.total_cost+$5, last_updated=NOW()
+                        `, [surplusProductId, safeBranchId, mistakeQty, mistakeRate, mistakeQty * mistakeRate]);
+                    });
+                }
+
+                await client.query(`RELEASE SAVEPOINT sp_surplus`);
+            } catch (surplusErr) {
+                await client.query(`ROLLBACK TO SAVEPOINT sp_surplus`);
+                await client.query(`RELEASE SAVEPOINT sp_surplus`);
+                console.warn(`[purchase-bill] surplus inventory skipped: ${surplusErr.message}`);
+            }
+        }
+
         await client.query("COMMIT");
         console.log(`[purchase-bill] ✅ COMMIT success — billId=${billId} items=${processedItems.length} productsCreated=${productsCreated} inventoryUpdated=${inventoryUpdated}`);
         res.status(201).json({

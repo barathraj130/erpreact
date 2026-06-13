@@ -11,7 +11,7 @@ import ExportButtons from '../../components/reports/ExportButtons';
 
 const ABC_COLORS = { A: '#10b981', B: '#f59e0b', C: '#ef4444' };
 
-const TABS = ['ABC Analysis', 'Fast Moving', 'Slow Moving', 'Reorder Alerts'];
+const TABS = ['ABC Analysis', 'Fast Moving', 'Slow Moving', 'Reorder Alerts', 'Stock Breakdown', 'Lot P&L', 'Conversions'];
 
 const InventoryReports = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -31,6 +31,9 @@ const InventoryReports = () => {
         1: `/reports/inventory/fast-moving?from=${from}&to=${to}&limit=20`,
         2: '/reports/inventory/slow-moving?days=90',
         3: '/reports/inventory/reorder-alerts',
+        4: '/reports/inventory/stock-breakdown',
+        5: '/reports/inventory/lot-profitability',
+        6: '/reports/inventory/conversions',
       };
       const res = await apiFetch(endpoints[tab]);
       if (res.ok) {
@@ -172,8 +175,45 @@ const InventoryReports = () => {
     { key: 'cost_price', label: 'Cost Price', type: 'amount', align: 'right', render: v => formatINR(v) },
   ];
 
-  const COLUMNS = [abcCols, fastMovingCols, slowMovingCols, reorderCols];
-  const TAB_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
+  const stockTypeBadge = (v) => {
+    const map = { fresh: ['#d1fae5','#065f46','Fresh'], mistake: ['#fee2e2','#991b1b','Mistake'], fresh_repaired: ['#dbeafe','#1e40af','Repaired'] };
+    const [bg, c, label] = map[v] || ['#f1f5f9','#475569', v || '—'];
+    return <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: bg, color: c }}>{label}</span>;
+  };
+
+  const stockBreakdownCols = [
+    { key: 'product_name', label: 'Product', wrap: true },
+    { key: 'stock_type', label: 'Type', align: 'center', render: stockTypeBadge },
+    { key: 'lot_number', label: 'Lot', align: 'center', render: v => v || '—' },
+    { key: 'quantity', label: 'Qty', align: 'right', render: v => formatNum(v) },
+    { key: 'avg_cost', label: 'Avg Cost', align: 'right', render: v => formatINR(v) },
+    { key: 'total_cost', label: 'Total Value', align: 'right', render: v => formatINR(v) },
+  ];
+
+  const lotPLCols = [
+    { key: 'lot_number', label: 'Lot Number', wrap: true },
+    { key: 'status', label: 'Status', align: 'center', render: v => <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#eff6ff', color: '#1e40af' }}>{v}</span> },
+    { key: 'total_purchased', label: 'Total Pcs', align: 'right', render: v => formatNum(v) },
+    { key: 'purchase_cost', label: 'Purchase Cost', align: 'right', render: v => formatINR(v) },
+    { key: 'qty_sold', label: 'Qty Sold', align: 'right', render: v => formatNum(v) },
+    { key: 'revenue', label: 'Revenue', align: 'right', render: v => formatINR(v) },
+    { key: 'gross_profit', label: 'Gross Profit', align: 'right', render: v => <span style={{ color: parseFloat(v) >= 0 ? '#059669' : '#dc2626', fontWeight: 700 }}>{formatINR(v)}</span> },
+    { key: 'margin_pct', label: 'Margin %', align: 'right', render: v => parseFloat(v||0).toFixed(1) + '%' },
+  ];
+
+  const conversionsCols = [
+    { key: 'conversion_date', label: 'Date', render: v => v ? new Date(v).toLocaleDateString('en-IN') : '—' },
+    { key: 'lot_number', label: 'Lot', wrap: true },
+    { key: 'mistake_qty_in', label: 'Mistake In', align: 'right', render: v => formatNum(v) },
+    { key: 'fresh_qty_out', label: 'Fresh Out', align: 'right', render: v => formatNum(v) },
+    { key: 'rejected_qty', label: 'Rejected', align: 'right', render: v => formatNum(v) },
+    { key: 'repair_cost_per_piece', label: 'Rate/pc', align: 'right', render: v => formatINR(v) },
+    { key: 'total_repair_cost', label: 'Total Cost', align: 'right', render: v => formatINR(v) },
+    { key: 'payment_mode', label: 'Mode', align: 'center' },
+  ];
+
+  const COLUMNS = [abcCols, fastMovingCols, slowMovingCols, reorderCols, stockBreakdownCols, lotPLCols, conversionsCols];
+  const TAB_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#059669', '#3b82f6', '#f97316'];
 
   return (
     <ReportShell

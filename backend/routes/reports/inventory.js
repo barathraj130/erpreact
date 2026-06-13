@@ -278,4 +278,114 @@ router.get('/aging', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/reports/inventory/stock-breakdown
+ * Per-product, per-stock-type breakdown
+ */
+router.get('/stock-breakdown', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  try {
+    const sql = `
+      SELECT
+        p.id AS product_id,
+        p.name AS product_name,
+        i.stock_type,
+        i.lot_id,
+        sl.lot_number,
+        COALESCE(i.quantity, 0) AS quantity,
+        COALESCE(i.avg_cost, 0) AS avg_cost,
+        COALESCE(i.total_cost, 0) AS total_cost
+      FROM inventory i
+      JOIN products p ON i.product_id = p.id
+      LEFT JOIN stock_lots sl ON i.lot_id = sl.id
+      WHERE p.company_id = $1 AND COALESCE(p.is_deleted, false) = false AND i.quantity > 0
+      ORDER BY p.name, i.stock_type
+    `;
+    const data = await db.pgAll(sql, [companyId]);
+    const summary = {
+      total_fresh: data.filter(r => r.stock_type === 'fresh').reduce((s, r) => s + Number(r.quantity), 0),
+      total_mistake: data.filter(r => r.stock_type === 'mistake').reduce((s, r) => s + Number(r.quantity), 0),
+      total_repaired: data.filter(r => r.stock_type === 'fresh_repaired').reduce((s, r) => s + Number(r.quantity), 0),
+      total_value: data.reduce((s, r) => s + Number(r.total_cost), 0),
+    };
+    res.json({ data: data || [], summary });
+  } catch (err) {
+    console.error('stock-breakdown error:', err.message);
+    res.json({ data: [], summary: {} });
+  }
+});
+
+/**
+ * GET /api/reports/inventory/lot-profitability
+ * Lot-wise P&L from invoice_line_items
+ */
+router.get('/lot-profitability', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  try {
+    const sql = `
+      SELECT
+        sl.id AS lot_id,
+        sl.lot_number,
+        sl.status,
+        COALESCE(sl.total_fresh_qty + sl.total_mistake_qty, 0) AS total_purchased,
+        COALESCE(sl.total_cost, 0) AS purchase_cost,
+        COALESCE(SUM(ili.quantity), 0) AS qty_sold,
+        COALESCE(SUM(ili.line_total), 0) AS revenue,
+        COALESCE(SUM(ili.total_profit), 0) AS gross_profit,
+        COALESCE(sl.total_repair_cost, 0) AS repair_cost,
+        ROUND(
+          CASE WHEN COALESCE(SUM(ili.line_total), 0) > 0
+          THEN (COALESCE(SUM(ili.total_profit), 0) / SUM(ili.line_total)) * 100
+          ELSE 0 END, 2
+        ) AS margin_pct
+      FROM stock_lots sl
+      LEFT JOIN invoice_line_items ili ON ili.lot_id = sl.id
+      LEFT JOIN invoices inv ON ili.invoice_id = inv.id AND COALESCE(inv.is_deleted, false) = false
+      WHERE sl.company_id = $1 AND COALESCE(sl.is_deleted, false) = false
+      GROUP BY sl.id, sl.lot_number, sl.status, sl.total_fresh_qty, sl.total_mistake_qty, sl.total_cost, sl.total_repair_cost
+      ORDER BY sl.created_at DESC
+    `;
+    const data = await db.pgAll(sql, [companyId]);
+    res.json({ data: data || [], summary: {} });
+  } catch (err) {
+    console.error('lot-profitability error:', err.message);
+    res.json({ data: [], summary: {} });
+  }
+});
+
+/**
+ * GET /api/reports/inventory/conversions
+ * Conversion (mistake→repaired) history
+ */
+router.get('/conversions', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  try {
+    const sql = `
+      SELECT
+        sc.id,
+        sc.conversion_date,
+        sl.lot_number,
+        p.name AS product_name,
+        sc.mistake_qty_in,
+        sc.fresh_qty_out,
+        sc.rejected_qty,
+        sc.repair_cost_per_piece,
+        sc.total_repair_cost,
+        sc.repair_worker,
+        sc.payment_mode
+      FROM stock_conversions sc
+      JOIN stock_lots sl ON sc.lot_id = sl.id
+      LEFT JOIN products p ON p.company_id = $1 AND COALESCE(p.is_deleted, false) = false
+      WHERE sl.company_id = $1
+      ORDER BY sc.created_at DESC
+      LIMIT 200
+    `;
+    const data = await db.pgAll(sql, [companyId]);
+    res.json({ data: data || [], summary: {} });
+  } catch (err) {
+    console.error('conversions error:', err.message);
+    res.json({ data: [], summary: {} });
+  }
+});
+
 export default router;
