@@ -293,20 +293,20 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
         .thm-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
         .thm-badge { font-size: 10px; font-weight: 700; background: #dbeafe; color: #1d4ed8; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
         
-        .thm-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+        .thm-body { flex: 1; overflow: hidden; padding: 24px; display: flex; flex-direction: column; gap: 20px; min-height: 0; }
         .thm-info-bar { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; font-size: 13px; }
         .thm-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .thm-stat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px; }
         .thm-stat-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
         .thm-stat-value { font-size: 22px; font-weight: 900; margin-top: 4px; }
         
-        .thm-content-grid { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-        .thm-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; overflow: hidden; }
+        .thm-content-grid { display: grid; grid-template-columns: 1fr 280px; gap: 20px; flex: 1; min-height: 0; }
+        .thm-card { border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
         .thm-filters-row { padding: 16px; border-bottom: 1px solid #f1f5f9; background: #fafafa; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
         .thm-input { width: 100%; height: 38px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0 10px; font-size: 13px; }
         .thm-reset-btn { height: 38px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font-weight: 700; font-size: 12px; padding: 0 12px; cursor: pointer; }
         
-        .thm-table-wrap { overflow-x: auto; }
+        .thm-table-wrap { overflow-x: auto; overflow-y: auto; flex: 1; min-height: 0; }
         .thm-table { width: 100%; border-collapse: collapse; }
         .thm-table th { background: #f8fafc; padding: 12px 16px; text-align: left; font-size: 11px; color: #94a3b8; text-transform: uppercase; }
         .thm-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
