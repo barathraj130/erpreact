@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  FaUndo, FaPlus, FaSync, FaTimes, FaTrash, FaFileInvoice,
+  FaUndo, FaPlus, FaSync, FaTimes, FaTrash, FaFileInvoice, FaExternalLinkAlt,
+  FaCheckCircle,
 } from "react-icons/fa";
 import "./PageShared.css";
 
@@ -22,7 +24,7 @@ interface ReturnItem {
   description: string;
   qty: number;
   rate: number;
-  max_qty?: number; // original invoice qty — for validation display
+  max_qty?: number;
 }
 
 interface InvoiceLineItem {
@@ -52,6 +54,7 @@ interface SalesReturn {
   return_date: string;
   customer_name: string;
   customer_display: string;
+  original_invoice_id: number | null;
   original_invoice_number: string;
   total_amount: number;
   refund_type: string;
@@ -59,37 +62,62 @@ interface SalesReturn {
   items: ReturnItem[];
 }
 
+interface CustomerHistory {
+  invoices: {
+    id: number;
+    invoice_number: string;
+    invoice_date: string;
+    total_amount: number;
+    return_amount: number;
+    status: string;
+    paid_amount: number;
+  }[];
+  totalInvoiced: number;
+  totalReturned: number;
+  netBalance: number;
+}
+
+interface ClearDialog {
+  returnNumber: string;
+  invoiceId: number;
+  invoiceNumber: string;
+}
+
 const EMPTY_ITEM: ReturnItem = { product_id: null, description: "", qty: 1, rate: 0 };
 
 const SalesReturns: React.FC = () => {
+  const navigate = useNavigate();
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [customers, setCustomers] = useState<{ id: number; username: string; nickname?: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
   // Form state
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [invoiceSearch, setInvoiceSearch] = useState("");
-  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
-  const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split("T")[0]);
   const [refundType, setRefundType] = useState("CREDIT_NOTE");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<ReturnItem[]>([{ ...EMPTY_ITEM }]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Customer history (shown in modal after invoice selection)
+  const [customerHistory, setCustomerHistory] = useState<CustomerHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Post-submit "bill cleared?" dialog
+  const [clearDialog, setClearDialog] = useState<ClearDialog | null>(null);
+  const [markingCleared, setMarkingCleared] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [retRes, invRes, custRes] = await Promise.all([
+      const [retRes, invRes] = await Promise.all([
         apiFetch("/sales-returns").then(r => r.json()),
         apiFetch("/sales-returns/invoices-for-return").then(r => r.json()).catch(() => []),
-        apiFetch("/users").then(r => r.json()).catch(() => []),
       ]);
       setReturns(Array.isArray(retRes) ? retRes : []);
       setInvoices(Array.isArray(invRes) ? invRes : []);
-      setCustomers(Array.isArray(custRes) ? custRes : []);
     } catch {
       setReturns([]);
     } finally {
@@ -99,28 +127,40 @@ const SalesReturns: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  // When an invoice is selected, prefill items from its line items
-  // Pre-fill qty=0 so user explicitly enters the return qty (with max_qty shown as hint)
+  const fetchCustomerHistory = async (customerId: number) => {
+    setHistoryLoading(true);
+    setCustomerHistory(null);
+    try {
+      const res = await apiFetch(`/sales-returns/customer-history?customer_id=${customerId}`);
+      const data = await res.json();
+      setCustomerHistory(data);
+    } catch {
+      setCustomerHistory(null);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const handleSelectInvoice = (inv: Invoice) => {
     setSelectedInvoice(inv);
     if (inv.line_items && inv.line_items.length > 0) {
       setItems(inv.line_items.map(li => ({
         product_id: li.product_id,
         description: li.description || "Item",
-        qty: 0,                              // start at 0 — user enters actual return qty
+        qty: 0,
         rate: Number(li.unit_price) || 0,
-        max_qty: Number(li.quantity) || 0,   // original qty for reference / validation
+        max_qty: Number(li.quantity) || 0,
       })));
     } else {
       setItems([{ ...EMPTY_ITEM }]);
     }
+    if (inv.customer_id) {
+      fetchCustomerHistory(inv.customer_id);
+    }
   };
 
   const addItem = () => setItems(prev => [...prev, { ...EMPTY_ITEM }]);
-
-  const removeItem = (idx: number) =>
-    setItems(prev => prev.filter((_, i) => i !== idx));
-
+  const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
   const updateItem = (idx: number, field: keyof ReturnItem, value: string | number) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it));
 
@@ -128,7 +168,6 @@ const SalesReturns: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Only submit items that actually have a qty > 0
     const activeItems = items.filter(i => Number(i.qty) > 0 && i.description.trim());
     if (activeItems.length === 0) {
       alert("Please enter a return quantity (> 0) for at least one item.");
@@ -153,13 +192,39 @@ const SalesReturns: React.FC = () => {
         const err = await res.json();
         throw new Error(err.error || "Failed");
       }
+      const record = await res.json();
+      const origInv = selectedInvoice;
       setShowModal(false);
       resetForm();
       load();
+      if (origInv) {
+        setClearDialog({
+          returnNumber: record.return_number,
+          invoiceId: origInv.id,
+          invoiceNumber: origInv.invoice_number,
+        });
+      }
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleMarkCleared = async () => {
+    if (!clearDialog) return;
+    setMarkingCleared(true);
+    try {
+      const res = await apiFetch(`/sales-returns/mark-invoice-cleared/${clearDialog.invoiceId}`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to mark cleared");
+      setClearDialog(null);
+      load();
+    } catch (err: any) {
+      alert("Could not mark invoice as cleared: " + err.message);
+    } finally {
+      setMarkingCleared(false);
     }
   };
 
@@ -170,6 +235,7 @@ const SalesReturns: React.FC = () => {
     setRefundType("CREDIT_NOTE");
     setNotes("");
     setItems([{ ...EMPTY_ITEM }]);
+    setCustomerHistory(null);
   };
 
   const filteredInvoices = invoices.filter(inv =>
@@ -246,16 +312,26 @@ const SalesReturns: React.FC = () => {
                 <td style={{ fontWeight: 600 }}>{r.customer_name || r.customer_display || "—"}</td>
                 <td>
                   {r.original_invoice_number ? (
-                    <span style={{ background: "#eff6ff", color: "#1d4ed8", padding: "2px 8px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
-                      <FaFileInvoice size={10} style={{ marginRight: 4 }} />{r.original_invoice_number}
-                    </span>
+                    <button
+                      onClick={() => navigate(`/invoices/edit/${r.original_invoice_id}`)}
+                      title="View original invoice"
+                      style={{
+                        background: "#eff6ff", color: "#1d4ed8",
+                        padding: "3px 8px", borderRadius: "6px", fontSize: "12px",
+                        fontWeight: 600, border: "1px solid #bfdbfe", cursor: "pointer",
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                      }}
+                    >
+                      <FaFileInvoice size={10} />{r.original_invoice_number}
+                      <FaExternalLinkAlt size={9} style={{ opacity: 0.6 }} />
+                    </button>
                   ) : "—"}
                 </td>
                 <td>
                   <span style={{
                     background: r.refund_type === "CASH_REFUND" ? "#dcfce7" : r.refund_type === "BANK_REFUND" ? "#dbeafe" : "#fef3c7",
                     color: r.refund_type === "CASH_REFUND" ? "#065f46" : r.refund_type === "BANK_REFUND" ? "#1e40af" : "#92400e",
-                    padding: "2px 8px", borderRadius: "6px", fontSize: "12px", fontWeight: 600
+                    padding: "2px 8px", borderRadius: "6px", fontSize: "12px", fontWeight: 600,
                   }}>
                     {REFUND_TYPES.find(t => t.value === r.refund_type)?.label.replace(/^[^ ]+ /, "") || r.refund_type}
                   </span>
@@ -277,7 +353,7 @@ const SalesReturns: React.FC = () => {
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
-              style={{ maxWidth: 700, width: "100%" }}
+              style={{ maxWidth: 720, width: "100%" }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
                 <h2 style={{ margin: 0 }}>Record Sales Return</h2>
@@ -304,7 +380,7 @@ const SalesReturns: React.FC = () => {
                         style={{
                           padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9",
                           background: selectedInvoice?.id === inv.id ? "#eff6ff" : undefined,
-                          display: "flex", justifyContent: "space-between", alignItems: "center"
+                          display: "flex", justifyContent: "space-between", alignItems: "center",
                         }}
                       >
                         <span style={{ fontWeight: 600 }}>{inv.invoice_number}</span>
@@ -315,16 +391,91 @@ const SalesReturns: React.FC = () => {
                 )}
 
                 {selectedInvoice && (
-                  <div style={{ padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>
-                      <strong>{selectedInvoice.invoice_number}</strong>
-                      <span style={{ color: "#64748b", marginLeft: 8, fontSize: 13 }}>{selectedInvoice.customer_name} — {fmt(selectedInvoice.total_amount)}</span>
-                    </span>
-                    <button type="button" onClick={() => { setSelectedInvoice(null); setItems([{ ...EMPTY_ITEM }]); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}>
-                      <FaTimes size={12} />
-                    </button>
-                  </div>
+                  <>
+                    <div style={{ padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>
+                        <strong>{selectedInvoice.invoice_number}</strong>
+                        <span style={{ color: "#64748b", marginLeft: 8, fontSize: 13 }}>{selectedInvoice.customer_name} — {fmt(selectedInvoice.total_amount)}</span>
+                      </span>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/invoices/edit/${selectedInvoice.id}`)}
+                          title="View original invoice"
+                          style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}
+                        >
+                          <FaFileInvoice size={10} /> View Bill <FaExternalLinkAlt size={9} />
+                        </button>
+                        <button type="button" onClick={() => { setSelectedInvoice(null); setItems([{ ...EMPTY_ITEM }]); setCustomerHistory(null); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}>
+                          <FaTimes size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Customer purchase history */}
+                    {selectedInvoice.customer_id && (
+                      <div style={{ border: "1px solid #e0e7ff", borderRadius: 10, marginBottom: 14, overflow: "hidden", background: "#fafafa" }}>
+                        <div style={{ padding: "8px 14px", background: "#eef2ff", borderBottom: "1px solid #e0e7ff", fontSize: 12, fontWeight: 700, color: "#4338ca", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span>Customer Purchase History</span>
+                          {historyLoading && <span style={{ fontWeight: 400, color: "#6b7280" }}>Loading…</span>}
+                        </div>
+                        {customerHistory && (
+                          <>
+                            <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #e0e7ff" }}>
+                              {[
+                                { label: "Total Invoiced", val: customerHistory.totalInvoiced, color: "#1e40af" },
+                                { label: "Total Returned", val: customerHistory.totalReturned, color: "#b91c1c" },
+                                { label: "Net Balance", val: customerHistory.netBalance, color: "#065f46" },
+                              ].map((kpi, i) => (
+                                <div key={i} style={{ flex: 1, padding: "10px 14px", borderRight: i < 2 ? "1px solid #e0e7ff" : undefined, textAlign: "center" }}>
+                                  <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{kpi.label}</div>
+                                  <div style={{ fontSize: 15, fontWeight: 700, color: kpi.color, marginTop: 3 }}>{fmt(kpi.val)}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {customerHistory.invoices.length > 0 && (
+                              <div style={{ maxHeight: 160, overflowY: "auto" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                                  <thead>
+                                    <tr style={{ background: "#f1f5f9" }}>
+                                      <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 600, color: "#374151" }}>Invoice</th>
+                                      <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 600, color: "#374151" }}>Date</th>
+                                      <th style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, color: "#374151" }}>Amount</th>
+                                      <th style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600, color: "#374151" }}>Returned</th>
+                                      <th style={{ padding: "6px 12px", textAlign: "center", fontWeight: 600, color: "#374151" }}>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {customerHistory.invoices.map((inv, i) => (
+                                      <tr key={inv.id} style={{ borderTop: "0.5px solid #f1f5f9", background: inv.id === selectedInvoice?.id ? "#eff6ff" : i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                        <td style={{ padding: "5px 12px", fontWeight: inv.id === selectedInvoice?.id ? 700 : 400, color: "#1d4ed8" }}>{inv.invoice_number}</td>
+                                        <td style={{ padding: "5px 12px", color: "#6b7280" }}>{new Date(inv.invoice_date).toLocaleDateString("en-IN")}</td>
+                                        <td style={{ padding: "5px 12px", textAlign: "right", fontWeight: 600 }}>{fmt(inv.total_amount)}</td>
+                                        <td style={{ padding: "5px 12px", textAlign: "right", color: Number(inv.return_amount) > 0 ? "#b91c1c" : "#9ca3af" }}>
+                                          {Number(inv.return_amount) > 0 ? fmt(inv.return_amount) : "—"}
+                                        </td>
+                                        <td style={{ padding: "5px 12px", textAlign: "center" }}>
+                                          <span style={{
+                                            padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                                            background: inv.status === "PAID" ? "#dcfce7" : inv.status === "PARTIAL" ? "#fef9c3" : "#fee2e2",
+                                            color: inv.status === "PAID" ? "#065f46" : inv.status === "PARTIAL" ? "#854d0e" : "#991b1b",
+                                          }}>{inv.status || "PENDING"}</span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {!customerHistory && !historyLoading && (
+                          <div style={{ padding: "16px", textAlign: "center", color: "#9ca3af", fontSize: 12 }}>No history available</div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="form-grid-2">
@@ -383,9 +534,7 @@ const SalesReturns: React.FC = () => {
                                 fontWeight: 700, fontSize: 14,
                                 color: item.qty === 0 ? "#94a3b8" : "#1e293b",
                                 background: item.qty === 0 ? "#f8fafc" : "#fff",
-                                border: item.qty === 0
-                                  ? "1.5px dashed #cbd5e1"
-                                  : "1.5px solid #6366f1",
+                                border: item.qty === 0 ? "1.5px dashed #cbd5e1" : "1.5px solid #6366f1",
                                 outline: "none",
                               }}
                             />
@@ -453,6 +602,49 @@ const SalesReturns: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Bill Cleared? Dialog ── */}
+      <AnimatePresence>
+        {clearDialog && (
+          <div className="page-modal-overlay" style={{ zIndex: 1100 }}>
+            <motion.div
+              initial={{ scale: 0.88, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.88, opacity: 0 }}
+              style={{
+                background: "#fff", borderRadius: 20, padding: "32px 28px",
+                maxWidth: 440, width: "100%",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.18)", textAlign: "center",
+              }}
+            >
+              <FaCheckCircle size={40} color="#16a34a" style={{ marginBottom: 14 }} />
+              <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 800, color: "#111827" }}>
+                Return {clearDialog.returnNumber} Recorded
+              </h3>
+              <p style={{ margin: "0 0 24px", color: "#6b7280", fontSize: 14, lineHeight: 1.6 }}>
+                Is the original bill{" "}
+                <strong style={{ color: "#1d4ed8" }}>{clearDialog.invoiceNumber}</strong>{" "}
+                now fully cleared / settled?
+              </p>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                <button
+                  onClick={() => setClearDialog(null)}
+                  style={{ padding: "10px 24px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: 14 }}
+                >
+                  No — Keep Balance
+                </button>
+                <button
+                  onClick={handleMarkCleared}
+                  disabled={markingCleared}
+                  style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+                >
+                  {markingCleared ? "Marking…" : "Yes — Mark Cleared"}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

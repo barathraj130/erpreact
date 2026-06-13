@@ -273,6 +273,57 @@ router.get('/pending-credits', authMiddleware, async (req, res) => {
     }
 });
 
+// ── GET /customer-history  – all invoices & returns for a customer ────────────
+router.get('/customer-history', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { customer_id } = req.query;
+    if (!customer_id) return res.json({ invoices: [], totalInvoiced: 0, totalReturned: 0, netBalance: 0 });
+    try {
+        await ensureTable();
+        const invoices = await db.pgAll(`
+            SELECT i.id, i.invoice_number, i.invoice_date, i.total_amount,
+                   COALESCE(i.return_amount, 0) AS return_amount,
+                   i.status, i.paid_amount
+            FROM invoices i
+            WHERE i.company_id = $1 AND i.customer_id = $2
+              AND COALESCE(i.is_deleted, false) = false
+              AND i.invoice_type NOT IN ('CREDIT_NOTE')
+            ORDER BY i.invoice_date DESC
+            LIMIT 50
+        `, [companyId, customer_id]);
+
+        const totalInvoiced = invoices.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+        const totalReturned = invoices.reduce((s, r) => s + parseFloat(r.return_amount || 0), 0);
+        const netBalance    = totalInvoiced - totalReturned;
+        res.json({ invoices, totalInvoiced, totalReturned, netBalance });
+    } catch (err) {
+        console.error('Customer history error:', err);
+        res.json({ invoices: [], totalInvoiced: 0, totalReturned: 0, netBalance: 0 });
+    }
+});
+
+// ── POST /mark-invoice-cleared/:invoiceId  – mark original invoice as settled ─
+router.post('/mark-invoice-cleared/:invoiceId', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { invoiceId } = req.params;
+    try {
+        const inv = await db.pgGet(
+            `SELECT id, total_amount FROM invoices WHERE id = $1 AND company_id = $2`,
+            [invoiceId, companyId]
+        );
+        if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+        await db.pgRun(
+            `UPDATE invoices SET status = 'PAID', paid_amount = total_amount, updated_at = NOW()
+             WHERE id = $1 AND company_id = $2`,
+            [invoiceId, companyId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Mark cleared error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── GET /:id  – single return detail ─────────────────────────────────────────
 router.get('/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
