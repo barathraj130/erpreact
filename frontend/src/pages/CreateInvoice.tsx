@@ -221,6 +221,7 @@ const CreateInvoice: React.FC = () => {
     { id: Date.now(), desc: "", hsn: "", uom: "Pcs", qty: 0, rate: 0 },
   ]);
   const [customerId, setCustomerId] = useState<number | null>(null);
+  const [retailCustomerName, setRetailCustomerName] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [meta, setMeta] = useState({
     invoiceDate: new Date().toISOString().slice(0, 10),
@@ -569,6 +570,7 @@ const CreateInvoice: React.FC = () => {
         ...(!isAutoMode && invoiceNo.trim() ? { invoice_number: invoiceNo.trim() } : {}),
         invoice_type: invoiceType,
         customer_id: customerId,
+        walk_in_name: invoiceType === 'RETAIL_SALE' ? retailCustomerName.trim() || null : null,
         // For each item, ensure gst_rate is set. If the product has no GST rate (0 or null),
         // fall back to the invoice-level GST rate the user selected (gstState.totalRate).
         items: items.filter((i) => i.desc && i.qty > 0).map(i => ({
@@ -770,7 +772,7 @@ const CreateInvoice: React.FC = () => {
                 <div style={{ marginTop: '8px' }}>
                   <CustomSelect
                     value={invoiceType}
-                    onChange={(e: any) => { setInvoiceType(e.target.value as BillTypeValue); setRetailGST(null); }}
+                    onChange={(e: any) => { setInvoiceType(e.target.value as BillTypeValue); setRetailGST(null); setRetailCustomerName(""); }}
                     disableSearch
                   >
                     {BILL_TYPES.map(bt => (
@@ -863,22 +865,35 @@ const CreateInvoice: React.FC = () => {
           {/* Customer */}
           <div className="ci-card">
             <div className="ci-card-title">
-              Customer {(BILL_TYPES.find(b => b.value === invoiceType)?.requiresCustomer) ? "*" : "(Optional)"}
+              {invoiceType === 'RETAIL_SALE'
+                ? 'Customer Name (Optional)'
+                : `Customer ${BILL_TYPES.find(b => b.value === invoiceType)?.requiresCustomer ? '*' : '(Optional)'}`}
             </div>
             <div className="ci-field">
               <div style={{ marginTop: "8px" }}>
-                <CustomSelect
-                  onChange={handleCustomerSelect}
-                  value={customerId || ""}
-                  placeholder="-- Choose Customer --"
-                >
-                  <option value="">-- Choose Customer --</option>
-                  {Array.isArray(customers) && customers.map((c: any) => (
-                    <option key={c.id} value={c.id}>
-                      {c.username}
-                    </option>
-                  ))}
-                </CustomSelect>
+                {invoiceType === 'RETAIL_SALE' ? (
+                  <input
+                    type="text"
+                    value={retailCustomerName}
+                    onChange={(e) => setRetailCustomerName(e.target.value)}
+                    placeholder="Walk-in customer name (optional)"
+                    className="ci-input"
+                    style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', width: '100%', fontSize: 14 }}
+                  />
+                ) : (
+                  <CustomSelect
+                    onChange={handleCustomerSelect}
+                    value={customerId || ""}
+                    placeholder="-- Choose Customer --"
+                  >
+                    <option value="">-- Choose Customer --</option>
+                    {Array.isArray(customers) && customers.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.username}
+                      </option>
+                    ))}
+                  </CustomSelect>
+                )}
               </div>
             </div>
           </div>

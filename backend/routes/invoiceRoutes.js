@@ -32,6 +32,7 @@ async function ensureNSBSchema(client) {
     if (_nsbSchemaDone) return;
     try {
         await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_nominal BOOLEAN DEFAULT false`);
+        await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS walk_in_name VARCHAR(200)`);
         await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_liability_amount NUMERIC(10,2) DEFAULT 0`);
         await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_paid BOOLEAN DEFAULT false`);
         await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS gst_paid_date DATE`);
@@ -321,6 +322,7 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
                i.cgst_total, i.sgst_total, i.igst_total, i.tax_total,
                i.sub_total, i.vehicle_number, i.transportation_mode, i.date_of_supply,
                i.reverse_charge, i.bundles_count, i.bill_purpose, i.series_prefix,
+               i.walk_in_name,
                i.created_at, i.updated_at,
                COALESCE(u.nickname, u.username) as customer_name,
                CASE
@@ -365,6 +367,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         points_to_redeem, // Points to redeem on this invoice
         tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST from frontend
         delivery_order_id, // Links back to the delivery order that spawned this invoice
+        walk_in_name,     // Retail walk-in customer name (no account required)
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
@@ -563,8 +566,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 bill_purpose,
                 points_earned, points_redeemed, points_discount,
                 series_prefix, series_number,
+                walk_in_name,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW())
             RETURNING id
         `;
 
@@ -581,7 +585,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             branchId,
             bill_purpose || 'real',
             0, pointsRedeemed, pointsDiscount,
-            seriesPrefix, seriesNumber
+            seriesPrefix, seriesNumber,
+            walk_in_name || null
         ];
 
         // Use SAVEPOINT so a duplicate-number failure can be recovered inside the transaction.
@@ -1454,6 +1459,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST rate
         invoice_type: editInvoiceType,
         discount_amount: editDiscountAmount,
+        walk_in_name: editWalkInName,
     } = req.body;
     const companyId = req.user.active_company_id;
 
@@ -1578,6 +1584,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 reverse_charge     = COALESCE($13, reverse_charge),
                 bundles_count      = COALESCE($14, bundles_count),
                 discount_amount    = COALESCE($17, 0),
+                walk_in_name       = $18,
                 updated_at         = NOW()
              WHERE id = $15 AND company_id = $16`,
             [
@@ -1598,6 +1605,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 id,
                 companyId,
                 editDiscountAmount != null ? Number(editDiscountAmount) : null,
+                editWalkInName || null,
             ]
         );
 

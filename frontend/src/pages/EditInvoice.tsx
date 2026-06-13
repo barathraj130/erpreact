@@ -203,6 +203,7 @@ const EditInvoice: React.FC = () => {
     dateOfSupply: new Date().toISOString().slice(0, 10),
   });
   const [customerId, setCustomerId] = useState<number | null>(null);
+  const [retailCustomerName, setRetailCustomerName] = useState<string>("");
   const [customer, setCustomer] = useState({
     name: "",
     address: "",
@@ -269,6 +270,7 @@ const EditInvoice: React.FC = () => {
             setNotes(inv.notes || "");
             setAmountPaidAlready(Number(inv.paid_amount) || 0);
             setEditDiscount(Number(inv.discount_amount) || 0);
+            setRetailCustomerName(inv.walk_in_name || "");
 
             setMeta({
               invoiceDate: inv.invoice_date ? inv.invoice_date.substring(0, 10) : new Date().toISOString().slice(0, 10),
@@ -481,6 +483,7 @@ const EditInvoice: React.FC = () => {
       },
       bundles_count: Number(meta.bundles) || 0,
       discount_amount: editDiscount,
+      walk_in_name: invoiceType === "RETAIL_SALE" ? retailCustomerName.trim() : null,
     };
 
     // Note: We might need to handle how new payments are appended to history, for now we update total paid
@@ -827,21 +830,33 @@ const EditInvoice: React.FC = () => {
               )}
             </div>
             <div>
-              <label style={inputLabelStyle}>Customer</label>
-              <CustomSelect
-                value={customerId || ""}
-                onChange={handleCustomerSelect}
-                style={inputStyle}
-              >
-                <option value="">-- Select Customer --</option>
-                {customers
-                  .filter((c) => c.username !== "admin")
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.username}
-                    </option>
-                  ))}
-              </CustomSelect>
+              <label style={inputLabelStyle}>
+                {invoiceType === "RETAIL_SALE" ? "Customer Name (optional)" : "Customer"}
+              </label>
+              {invoiceType === "RETAIL_SALE" ? (
+                <input
+                  type="text"
+                  value={retailCustomerName}
+                  onChange={(e) => setRetailCustomerName(e.target.value)}
+                  placeholder="Walk-in customer name (optional)"
+                  style={{ ...inputStyle, background: "#fffbeb" }}
+                />
+              ) : (
+                <CustomSelect
+                  value={customerId || ""}
+                  onChange={handleCustomerSelect}
+                  style={inputStyle}
+                >
+                  <option value="">-- Select Customer --</option>
+                  {customers
+                    .filter((c) => c.username !== "admin")
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.username}
+                      </option>
+                    ))}
+                </CustomSelect>
+              )}
             </div>
           </div>
 
