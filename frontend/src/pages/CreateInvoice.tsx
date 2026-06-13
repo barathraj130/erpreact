@@ -232,6 +232,7 @@ const CreateInvoice: React.FC = () => {
     placeOfSupplyCode: "33",
   });
   const [invoiceType, setInvoiceType] = useState<BillTypeValue>("TAX_INVOICE");
+  const [retailGST, setRetailGST] = useState<boolean | null>(null); // null = not yet asked
   const [paymentsList, setPaymentsList] = useState<{ amount: number; method: string; reference?: string }[]>([{ amount: 0, method: "CASH", reference: "" }]);
   const amountPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [paymentsList]);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
@@ -485,7 +486,7 @@ const CreateInvoice: React.FC = () => {
     // NON_TAX_INVOICE → no GST (isNoGST)
     // RETAIL_SALE     → GST from product rates (use invoice-level rate for preview)
     // Others          → GST always applies using invoice-level gstState
-    const isNoGST = invoiceType === "NON_TAX_INVOICE";
+    const isNoGST = invoiceType === "NON_TAX_INVOICE" || (invoiceType === "RETAIL_SALE" && retailGST === false);
 
     const cgstAmt = isNoGST ? 0 : taxable * (gstState.cgst * 0.01);
     const sgstAmt = isNoGST ? 0 : taxable * (gstState.sgst * 0.01);
@@ -540,6 +541,9 @@ const CreateInvoice: React.FC = () => {
 
   const saveInvoice = async () => {
     if (isSaving) return; // prevent double-submit
+    if (invoiceType === 'RETAIL_SALE' && retailGST === null) {
+      return alert("Please select whether to add GST or not for this retail bill.");
+    }
     const billTypeCfg = BILL_TYPES.find(b => b.value === invoiceType);
     if (billTypeCfg?.requiresCustomer && !customerId) {
         return alert(`Please select a customer — ${billTypeCfg.label} requires a customer.`);
@@ -569,11 +573,13 @@ const CreateInvoice: React.FC = () => {
         // fall back to the invoice-level GST rate the user selected (gstState.totalRate).
         items: items.filter((i) => i.desc && i.qty > 0).map(i => ({
           ...i,
-          gst_rate: (i.gst_rate != null && Number(i.gst_rate) > 0) ? i.gst_rate : gstState.totalRate,
+          gst_rate: (invoiceType === 'RETAIL_SALE' && retailGST === false) ? 0
+            : (i.gst_rate != null && Number(i.gst_rate) > 0) ? i.gst_rate : gstState.totalRate,
         })),
         return_items: returnItems.filter((i) => i.desc && i.qty > 0).map(i => ({
           ...i,
-          gst_rate: (i.gst_rate != null && Number(i.gst_rate) > 0) ? i.gst_rate : gstState.totalRate,
+          gst_rate: (invoiceType === 'RETAIL_SALE' && retailGST === false) ? 0
+            : (i.gst_rate != null && Number(i.gst_rate) > 0) ? i.gst_rate : gstState.totalRate,
         })),
         notes,
         grand_total: totals.grandTotal,
@@ -764,7 +770,7 @@ const CreateInvoice: React.FC = () => {
                 <div style={{ marginTop: '8px' }}>
                   <CustomSelect
                     value={invoiceType}
-                    onChange={(e: any) => setInvoiceType(e.target.value as BillTypeValue)}
+                    onChange={(e: any) => { setInvoiceType(e.target.value as BillTypeValue); setRetailGST(null); }}
                     disableSearch
                   >
                     {BILL_TYPES.map(bt => (
@@ -1150,6 +1156,48 @@ const CreateInvoice: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* GST prompt for Retail Sale */}
+          {invoiceType === 'RETAIL_SALE' && retailGST === null && (
+            <div style={{ background: '#fffbeb', border: '2px solid #f59e0b', borderRadius: 12, padding: '20px 24px', marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
+                Add GST to this bill?
+              </div>
+              <div style={{ fontSize: 13, color: '#78350f', marginBottom: 16 }}>
+                Choose whether this retail bill includes GST or not.
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setRetailGST(true)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                >
+                  ✓ Yes, Add GST
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRetailGST(false)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                >
+                  ✗ No GST
+                </button>
+              </div>
+            </div>
+          )}
+          {invoiceType === 'RETAIL_SALE' && retailGST !== null && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: retailGST ? '#f0fdf4' : '#fef2f2', border: `1px solid ${retailGST ? '#bbf7d0' : '#fecaca'}`, borderRadius: 8, padding: '8px 14px', marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: retailGST ? '#166534' : '#991b1b' }}>
+                {retailGST ? '✓ GST included in this bill' : '✗ No GST on this bill'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setRetailGST(null)}
+                style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Change
+              </button>
+            </div>
+          )}
 
           {/* Line Items */}
           <div className="ci-card">
