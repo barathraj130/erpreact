@@ -78,7 +78,7 @@ export const SectionGap = () => (
 export const ReportCard = ({ children, style }) => (
   <div style={{
     border: '1px solid #e5e7eb', borderRadius: 10,
-    overflow: 'hidden', background: '#fff', ...style,
+    overflow: 'clip', background: '#fff', ...style,
   }}>
     {children}
   </div>

@@ -25,7 +25,7 @@ const DataTable = ({ columns = [], data = [], loading = false, summary, emptyTex
   );
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'clip', background: '#fff' }}>
       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{
           width: '100%', borderCollapse: 'collapse',
