@@ -1708,6 +1708,56 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         await client.query("COMMIT");
         res.json({ success: true, message: "Invoice updated successfully" });
 
+        // ── Post-commit: WhatsApp thank-you for new payments (non-blocking) ──
+        const newPaymentTotal = Array.isArray(payments)
+            ? payments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+            : 0;
+        if (newPaymentTotal > 0) {
+            try {
+                const { sendWhatsApp, notifyOwner } = await import('../utils/whatsapp.js');
+                const fmt = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+                const custRow = effectiveCustomerId
+                    ? await db.pgGet(`SELECT username, nickname, phone FROM users WHERE id = $1`, [effectiveCustomerId])
+                    : null;
+                const custName  = custRow?.nickname || custRow?.username || 'Customer';
+                const custPhone = custRow?.phone || '';
+
+                const updInv = await db.pgGet(
+                    `SELECT paid_amount, total_amount FROM invoices WHERE id = $1`, [id]
+                );
+                const updPaid    = parseFloat(updInv?.paid_amount || 0);
+                const updTotal   = parseFloat(updInv?.total_amount || 0);
+                const updBalance = Math.max(0, updTotal - updPaid);
+
+                if (custPhone) {
+                    await sendWhatsApp(custPhone,
+`Dear ${custName},
+
+🙏 Thank you for your payment!
+
+Invoice No : ${finalInvoiceNumber}
+Amount Received : ₹${fmt(newPaymentTotal)}
+Total Paid : ₹${fmt(updPaid)}
+Balance Due : ₹${fmt(updBalance)}
+${updBalance <= 0 ? '✅ Payment complete — Thank you!' : '⏳ Partial payment received'}
+
+JBS Knit Wear, Tiruppur
+📞 8148232205`);
+                }
+
+                await notifyOwner(
+`✅ Payment Received!
+
+Customer : ${custName}
+Invoice  : ${finalInvoiceNumber}
+Amount   : ₹${fmt(newPaymentTotal)}
+Balance  : ₹${fmt(updBalance)}`);
+            } catch (waErr) {
+                console.log('[WhatsApp/edit-payment] silent fail:', waErr.message);
+            }
+        }
+
     } catch (err) {
         if (client) await client.query("ROLLBACK");
         console.error("Update Invoice Error:", err.message);
@@ -1871,21 +1921,22 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
             const custName  = custRow?.nickname || custRow?.username || 'Customer';
             const custPhone = custRow?.phone || '';
 
-            // Customer receipt
+            // Customer thank-you receipt
             if (custPhone) {
                 await sendWhatsApp(custPhone,
 `Dear ${custName},
 
-💰 Payment Received!
+🙏 *Thank you for your payment!*
 
-Invoice: ${waInvNumber}
-Amount Paid Now: ₹${fmt(amount)}
-Total Paid: ₹${fmt(waNewPaid)}
-Balance: ₹${fmt(waNewBalance)}
-Status: ${waNewBalance <= 0 ? '✅ FULLY PAID' : '⏳ Partially Paid'}
+Invoice No  : ${waInvNumber}
+Amount Paid : ₹${fmt(amount)} (via ${waMode})
+Total Paid  : ₹${fmt(waNewPaid)}
+Balance Due : ₹${fmt(waNewBalance)}
+${waNewBalance <= 0
+    ? '✅ Your account is fully settled. We appreciate your promptness!'
+    : '⏳ Partial payment received. Balance of ₹' + fmt(waNewBalance) + ' is pending.'}
 
-Thank you!
-JBS Knit Wear, Tiruppur
+Thank you for choosing JBS Knit Wear, Tiruppur.
 📞 8148232205`);
             }
 
