@@ -1551,6 +1551,7 @@ const CreateInvoice: React.FC = () => {
                           <option value="CASH">CASH</option>
                           <option value="BANK">BANK {'/'} CARD</option>
                           <option value="UPI">UPI {'/'} QR SCAN</option>
+                          <option value="PROPRIETOR_AC">PROPRIETOR A/C</option>
                         </CustomSelect>
                     </div>
                   </div>

@@ -765,6 +765,15 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                             INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                         `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || pMethod, p.reference_no || p.bank_transaction_id || '-', pDate, invoiceId]);
+                    } else if (pMethod === 'PROPRIETOR_AC') {
+                        // Customer paid directly to proprietor's personal account
+                        await client.query(`
+                            INSERT INTO proprietor_transactions
+                                (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, reference_type, reference_id)
+                            VALUES ($1, $2, 'PERSONAL_RECEIPT', $3, 'PROPRIETOR_AC', $4, $5, $6, 'INVOICE', $7)
+                        `, [companyId, req.user.branch_id || 1, pAmt, pDate,
+                            `Customer payment via Proprietor A/C — Invoice #${invoiceId}`,
+                            req.user.id, invoiceId]);
                     }
                 }
             }
@@ -1668,6 +1677,14 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                             INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                         `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || 'Bank', p.reference_no || p.bank_transaction_id || '-', pDate, id]);
+                    } else if (pMethod === 'PROPRIETOR_AC') {
+                        await client.query(`
+                            INSERT INTO proprietor_transactions
+                                (company_id, branch_id, transaction_type, amount, payment_mode, transaction_date, notes, created_by, reference_type, reference_id)
+                            VALUES ($1, $2, 'PERSONAL_RECEIPT', $3, 'PROPRIETOR_AC', $4, $5, $6, 'INVOICE', $7)
+                        `, [companyId, req.user.branch_id || 1, pAmt, pDate,
+                            `Customer payment via Proprietor A/C — Invoice #${id}`,
+                            req.user.id, Number(id)]);
                     }
                 }
             }

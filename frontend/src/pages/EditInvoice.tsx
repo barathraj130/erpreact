@@ -12,6 +12,7 @@ import {
   FaSave,
   FaTrash,
   FaUniversity,
+  FaUser,
   FaWallet,
 } from "react-icons/fa";
 import { useNavigate, useParams } from "react-router-dom";
@@ -137,6 +138,7 @@ const PAYMENT_METHODS = [
   { value: "CARD", label: "Card", icon: <FaCreditCard />, color: "#f59e0b" },
   { value: "CHEQUE", label: "Cheque", icon: <FaReceipt />, color: "#64748b" },
   { value: "WALLET", label: "Wallet", icon: <FaWallet />, color: "#ec4899" },
+  { value: "PROPRIETOR_AC", label: "Proprietor A/C", icon: <FaUser />, color: "#7c3aed" },
 ];
 
 // Interfaces
