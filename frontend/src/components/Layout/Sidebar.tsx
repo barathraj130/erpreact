@@ -66,6 +66,7 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
         { name: "Finance Reports", path: "/reports/finance" },
         { name: "GST Reports", path: "/reports/gst" },
         { name: "HR Reports", path: "/reports/hr" },
+        { name: "Discounts & Waivers", path: "/reports/discounts" },
         { name: "Intelligence", path: "/reports/world-class" },
       ]
     },

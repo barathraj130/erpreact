@@ -1366,6 +1366,81 @@ router.get('/hr/salary', authMiddleware, async (req, res) => {
     }
 });
 
+// ─── Discount / Waiver Report ──────────────────────────────────────────────
+router.get('/discounts', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { from, to } = req.query;
+    try {
+        let dateClause = '';
+        const params = [companyId];
+        if (from && to) {
+            dateClause = ` AND i.invoice_date >= $2::date AND i.invoice_date <= $3::date`;
+            params.push(from, to);
+        }
+
+        // Per-invoice detail rows
+        const rows = await db.pgAll(`
+            SELECT
+                i.id,
+                i.invoice_number,
+                i.invoice_date AS date,
+                u.username AS customer_name,
+                i.total_amount,
+                COALESCE(i.discount_amount, 0) AS discount_amount,
+                CASE WHEN i.total_amount > 0
+                     THEN ROUND(COALESCE(i.discount_amount, 0) * 100.0 / i.total_amount, 1)
+                     ELSE 0 END AS discount_pct,
+                i.notes
+            FROM invoices i
+            JOIN users u ON u.id = i.customer_id
+            WHERE i.company_id = $1
+              AND COALESCE(i.is_deleted, false) = false
+              AND UPPER(COALESCE(i.invoice_type, '')) != 'SALES_RETURN'
+              AND COALESCE(i.discount_amount, 0) > 0
+              ${dateClause}
+            ORDER BY i.invoice_date DESC
+        `, params);
+
+        // Customer-level summary
+        const byCustomer = await db.pgAll(`
+            SELECT
+                u.username AS customer_name,
+                COUNT(*) AS invoice_count,
+                SUM(COALESCE(i.discount_amount, 0)) AS total_discount,
+                SUM(i.total_amount) AS total_billed,
+                CASE WHEN SUM(i.total_amount) > 0
+                     THEN ROUND(SUM(COALESCE(i.discount_amount, 0)) * 100.0 / SUM(i.total_amount), 1)
+                     ELSE 0 END AS discount_pct
+            FROM invoices i
+            JOIN users u ON u.id = i.customer_id
+            WHERE i.company_id = $1
+              AND COALESCE(i.is_deleted, false) = false
+              AND UPPER(COALESCE(i.invoice_type, '')) != 'SALES_RETURN'
+              AND COALESCE(i.discount_amount, 0) > 0
+              ${dateClause}
+            GROUP BY u.id, u.username
+            ORDER BY total_discount DESC
+        `, params);
+
+        const totalDiscount = rows.reduce((s, r) => s + parseFloat(r.discount_amount || 0), 0);
+        const totalBilled   = rows.reduce((s, r) => s + parseFloat(r.total_amount   || 0), 0);
+
+        res.json({
+            data: { rows, byCustomer },
+            summary: {
+                total_discount: totalDiscount,
+                total_billed: totalBilled,
+                invoice_count: rows.length,
+                customer_count: byCustomer.length,
+                avg_discount_pct: totalBilled > 0 ? ((totalDiscount / totalBilled) * 100).toFixed(1) : '0',
+            }
+        });
+    } catch (err) {
+        console.error('discounts report error:', err.message);
+        res.json({ data: { rows: [], byCustomer: [] }, summary: {} });
+    }
+});
+
 // ─── Enterprise Reports Sub-Routers ────────────────────────────────────────
 import salesReports from './reports/sales.js';
 import purchaseReports from './reports/purchase.js';

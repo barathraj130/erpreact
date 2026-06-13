@@ -67,6 +67,15 @@ const CATEGORIES = [
     description: 'KPIs, insights, revenue forecast, risk indicators',
     count: 4,
   },
+  {
+    id: 'discounts',
+    title: 'Discount & Waiver Report',
+    path: '/reports/discounts',
+    color: '#f59e0b',
+    icon: '🎁',
+    description: 'Total waivers given, per-customer breakdown, invoice-wise list',
+    count: 2,
+  },
 ];
 
 const ReportsHome = () => {

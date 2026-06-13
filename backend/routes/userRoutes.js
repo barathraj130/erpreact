@@ -100,6 +100,13 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
                     SELECT SUM(amount)
                     FROM transactions
                     WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(COALESCE(discount_amount, 0))
+                    FROM invoices
+                    WHERE customer_id = $1 AND company_id = $2
+                      AND COALESCE(is_deleted, false) = false
+                      AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'
                 ), 0) as remaining_balance
             FROM users
             WHERE id = $1 AND company_id = $2
@@ -163,6 +170,13 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                     SELECT SUM(amount)
                     FROM transactions
                     WHERE user_id = u.id AND company_id = $1 AND type = 'ROUND_OFF'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(COALESCE(discount_amount, 0))
+                    FROM invoices
+                    WHERE customer_id = u.id AND company_id = $1
+                      AND COALESCE(is_deleted, false) = false
+                      AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'
                 ), 0) as remaining_balance
             FROM users u
             WHERE u.role IN ('user', 'customer') AND u.company_id = $1

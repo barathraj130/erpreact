@@ -89,6 +89,7 @@ import FinanceReports from "./pages/reports/FinanceReports";
 import GSTReports from "./pages/reports/GSTReports";
 import HRReports from "./pages/reports/HRReports";
 import ExecutiveDashboard from "./pages/reports/ExecutiveDashboard";
+import DiscountReport from "./pages/reports/DiscountReport";
 import ConsolidatedInventory from "./pages/ConsolidatedInventory";
 import StockTransfer from "./pages/StockTransfer";
 import StockRequestsInbox from "./pages/StockRequestsInbox";
@@ -344,6 +345,7 @@ const App: React.FC = () => {
             <Route path="/reports/gst" element={<GSTReports />} />
             <Route path="/reports/hr" element={<HRReports />} />
             <Route path="/reports/executive" element={<ExecutiveDashboard />} />
+            <Route path="/reports/discounts" element={<DiscountReport />} />
             <Route path="/reports/classic" element={<ReportsDashboard />} />
             <Route path="/reports/:reportId" element={<ReportViewer />} />
           </Route>
