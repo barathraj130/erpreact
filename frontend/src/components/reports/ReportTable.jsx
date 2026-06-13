@@ -53,10 +53,10 @@ const ReportTable = ({ columns = [], data = [], loading = false, summary, emptyT
   return (
     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <table style={{ width: '100%', minWidth: Math.max(560, columns.length * 120), borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
+        <table style={{ width: '100%', minWidth: Math.max(560, columns.length * 120), borderCollapse: 'collapse', fontSize: 13, tableLayout: 'auto' }}>
           <colgroup>
             {columns.map((col, i) => (
-              <col key={i} style={{ width: col.width || 'auto', minWidth: col.type === 'amount' ? 130 : col.minWidth || undefined }} />
+              <col key={i} style={{ width: col.width || undefined, minWidth: col.type === 'amount' ? 150 : col.minWidth || undefined }} />
             ))}
           </colgroup>
           <thead>
@@ -87,8 +87,8 @@ const ReportTable = ({ columns = [], data = [], loading = false, summary, emptyT
                       color: cellColor, fontWeight: col.bold ? 600 : 400,
                       whiteSpace: (col.wrap || col.type === 'text') ? 'normal' : 'nowrap',
                       fontVariantNumeric: col.type === 'amount' ? 'tabular-nums' : undefined,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
+                      overflow: col.type === 'amount' ? 'visible' : 'hidden',
+                      textOverflow: col.type === 'amount' ? 'clip' : 'ellipsis',
                     }}>
                       {content}
                     </td>
