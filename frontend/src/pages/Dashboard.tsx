@@ -50,6 +50,8 @@ const Dashboard: React.FC = () => {
   });
   const [ledgerWarnings, setLedgerWarnings] = useState<{ cash?: string; bank?: string }>({});
   const [nsbPending, setNsbPending] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
+  const [stockSummary, setStockSummary] = useState<{ total_fresh: number; total_mistake: number; total_inventory_value: number; active_lots: number } | null>(null);
+  const [lotPipeline, setLotPipeline] = useState<Record<string, number> | null>(null);
 
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
   const [expenseData, setExpenseData] = useState<any[]>([]);
@@ -70,6 +72,9 @@ const Dashboard: React.FC = () => {
           apiFetch("/loans").then(r => r.json()).catch(() => []),
           apiFetch("/invoice/nsb/gst-pending").then(r => r.json()).catch(() => ({ summary: {} })),
         ]);
+
+        if (kpiRes?.stock_summary) setStockSummary(kpiRes.stock_summary);
+        if (kpiRes?.lot_pipeline)  setLotPipeline(kpiRes.lot_pipeline);
 
         if (kpiRes) {
           console.log('DASHBOARD DEBUG - KPI Response:', kpiRes);
@@ -316,6 +321,49 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Stock Management Widget — JBS Knit Wear Surplus Module */}
+      {(stockSummary || lotPipeline) && (
+        <div style={{ margin: "20px 0", padding: "0 20px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Stock Management</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 14 }}>
+            {[
+              { label: "Fresh Available", value: `${Number(stockSummary?.total_fresh || 0).toLocaleString("en-IN")} pcs`, color: "#10b981" },
+              { label: "Mistake Available", value: `${Number(stockSummary?.total_mistake || 0).toLocaleString("en-IN")} pcs`, color: "#f59e0b" },
+              { label: "Inventory Value", value: `₹${Number(stockSummary?.total_inventory_value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`, color: "#4f46e5" },
+              { label: "Active Lots", value: String(stockSummary?.active_lots || 0), color: "#8b5cf6" },
+            ].map(k => (
+              <div key={k.label} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", borderLeft: `3px solid ${k.color}` }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{k.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: k.color, marginTop: 4 }}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+          {lotPipeline && (
+            <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 20px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 12, textTransform: "uppercase" }}>Lot Pipeline</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto" }}>
+                {[
+                  { label: "Received", key: "received", color: "#6b7280" },
+                  { label: "Inspecting", key: "inspecting", color: "#3b82f6" },
+                  { label: "Converting", key: "converting", color: "#f59e0b" },
+                  { label: "Ready", key: "ready", color: "#10b981" },
+                  { label: "Partial", key: "partial_sold", color: "#8b5cf6" },
+                  { label: "Sold Out", key: "sold_out", color: "#14b8a6" },
+                ].map((stage, i, arr) => (
+                  <React.Fragment key={stage.key}>
+                    <div style={{ textAlign: "center", minWidth: 80 }}>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: stage.color }}>{lotPipeline[stage.key] || 0}</div>
+                      <div style={{ fontSize: 10, color: "#64748b", fontWeight: 600, marginTop: 2 }}>{stage.label}</div>
+                    </div>
+                    {i < arr.length - 1 && <div style={{ color: "#e2e8f0", fontSize: 18, padding: "0 6px", flexShrink: 0 }}>→</div>}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

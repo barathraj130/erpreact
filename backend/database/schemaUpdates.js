@@ -890,6 +890,120 @@ export const runSchemaUpdates = async () => {
         // Backfill: pending_amount = current_balance for old records
         await db.query(`UPDATE salary_advances SET pending_amount = current_balance WHERE pending_amount IS NULL OR pending_amount = 0`).catch(() => {});
 
+        // ── Stock Lots Module (JBS Knit Wear surplus T-shirt tracking) ─────────
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS stock_lots (
+                id                    SERIAL PRIMARY KEY,
+                company_id            INTEGER,
+                lot_number            VARCHAR(50) NOT NULL,
+                supplier_id           INTEGER REFERENCES suppliers(id),
+                product_id            INTEGER REFERENCES products(id),
+                purchase_date         DATE DEFAULT CURRENT_DATE,
+                fresh_qty_purchased   INTEGER DEFAULT 0,
+                mistake_qty_purchased INTEGER DEFAULT 0,
+                fresh_purchase_rate   NUMERIC(10,2) DEFAULT 0,
+                mistake_purchase_rate NUMERIC(10,2) DEFAULT 0,
+                fresh_purchase_cost   NUMERIC(12,2) DEFAULT 0,
+                mistake_purchase_cost NUMERIC(12,2) DEFAULT 0,
+                total_purchase_cost   NUMERIC(12,2) DEFAULT 0,
+                transport_cost        NUMERIC(10,2) DEFAULT 0,
+                fresh_qty_current     INTEGER DEFAULT 0,
+                mistake_qty_current   INTEGER DEFAULT 0,
+                repaired_qty          INTEGER DEFAULT 0,
+                rejected_qty          INTEGER DEFAULT 0,
+                sold_fresh_qty        INTEGER DEFAULT 0,
+                sold_mistake_qty      INTEGER DEFAULT 0,
+                total_repair_cost     NUMERIC(12,2) DEFAULT 0,
+                status                VARCHAR(30) DEFAULT 'received',
+                notes                 TEXT,
+                is_deleted            BOOLEAN DEFAULT false,
+                created_at            TIMESTAMP DEFAULT NOW(),
+                updated_at            TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS stock_lots_lot_number_company_idx ON stock_lots(lot_number, company_id)`).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS stock_lot_inspections (
+                id                    SERIAL PRIMARY KEY,
+                lot_id                INTEGER REFERENCES stock_lots(id),
+                inspection_date       DATE DEFAULT CURRENT_DATE,
+                inspector_name        VARCHAR(100),
+                fresh_qty_inspected   INTEGER DEFAULT 0,
+                fresh_passed          INTEGER DEFAULT 0,
+                fresh_failed          INTEGER DEFAULT 0,
+                mistake_qty_inspected INTEGER DEFAULT 0,
+                mistake_repairable    INTEGER DEFAULT 0,
+                mistake_rejected      INTEGER DEFAULT 0,
+                notes                 TEXT,
+                created_at            TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS stock_conversions (
+                id                   SERIAL PRIMARY KEY,
+                lot_id               INTEGER REFERENCES stock_lots(id),
+                conversion_date      DATE DEFAULT CURRENT_DATE,
+                mistake_qty_in       INTEGER DEFAULT 0,
+                fresh_qty_out        INTEGER DEFAULT 0,
+                rejected_qty         INTEGER DEFAULT 0,
+                repair_cost_per_piece NUMERIC(10,2) DEFAULT 0,
+                total_repair_cost    NUMERIC(12,2) DEFAULT 0,
+                repair_worker        VARCHAR(100),
+                payment_mode         VARCHAR(20) DEFAULT 'cash',
+                notes                TEXT,
+                created_at           TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS stock_inventory (
+                id           SERIAL PRIMARY KEY,
+                lot_id       INTEGER REFERENCES stock_lots(id),
+                product_id   INTEGER REFERENCES products(id),
+                stock_type   VARCHAR(30) NOT NULL,
+                quantity     INTEGER DEFAULT 0,
+                avg_cost     NUMERIC(10,2) DEFAULT 0,
+                total_cost   NUMERIC(12,2) DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT NOW(),
+                UNIQUE(lot_id, stock_type)
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS stock_transactions (
+                id               SERIAL PRIMARY KEY,
+                lot_id           INTEGER REFERENCES stock_lots(id),
+                product_id       INTEGER REFERENCES products(id),
+                transaction_type VARCHAR(30) NOT NULL,
+                stock_type_from  VARCHAR(30),
+                stock_type_to    VARCHAR(30),
+                quantity         INTEGER NOT NULL,
+                rate             NUMERIC(10,2) DEFAULT 0,
+                amount           NUMERIC(12,2) DEFAULT 0,
+                reference_type   VARCHAR(30),
+                reference_id     INTEGER,
+                notes            TEXT,
+                created_at       TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        // Alter existing tables for lot integration
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_id    INTEGER REFERENCES stock_lots(id)`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30)`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS avg_cost   NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS profit_per_piece NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS total_profit NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_id        INTEGER REFERENCES stock_lots(id)`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_qty     INTEGER DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_qty   INTEGER DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_rate    NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_rate  NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS transport_cost NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

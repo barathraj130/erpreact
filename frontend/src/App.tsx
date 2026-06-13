@@ -35,6 +35,9 @@ import DailySalary from "./pages/hr/DailySalary";
 import Inventory from "./pages/Inventory";
 import Invoices from "./pages/Invoices";
 import SalesReturns from "./pages/SalesReturns";
+import StockLots from "./pages/StockLots";
+import StockLotDetail from "./pages/StockLotDetail";
+import StockInventory from "./pages/StockInventory";
 import InvoiceDetails from "./pages/InvoiceDetails";
 import Ledgers from "./pages/Ledgers";
 import Login from "./pages/Login";
@@ -296,6 +299,9 @@ const App: React.FC = () => {
             <Route path="/delivery-orders/:id/edit" element={<EditDeliveryOrder />} />
             <Route path="/delivery-orders/:id" element={<DeliveryOrderDetail />} />
             <Route path="/sales/returns" element={<SalesReturns />} />
+            <Route path="/stock-lots" element={<StockLots />} />
+            <Route path="/stock-lots/:id" element={<StockLotDetail />} />
+            <Route path="/stock-inventory" element={<StockInventory />} />
             <Route path="/products" element={<Inventory />} />
             <Route path="/documents" element={<DocumentManager />} />
             <Route path="/ai-insights" element={<AIInsights />} />

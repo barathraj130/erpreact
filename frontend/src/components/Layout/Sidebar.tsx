@@ -119,6 +119,17 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
     });
   }
 
+  // Stock Management (always visible — JBS Knit Wear surplus module)
+  baseItems.push({
+      name: "Stock Mgmt",
+      icon: <FaBox />,
+      section: "Stock Management",
+      subItems: [
+          { name: "Stock Lots", path: "/stock-lots" },
+          { name: "Stock Inventory", path: "/stock-inventory" },
+      ]
+  });
+
   if (hasModule("finance")) {
       baseItems.push({ 
           name: "Finance", 

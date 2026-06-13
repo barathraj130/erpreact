@@ -74,6 +74,11 @@ import gstReportRoutes from "./routes/reports/gst.js";
 import hrReportRoutes from "./routes/reports/hr.js";
 import proprietorReportRoutes from "./routes/reports/proprietor.js";
 import executiveReportRoutes from "./routes/reports/executive.js";
+import stockLotsRoutes from "./routes/stockLots.js";
+import stockInspectionsRoutes from "./routes/stockInspections.js";
+import stockConversionsRoutes from "./routes/stockConversions.js";
+import stockInventoryRoutes from "./routes/stockInventory.js";
+import stockReportRoutes from "./routes/reports/stock.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -189,6 +194,11 @@ app.use("/api/points", pointsRoutes);
 app.use("/api/reset", resetRoutes);
 app.use("/api/debug", debugRoutes);
 app.use("/api/delivery-orders", deliveryOrderRoutes);
+app.use("/api/stock-lots", stockLotsRoutes);
+app.use("/api/stock-inspections", stockInspectionsRoutes);
+app.use("/api/stock-conversions", stockConversionsRoutes);
+app.use("/api/stock-inventory", stockInventoryRoutes);
+app.use("/api/reports/stock", stockReportRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");

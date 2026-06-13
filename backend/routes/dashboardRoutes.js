@@ -160,14 +160,37 @@ router.get('/summary', authMiddleware, async (req, res) => {
             ) x WHERE x.bal > 0
         `;
 
-        const [cashRes, bankRes, totalRevRes, monthRevRes, outstandingRes, salesRes, outstandingCountRes] = await Promise.all([
+        const stockSql = `
+            SELECT
+                COALESCE(SUM(CASE WHEN si.stock_type IN ('fresh_purchased','fresh_repaired') THEN si.quantity ELSE 0 END), 0) AS total_fresh,
+                COALESCE(SUM(CASE WHEN si.stock_type = 'mistake'  THEN si.quantity ELSE 0 END), 0) AS total_mistake,
+                COALESCE(SUM(si.total_cost), 0) AS total_inventory_value,
+                COUNT(DISTINCT CASE WHEN sl.status NOT IN ('sold_out','closed') THEN sl.id END) AS active_lots
+            FROM stock_inventory si
+            JOIN stock_lots sl ON sl.id = si.lot_id
+            WHERE sl.is_deleted = false AND sl.company_id = $1
+        `;
+        const pipelineSql = `
+            SELECT
+                COUNT(CASE WHEN status='received'     THEN 1 END) AS received,
+                COUNT(CASE WHEN status='inspecting'   THEN 1 END) AS inspecting,
+                COUNT(CASE WHEN status='converting'   THEN 1 END) AS converting,
+                COUNT(CASE WHEN status='ready'        THEN 1 END) AS ready,
+                COUNT(CASE WHEN status='partial_sold' THEN 1 END) AS partial_sold,
+                COUNT(CASE WHEN status='sold_out'     THEN 1 END) AS sold_out
+            FROM stock_lots WHERE is_deleted = false AND company_id = $1
+        `;
+
+        const [cashRes, bankRes, totalRevRes, monthRevRes, outstandingRes, salesRes, outstandingCountRes, stockRes, pipelineRes] = await Promise.all([
             db.pgGet(cashSql, [companyId]),
             db.pgGet(bankSql, [companyId]),
             db.pgGet(totalRevSql, [companyId]),
             db.pgGet(monthRevSql, [companyId]),
             db.pgGet(outstandingSql, [companyId]),
             db.pgGet(salesBreakdownSql, [companyId]),
-            db.pgGet(outstandingCountSql, [companyId])
+            db.pgGet(outstandingCountSql, [companyId]),
+            db.pgGet(stockSql, [companyId]).catch(() => null),
+            db.pgGet(pipelineSql, [companyId]).catch(() => null),
         ]);
 
         const cashBalance = Number(cashRes?.balance || 0);
@@ -195,7 +218,21 @@ router.get('/summary', authMiddleware, async (req, res) => {
                 tax_sales: parseFloat(salesRes?.tax_sales || 0),
                 anon_sales: parseFloat(salesRes?.anon_sales || 0),
                 name_sake_sales: 0
-            }
+            },
+            stock_summary: {
+                total_fresh:            parseInt(stockRes?.total_fresh || 0),
+                total_mistake:          parseInt(stockRes?.total_mistake || 0),
+                total_inventory_value:  parseFloat(stockRes?.total_inventory_value || 0),
+                active_lots:            parseInt(stockRes?.active_lots || 0),
+            },
+            lot_pipeline: {
+                received:     parseInt(pipelineRes?.received     || 0),
+                inspecting:   parseInt(pipelineRes?.inspecting   || 0),
+                converting:   parseInt(pipelineRes?.converting   || 0),
+                ready:        parseInt(pipelineRes?.ready        || 0),
+                partial_sold: parseInt(pipelineRes?.partial_sold || 0),
+                sold_out:     parseInt(pipelineRes?.sold_out     || 0),
+            },
         };
 
         console.log('Dashboard final response:', response);

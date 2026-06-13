@@ -676,28 +676,95 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 }
             }
 
-            await client.query(
+            const lineItemRes = await client.query(
                 `INSERT INTO invoice_line_items (
-                    invoice_id, product_id, description, quantity, 
+                    invoice_id, product_id, description, quantity,
                     unit_price, taxable_value, discount_percent, tax_percent,
                     cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
-                    line_total, is_return
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+                    line_total, is_return,
+                    lot_id, stock_type
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                RETURNING id`,
                 [
-                    invoiceId, 
-                    item.product_id || null, 
-                    item.name || item.desc || item.description || "Item", 
-                    item.qty, 
-                    item.rate, 
+                    invoiceId,
+                    item.product_id || null,
+                    item.name || item.desc || item.description || "Item",
+                    item.qty,
+                    item.rate,
                     item.amount,
                     item.discount_percent || 0,
                     item.taxRate,
                     item.cgstR, item.sgstR, item.igstR,
                     item.cgstA, item.sgstA, item.igstA,
-                    item.is_return ? -(item.amount + item.lineTax) : (item.amount + item.lineTax), 
-                    item.is_return
+                    item.is_return ? -(item.amount + item.lineTax) : (item.amount + item.lineTax),
+                    item.is_return,
+                    item.lot_id || null,
+                    item.stock_type || null,
                 ]
             );
+
+            // Stock lot integration — deduct from lot inventory and record profit
+            if (item.lot_id && item.stock_type && !item.is_return) {
+                try {
+                    const avgCostRow = await client.query(
+                        `SELECT COALESCE(avg_cost, 0) AS avg_cost FROM stock_inventory WHERE lot_id = $1 AND stock_type = $2`,
+                        [item.lot_id, item.stock_type]
+                    );
+                    const avgCost       = parseFloat(avgCostRow.rows[0]?.avg_cost || 0);
+                    const profitPerPiece = parseFloat(item.rate) - avgCost;
+                    const totalProfit   = profitPerPiece * parseFloat(item.qty);
+
+                    await client.query(
+                        `UPDATE invoice_line_items SET avg_cost=$1, profit_per_piece=$2, total_profit=$3 WHERE id=$4`,
+                        [avgCost, profitPerPiece, totalProfit, lineItemRes.rows[0].id]
+                    );
+
+                    await client.query(
+                        `UPDATE stock_inventory SET quantity = GREATEST(0, quantity - $1), last_updated = NOW()
+                         WHERE lot_id = $2 AND stock_type = $3`,
+                        [item.qty, item.lot_id, item.stock_type]
+                    );
+
+                    await client.query(`
+                        INSERT INTO stock_transactions (lot_id, product_id, transaction_type, stock_type_from, quantity, rate, amount, reference_type, reference_id, notes)
+                        VALUES ($1, $2, 'sale', $3, $4, $5, $6, 'invoice', $7, 'Sale from lot')
+                    `, [item.lot_id, item.product_id || null, item.stock_type, item.qty, item.rate, item.qty * item.rate, invoiceId]);
+
+                    const freshField = (item.stock_type || '').includes('fresh') ? 'sold_fresh_qty' : 'sold_mistake_qty';
+                    await client.query(
+                        `UPDATE stock_lots SET ${freshField} = ${freshField} + $1, updated_at = NOW() WHERE id = $2`,
+                        [item.qty, item.lot_id]
+                    );
+
+                    // COGS ledger entry
+                    if (avgCost > 0) {
+                        const cogDesc = `COGS lot ${item.lot_id} — ${item.qty} pcs`;
+                        const invAcct = item.stock_type === 'mistake' ? 'Inventory - Mistake Stock' : 'Inventory - Fresh Stock';
+                        await client.query(`
+                            INSERT INTO ledger_entries (company_id, account_name, debit, credit, description, reference_type, payment_mode, transaction_date)
+                            VALUES
+                                ($1, 'Cost of Goods Sold', $2, 0, $3, 'sale_cogs', 'sale', CURRENT_DATE),
+                                ($1, $4, 0, $2, $3, 'sale_cogs', 'sale', CURRENT_DATE)
+                        `, [companyId, avgCost * item.qty, cogDesc, invAcct]);
+                    }
+
+                    // Auto-update lot status after sale
+                    await client.query(`
+                        UPDATE stock_lots SET
+                            status = CASE
+                                WHEN (
+                                    COALESCE((SELECT SUM(quantity) FROM stock_inventory WHERE lot_id=$1 AND stock_type IN ('fresh_purchased','fresh_repaired','mistake')), 0) <= 0
+                                ) THEN 'sold_out'
+                                WHEN (sold_fresh_qty + sold_mistake_qty) > 0 THEN 'partial_sold'
+                                ELSE status
+                            END,
+                            updated_at = NOW()
+                        WHERE id = $1
+                    `, [item.lot_id]);
+                } catch (lotErr) {
+                    console.warn('[invoice lot integration]', lotErr.message);
+                }
+            }
         }
 
         if (customer_id) {
