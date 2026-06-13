@@ -1444,6 +1444,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         bundles_count,
         tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST rate
         invoice_type: editInvoiceType,
+        discount_amount: editDiscountAmount,
     } = req.body;
     const companyId = req.user.active_company_id;
 
@@ -1567,6 +1568,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 date_of_supply     = COALESCE($12::date, date_of_supply),
                 reverse_charge     = COALESCE($13, reverse_charge),
                 bundles_count      = COALESCE($14, bundles_count),
+                discount_amount    = COALESCE($17, 0),
                 updated_at         = NOW()
              WHERE id = $15 AND company_id = $16`,
             [
@@ -1586,6 +1588,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 bundles_count != null ? Number(bundles_count) : null,
                 id,
                 companyId,
+                editDiscountAmount != null ? Number(editDiscountAmount) : null,
             ]
         );
 

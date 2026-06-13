@@ -1524,17 +1524,11 @@ const CreateInvoice: React.FC = () => {
               <div style={{ marginTop: '12px', padding: '12px 14px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803d' }}>Advance Balance Available</div>
-                  <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: '2px' }}>Customer has overpaid — apply to reduce this bill</div>
+                  <div style={{ fontSize: '0.72rem', color: '#166534', marginTop: '2px' }}>This advance will automatically reduce the outstanding balance</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '1rem', fontWeight: 900, color: '#15803d' }}>₹{fmt(customerAdvance)}</span>
-                  <button
-                    type="button"
-                    onClick={() => setDiscount(Math.min(customerAdvance, totals.grandTotal))}
-                    style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '7px', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    Apply
-                  </button>
+                  <span style={{ fontSize: '0.7rem', color: '#166534', fontWeight: 600 }}>Auto-adjusted</span>
                 </div>
               </div>
             )}

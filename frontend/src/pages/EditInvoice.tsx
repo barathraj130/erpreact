@@ -178,6 +178,7 @@ const EditInvoice: React.FC = () => {
   ]);
   const [notes, setNotes] = useState("");
   const [amountPaidAlready, setAmountPaidAlready] = useState<number>(0);
+  const [editDiscount, setEditDiscount] = useState<number>(0);
 
   // Multiple payments array (for new payments)
   const [payments, setPayments] = useState<PaymentEntry[]>([
@@ -265,6 +266,7 @@ const EditInvoice: React.FC = () => {
             setInvoiceType(inv.invoice_type || "TAX_INVOICE");
             setNotes(inv.notes || "");
             setAmountPaidAlready(Number(inv.paid_amount) || 0);
+            setEditDiscount(Number(inv.discount_amount) || 0);
 
             setMeta({
               invoiceDate: inv.invoice_date ? inv.invoice_date.substring(0, 10) : new Date().toISOString().slice(0, 10),
@@ -476,6 +478,7 @@ const EditInvoice: React.FC = () => {
         reverse_charge: meta.reverseCharge,
       },
       bundles_count: Number(meta.bundles) || 0,
+      discount_amount: editDiscount,
     };
 
     // Note: We might need to handle how new payments are appended to history, for now we update total paid
@@ -1057,6 +1060,23 @@ const EditInvoice: React.FC = () => {
                 style={{ ...inputStyle, background: "#f8fafc" }}
                 placeholder="0"
               />
+            </div>
+
+            <div style={{ marginBottom: "15px" }}>
+              <label style={inputLabelStyle}>Waiver / Discount (₹)</label>
+              <input
+                type="number"
+                value={editDiscount || ""}
+                onChange={(e) => setEditDiscount(Number(e.target.value))}
+                style={{ ...inputStyle, background: "#fff7ed", border: "1px solid #fed7aa" }}
+                placeholder="0"
+                min="0"
+              />
+              {editDiscount > 0 && (
+                <div style={{ fontSize: "0.75rem", color: "#92400e", marginTop: 4 }}>
+                  Set to 0 to remove an incorrect waiver entry
+                </div>
+              )}
             </div>
 
             {/* New Payment Entry */}
