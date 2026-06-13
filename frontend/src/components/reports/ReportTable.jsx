@@ -51,7 +51,7 @@ const ReportTable = ({ columns = [], data = [], loading = false, summary, emptyT
   if (!data || data.length === 0) return <EmptyState message={emptyText} />;
 
   return (
-    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
+    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', minWidth: Math.max(560, columns.length * 120), borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
           <colgroup>
