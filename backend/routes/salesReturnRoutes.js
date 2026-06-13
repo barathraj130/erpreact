@@ -342,4 +342,207 @@ router.get('/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// ── PUT /:id  – edit a return ─────────────────────────────────────────────────
+router.put('/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const returnId  = req.params.id;
+    const { return_date, items, notes, refund_type } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0)
+        return res.status(400).json({ error: 'At least one item required' });
+
+    const processedItems = items.map(i => ({
+        product_id: i.product_id || null,
+        description: i.description || 'Returned item',
+        qty:  Number(i.qty)  || 0,
+        rate: Number(i.rate) || 0,
+        line_total: (Number(i.qty) || 0) * (Number(i.rate) || 0),
+    }));
+    const newTotal = processedItems.reduce((s, i) => s + i.line_total, 0);
+    if (newTotal <= 0) return res.status(400).json({ error: 'Return amount must be > 0' });
+
+    let client;
+    try {
+        await ensureTable();
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const oldRes = await client.query(
+            `SELECT * FROM sales_returns WHERE id = $1 AND company_id = $2`,
+            [returnId, companyId]
+        );
+        if (!oldRes.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Return not found' });
+        }
+        const old      = oldRes.rows[0];
+        const oldItems = Array.isArray(old.items) ? old.items : JSON.parse(old.items || '[]');
+        const oldTotal = parseFloat(old.total_amount);
+        const oldType  = old.refund_type;
+        const newType  = refund_type || oldType;
+        const rDate    = return_date || old.return_date;
+
+        // ── Reverse old inventory, apply new ─────────────────────────────────
+        for (const item of oldItems) {
+            if (item.product_id && item.qty > 0) {
+                await client.query(
+                    `UPDATE branch_inventory SET current_stock = current_stock - $1, last_updated = NOW()
+                     WHERE company_id = $2 AND branch_id = $3 AND product_id = $4`,
+                    [item.qty, companyId, branchId, item.product_id]
+                );
+            }
+        }
+        for (const item of processedItems) {
+            if (item.product_id && item.qty > 0) {
+                await client.query(
+                    `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
+                     VALUES ($1,$2,$3,$4,NOW())
+                     ON CONFLICT (branch_id, product_id)
+                     DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()`,
+                    [companyId, branchId, item.product_id, item.qty]
+                );
+            }
+        }
+
+        // ── Reverse old cash/bank entry, create new ───────────────────────────
+        if (oldType === 'CASH_REFUND') {
+            await client.query(
+                `DELETE FROM cash_ledger WHERE company_id=$1 AND branch_id=$2 AND source='SALES_RETURN' AND amount=$3 AND direction='out' AND date=$4`,
+                [companyId, branchId, oldTotal, old.return_date]
+            );
+        } else if (oldType === 'BANK_REFUND') {
+            await client.query(
+                `DELETE FROM bank_ledger WHERE company_id=$1 AND source='SALES_RETURN' AND transaction_id=$2`,
+                [companyId, `RET-${returnId}`]
+            );
+        }
+        if (newType === 'CASH_REFUND') {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1,$2,'SALES_RETURN',$3,'out',$4)`,
+                [companyId, branchId, newTotal, rDate]
+            );
+        } else if (newType === 'BANK_REFUND') {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date)
+                 VALUES ($1,$2,'SALES_RETURN',$3,'out','Main Account',$4,$5)`,
+                [companyId, branchId, newTotal, `RET-${returnId}`, rDate]
+            );
+        }
+
+        // ── Adjust customer ledger ────────────────────────────────────────────
+        if (old.customer_id) {
+            await client.query(
+                `UPDATE customer_ledger SET debit=$1, date=$2
+                 WHERE customer_id=$3 AND company_id=$4 AND type='SALES_RETURN' AND description LIKE $5`,
+                [newTotal, rDate, old.customer_id, companyId, `%${old.return_number}%`]
+            );
+        }
+
+        // ── Adjust invoice return_amount ──────────────────────────────────────
+        if (old.original_invoice_id) {
+            await client.query(
+                `UPDATE invoices SET return_amount = GREATEST(0, COALESCE(return_amount,0) + $1), updated_at=NOW()
+                 WHERE id=$2 AND company_id=$3`,
+                [newTotal - oldTotal, old.original_invoice_id, companyId]
+            );
+        }
+
+        // ── Update return record ──────────────────────────────────────────────
+        const updated = await client.query(
+            `UPDATE sales_returns
+             SET return_date=$1, items=$2, total_amount=$3, notes=$4, refund_type=$5, updated_at=NOW()
+             WHERE id=$6 AND company_id=$7 RETURNING *`,
+            [rDate, JSON.stringify(processedItems), newTotal, notes || null, newType, returnId, companyId]
+        );
+
+        await client.query('COMMIT');
+        res.json(updated.rows[0]);
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Sales return update error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// ── DELETE /:id  – delete return with full reversal ──────────────────────────
+router.delete('/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id || 1;
+    const returnId  = req.params.id;
+
+    let client;
+    try {
+        await ensureTable();
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const oldRes = await client.query(
+            `SELECT * FROM sales_returns WHERE id=$1 AND company_id=$2`,
+            [returnId, companyId]
+        );
+        if (!oldRes.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Return not found' });
+        }
+        const old      = oldRes.rows[0];
+        const oldItems = Array.isArray(old.items) ? old.items : JSON.parse(old.items || '[]');
+        const oldTotal = parseFloat(old.total_amount);
+
+        // ── Reverse inventory (stock was added on insert, remove it) ─────────
+        for (const item of oldItems) {
+            if (item.product_id && item.qty > 0) {
+                await client.query(
+                    `UPDATE branch_inventory SET current_stock = current_stock - $1, last_updated=NOW()
+                     WHERE company_id=$2 AND branch_id=$3 AND product_id=$4`,
+                    [item.qty, companyId, branchId, item.product_id]
+                );
+            }
+        }
+
+        // ── Reverse cash/bank ledger ──────────────────────────────────────────
+        if (old.refund_type === 'CASH_REFUND') {
+            await client.query(
+                `DELETE FROM cash_ledger WHERE company_id=$1 AND branch_id=$2 AND source='SALES_RETURN' AND amount=$3 AND direction='out' AND date=$4`,
+                [companyId, branchId, oldTotal, old.return_date]
+            );
+        } else if (old.refund_type === 'BANK_REFUND') {
+            await client.query(
+                `DELETE FROM bank_ledger WHERE company_id=$1 AND source='SALES_RETURN' AND transaction_id=$2`,
+                [companyId, `RET-${returnId}`]
+            );
+        }
+
+        // ── Reverse customer ledger ───────────────────────────────────────────
+        if (old.customer_id) {
+            await client.query(
+                `DELETE FROM customer_ledger WHERE customer_id=$1 AND company_id=$2 AND type='SALES_RETURN' AND description LIKE $3`,
+                [old.customer_id, companyId, `%${old.return_number}%`]
+            );
+        }
+
+        // ── Restore invoice return_amount ─────────────────────────────────────
+        if (old.original_invoice_id) {
+            await client.query(
+                `UPDATE invoices SET return_amount = GREATEST(0, COALESCE(return_amount,0) - $1), updated_at=NOW()
+                 WHERE id=$2 AND company_id=$3`,
+                [oldTotal, old.original_invoice_id, companyId]
+            );
+        }
+
+        await client.query(`DELETE FROM sales_returns WHERE id=$1`, [returnId]);
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Sales return delete error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 export default router;
