@@ -381,14 +381,84 @@ const FinanceReports = () => {
 
   const typeLabel = t => ({ CAPITAL_INTRO: 'Capital Intro', DRAWINGS: 'Drawings', PERSONAL_RECEIPT: 'Personal Receipt', PERSONAL_PAYMENT: 'Personal Payment' })[t] || t;
 
+  /* ── Cash Flow / Fund Flow fixed-layout table ── */
+  const renderFlowTable = (rows) => {
+    const inflow  = rows.filter(r => r.type === 'inflow').reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+    const outflow = rows.filter(r => r.type === 'outflow').reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+    const net     = inflow - outflow;
+    const fmtN    = n => parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+    const thStyle = { padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.04em', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', whiteSpace: 'nowrap' };
+
+    return (
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: '45%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '35%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, textAlign: 'left' }}>CATEGORY</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>TYPE</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>AMOUNT (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              const isIn  = row.type === 'inflow';
+              const isFin = row.type === 'financing';
+              const badgeBg = isIn ? '#dcfce7' : isFin ? '#eff6ff' : '#fee2e2';
+              const badgeClr = isIn ? '#166534' : isFin ? '#1e40af' : '#dc2626';
+              const amtClr   = isIn ? '#10b981' : isFin ? '#3b82f6' : '#ef4444';
+              return (
+                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <td style={{ padding: '11px 16px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.category}
+                  </td>
+                  <td style={{ padding: '11px 16px', textAlign: 'center' }}>
+                    <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: badgeBg, color: badgeClr }}>
+                      {isIn ? 'INFLOW' : isFin ? 'FINANCING' : 'OUTFLOW'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 600, fontSize: 14, color: amtClr, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {isIn || isFin ? '+' : '−'}₹{fmtN(row.amount)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #e5e7eb', background: '#f9fafb' }}>
+              <td style={{ padding: '11px 16px', fontWeight: 600, fontSize: 13 }}>Total Inflow</td>
+              <td />
+              <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 700, fontSize: 15, color: '#10b981', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>+₹{fmtN(inflow)}</td>
+            </tr>
+            <tr style={{ background: '#f9fafb' }}>
+              <td style={{ padding: '11px 16px', fontWeight: 600, fontSize: 13 }}>Total Outflow</td>
+              <td />
+              <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 700, fontSize: 15, color: '#ef4444', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>−₹{fmtN(outflow)}</td>
+            </tr>
+            <tr style={{ background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
+              <td style={{ padding: '12px 16px', fontWeight: 700, fontSize: 14 }}>Net Cash Flow</td>
+              <td />
+              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, fontSize: 16, color: net >= 0 ? '#10b981' : '#ef4444', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                {net >= 0 ? '+' : '−'}₹{fmtN(Math.abs(net))}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    );
+  };
+
   const COLUMNS_BY_TAB = {
-    1:  [{ key: 'category', label: 'Category' }, { key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'amount', align: 'right', render: v => formatINR(v) }],
-    2:  [{ key: 'category', label: 'Category' }, { key: 'type', label: 'Type' }, { key: 'amount', label: 'Amount', type: 'amount', align: 'right', render: v => formatINR(v) }],
-    3:  [{ key: 'label', label: 'Item' }, { key: 'type', label: 'Type' }, { key: 'value', label: 'Amount', type: 'amount', align: 'right', render: v => formatINR(v) }],
-    5:  [{ key: 'month', label: 'Month' }, { key: 'total_income', label: 'Income', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'total_expense', label: 'Expense', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'capital_intro', label: 'Capital Intro', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'drawings', label: 'Drawings', type: 'amount', align: 'right', render: v => formatINR(v) }],
-    8:  [{ key: 'date', label: 'Date', render: v => formatDate(v) }, { key: 'type', label: 'Type', render: (v) => typeLabel(v) }, { key: 'reference_type', label: 'Reference' }, { key: 'amount', label: 'Amount', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'payment_mode', label: 'Mode' }, { key: 'notes', label: 'Notes', wrap: true }],
-    9:  [{ key: 'ratio', label: 'Financial Ratio' }, { key: 'value', label: 'Value', align: 'right' }, { key: 'description', label: 'Description', wrap: true }],
-    10: [{ key: 'category', label: 'Category' }, { key: 'budget', label: 'Budget', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'actual', label: 'Actual', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'variance', label: 'Variance', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'variance_pct', label: 'Variance %', align: 'right' }],
+    3:  [{ key: 'label', label: 'Item', width: '40%', wrap: true }, { key: 'type', label: 'Type', width: '15%' }, { key: 'value', label: 'Amount', width: '45%', type: 'amount', align: 'right', render: v => formatINR(v) }],
+    5:  [{ key: 'month', label: 'Month', width: '12%' }, { key: 'total_income', label: 'Income', width: '22%', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'total_expense', label: 'Expense', width: '22%', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'capital_intro', label: 'Capital Intro', width: '22%', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'drawings', label: 'Drawings', width: '22%', type: 'amount', align: 'right', render: v => formatINR(v) }],
+    8:  [{ key: 'date', label: 'Date', width: '12%', render: v => formatDate(v) }, { key: 'type', label: 'Type', width: '18%', render: v => typeLabel(v) }, { key: 'reference_type', label: 'Reference', width: '14%' }, { key: 'amount', label: 'Amount', width: '18%', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'payment_mode', label: 'Mode', width: '14%' }, { key: 'notes', label: 'Notes', width: '24%', wrap: true }],
+    9:  [{ key: 'ratio', label: 'Financial Ratio', width: '35%' }, { key: 'value', label: 'Value', width: '20%', align: 'right' }, { key: 'description', label: 'Description', width: '45%', wrap: true }],
+    10: [{ key: 'category', label: 'Category', width: '28%', wrap: true }, { key: 'budget', label: 'Budget', width: '18%', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'actual', label: 'Actual', width: '18%', type: 'amount', align: 'right', render: v => formatINR(v) }, { key: 'variance', label: 'Variance', width: '18%', type: 'amount', align: 'right', render: v => formatINR(v), colorFn: v => parseFloat(v) >= 0 ? '#10b981' : '#ef4444' }, { key: 'variance_pct', label: 'Variance %', width: '18%', align: 'right' }],
   };
 
   const getTableData = () => {
@@ -468,7 +538,13 @@ const FinanceReports = () => {
             <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#374151', margin: 0 }}>Detail View</h3>
             <ExportButtons data={getTableData()} filename={`finance-${TABS[activeTab].toLowerCase().replace(/[\s/&]+/g, '-')}`} />
           </div>
-          <ReportTable columns={COLUMNS_BY_TAB[activeTab] || []} data={getTableData()} loading={loading} />
+          {/* Cash Flow & Fund Flow use fixed-layout table with type badges + tfoot */}
+          {(activeTab === 1 || activeTab === 2) && Array.isArray(tabData) && tabData.length > 0
+            ? renderFlowTable(tabData)
+            : (activeTab === 1 || activeTab === 2)
+              ? <div style={{ padding: '48px 0', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>No cash flow data for selected period</div>
+              : <ReportTable columns={COLUMNS_BY_TAB[activeTab] || []} data={getTableData()} loading={loading} />
+          }
         </>
       )}
     </ReportShell>

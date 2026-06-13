@@ -53,7 +53,7 @@ const ReportTable = ({ columns = [], data = [], loading = false, summary, emptyT
   return (
     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'clip' }}>
       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <table style={{ width: '100%', minWidth: Math.max(560, columns.length * 120), borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', minWidth: Math.max(560, columns.length * 120), borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
           <colgroup>
             {columns.map((col, i) => (
               <col key={i} style={{ width: col.width || 'auto', minWidth: col.type === 'amount' ? 130 : col.minWidth || undefined }} />
@@ -86,11 +86,9 @@ const ReportTable = ({ columns = [], data = [], loading = false, summary, emptyT
                       padding: '10px 14px', textAlign: col.align || 'left',
                       color: cellColor, fontWeight: col.bold ? 600 : 400,
                       whiteSpace: (col.wrap || col.type === 'text') ? 'normal' : 'nowrap',
-                      width: col.type === 'amount' ? '1%' : undefined,
-                      minWidth: col.type === 'amount' ? 130 : col.minWidth || undefined,
                       fontVariantNumeric: col.type === 'amount' ? 'tabular-nums' : undefined,
-                      overflow: 'hidden', maxWidth: col.width || undefined,
-                      textOverflow: col.wrap ? undefined : 'ellipsis',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
                     }}>
                       {content}
                     </td>
