@@ -6,8 +6,7 @@ import { createTransaction } from "../api/transactionApi";
 import { Customer, fetchCustomers } from "../api/userApi";
 import { BankAccount, fetchBankAccounts } from "../api/companyApi";
 import CustomSelect from "./CustomSelect";
-// Assuming fetchSuppliers exist, if not I'll check.
-// I'll check lenders/suppliers API.
+import CategoryCombobox from "./CategoryCombobox";
 
 const styles = {
   overlay: {
@@ -300,6 +299,21 @@ const AddTransactionModal: React.FC<Props> = ({ onClose, onSuccess }) => {
                   </option>
                 ))}
               </CustomSelect>
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Transaction Category</label>
+              <CategoryCombobox
+                value={formData.category}
+                onChange={(cat, type) => {
+                  const update: typeof formData = { ...formData, category: cat };
+                  if (type === "income") update.type = "RECEIPT";
+                  else if (type === "expense") update.type = "PAYMENT";
+                  setFormData(update);
+                }}
+                transactionType={formData.type as "RECEIPT" | "PAYMENT"}
+                placeholder="e.g. Rent, Sales, Transport..."
+              />
             </div>
 
             <div style={styles.inputGroup}>

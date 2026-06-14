@@ -77,6 +77,7 @@ import executiveReportRoutes from "./routes/reports/executive.js";
 import stockLotsRoutes from "./routes/stockLots.js";
 import stockInspectionsRoutes from "./routes/stockInspections.js";
 import stockConversionsRoutes from "./routes/stockConversions.js";
+import transactionCategoriesRoutes from "./routes/transactionCategoriesRoutes.js";
 import stockInventoryRoutes from "./routes/stockInventory.js";
 import stockReportRoutes from "./routes/reports/stock.js";
 
@@ -154,6 +155,7 @@ app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/ledger", ledgerRoutes);
 app.use("/api/transactions", transactionRoutes);
+app.use("/api/transaction-categories", transactionCategoriesRoutes);
 app.use("/api/accounting", accountingRoutes);
 app.use("/api/toc", tocRoutes);
 app.use("/api/ai", aiRoutes);

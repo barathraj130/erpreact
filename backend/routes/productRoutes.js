@@ -142,6 +142,32 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
     }
 });
 
+// Quick-create a product by name (JSON, no image upload)
+router.post("/quick", authMiddleware, async (req, res) => {
+    const companyId = parseInt(req.user?.active_company_id);
+    const { name, unit = "pcs", gst_percent = 0 } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: "Product name required" });
+
+    try {
+        const existing = await pgModule.pgGet(
+            `SELECT id, name FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
+            [companyId, name.trim()]
+        );
+        if (existing) return res.json({ success: true, product: existing, created: false });
+
+        const sku = `PROD-${Date.now().toString().slice(-6)}`;
+        const product = await pgModule.pgGet(
+            `INSERT INTO products (company_id, name, unit, gst_percent, sku, is_active, is_deleted)
+             VALUES ($1, $2, $3, $4, $5, true, false) RETURNING id, name`,
+            [companyId, name.trim(), unit, parseFloat(gst_percent) || 0, sku]
+        );
+        return res.status(201).json({ success: true, product, created: true });
+    } catch (err) {
+        console.error("Quick create product error:", err);
+        return res.status(500).json({ error: "Failed to create product" });
+    }
+});
+
 router.get("/breakdown", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {

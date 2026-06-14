@@ -8,6 +8,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import CustomSelect from "../components/CustomSelect";
+import ProductCombobox from "../components/ProductCombobox";
 import AddProductModal from "./AddProductModal";
 import AddSupplierModal from "./AddSupplierModal";
 import { motion, AnimatePresence } from "framer-motion";
@@ -472,16 +473,18 @@ const SimplifiedPurchaseBill: React.FC = () => {
                             {surplusLines.map((line, index) => (
                               <tr key={index} style={{ borderBottom: "1px solid #f1f5f9" }}>
                                 <td style={{ padding: "8px 10px" }}>
-                                  <select value={line.product_id}
-                                    onChange={e => {
-                                      const opt = e.target.options[e.target.selectedIndex];
-                                      updateSurplusLine(index, "product_id",   e.target.value);
-                                      updateSurplusLine(index, "product_name", opt.text === "Select product" ? "" : opt.text);
+                                  <ProductCombobox
+                                    products={products}
+                                    value={line.product_id}
+                                    productName={line.product_name}
+                                    onSelect={({ id, name }) => {
+                                      updateSurplusLine(index, "product_id", id);
+                                      updateSurplusLine(index, "product_name", name);
                                     }}
-                                    style={{ width: "100%", padding: "7px 8px", borderRadius: "8px", border: !line.product_id ? "1.5px solid #ef4444" : "1px solid #e2e8f0", fontSize: "0.82rem", background: "#fff" }}>
-                                    <option value="">Select product</option>
-                                    {products.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                  </select>
+                                    onProductCreated={({ id, name }) => {
+                                      setProducts((prev: any[]) => [...prev, { id, name }]);
+                                    }}
+                                  />
                                 </td>
                                 <td style={{ padding: "8px 6px" }}>
                                   <input type="number" placeholder="0" value={line.fresh_qty}

@@ -1026,6 +1026,42 @@ export const runSchemaUpdates = async () => {
             ON inventory (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
         `).catch(() => {});
 
+        // ── Transaction Categories ─────────────────────────────────────────────
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS transaction_categories (
+                id          SERIAL PRIMARY KEY,
+                company_id  INTEGER NOT NULL DEFAULT 0,
+                name        VARCHAR(100) NOT NULL,
+                type        VARCHAR(20) NOT NULL DEFAULT 'both',
+                usage_count INTEGER DEFAULT 0,
+                is_custom   BOOLEAN DEFAULT false,
+                created_at  TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+        await db.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS transaction_categories_uniq
+            ON transaction_categories (company_id, LOWER(name))
+        `).catch(() => {});
+        await db.query(`
+            INSERT INTO transaction_categories (company_id, name, type, is_custom) VALUES
+                (0, 'Sales',           'income',  false),
+                (0, 'Service Income',  'income',  false),
+                (0, 'Interest Income', 'income',  false),
+                (0, 'Refund Received', 'income',  false),
+                (0, 'Commission',      'income',  false),
+                (0, 'Raw Materials',   'expense', false),
+                (0, 'Rent',            'expense', false),
+                (0, 'Salaries',        'expense', false),
+                (0, 'Transport',       'expense', false),
+                (0, 'Utilities',       'expense', false),
+                (0, 'Maintenance',     'expense', false),
+                (0, 'Office Supplies', 'expense', false),
+                (0, 'Marketing',       'expense', false),
+                (0, 'Tax / GST',       'expense', false),
+                (0, 'General',         'both',    false)
+            ON CONFLICT DO NOTHING
+        `).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
