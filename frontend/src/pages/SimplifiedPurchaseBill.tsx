@@ -214,9 +214,11 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const updatePayment = (i: number, field: keyof PaymentEntry, val: string | number) =>
     setPayments(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: val } : p));
 
-  const handleProductSelect = (index: number, val: string) => {
+  const handleProductSelect = (index: number, val: string, id?: string) => {
     const newItems = [...items];
-    const prod = products.find(p => p.name === val || p.id === parseInt(val));
+    const prod = id
+      ? products.find(p => String(p.id) === id) || products.find(p => p.name === val)
+      : products.find(p => p.name === val || p.id === parseInt(val));
     if (prod) {
       newItems[index] = {
         id: String(prod.id),
@@ -229,7 +231,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
         imageUrl: prod.image_url
       };
     } else {
-      newItems[index].name = val;
+      newItems[index] = { ...newItems[index], id: id || "", name: val };
     }
     setItems(newItems);
   };
@@ -503,6 +505,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                       updateSurplusLine(index, "product_id", id);
                                       updateSurplusLine(index, "product_name", name);
                                     }}
+                                    onProductCreated={({ id, name }) => {
+                                      setProducts((prev: any[]) => [...prev, { id, name }]);
+                                    }}
                                   />
                                 </td>
                                 <td style={{ padding: "8px 6px" }}>
@@ -629,7 +634,11 @@ const SimplifiedPurchaseBill: React.FC = () => {
                               products={products}
                               value={item.id}
                               productName={item.name}
-                              onSelect={({ name }) => handleProductSelect(idx, name)}
+                              onSelect={({ id, name }) => handleProductSelect(idx, name, id)}
+                              onProductCreated={({ id, name }) => {
+                                setProducts((prev: any[]) => [...prev, { id, name }]);
+                                handleProductSelect(idx, name, id);
+                              }}
                               style={{ padding: "10px", borderRadius: "10px", fontSize: "0.95rem" }}
                               placeholder="Type or select product..."
                             />
