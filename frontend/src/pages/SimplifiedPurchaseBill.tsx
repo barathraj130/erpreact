@@ -120,6 +120,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+
+  const DRAFT_KEY = "purchase_bill_draft";
 
   // Fetch Initial Data
   useEffect(() => {
@@ -137,6 +140,57 @@ const SimplifiedPurchaseBill: React.FC = () => {
     };
     fetchData();
   }, [showAddProductModal, showAddSupplierModal]);
+
+  // Draft detection on mount
+  useEffect(() => {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (raw) {
+      try {
+        const draft = JSON.parse(raw);
+        if (draft.savedAt) setDraftBanner({ savedAt: draft.savedAt });
+      } catch {}
+    }
+  }, []);
+
+  const saveDraft = () => {
+    const draft = {
+      savedAt: new Date().toISOString(),
+      selectedSupplierId, billNumber, billDate, billType, billCategory,
+      items, expenses, discountAmount, payments, brokerId, brokerCommRate,
+      isSurplus, surplusLotNumber, surplusTransportCost, surplusLines,
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    alert("Draft saved! You can continue later.");
+  };
+
+  const restoreDraft = () => {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    try {
+      const d = JSON.parse(raw);
+      if (d.selectedSupplierId !== undefined) setSelectedSupplierId(d.selectedSupplierId);
+      if (d.billNumber       !== undefined) setBillNumber(d.billNumber);
+      if (d.billDate         !== undefined) setBillDate(d.billDate);
+      if (d.billType         !== undefined) setBillType(d.billType);
+      if (d.billCategory     !== undefined) setBillCategory(d.billCategory);
+      if (d.items            !== undefined) setItems(d.items);
+      if (d.expenses         !== undefined) setExpenses(d.expenses);
+      if (d.discountAmount   !== undefined) setDiscountAmount(d.discountAmount);
+      if (d.payments         !== undefined) setPayments(d.payments);
+      if (d.brokerId         !== undefined) setBrokerId(d.brokerId);
+      if (d.brokerCommRate   !== undefined) setBrokerCommRate(d.brokerCommRate);
+      if (d.isSurplus        !== undefined) setIsSurplus(d.isSurplus);
+      if (d.surplusLotNumber !== undefined) setSurplusLotNumber(d.surplusLotNumber);
+      if (d.surplusTransportCost !== undefined) setSurplusTransportCost(d.surplusTransportCost);
+      if (d.surplusLines     !== undefined) setSurplusLines(d.surplusLines);
+    } catch {}
+    setDraftBanner(null);
+  };
+
+  const discardDraft = () => {
+    localStorage.removeItem(DRAFT_KEY);
+    setDraftBanner(null);
+  };
 
   // GST Type Detection
   const gstType = useMemo(() => {
@@ -296,6 +350,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
       if (res.ok) {
         const result = await res.json();
+        localStorage.removeItem(DRAFT_KEY);
         const summary = result.items_saved > 0
           ? `Bill saved! ${result.items_saved} item(s) recorded, ${result.products_created} new product(s) created, inventory updated.`
           : "Purchase Bill Saved Successfully!";
@@ -334,6 +389,22 @@ const SimplifiedPurchaseBill: React.FC = () => {
           </span>
         </div>
       </header>
+
+      {draftBanner && (
+        <div style={{ background: "#fef9c3", borderBottom: "1px solid #fde047", padding: "12px 30px", display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "0.85rem", color: "#854d0e", fontWeight: 600 }}>
+            📋 You have an unsaved draft from {new Date(draftBanner.savedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+          </span>
+          <button onClick={restoreDraft}
+            style={{ padding: "5px 16px", borderRadius: 8, border: "none", background: "#854d0e", color: "#fff", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+            Restore Draft
+          </button>
+          <button onClick={discardDraft}
+            style={{ padding: "5px 14px", borderRadius: 8, border: "1px solid #854d0e", background: "transparent", color: "#854d0e", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+            Discard
+          </button>
+        </div>
+      )}
 
       <div className="db-content" style={{ padding: "30px", display: "grid", gridTemplateColumns: "1fr 380px", gap: "30px", maxWidth: "1600px", margin: "0 auto" }}>
         {/* Main Form Area */}
@@ -905,6 +976,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
                 </button>
                 <button onClick={() => handleSave(true)} disabled={loading} style={{ background: "#fff", color: "#4f46e5", border: "2px solid #4f46e5", borderRadius: "12px", padding: "14px", fontSize: "1rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
                    Save & Print
+                </button>
+                <button onClick={saveDraft} disabled={loading}
+                  style={{ background: "#fef9c3", color: "#854d0e", border: "1.5px dashed #fde047", borderRadius: "12px", padding: "12px", fontSize: "0.9rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                  📋 Save Draft (Continue Later)
                 </button>
               </div>
             </div>
