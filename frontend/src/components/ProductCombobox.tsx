@@ -70,7 +70,9 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: query.trim(), unit: "pcs", gst_percent: 0 }),
       });
-      const data = await res.json();
+      let data: any = {};
+      try { data = await res.json(); } catch { /* non-JSON response (e.g. 404 HTML) */ }
+      if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
       if (data.product) {
         const newProduct = { id: String(data.product.id), name: data.product.name };
         onSelect(newProduct);
@@ -78,8 +80,8 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
         setQuery(data.product.name);
         setOpen(false);
       }
-    } catch {
-      alert("Failed to create product. Please try again.");
+    } catch (err: any) {
+      alert(`Failed to create product: ${err?.message || "Please try again."}`);
     } finally {
       setCreating(false);
     }

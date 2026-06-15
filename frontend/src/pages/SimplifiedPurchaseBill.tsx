@@ -87,6 +87,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [isSurplus, setIsSurplus] = useState(false);
   const [surplusLotNumber, setSurplusLotNumber] = useState("");
   const [surplusTransportCost, setSurplusTransportCost] = useState<number>(0);
+  const [surplusSingleMistakeRate, setSurplusSingleMistakeRate] = useState<string>("");
   interface SurplusLine { product_id: string; product_name: string; fresh_qty: string; fresh_rate: string; mistake_qty: string; mistake_rate: string; fresh_amount: number; mistake_amount: number; total_amount: number; }
   const [surplusLines, setSurplusLines] = useState<SurplusLine[]>([
     { product_id: "", product_name: "", fresh_qty: "", fresh_rate: "", mistake_qty: "", mistake_rate: "", fresh_amount: 0, mistake_amount: 0, total_amount: 0 }
@@ -98,7 +99,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
     setSurplusLines(prev => prev.map((line, i) => {
       if (i !== index) return line;
       const updated: any = { ...line, [field]: value };
-      const freshAmt  = parseFloat(updated.fresh_qty  || 0) * parseFloat(updated.fresh_rate  || 0);
+      const freshAmt   = parseFloat(updated.fresh_qty  || 0) * parseFloat(updated.fresh_rate  || 0);
       const mistakeAmt = parseFloat(updated.mistake_qty || 0) * parseFloat(updated.mistake_rate || 0);
       updated.fresh_amount   = freshAmt;
       updated.mistake_amount = mistakeAmt;
@@ -107,12 +108,20 @@ const SimplifiedPurchaseBill: React.FC = () => {
     }));
   };
 
+  // When a single mistake rate is active it overrides per-line mistake_rate for amounts
+  const getEffectiveAmounts = (line: SurplusLine) => {
+    const freshAmt   = parseFloat(line.fresh_qty || "0") * parseFloat(line.fresh_rate || "0");
+    const mRate      = surplusSingleMistakeRate ? parseFloat(surplusSingleMistakeRate) : parseFloat(line.mistake_rate || "0");
+    const mistakeAmt = parseFloat(line.mistake_qty || "0") * mRate;
+    return { freshAmt, mistakeAmt, totalAmt: freshAmt + mistakeAmt };
+  };
+
   const surplusTotals = {
     fresh_qty:      surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0"), 0),
     mistake_qty:    surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0"), 0),
-    fresh_amount:   surplusLines.reduce((s, l) => s + l.fresh_amount,   0),
-    mistake_amount: surplusLines.reduce((s, l) => s + l.mistake_amount, 0),
-    subtotal:       surplusLines.reduce((s, l) => s + l.total_amount,   0),
+    fresh_amount:   surplusLines.reduce((s, l) => s + getEffectiveAmounts(l).freshAmt,   0),
+    mistake_amount: surplusLines.reduce((s, l) => s + getEffectiveAmounts(l).mistakeAmt, 0),
+    get subtotal()  { return this.fresh_amount + this.mistake_amount; },
     get total()     { return this.subtotal + (surplusTransportCost || 0); },
   };
 
@@ -265,22 +274,26 @@ const SimplifiedPurchaseBill: React.FC = () => {
           const hasFresh   = parseFloat(line.fresh_qty   || "0") > 0;
           const hasMistake = parseFloat(line.mistake_qty || "0") > 0;
           if (!hasFresh && !hasMistake)                          { setLoading(false); return alert(`Enter fresh or mistake qty for surplus line ${i + 1}.`); }
-          if (hasFresh   && !parseFloat(line.fresh_rate   || "0")) { setLoading(false); return alert(`Enter fresh rate for surplus line ${i + 1}.`); }
-          if (hasMistake && !parseFloat(line.mistake_rate || "0")) { setLoading(false); return alert(`Enter mistake rate for surplus line ${i + 1}.`); }
+          if (hasFresh   && !parseFloat(line.fresh_rate || "0")) { setLoading(false); return alert(`Enter fresh rate for surplus line ${i + 1}.`); }
+          const effectiveMRate = parseFloat(surplusSingleMistakeRate || line.mistake_rate || "0");
+          if (hasMistake && !effectiveMRate) { setLoading(false); return alert(`Enter a mistake rate for surplus line ${i + 1} (or set the global Mistake Rate above).`); }
         }
         payload.is_surplus     = true;
         payload.lot_number     = surplusLotNumber;
         payload.transport_cost = surplusTransportCost || 0;
-        payload.surplus_lines  = surplusLines.filter(l => l.product_id).map(l => ({
+        payload.surplus_lines  = surplusLines.filter(l => l.product_id).map(l => {
+          const { freshAmt, mistakeAmt } = getEffectiveAmounts(l);
+          return {
           product_id:    parseInt(l.product_id),
           product_name:  l.product_name,
-          fresh_qty:     parseFloat(l.fresh_qty    || "0"),
-          fresh_rate:    parseFloat(l.fresh_rate   || "0"),
-          mistake_qty:   parseFloat(l.mistake_qty  || "0"),
-          mistake_rate:  parseFloat(l.mistake_rate || "0"),
-          fresh_amount:  l.fresh_amount,
-          mistake_amount:l.mistake_amount,
-        }));
+          fresh_qty:     parseFloat(l.fresh_qty  || "0"),
+          fresh_rate:    parseFloat(l.fresh_rate || "0"),
+          mistake_qty:   parseFloat(l.mistake_qty || "0"),
+          mistake_rate:  surplusSingleMistakeRate ? parseFloat(surplusSingleMistakeRate) : parseFloat(l.mistake_rate || "0"),
+          fresh_amount:  freshAmt,
+          mistake_amount: mistakeAmt,
+          }; // close return object
+        }); // close map
       }
 
       formData.append("data", JSON.stringify(payload));
@@ -443,6 +456,15 @@ const SimplifiedPurchaseBill: React.FC = () => {
                           placeholder="0"
                           style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
                       </div>
+                      <div style={{ width: "200px" }}>
+                        <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#b45309", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                          Mistake Rate — All Pcs (₹)
+                        </label>
+                        <input type="number" min="0" value={surplusSingleMistakeRate}
+                          onChange={e => setSurplusSingleMistakeRate(e.target.value)}
+                          placeholder="Leave blank for per-row"
+                          style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: surplusSingleMistakeRate ? "1.5px solid #b45309" : "1px solid #e2e8f0", boxSizing: "border-box", color: surplusSingleMistakeRate ? "#b45309" : "#0f172a", fontWeight: surplusSingleMistakeRate ? 700 : 400 }} />
+                      </div>
                     </div>
 
                     {/* Product lines table */}
@@ -462,8 +484,8 @@ const SimplifiedPurchaseBill: React.FC = () => {
                           </colgroup>
                           <thead>
                             <tr style={{ background: "#f8fafc" }}>
-                              {["PRODUCT", "FRESH QTY", "FRESH RATE", "MSTK QTY", "MSTK RATE", "FRESH AMT", "MSTK AMT", "TOTAL", ""].map((h, i) => (
-                                <th key={i} style={{ padding: "10px", textAlign: i >= 5 ? "right" : "left", fontSize: "0.7rem", fontWeight: 700, color: "#64748b", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap", textTransform: "uppercase" }}>
+                              {["PRODUCT", "FRESH QTY", "FRESH RATE", "MSTK QTY", surplusSingleMistakeRate ? `MSTK RATE (₹${surplusSingleMistakeRate} / all)` : "MSTK RATE", "FRESH AMT", "MSTK AMT", "TOTAL", ""].map((h, i) => (
+                                <th key={i} style={{ padding: "10px", textAlign: i >= 5 ? "right" : "left", fontSize: "0.7rem", fontWeight: 700, color: i === 4 && surplusSingleMistakeRate ? "#b45309" : "#64748b", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap", textTransform: "uppercase" }}>
                                   {h}
                                 </th>
                               ))}
@@ -502,18 +524,20 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                     style={{ width: "100%", padding: "7px 8px", borderRadius: "8px", border: "1px solid #fecaca", background: "#fff5f5", fontSize: "0.82rem", textAlign: "right" }} />
                                 </td>
                                 <td style={{ padding: "8px 6px" }}>
-                                  <input type="number" placeholder="0" value={line.mistake_rate}
-                                    onChange={e => updateSurplusLine(index, "mistake_rate", e.target.value)}
-                                    style={{ width: "100%", padding: "7px 8px", borderRadius: "8px", border: "1px solid #fecaca", background: "#fff5f5", fontSize: "0.82rem", textAlign: "right" }} />
+                                  <input type="number" placeholder="0"
+                                    value={surplusSingleMistakeRate || line.mistake_rate}
+                                    onChange={e => { if (!surplusSingleMistakeRate) updateSurplusLine(index, "mistake_rate", e.target.value); }}
+                                    readOnly={!!surplusSingleMistakeRate}
+                                    style={{ width: "100%", padding: "7px 8px", borderRadius: "8px", border: "1px solid #fecaca", background: surplusSingleMistakeRate ? "#f1f5f9" : "#fff5f5", fontSize: "0.82rem", textAlign: "right", opacity: surplusSingleMistakeRate ? 0.6 : 1, cursor: surplusSingleMistakeRate ? "default" : "text" }} />
                                 </td>
                                 <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "0.82rem", fontWeight: 600, color: "#059669", whiteSpace: "nowrap" }}>
-                                  ₹{line.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                                  ₹{getEffectiveAmounts(line).freshAmt.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                                 </td>
                                 <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "0.82rem", fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>
-                                  ₹{line.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                                  ₹{getEffectiveAmounts(line).mistakeAmt.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                                 </td>
                                 <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "0.88rem", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}>
-                                  ₹{line.total_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                                  ₹{getEffectiveAmounts(line).totalAmt.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                                 </td>
                                 <td style={{ padding: "8px 6px", textAlign: "center" }}>
                                   {surplusLines.length > 1 && (
