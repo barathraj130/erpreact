@@ -662,6 +662,56 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             try {
                 const transport  = parseFloat(data.transport_cost) || 0;
                 const lotNum     = (data.lot_number || '').trim();
+
+                // ── Bulk Mistake mode (no product breakdown) ──────────────────────────
+                if (data.surplus_mode === 'bulk') {
+                    const bulkLines   = Array.isArray(data.bulk_lines) ? data.bulk_lines : [];
+                    const totalBulkPcs = bulkLines.reduce((s, l) => s + (parseFloat(l.total_pcs) || 0), 0);
+                    const totalBulkAmt = bulkLines.reduce((s, l) => s + (parseFloat(l.amount)    || 0), 0);
+                    const totalCost    = totalBulkAmt + transport;
+                    const notesStr     = bulkLines.map(l => `${l.description}: ${l.total_pcs}pcs @ ₹${l.rate_per_pc}`).join(' | ');
+
+                    await client.query(
+                        `UPDATE purchase_bills SET is_surplus=true, lot_number=$1, fresh_qty=0, mistake_qty=$2, transport_cost=$3, notes=$4 WHERE id=$5`,
+                        [lotNum || null, totalBulkPcs, transport, notesStr, billId]
+                    );
+
+                    // Upsert stock lot (accumulates across saves)
+                    const lotRes = await client.query(`
+                        INSERT INTO stock_lots
+                            (company_id, lot_number, supplier_id, product_id, purchase_date,
+                             total_fresh_qty, total_mistake_qty, total_cost, transport_cost, status)
+                        VALUES ($1,$2,$3,NULL,CURRENT_DATE,0,$4,$5,$6,'received')
+                        ON CONFLICT (lot_number, company_id) DO UPDATE SET
+                            total_mistake_qty = stock_lots.total_mistake_qty + $4,
+                            total_cost        = stock_lots.total_cost        + $5,
+                            updated_at        = NOW()
+                        RETURNING id
+                    `, [companyId, lotNum, safeSupplierId, totalBulkPcs, totalCost, transport]);
+                    const lotId = lotRes.rows[0].id;
+
+                    // One inventory row per bulk line (NULL product_id = mixed/no product)
+                    for (const line of bulkLines) {
+                        const pcs  = parseFloat(line.total_pcs)   || 0;
+                        const rate = parseFloat(line.rate_per_pc) || 0;
+                        const amt  = parseFloat(line.amount)      || pcs * rate;
+                        if (pcs <= 0) continue;
+                        await client.query(`
+                            INSERT INTO inventory (product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
+                            VALUES (NULL, $1, $2, 'mistake', $3, $4, $5, NOW())
+                        `, [safeBranchId, lotId, pcs, rate, amt]);
+
+                        await client.query(`
+                            INSERT INTO ledger_entries (company_id, account_name, debit, credit, description, reference_type, transaction_date)
+                            VALUES ($1,'Inventory - Mistake Stock',$2,0,$3,'stock_purchase',CURRENT_DATE),
+                                   ($1,'Supplier Payable',0,$2,$3,'stock_purchase',CURRENT_DATE)
+                        `, [companyId, amt, `Bulk mistake: ${line.description} — ${pcs}pcs @ ₹${rate} — lot ${lotNum}`]);
+                    }
+
+                    await client.query(`RELEASE SAVEPOINT sp_surplus`);
+                    // skip product-wise surplus block below
+                } else {
+
                 const lines      = Array.isArray(data.surplus_lines) ? data.surplus_lines : [];
 
                 // Aggregate totals for purchase_bills columns
@@ -766,6 +816,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 }
 
                 await client.query(`RELEASE SAVEPOINT sp_surplus`);
+                } // end else (product-wise mode)
             } catch (surplusErr) {
                 await client.query(`ROLLBACK TO SAVEPOINT sp_surplus`);
                 await client.query(`RELEASE SAVEPOINT sp_surplus`);

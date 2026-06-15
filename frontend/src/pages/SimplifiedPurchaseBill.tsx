@@ -85,6 +85,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
   // Surplus stock fields
   const [isSurplus, setIsSurplus] = useState(false);
+  const [surplusMode, setSurplusMode] = useState<'product' | 'bulk'>('product');
   const [surplusLotNumber, setSurplusLotNumber] = useState("");
   const [surplusTransportCost, setSurplusTransportCost] = useState<number>(0);
   const [surplusSingleMistakeRate, setSurplusSingleMistakeRate] = useState<string>("");
@@ -92,6 +93,22 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [surplusLines, setSurplusLines] = useState<SurplusLine[]>([
     { product_id: "", product_name: "", fresh_qty: "", fresh_rate: "", mistake_qty: "", mistake_rate: "", fresh_amount: 0, mistake_amount: 0, total_amount: 0 }
   ]);
+
+  // Bulk mistake mode
+  interface BulkLine { description: string; total_pcs: string; rate_per_pc: string; amount: number; }
+  const [bulkLines, setBulkLines] = useState<BulkLine[]>([{ description: '', total_pcs: '', rate_per_pc: '', amount: 0 }]);
+  const addBulkLine = () => setBulkLines(prev => [...prev, { description: '', total_pcs: '', rate_per_pc: '', amount: 0 }]);
+  const removeBulkLine = (index: number) => setBulkLines(prev => prev.filter((_, i) => i !== index));
+  const updateBulkLine = (index: number, field: string, value: string) => {
+    setBulkLines(prev => prev.map((line, i) => {
+      if (i !== index) return line;
+      const updated: any = { ...line, [field]: value };
+      updated.amount = parseFloat(updated.total_pcs || '0') * parseFloat(updated.rate_per_pc || '0');
+      return updated;
+    }));
+  };
+  const bulkTotal = bulkLines.reduce((s, l) => s + l.amount, 0);
+  const bulkTotalPcs = bulkLines.reduce((s, l) => s + parseFloat(l.total_pcs || '0'), 0);
 
   const addSurplusLine = () => setSurplusLines(prev => [...prev, { product_id: "", product_name: "", fresh_qty: "", fresh_rate: "", mistake_qty: "", mistake_rate: "", fresh_amount: 0, mistake_amount: 0, total_amount: 0 }]);
   const removeSurplusLine = (index: number) => setSurplusLines(prev => prev.filter((_, i) => i !== index));
@@ -270,32 +287,51 @@ const SimplifiedPurchaseBill: React.FC = () => {
       };
       if (isSurplus) {
         if (!surplusLotNumber.trim()) { setLoading(false); return alert("Enter lot number for surplus purchase."); }
-        for (let i = 0; i < surplusLines.length; i++) {
-          const line = surplusLines[i];
-          if (!line.product_id) { setLoading(false); return alert(`Select product for surplus line ${i + 1}.`); }
-          const hasFresh   = parseFloat(line.fresh_qty   || "0") > 0;
-          const hasMistake = parseFloat(line.mistake_qty || "0") > 0;
-          if (!hasFresh && !hasMistake)                          { setLoading(false); return alert(`Enter fresh or mistake qty for surplus line ${i + 1}.`); }
-          if (hasFresh   && !parseFloat(line.fresh_rate || "0")) { setLoading(false); return alert(`Enter fresh rate for surplus line ${i + 1}.`); }
-          const effectiveMRate = parseFloat(surplusSingleMistakeRate || line.mistake_rate || "0");
-          if (hasMistake && !effectiveMRate) { setLoading(false); return alert(`Enter a mistake rate for surplus line ${i + 1} (or set the global Mistake Rate above).`); }
+        if (surplusMode === 'bulk') {
+          for (let i = 0; i < bulkLines.length; i++) {
+            const line = bulkLines[i];
+            if (!line.description.trim()) { setLoading(false); return alert(`Enter description for bulk entry ${i + 1}.`); }
+            if (!(parseFloat(line.total_pcs) > 0)) { setLoading(false); return alert(`Enter pieces for bulk entry ${i + 1}.`); }
+            if (!(parseFloat(line.rate_per_pc) > 0)) { setLoading(false); return alert(`Enter rate for bulk entry ${i + 1}.`); }
+          }
+          payload.is_surplus     = true;
+          payload.surplus_mode   = 'bulk';
+          payload.lot_number     = surplusLotNumber;
+          payload.transport_cost = surplusTransportCost || 0;
+          payload.bulk_lines     = bulkLines.map(l => ({
+            description: l.description.trim(),
+            total_pcs:   parseFloat(l.total_pcs || '0'),
+            rate_per_pc: parseFloat(l.rate_per_pc || '0'),
+            amount:      l.amount,
+          }));
+        } else {
+          for (let i = 0; i < surplusLines.length; i++) {
+            const line = surplusLines[i];
+            if (!line.product_id) { setLoading(false); return alert(`Select product for surplus line ${i + 1}.`); }
+            const hasFresh   = parseFloat(line.fresh_qty   || "0") > 0;
+            const hasMistake = parseFloat(line.mistake_qty || "0") > 0;
+            if (!hasFresh && !hasMistake)                          { setLoading(false); return alert(`Enter fresh or mistake qty for surplus line ${i + 1}.`); }
+            if (hasFresh   && !parseFloat(line.fresh_rate || "0")) { setLoading(false); return alert(`Enter fresh rate for surplus line ${i + 1}.`); }
+            const effectiveMRate = parseFloat(surplusSingleMistakeRate || line.mistake_rate || "0");
+            if (hasMistake && !effectiveMRate) { setLoading(false); return alert(`Enter a mistake rate for surplus line ${i + 1} (or set the global Mistake Rate above).`); }
+          }
+          payload.is_surplus     = true;
+          payload.lot_number     = surplusLotNumber;
+          payload.transport_cost = surplusTransportCost || 0;
+          payload.surplus_lines  = surplusLines.filter(l => l.product_id).map(l => {
+            const { freshAmt, mistakeAmt } = getEffectiveAmounts(l);
+            return {
+              product_id:     parseInt(l.product_id),
+              product_name:   l.product_name,
+              fresh_qty:      parseFloat(l.fresh_qty  || "0"),
+              fresh_rate:     parseFloat(l.fresh_rate || "0"),
+              mistake_qty:    parseFloat(l.mistake_qty || "0"),
+              mistake_rate:   surplusSingleMistakeRate ? parseFloat(surplusSingleMistakeRate) : parseFloat(l.mistake_rate || "0"),
+              fresh_amount:   freshAmt,
+              mistake_amount: mistakeAmt,
+            };
+          });
         }
-        payload.is_surplus     = true;
-        payload.lot_number     = surplusLotNumber;
-        payload.transport_cost = surplusTransportCost || 0;
-        payload.surplus_lines  = surplusLines.filter(l => l.product_id).map(l => {
-          const { freshAmt, mistakeAmt } = getEffectiveAmounts(l);
-          return {
-          product_id:    parseInt(l.product_id),
-          product_name:  l.product_name,
-          fresh_qty:     parseFloat(l.fresh_qty  || "0"),
-          fresh_rate:    parseFloat(l.fresh_rate || "0"),
-          mistake_qty:   parseFloat(l.mistake_qty || "0"),
-          mistake_rate:  surplusSingleMistakeRate ? parseFloat(surplusSingleMistakeRate) : parseFloat(l.mistake_rate || "0"),
-          fresh_amount:  freshAmt,
-          mistake_amount: mistakeAmt,
-          }; // close return object
-        }); // close map
       }
 
       formData.append("data", JSON.stringify(payload));
@@ -469,7 +505,99 @@ const SimplifiedPurchaseBill: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Mode toggle */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 16, padding: "4px", background: "#f1f5f9", borderRadius: 8, width: "fit-content" }}>
+                      <button onClick={() => setSurplusMode('product')} style={{ padding: "6px 16px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", background: surplusMode === 'product' ? "#4f46e5" : "transparent", color: surplusMode === 'product' ? "#fff" : "#64748b", transition: "all 0.15s" }}>
+                        Product Wise
+                      </button>
+                      <button onClick={() => setSurplusMode('bulk')} style={{ padding: "6px 16px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", background: surplusMode === 'bulk' ? "#f59e0b" : "transparent", color: surplusMode === 'bulk' ? "#fff" : "#64748b", transition: "all 0.15s" }}>
+                        Bulk Mistake (Mixed)
+                      </button>
+                    </div>
+
+                    {/* Bulk mistake table */}
+                    {surplusMode === 'bulk' && (
+                      <div>
+                        <div style={{ padding: "10px 14px", background: "#fef3c7", border: "0.5px solid #fbbf24", borderRadius: 8, fontSize: 12, color: "#92400e", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>⚠</span>
+                          Bulk Mistake mode — all pieces recorded as Mistake Stock. No product breakdown.
+                        </div>
+                        <div style={{ border: "0.5px solid #e2e8f0", borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                            <colgroup>
+                              <col style={{ width: "35%" }} />
+                              <col style={{ width: "18%" }} />
+                              <col style={{ width: "18%" }} />
+                              <col style={{ width: "22%" }} />
+                              <col style={{ width: "7%" }} />
+                            </colgroup>
+                            <thead>
+                              <tr style={{ background: "#fef3c7" }}>
+                                {["DESCRIPTION / SUPPLIER NAME", "TOTAL PCS", "RATE (₹/PC)", "AMOUNT (₹)", ""].map((h, i) => (
+                                  <th key={i} style={{ padding: "9px 12px", textAlign: i >= 2 ? "right" : "left", fontSize: 10, fontWeight: 600, color: "#92400e", borderBottom: "0.5px solid #fbbf24", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {bulkLines.map((line, index) => (
+                                <tr key={index} style={{ borderBottom: "0.5px solid #f1f5f9" }}>
+                                  <td style={{ padding: "8px 10px" }}>
+                                    <input type="text" placeholder="e.g. Addy mixed lot, ABC surplus..." value={line.description}
+                                      onChange={e => updateBulkLine(index, 'description', e.target.value)}
+                                      style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: !line.description.trim() ? "1.5px solid #ef4444" : "0.5px solid #e2e8f0", fontSize: 12, boxSizing: "border-box" }} />
+                                  </td>
+                                  <td style={{ padding: "8px 6px" }}>
+                                    <input type="number" placeholder="0" value={line.total_pcs}
+                                      onChange={e => updateBulkLine(index, 'total_pcs', e.target.value)}
+                                      style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "0.5px solid #f59e0b", fontSize: 13, textAlign: "right", fontWeight: 600, boxSizing: "border-box" }} />
+                                  </td>
+                                  <td style={{ padding: "8px 6px" }}>
+                                    <input type="number" placeholder="0" value={line.rate_per_pc}
+                                      onChange={e => updateBulkLine(index, 'rate_per_pc', e.target.value)}
+                                      style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "0.5px solid #f59e0b", fontSize: 13, textAlign: "right", boxSizing: "border-box" }} />
+                                  </td>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", fontSize: 14, fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap" }}>
+                                    ₹{line.amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                                  </td>
+                                  <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                                    {bulkLines.length > 1 && (
+                                      <button onClick={() => removeBulkLine(index)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
+                                <td style={{ padding: "10px 12px", fontWeight: 700, fontSize: 13 }}>TOTAL ({bulkLines.length} entr{bulkLines.length > 1 ? "ies" : "y"})</td>
+                                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, fontSize: 14, color: "#f59e0b" }}>{bulkTotalPcs.toLocaleString("en-IN")} pcs</td>
+                                <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12, color: "#64748b" }}>avg ₹{bulkTotalPcs > 0 ? (bulkTotal / bulkTotalPcs).toFixed(2) : "0"}</td>
+                                <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, fontSize: 15, color: "#f59e0b" }}>₹{bulkTotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
+                                <td></td>
+                              </tr>
+                              {(surplusTransportCost || 0) > 0 && (
+                                <tr style={{ background: "#f8fafc" }}>
+                                  <td colSpan={3} style={{ padding: "8px 12px", fontSize: 12, color: "#64748b" }}>Transport Cost</td>
+                                  <td style={{ padding: "8px 12px", textAlign: "right", fontSize: 12, fontWeight: 600 }}>₹{(surplusTransportCost || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
+                                  <td></td>
+                                </tr>
+                              )}
+                              <tr style={{ background: "#fffbeb", borderTop: "0.5px solid #fbbf24" }}>
+                                <td colSpan={3} style={{ padding: "11px 12px", fontSize: 13, fontWeight: 700, color: "#92400e" }}>GRAND TOTAL (incl. transport)</td>
+                                <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 15, fontWeight: 700, color: "#92400e" }}>₹{(bulkTotal + (surplusTransportCost || 0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                        <button onClick={addBulkLine} style={{ padding: "7px 14px", border: "0.5px dashed #f59e0b", borderRadius: 8, background: "transparent", fontSize: 12, color: "#92400e", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                          + Add Another Bulk Entry
+                        </button>
+                      </div>
+                    )}
+
                     {/* Product lines table */}
+                    {surplusMode === 'product' && <>
                     <div style={{ border: "1px solid #e2e8f0", borderRadius: "10px", overflow: "hidden", marginBottom: "12px" }}>
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: "700px" }}>
@@ -585,6 +713,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
                       style={{ padding: "8px 16px", border: "1px dashed #cbd5e1", borderRadius: "8px", background: "transparent", fontSize: "0.85rem", color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
                       <FaPlus size={11} /> Add Product Line
                     </button>
+                    </>}
                   </div>
                 </motion.div>
               )}
@@ -785,7 +914,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
                     <span>Subtotal</span>
-                    <span style={{ fontWeight: 700, color: "#0f172a" }}>₹{surplusTotals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    <span style={{ fontWeight: 700, color: "#0f172a" }}>
+                      ₹{(surplusMode === 'bulk' ? bulkTotal : surplusTotals.subtotal).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
                   {(surplusTransportCost || 0) > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
@@ -795,11 +926,22 @@ const SimplifiedPurchaseBill: React.FC = () => {
                   )}
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
                     <span>Gross Total</span>
-                    <span style={{ fontWeight: 800, color: "#0f172a" }}>₹{surplusTotals.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    <span style={{ fontWeight: 800, color: "#0f172a" }}>
+                      ₹{(surplusMode === 'bulk' ? bulkTotal + (surplusTransportCost || 0) : surplusTotals.total).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
                   <div style={{ fontSize: "0.78rem", color: "#64748b", background: "#f8fafc", borderRadius: "8px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <div style={{ color: "#059669", fontWeight: 600 }}>Fresh: {surplusTotals.fresh_qty} pcs = ₹{surplusTotals.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
-                    <div style={{ color: "#b45309", fontWeight: 600 }}>Mistake: {surplusTotals.mistake_qty} pcs = ₹{surplusTotals.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+                    {surplusMode === 'bulk' ? (
+                      <>
+                        <div style={{ color: "#f59e0b", fontWeight: 600 }}>Mistake: {bulkTotalPcs.toLocaleString("en-IN")} pcs = ₹{bulkTotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>All recorded as Mistake Stock</div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ color: "#059669", fontWeight: 600 }}>Fresh: {surplusTotals.fresh_qty} pcs = ₹{surplusTotals.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+                        <div style={{ color: "#b45309", fontWeight: 600 }}>Mistake: {surplusTotals.mistake_qty} pcs = ₹{surplusTotals.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>
+                      </>
+                    )}
                   </div>
                 </>
               ) : (
@@ -835,7 +977,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
                 <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>NET AMOUNT</span>
                 <span style={{ fontSize: "1.5rem", fontWeight: 900, color: "#4f46e5" }}>
                   ₹{isSurplus
-                    ? (surplusTotals.total - discountAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })
+                    ? ((surplusMode === 'bulk' ? bulkTotal + (surplusTransportCost || 0) : surplusTotals.total) - discountAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })
                     : totals.netTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
