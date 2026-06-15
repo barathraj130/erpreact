@@ -98,8 +98,8 @@ const SimplifiedPurchaseBill: React.FC = () => {
     setSurplusLines(prev => prev.map((line, i) => {
       if (i !== index) return line;
       const updated: any = { ...line, [field]: value };
-      const freshAmt   = parseFloat(updated.fresh_qty  || 0) * parseFloat(updated.fresh_rate  || 0);
-      const mistakeAmt = parseFloat(updated.mistake_qty || 0) * parseFloat(updated.mistake_rate || 0);
+      const freshAmt   = parseFloat(updated.fresh_qty  || "0") * parseFloat(updated.fresh_rate  || "0");
+      const mistakeAmt = parseFloat(updated.mistake_qty || "0") * parseFloat(updated.mistake_rate || "0");
       updated.fresh_amount   = freshAmt;
       updated.mistake_amount = mistakeAmt;
       updated.total_amount   = freshAmt + mistakeAmt;
@@ -110,10 +110,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const surplusTotals = {
     fresh_qty:      surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0"), 0),
     mistake_qty:    surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0"), 0),
-    fresh_amount:   surplusLines.reduce((s, l) => s + l.fresh_amount,   0),
-    mistake_amount: surplusLines.reduce((s, l) => s + l.mistake_amount, 0),
-    get subtotal()  { return this.fresh_amount + this.mistake_amount; },
-    get total()     { return this.subtotal + (surplusTransportCost || 0); },
+    fresh_amount:   surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0") * parseFloat(l.fresh_rate  || "0"), 0),
+    mistake_amount: surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0") * parseFloat(l.mistake_rate || "0"), 0),
+    get subtotal()    { return this.fresh_amount + this.mistake_amount; },
+    get grand_total() { return this.subtotal + (surplusTransportCost || 0); },
   };
 
   // UI State
@@ -279,9 +279,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
           fresh_rate:     parseFloat(l.fresh_rate  || "0"),
           mistake_qty:    parseFloat(l.mistake_qty || "0"),
           mistake_rate:   parseFloat(l.mistake_rate || "0"),
-          fresh_amount:   l.fresh_amount,
-          mistake_amount: l.mistake_amount,
-          total_amount:   l.total_amount,
+          fresh_amount:   parseFloat(l.fresh_qty   || "0") * parseFloat(l.fresh_rate  || "0"),
+          mistake_amount: parseFloat(l.mistake_qty || "0") * parseFloat(l.mistake_rate || "0"),
+          total_amount:   parseFloat(l.fresh_qty   || "0") * parseFloat(l.fresh_rate  || "0") +
+                          parseFloat(l.mistake_qty || "0") * parseFloat(l.mistake_rate || "0"),
         }));
       }
 
@@ -494,20 +495,26 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                     style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
                                 </td>
                                 <td style={{ padding: "7px 5px" }}>
-                                  <input type="number" placeholder="0" value={line.mistake_qty}
+                                  <input type="number" placeholder="0"
+                                    value={line.mistake_qty === "" ? "" : line.mistake_qty}
                                     onChange={e => updateSurplusLine(index, "mistake_qty", e.target.value)}
-                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
+                                    onFocus={e => e.target.select()}
+                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 12, textAlign: "right", boxSizing: "border-box", color: "#92400e", fontWeight: 500, cursor: "text" }} />
                                 </td>
                                 <td style={{ padding: "7px 5px" }}>
-                                  <input type="number" placeholder="0" value={line.mistake_rate}
+                                  <input type="number" placeholder="0"
+                                    value={line.mistake_rate === "" ? "" : line.mistake_rate}
                                     onChange={e => updateSurplusLine(index, "mistake_rate", e.target.value)}
-                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
+                                    onFocus={e => e.target.select()}
+                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 12, textAlign: "right", boxSizing: "border-box", color: "#92400e", fontWeight: 500, cursor: "text" }} />
                                 </td>
                                 <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 600, color: "#10b981", whiteSpace: "nowrap" }}>
                                   {line.fresh_amount > 0 ? `₹${line.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
                                 </td>
                                 <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 600, color: "#f59e0b", whiteSpace: "nowrap" }}>
-                                  {line.mistake_amount > 0 ? `₹${line.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
+                                  {(parseFloat(line.mistake_qty || "0") * parseFloat(line.mistake_rate || "0")) > 0
+                                    ? `₹${(parseFloat(line.mistake_qty || "0") * parseFloat(line.mistake_rate || "0")).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
+                                    : <span style={{ color: "#cbd5e1" }}>—</span>}
                                 </td>
                                 <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>
                                   ₹{line.total_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
@@ -544,7 +551,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
                             )}
                             <tr style={{ background: "#eff6ff", borderTop: "1px solid #bfdbfe" }}>
                               <td colSpan={7} style={{ padding: "11px 12px", fontSize: "0.88rem", fontWeight: 800, color: "#1e40af" }}>GRAND TOTAL (incl. transport)</td>
-                              <td style={{ padding: "11px 10px", textAlign: "right", fontSize: "1rem", fontWeight: 900, color: "#1e40af", whiteSpace: "nowrap" }}>₹{surplusTotals.total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: "11px 10px", textAlign: "right", fontSize: "1rem", fontWeight: 900, color: "#1e40af", whiteSpace: "nowrap" }}>₹{surplusTotals.grand_total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
                               <td></td>
                             </tr>
                           </tfoot>
@@ -753,26 +760,42 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
               {isSurplus ? (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
-                    <span>Subtotal</span>
-                    <span style={{ fontWeight: 700, color: "#0f172a" }}>₹{surplusTotals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                <div style={{ marginTop: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "0.5px solid #e2e8f0" }}>
+                    <span style={{ fontSize: 12, color: "#10b981", fontWeight: 500 }}>Fresh Stock</span>
+                    <span style={{ fontSize: 12, color: "#10b981", fontWeight: 600, whiteSpace: "nowrap" }}>
+                      {surplusTotals.fresh_qty > 0
+                        ? `${surplusTotals.fresh_qty.toLocaleString("en-IN")} pcs = ₹${surplusTotals.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
+                        : "0 pcs = ₹0"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "0.5px solid #e2e8f0" }}>
+                    <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 500 }}>Mistake Stock</span>
+                    <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600, whiteSpace: "nowrap" }}>
+                      {surplusTotals.mistake_qty > 0
+                        ? `${surplusTotals.mistake_qty.toLocaleString("en-IN")} pcs = ₹${surplusTotals.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
+                        : "0 pcs = ₹0"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "0.5px solid #e2e8f0" }}>
+                    <span style={{ fontSize: "0.95rem", color: "#64748b" }}>Subtotal</span>
+                    <span style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>₹{surplusTotals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                   </div>
                   {(surplusTransportCost || 0) > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
-                      <span>Transport</span>
-                      <span style={{ fontWeight: 700, color: "#0f172a" }}>₹{(surplusTransportCost || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "0.5px solid #e2e8f0" }}>
+                      <span style={{ fontSize: 12, color: "#64748b" }}>Transport</span>
+                      <span style={{ fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>₹{(surplusTransportCost || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                     </div>
                   )}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
-                    <span>Gross Total</span>
-                    <span style={{ fontWeight: 800, color: "#0f172a" }}>₹{surplusTotals.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", marginTop: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
+                      Total ({(surplusTotals.fresh_qty + surplusTotals.mistake_qty).toLocaleString("en-IN")} pcs)
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#4f46e5", whiteSpace: "nowrap" }}>
+                      ₹{surplusTotals.grand_total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                    </span>
                   </div>
-                  <div style={{ fontSize: "0.78rem", background: "#f8fafc", borderRadius: "8px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    {surplusTotals.fresh_qty > 0 && <div style={{ color: "#059669", fontWeight: 600 }}>Fresh: {surplusTotals.fresh_qty.toLocaleString("en-IN")} pcs = ₹{surplusTotals.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>}
-                    {surplusTotals.mistake_qty > 0 && <div style={{ color: "#f59e0b", fontWeight: 600 }}>Mistake: {surplusTotals.mistake_qty.toLocaleString("en-IN")} pcs = ₹{surplusTotals.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</div>}
-                  </div>
-                </>
+                </div>
               ) : (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem", color: "#64748b" }}>
@@ -806,7 +829,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
                 <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>NET AMOUNT</span>
                 <span style={{ fontSize: "1.5rem", fontWeight: 900, color: "#4f46e5" }}>
                   ₹{isSurplus
-                    ? (surplusTotals.total - discountAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })
+                    ? (surplusTotals.grand_total - discountAmount).toLocaleString("en-IN", { minimumFractionDigits: 2 })
                     : totals.netTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
