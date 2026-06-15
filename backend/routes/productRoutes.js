@@ -157,8 +157,8 @@ router.post("/quick", authMiddleware, async (req, res) => {
 
         const sku = `PROD-${Date.now().toString().slice(-6)}`;
         const product = await pgModule.pgGet(
-            `INSERT INTO products (company_id, name, unit, gst_percent, sku, is_active, is_deleted)
-             VALUES ($1, $2, $3, $4, $5, true, false) RETURNING id, name`,
+            `INSERT INTO products (company_id, name, unit, gst_percent, sku, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted)
+             VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, 'Other', 1, false) RETURNING id, name`,
             [companyId, name.trim(), unit, parseFloat(gst_percent) || 0, sku]
         );
         return res.status(201).json({ success: true, product, created: true });
