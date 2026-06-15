@@ -297,6 +297,10 @@
     min-height: 100vh;
     background: var(--erp-bg, #f8fafc);
     font-family: 'Satoshi', sans-serif;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .report-breadcrumb {

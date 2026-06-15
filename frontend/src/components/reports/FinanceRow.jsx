@@ -25,7 +25,8 @@ export const FinanceRow = ({
       paddingLeft: indent ? 32 : 16,
       borderBottom: '0.5px solid #f1f5f9',
       background: bg,
-      gap: 12, minWidth: 0,
+      gap: 16, minWidth: 0,
+      width: '100%', boxSizing: 'border-box',
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -78,7 +79,9 @@ export const SectionGap = () => (
 export const ReportCard = ({ children, style }) => (
   <div style={{
     border: '1px solid #e5e7eb', borderRadius: 10,
-    overflow: 'clip', background: '#fff', ...style,
+    overflow: 'hidden', background: '#fff',
+    width: '100%', boxSizing: 'border-box',
+    ...style,
   }}>
     {children}
   </div>
@@ -89,6 +92,7 @@ export const TwoCol = ({ children }) => (
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     gap: 16, marginBottom: 20,
+    width: '100%', boxSizing: 'border-box',
   }}>
     {children}
   </div>
@@ -97,8 +101,9 @@ export const TwoCol = ({ children }) => (
 export const KPIGrid = ({ cards }) => (
   <div style={{
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
     gap: 10, marginBottom: 20,
+    width: '100%', boxSizing: 'border-box',
   }}>
     {cards.map((card, i) => {
       const n = parseFloat(card.value || 0);
