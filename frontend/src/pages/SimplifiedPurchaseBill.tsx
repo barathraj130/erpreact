@@ -604,7 +604,18 @@ const SimplifiedPurchaseBill: React.FC = () => {
                             </div>
                           </td>
                           <td style={{ padding: "10px" }}>
-                            <input list="purchase-prod-list" value={item.name} onChange={e => handleProductSelect(idx, e.target.value)} placeholder="Type or select product..." style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", outline: "none", fontSize: "0.95rem" }} />
+                            <ProductCombobox
+                              products={products}
+                              value={item.id}
+                              productName={item.name}
+                              onSelect={({ name }) => handleProductSelect(idx, name)}
+                              onProductCreated={({ id, name }) => {
+                                setProducts((prev: any[]) => [...prev, { id, name }]);
+                                handleProductSelect(idx, name);
+                              }}
+                              style={{ padding: "10px", borderRadius: "10px", fontSize: "0.95rem" }}
+                              placeholder="Type or select product..."
+                            />
                           </td>
                           <td style={{ padding: "10px" }}>
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
