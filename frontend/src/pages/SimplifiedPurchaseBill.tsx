@@ -503,9 +503,6 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                       updateSurplusLine(index, "product_id", id);
                                       updateSurplusLine(index, "product_name", name);
                                     }}
-                                    onProductCreated={({ id, name }) => {
-                                      setProducts((prev: any[]) => [...prev, { id, name }]);
-                                    }}
                                   />
                                 </td>
                                 <td style={{ padding: "8px 6px" }}>
@@ -633,10 +630,6 @@ const SimplifiedPurchaseBill: React.FC = () => {
                               value={item.id}
                               productName={item.name}
                               onSelect={({ name }) => handleProductSelect(idx, name)}
-                              onProductCreated={({ id, name }) => {
-                                setProducts((prev: any[]) => [...prev, { id, name }]);
-                                handleProductSelect(idx, name);
-                              }}
                               style={{ padding: "10px", borderRadius: "10px", fontSize: "0.95rem" }}
                               placeholder="Type or select product..."
                             />

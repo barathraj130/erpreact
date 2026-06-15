@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { apiFetch } from "../utils/api";
 
 interface Product {
   id: string | number;
@@ -11,7 +10,6 @@ interface ProductComboboxProps {
   value: string;
   productName: string;
   onSelect: (product: { id: string; name: string }) => void;
-  onProductCreated?: (product: { id: string; name: string }) => void;
   style?: React.CSSProperties;
   placeholder?: string;
 }
@@ -21,13 +19,11 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
   value,
   productName,
   onSelect,
-  onProductCreated,
   style,
   placeholder = "Type or select product...",
 }) => {
   const [query, setQuery] = useState(productName || "");
   const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,41 +47,10 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
       )
     : products;
 
-  const exactMatch = products.some(
-    (p) => p.name.toLowerCase() === query.toLowerCase().trim()
-  );
-
   const handleSelect = (product: Product) => {
     onSelect({ id: String(product.id), name: product.name });
     setQuery(product.name);
     setOpen(false);
-  };
-
-  const handleCreate = async () => {
-    if (!query.trim() || creating) return;
-    setCreating(true);
-    try {
-      // Use the existing multipart endpoint — works on current Railway deployment
-      const fd = new FormData();
-      fd.append("name", query.trim());
-      fd.append("unit", "pcs");
-      fd.append("gst_percent", "0");
-      const res = await apiFetch("/api/products", { method: "POST", body: fd }, false);
-      let data: any = {};
-      try { data = await res.json(); } catch { /* non-JSON response */ }
-      if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
-      if (data.product) {
-        const newProduct = { id: String(data.product.id), name: data.product.name };
-        onSelect(newProduct);
-        onProductCreated?.(newProduct);
-        setQuery(data.product.name);
-        setOpen(false);
-      }
-    } catch (err: any) {
-      alert(`Failed to create product: ${err?.message || "Please try again."}`);
-    } finally {
-      setCreating(false);
-    }
   };
 
   const baseInputStyle: React.CSSProperties = {
@@ -112,8 +77,9 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
         style={baseInputStyle}
+        autoComplete="off"
       />
-      {open && (
+      {open && filtered.length > 0 && (
         <div
           style={{
             position: "absolute",
@@ -130,17 +96,6 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
             marginTop: "2px",
           }}
         >
-          {filtered.length === 0 && query.trim() && (
-            <div
-              style={{
-                padding: "8px 12px",
-                fontSize: "0.8rem",
-                color: "#64748b",
-              }}
-            >
-              No products found
-            </div>
-          )}
           {filtered.map((p) => (
             <div
               key={p.id}
@@ -164,25 +119,6 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
               {p.name}
             </div>
           ))}
-          {query.trim() && !exactMatch && (
-            <div
-              onMouseDown={handleCreate}
-              style={{
-                padding: "8px 12px",
-                fontSize: "0.82rem",
-                cursor: creating ? "wait" : "pointer",
-                background: "#f0fdf4",
-                color: "#059669",
-                fontWeight: 600,
-                borderTop: filtered.length > 0 ? "1px solid #e2e8f0" : "none",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              {creating ? "Creating..." : `+ Create "${query.trim()}"`}
-            </div>
-          )}
         </div>
       )}
     </div>
