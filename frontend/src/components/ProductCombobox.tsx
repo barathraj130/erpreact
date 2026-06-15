@@ -65,13 +65,14 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
     if (!query.trim() || creating) return;
     setCreating(true);
     try {
-      const res = await apiFetch("/api/products/quick", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: query.trim(), unit: "pcs", gst_percent: 0 }),
-      });
+      // Use the existing multipart endpoint — works on current Railway deployment
+      const fd = new FormData();
+      fd.append("name", query.trim());
+      fd.append("unit", "pcs");
+      fd.append("gst_percent", "0");
+      const res = await apiFetch("/api/products", { method: "POST", body: fd }, false);
       let data: any = {};
-      try { data = await res.json(); } catch { /* non-JSON response (e.g. 404 HTML) */ }
+      try { data = await res.json(); } catch { /* non-JSON response */ }
       if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
       if (data.product) {
         const newProduct = { id: String(data.product.id), name: data.product.name };
