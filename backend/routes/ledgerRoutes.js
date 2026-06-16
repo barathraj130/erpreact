@@ -764,9 +764,10 @@ router.patch('/:id/archive', authMiddleware, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// POST /ledger/set-opening-balance  — upsert the OPENING_BALANCE entry
-// Deletes any existing OPENING_BALANCE row and inserts a new one.
-// All other transactions remain untouched.
+// POST /ledger/set-opening-balance  — directly set the OPENING_BALANCE entry
+// Deletes any existing OPENING_BALANCE row and inserts a new one with the
+// exact desired amount. All other transactions remain untouched.
+// The Balance b/d shown in the ledger will reflect this entry directly.
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
@@ -775,42 +776,28 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
         return res.status(400).json({ error: 'ledger_type must be CASH or BANK' });
     }
     const desired = parseFloat(amount);
-    if (isNaN(desired)) {
-        return res.status(400).json({ error: 'amount must be a number' });
+    if (isNaN(desired) || desired < 0) {
+        return res.status(400).json({ error: 'amount must be a valid non-negative number' });
     }
     const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
     const balDate = date || '2020-01-01';
 
-    // Use the same source-aware inflow logic as GET /cash and GET /bank
-    // so that netOthers matches exactly what the ledger display computes.
-    const CASH_INFLOWS_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
-    const BANK_INFLOWS_SQL = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
-    const inflowsSql = ledger_type === 'BANK' ? BANK_INFLOWS_SQL : CASH_INFLOWS_SQL;
-
     try {
-        // Back-calculate the opening entry so that closing balance = desired
-        const othersRow = await db.pgGet(
-            `SELECT COALESCE(SUM(CASE
-                WHEN source IN (${inflowsSql}) THEN ABS(amount)
-                WHEN direction = 'in' THEN amount
-                ELSE -amount
-             END), 0) AS net
-             FROM ${tbl} WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
-            [companyId]
-        );
-        const netOthers = parseFloat(othersRow?.net || 0);
-        const needed = desired - netOthers;
-
+        // Remove any existing OPENING_BALANCE entry for this company
         await db.pgRun(
             `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
-        if (Math.abs(needed) > 0.001) {
+
+        // Directly insert the new opening balance entry with the exact desired amount
+        if (desired > 0.001) {
             await db.pgRun(
-                `INSERT INTO ${tbl} (company_id, source, amount, direction, date) VALUES ($1, 'OPENING_BALANCE', $2, $3, $4)`,
-                [companyId, Math.abs(needed), needed >= 0 ? 'in' : 'out', balDate]
+                `INSERT INTO ${tbl} (company_id, source, amount, direction, date)
+                 VALUES ($1, 'OPENING_BALANCE', $2, 'in', $3)`,
+                [companyId, desired, balDate]
             );
         }
+
         res.json({ success: true, message: `Balance set to ₹${desired.toFixed(2)}` });
     } catch (err) {
         console.error('[set-opening-balance]', err.message);
