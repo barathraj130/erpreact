@@ -287,7 +287,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
     if (!isSurplus && billCategory === "PRODUCT" && items.some(i => !i.name || i.qty <= 0)) return alert("Please ensure all products have name and quantity.");
     if (billCategory === "EXPENSE" && expenses.some(e => !e.expense_type || e.amount <= 0)) return alert("Please ensure all expenses have type and amount.");
     const validPayments = payments.filter(p => p.amount > 0);
-    if (totals.totalPaid > totals.netTotal + 0.01) return alert(`Total paid (₹${totals.totalPaid.toFixed(2)}) cannot exceed bill amount (₹${totals.netTotal.toFixed(2)}).`);
+    const effectiveTotal = isSurplus ? surplusTotals.grand_total - discountAmount : totals.netTotal;
+    const totalPaid = validPayments.reduce((s, p) => s + (p.amount || 0), 0);
+    if (totalPaid > effectiveTotal + 0.01) return alert(`Total paid (₹${totalPaid.toFixed(2)}) cannot exceed bill amount (₹${effectiveTotal.toFixed(2)}).`);
 
     setLoading(true);
     try {
@@ -298,7 +300,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
         bill_date: billDate,
         bill_type: billType,
         bill_category: billCategory,
-        items: billCategory === "PRODUCT" ? items.map(i => ({
+        items: (!isSurplus && billCategory === "PRODUCT") ? items.map(i => ({
           product_id: i.id ? parseInt(i.id) : null,
           description: i.name,
           quantity: i.qty,

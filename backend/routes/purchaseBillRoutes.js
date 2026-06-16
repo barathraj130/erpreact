@@ -284,6 +284,16 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             return { ...exp, cgst_amount: cgstA, sgst_amount: sgstA, igst_amount: igstA, total_amount: lineTotal };
         });
 
+        // For surplus bills, calculate total from surplus_lines + transport
+        if (data.is_surplus && Array.isArray(data.surplus_lines)) {
+            const surplusLineTotal = data.surplus_lines.reduce((s, l) => {
+                const fa = parseFloat(l.fresh_amount)   || (parseFloat(l.fresh_qty   || 0) * parseFloat(l.fresh_rate   || 0));
+                const ma = parseFloat(l.mistake_amount) || (parseFloat(l.mistake_qty  || 0) * parseFloat(l.mistake_rate || 0));
+                return s + fa + ma;
+            }, 0);
+            subTotal += surplusLineTotal + (parseFloat(data.transport_cost) || 0);
+        }
+
         const discount = isNaN(parseFloat(discount_amount)) ? 0 : parseFloat(discount_amount);
         const grossTotal = subTotal + taxTotal;
         const netAmount = grossTotal - discount;
