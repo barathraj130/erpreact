@@ -284,7 +284,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const handleSave = async (print = false) => {
     if (!selectedSupplierId) return alert("Please select a supplier.");
     if (!billNumber) return alert("Please enter bill number.");
-    if (billCategory === "PRODUCT" && items.some(i => !i.name || i.qty <= 0)) return alert("Please ensure all products have name and quantity.");
+    if (!isSurplus && billCategory === "PRODUCT" && items.some(i => !i.name || i.qty <= 0)) return alert("Please ensure all products have name and quantity.");
     if (billCategory === "EXPENSE" && expenses.some(e => !e.expense_type || e.amount <= 0)) return alert("Please ensure all expenses have type and amount.");
     const validPayments = payments.filter(p => p.amount > 0);
     if (totals.totalPaid > totals.netTotal + 0.01) return alert(`Total paid (₹${totals.totalPaid.toFixed(2)}) cannot exceed bill amount (₹${totals.netTotal.toFixed(2)}).`);
