@@ -686,6 +686,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
                               value={item.id}
                               productName={item.name}
                               onSelect={({ id, name }) => handleProductSelect(idx, name, id)}
+                              onNameChange={(name) => {
+                                const t = [...items]; t[idx] = { ...t[idx], name }; setItems(t);
+                              }}
                               onProductCreated={({ id, name }) => {
                                 setProducts((prev: any[]) => [...prev, { id, name }]);
                                 handleProductSelect(idx, name, id);

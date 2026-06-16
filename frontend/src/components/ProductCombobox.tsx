@@ -17,6 +17,7 @@ interface ProductComboboxProps {
   productName: string;
   onSelect: (product: { id: string; name: string }) => void;
   onProductCreated?: (product: { id: string; name: string }) => void;
+  onNameChange?: (name: string) => void;
   style?: React.CSSProperties;
   placeholder?: string;
 }
@@ -27,6 +28,7 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
   productName,
   onSelect,
   onProductCreated,
+  onNameChange,
   style,
   placeholder = "Type product name",
 }) => {
@@ -165,9 +167,11 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
           type="text"
           value={query}
           onChange={(e) => {
-            setQuery(e.target.value);
+            const v = e.target.value;
+            setQuery(v);
             setSaved(false);
-            if (!e.target.value.trim()) onSelect({ id: "", name: "" });
+            onNameChange?.(v);
+            if (!v.trim()) onSelect({ id: "", name: "" });
             setOpen(true);
           }}
           onKeyDown={handleKeyDown}
