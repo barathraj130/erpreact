@@ -825,6 +825,34 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
 
         const results = [];
         for (const p of empList) {
+            // Temp workers have is_temp:true — no employee record, just ledger entry
+            if (p.is_temp) {
+                const wage  = Number(p.daily_wage) || 0;
+                const pMode = (p.payment_mode || 'cash').toUpperCase();
+                if (wage <= 0) continue;
+                const tempName = p.employee_name || 'Temp Worker';
+                if (pMode === 'CASH') {
+                    await client.query(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                         VALUES ($1,$2,'daily_wage',$3,'out',$4)`,
+                        [companyId, branchId, wage, date]);
+                } else if (pMode !== 'PROPRIETOR') {
+                    await client.query(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                         VALUES ($1,$2,'daily_wage',$3,'out','Main Account',$4)`,
+                        [companyId, branchId, wage, date]);
+                } else {
+                    const { recordProprietorCapital } = await import('../utils/proprietorLedger.js');
+                    await recordProprietorCapital(client, {
+                        companyId, branchId, userId: req.user?.id, amount: wage,
+                        description: `Daily Wage – ${tempName} (Temp, ${date})`,
+                        referenceType: 'DAILY_WAGE',
+                    });
+                }
+                results.push({ employee_id: null, name: tempName, wage, deduction: 0 });
+                continue;
+            }
+
             const emp = await db.pgGet(`SELECT * FROM employees WHERE id=$1 AND company_id=$2`, [p.employee_id, companyId]);
             if (!emp) continue;
 

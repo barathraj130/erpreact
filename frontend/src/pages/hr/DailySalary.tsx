@@ -21,6 +21,7 @@ interface DailyRow {
   daily_wage: number;
   payment_mode: "cash" | "bank" | "proprietor";
   already_paid?: boolean;
+  is_temp?: boolean;
 }
 
 interface PayItem {
@@ -31,6 +32,7 @@ interface PayItem {
   extra_pay: number;
   net_wage: number;
   payment_mode: "cash" | "bank" | "proprietor";
+  is_temp?: boolean;
 }
 
 const fmt = (n: number) =>
@@ -49,6 +51,36 @@ const DailySalary: React.FC = () => {
   const [marking, setMarking] = useState<number | null>(null);
   const [error, setError]     = useState<string | null>(null);
   const [result, setResult]   = useState<{ processed: number; total_paid: number } | null>(null);
+
+  // Temp worker form
+  const [showTempForm, setShowTempForm] = useState(false);
+  const [tempName, setTempName]         = useState("");
+  const [tempRate, setTempRate]         = useState<number | "">("");
+  const [tempCounter, setTempCounter]   = useState(0);
+
+  const addTempWorker = () => {
+    if (!String(tempName).trim() || !tempRate) return;
+    const rate = Number(tempRate);
+    const id   = -(tempCounter + 1); // negative IDs for temp workers
+    setRows(prev => [...prev, {
+      employee_id:           id,
+      employee_name:         tempName.trim(),
+      designation:           "Temp Worker",
+      salary_type:           "daily",
+      daily_rate:            rate,
+      weekly_rate:           0,
+      salary:                0,
+      working_days_per_week: 6,
+      status:                "present",
+      working_hours:         8,
+      daily_wage:            rate,
+      payment_mode:          "cash",
+      already_paid:          false,
+      is_temp:               true,
+    }]);
+    setTempCounter(c => c + 1);
+    setTempName(""); setTempRate(""); setShowTempForm(false);
+  };
 
   // Payment confirm modal
   const [showPayModal, setShowPayModal] = useState(false);
@@ -92,8 +124,19 @@ const DailySalary: React.FC = () => {
   const markAttendance = async (
     employeeId: number,
     status: "present" | "absent" | "half_day",
-    hours = 8
+    hours = 8,
+    isTemp = false
   ) => {
+    if (isTemp) {
+      // Temp workers: update local state only — no backend attendance record
+      setRows(prev => prev.map(r => {
+        if (r.employee_id !== employeeId) return r;
+        const rate = r.daily_rate;
+        const wage = status === "present" ? rate : status === "half_day" ? Math.ceil(rate / 2) : 0;
+        return { ...r, status, working_hours: hours, daily_wage: wage };
+      }));
+      return;
+    }
     setMarking(employeeId);
     try {
       const res = await apiFetch("/hr/attendance/daily", {
@@ -130,6 +173,7 @@ const DailySalary: React.FC = () => {
       extra_pay:     0,
       net_wage:      r.daily_wage,
       payment_mode:  r.payment_mode,
+      is_temp:       r.is_temp,
     })));
     setShowPayModal(true);
   };
@@ -170,12 +214,14 @@ const DailySalary: React.FC = () => {
         body: {
           date,
           employees: payItems.map(p => ({
-            employee_id:  p.employee_id,
-            daily_wage:   p.net_wage,      // pay net (after deduction + extra)
-            gross_wage:   p.gross_wage,
-            deduction:    p.deduction,
-            extra_pay:    p.extra_pay,
-            payment_mode: p.payment_mode,
+            employee_id:   p.employee_id,
+            employee_name: p.employee_name,
+            daily_wage:    p.net_wage,
+            gross_wage:    p.gross_wage,
+            deduction:     p.deduction,
+            extra_pay:     p.extra_pay,
+            payment_mode:  p.payment_mode,
+            is_temp:       p.is_temp || false,
           })),
         },
       });
@@ -280,8 +326,13 @@ const DailySalary: React.FC = () => {
                     return (
                       <tr key={row.employee_id} style={{ borderBottom: "1px solid #f8fafc", background: isPaid ? "#f0fdf4" : undefined }}>
                         <td style={{ padding: "13px 14px" }}>
-                          <div style={{ fontWeight: 700, color: "#1e293b" }}>{row.employee_name}</div>
-                          {row.designation && <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{row.designation}</div>}
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={{ fontWeight: 700, color: "#1e293b" }}>{row.employee_name}</span>
+                            {row.is_temp && (
+                              <span style={{ fontSize: "0.65rem", fontWeight: 700, background: "#fef3c7", color: "#92400e", padding: "1px 7px", borderRadius: "20px", border: "1px solid #fde68a", whiteSpace: "nowrap" }}>TEMP</span>
+                            )}
+                          </div>
+                          {row.designation && !row.is_temp && <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{row.designation}</div>}
                         </td>
                         <td style={{ padding: "13px 14px" }}>
                           <span style={{ background: row.salary_type === "daily" ? "#fef3c7" : "#ede9fe", color: row.salary_type === "daily" ? "#92400e" : "#6d28d9", padding: "3px 10px", borderRadius: "20px", fontSize: "0.73rem", fontWeight: 700, textTransform: "capitalize" }}>
@@ -321,7 +372,7 @@ const DailySalary: React.FC = () => {
                         </td>
                         <td style={{ padding: "13px 14px" }}>
                           {isPaid ? <span style={{ color: "#86efac", fontSize: "0.8rem" }}>✓</span> : (
-                            <button onClick={() => markAttendance(row.employee_id, "present", 8)} disabled={isMarking}
+                            <button onClick={() => markAttendance(row.employee_id, "present", 8, row.is_temp)} disabled={isMarking}
                               style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 11px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.76rem", background: row.status === "present" ? "#10b981" : "#f0fdf4", color: row.status === "present" ? "#fff" : "#15803d", opacity: isMarking ? 0.6 : 1 }}>
                               <FaCheck /> Present
                             </button>
@@ -329,7 +380,7 @@ const DailySalary: React.FC = () => {
                         </td>
                         <td style={{ padding: "13px 14px" }}>
                           {isPaid ? <span style={{ color: "#86efac", fontSize: "0.8rem" }}>✓</span> : (
-                            <button onClick={() => markAttendance(row.employee_id, "half_day", 4)} disabled={isMarking}
+                            <button onClick={() => markAttendance(row.employee_id, "half_day", 4, row.is_temp)} disabled={isMarking}
                               style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 11px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.76rem", background: row.status === "half_day" ? "#f59e0b" : "#fffbeb", color: row.status === "half_day" ? "#fff" : "#92400e", opacity: isMarking ? 0.6 : 1 }}>
                               ½ Half
                             </button>
@@ -337,7 +388,7 @@ const DailySalary: React.FC = () => {
                         </td>
                         <td style={{ padding: "13px 14px" }}>
                           {isPaid ? <span style={{ color: "#86efac", fontSize: "0.8rem" }}>✓</span> : (
-                            <button onClick={() => markAttendance(row.employee_id, "absent", 0)} disabled={isMarking}
+                            <button onClick={() => markAttendance(row.employee_id, "absent", 0, row.is_temp)} disabled={isMarking}
                               style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 11px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.76rem", background: row.status === "absent" ? "#ef4444" : "#fef2f2", color: row.status === "absent" ? "#fff" : "#dc2626", opacity: isMarking ? 0.6 : 1 }}>
                               <FaTimes /> Absent
                             </button>
@@ -356,6 +407,43 @@ const DailySalary: React.FC = () => {
                 </tfoot>
               </table>
             </div>
+
+            {/* Temp worker form */}
+            {showTempForm ? (
+              <div style={{ padding: "16px 20px", borderTop: "1px solid #f1f5f9", background: "#fefce8", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#92400e" }}>+ Temp Worker</span>
+                <input
+                  type="text" placeholder="Worker name" value={tempName}
+                  onChange={e => setTempName(e.target.value)}
+                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #fde68a", fontSize: "0.88rem", outline: "none", flex: "1", minWidth: "140px" }}
+                  autoFocus
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span style={{ color: "#92400e", fontWeight: 700 }}>₹</span>
+                  <input
+                    type="number" placeholder="Daily rate" value={tempRate}
+                    onChange={e => setTempRate(e.target.value === "" ? "" : Number(e.target.value))}
+                    onKeyDown={e => e.key === "Enter" && addTempWorker()}
+                    style={{ padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #fde68a", fontSize: "0.88rem", outline: "none", width: "110px" }}
+                  />
+                </div>
+                <button onClick={addTempWorker}
+                  style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#f59e0b", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                  Add
+                </button>
+                <button onClick={() => { setShowTempForm(false); setTempName(""); setTempRate(""); }}
+                  style={{ padding: "8px 14px", borderRadius: "8px", border: "1px solid #fde68a", background: "#fff", color: "#92400e", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: "12px 20px", borderTop: "1px dashed #fde68a" }}>
+                <button onClick={() => setShowTempForm(true)}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 16px", borderRadius: "8px", border: "1.5px dashed #f59e0b", background: "#fefce8", color: "#92400e", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer" }}>
+                  + Add Temporary Worker
+                </button>
+              </div>
+            )}
 
             {/* Process footer */}
             {payableRows.length > 0 && (
