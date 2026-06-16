@@ -22,26 +22,29 @@ export const createBroker = async (user, brokerData) => {
         }
         const groupId = groupRes.rows[0].id;
 
-        // 2. Insert Broker
+        // 2. Insert Broker — add opening_balance column if it doesn't exist yet
+        await client.query(`ALTER TABLE brokers ADD COLUMN IF NOT EXISTS opening_balance NUMERIC(15,2) DEFAULT 0`).catch(() => {});
+
         const sql = `
-            INSERT INTO brokers (company_id, name, phone, address, broker_type, commission_rate)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO brokers (company_id, name, phone, address, broker_type, commission_rate, opening_balance)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
         `;
+        const openingBalance = parseFloat(brokerData.opening_balance) || 0;
         const res = await client.query(sql, [
-            companyId, brokerData.name, brokerData.phone, brokerData.address, 
-            brokerData.broker_type || 'BOTH', brokerData.commission_rate || 0
+            companyId, brokerData.name, brokerData.phone, brokerData.address,
+            brokerData.broker_type || 'BOTH', brokerData.commission_rate || 0, openingBalance
         ]);
         const broker = res.rows[0];
 
         // 3. Create Ledger for this specific broker (if not exists)
         const ledgerName = broker.name + ' - Commission Payable';
         const ledgerCheck = await client.query("SELECT id FROM ledgers WHERE company_id = $1 AND name = $2", [companyId, ledgerName]);
-        
+
         if (!ledgerCheck.rows[0]) {
             await client.query(
                 `INSERT INTO ledgers (company_id, name, group_id, opening_balance, is_dr) VALUES ($1, $2, $3, $4, $5)`,
-                [companyId, ledgerName, groupId, 0, 0]
+                [companyId, ledgerName, groupId, openingBalance, 0]
             );
         }
 
@@ -271,9 +274,9 @@ export const getBrokerLedger = async (companyId, brokerId) => {
 
 export const getBrokerSummary = async (companyId) => {
     const sql = `
-        SELECT 
+        SELECT
             b.id, b.name, b.broker_type, b.commission_rate as default_rate,
-            COALESCE(SUM(bc.commission_amount), 0) as total_earned,
+            COALESCE(b.opening_balance, 0) + COALESCE(SUM(bc.commission_amount), 0) as total_earned,
             COALESCE((
                 SELECT SUM(tl.debit_amount) 
                 FROM transactions t 

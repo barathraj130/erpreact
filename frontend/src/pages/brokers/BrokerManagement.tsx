@@ -12,8 +12,8 @@ const BrokerManagement: React.FC = () => {
   const [payBroker, setPayBroker] = useState<brokerApi.BrokerSummary | null>(null);
   const [payForm, setPayForm] = useState({ amount: 0, payment_date: new Date().toISOString().split("T")[0], payment_mode: "CASH" });
   const [payLoading, setPayLoading] = useState(false);
-  const [formData, setFormData] = useState<{ name: string; phone: string; address: string; broker_type: 'PURCHASE' | 'SALES' | 'BOTH'; commission_rate: number }>({
-    name: "", phone: "", address: "", broker_type: "BOTH", commission_rate: 0
+  const [formData, setFormData] = useState<{ name: string; phone: string; address: string; broker_type: 'PURCHASE' | 'SALES' | 'BOTH'; commission_rate: number; opening_balance: number }>({
+    name: "", phone: "", address: "", broker_type: "BOTH", commission_rate: 0, opening_balance: 0
   });
   const navigate = useNavigate();
 
@@ -35,7 +35,7 @@ const BrokerManagement: React.FC = () => {
     try {
       await brokerApi.createBroker(formData);
       setShowModal(false);
-      setFormData({ name: "", phone: "", address: "", broker_type: "BOTH", commission_rate: 0 });
+      setFormData({ name: "", phone: "", address: "", broker_type: "BOTH", commission_rate: 0, opening_balance: 0 });
       loadBrokers();
     } catch { alert("Failed to create broker"); }
   };
@@ -237,6 +237,13 @@ const BrokerManagement: React.FC = () => {
                     <option value="PURCHASE">Purchase Only</option>
                     <option value="SALES">Sales Only</option>
                   </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "6px" }}>Opening Balance (₹)</label>
+                  <input type="number" step="0.01" min="0" value={formData.opening_balance || ""} placeholder="0"
+                    onChange={e => setFormData({ ...formData, opening_balance: Number(e.target.value) })}
+                    style={{ width: "100%", padding: "12px 16px", borderRadius: "12px", border: "1px solid #e2e8f0", outline: "none", fontSize: "14px", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px" }}>Commission owed to this broker before using this system</div>
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "6px" }}>Address</label>
