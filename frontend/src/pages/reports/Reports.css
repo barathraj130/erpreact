@@ -300,7 +300,7 @@
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
-    overflow-x: visible;
+    overflow-x: auto;
     min-width: 0;
 }
 
