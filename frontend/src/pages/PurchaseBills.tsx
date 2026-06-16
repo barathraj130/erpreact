@@ -12,6 +12,7 @@ import {
   FaSearch,
   FaSync,
   FaTimes,
+  FaTrash,
 } from "react-icons/fa";
 import { PurchaseBill, fetchPurchaseBills } from "../api/purchaseBillApi";
 import { scanProductFromBill } from "../api/productApi";
@@ -161,6 +162,21 @@ const PurchaseBills: React.FC = () => {
     });
     setBillFile(null);
     setShowCreateModal(true);
+  };
+
+  const handleDelete = async (bill: any) => {
+    if (!window.confirm(`Delete bill #${bill.bill_number} from ${bill.supplier_name}? This cannot be undone.`)) return;
+    try {
+      const res = await apiFetch(`/purchase-bills/${bill.id}/archive`, { method: "PATCH" });
+      if (res.ok) {
+        setBills(prev => prev.filter(b => b.id !== bill.id));
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to delete bill.");
+      }
+    } catch {
+      alert("An error occurred while deleting.");
+    }
   };
 
   const resetForm = () => {
@@ -371,8 +387,9 @@ const PurchaseBills: React.FC = () => {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <button className="control-btn" style={{ background: "#f8fafc" }} onClick={() => handleViewBill(bill)}><FaEye /></button>
-                      <button className="control-btn" style={{ background: "var(--primary-glow)", color: "var(--primary)" }} onClick={() => handleEdit(bill)}><FaEdit /></button>
+                      <button className="control-btn" style={{ background: "#f8fafc" }} onClick={() => handleViewBill(bill)} title="View"><FaEye /></button>
+                      <button className="control-btn" style={{ background: "var(--primary-glow)", color: "var(--primary)" }} onClick={() => handleEdit(bill)} title="Edit"><FaEdit /></button>
+                      <button className="control-btn" style={{ background: "#fef2f2", color: "#ef4444" }} onClick={() => handleDelete(bill)} title="Delete"><FaTrash /></button>
                     </div>
                   </div>
                 </motion.div>
@@ -481,6 +498,14 @@ const PurchaseBills: React.FC = () => {
                           title="Edit"
                         >
                           <FaEdit />
+                        </button>
+                        <button
+                          className="control-btn"
+                          style={{ background: "#fef2f2", color: "#ef4444" }}
+                          onClick={() => handleDelete(bill)}
+                          title="Delete"
+                        >
+                          <FaTrash />
                         </button>
                       </div>
                     </td>
