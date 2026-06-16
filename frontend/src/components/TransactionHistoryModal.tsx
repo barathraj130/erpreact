@@ -228,6 +228,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   };
 
   const summaryCards = entityType === "customer" ? [
+    { label: "Opening Balance", value: customerSummary?.opening_balance || 0, color: "#6366f1", bg: "#eef2ff", icon: <FaInfoCircle size={14} /> },
     { label: "Total Billed", value: customerSummary?.total_billed || 0, color: "#0f766e", bg: "#f0fdfa", icon: <FaFileInvoiceDollar size={14} /> },
     { label: "Total Paid", value: customerSummary?.total_paid || 0, color: "#2563eb", bg: "#eff6ff", icon: <FaCheckCircle size={14} /> },
     { label: "Total Returns", value: customerSummary?.total_returns || 0, color: "#d97706", bg: "#fffbeb", icon: <FaUndo size={14} /> },
@@ -295,7 +296,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
         
         .thm-body { flex: 1; overflow: hidden; padding: 24px; display: flex; flex-direction: column; gap: 20px; min-height: 0; }
         .thm-info-bar { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; font-size: 13px; }
-        .thm-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .thm-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
         .thm-stat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px; }
         .thm-stat-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
         .thm-stat-value { font-size: 22px; font-weight: 900; margin-top: 4px; }
@@ -429,6 +430,30 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                         </tr>
                       </thead>
                       <tbody>
+                        {/* Opening Balance row — always pinned first */}
+                        {(() => {
+                          const ob = entityType === "customer"
+                            ? (customerSummary?.opening_balance || 0)
+                            : (supplierLedger?.summary?.opening_balance || 0);
+                          if (ob === 0) return null;
+                          return (
+                            <tr key="opening-balance" style={{ background: "#f0fdf4", borderBottom: "2px solid #bbf7d0" }}>
+                              <td style={{ whiteSpace: "nowrap", color: "#64748b", fontSize: 12 }}>—</td>
+                              <td>
+                                <div style={{ fontWeight: 700, color: "#15803d" }}>Opening Balance</div>
+                                <div style={{ fontSize: 10, color: "#86efac", marginTop: 2 }}>
+                                  <span className="thm-row-type-badge" style={{ background: "#dcfce7", color: "#15803d" }}>OPENING</span>
+                                  Balance brought forward
+                                </div>
+                              </td>
+                              <td>—</td>
+                              <td className="right" style={{ color: "#cbd5e1" }}>—</td>
+                              <td className="right" style={{ color: "#cbd5e1" }}>—</td>
+                              <td className="right" style={{ fontWeight: 800, color: "#15803d" }}>{fmt(ob)}</td>
+                              {entityType === "customer" && <td />}
+                            </tr>
+                          );
+                        })()}
                         {(entityType === "customer" ? customerRows : supplierTransactions).map((row: any) => (
                           <tr key={row.id}>
                             <td style={{ whiteSpace: 'nowrap' }}><FaCalendarAlt size={10} style={{marginRight: 6, color: '#cbd5e1'}} />{formatDate(row.date)}</td>
