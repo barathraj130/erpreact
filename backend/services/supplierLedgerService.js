@@ -103,7 +103,7 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
          t.created_at AS sort_created_at
        FROM transactions t
        WHERE t.company_id = $1
-         AND t.reference_type = 'SUPPLIER_PAYMENT'
+         AND t.reference_type IN ('SUPPLIER_PAYMENT', 'supplier')
          AND t.reference_id::text = $2::text
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,

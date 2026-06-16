@@ -657,30 +657,32 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
             <div style={{ overflowX: "auto" }}>
               {billCategory === "PRODUCT" ? (
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col style={{ width: "40%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "15%" }} />
+                    {billType === "TAX" && <col style={{ width: "12%" }} />}
+                    <col style={{ width: billType === "TAX" ? "16%" : "28%" }} />
+                    <col style={{ width: "4%" }} />
+                  </colgroup>
                   <thead>
                     <tr style={{ textAlign: "left", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
-                      <th style={{ padding: "15px", width: "60px" }}>IMG</th>
-                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Product Description</th>
-                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>Qty</th>
-                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "150px" }}>Rate (₹)</th>
+                      <th style={{ padding: "12px 14px", fontSize: "0.72rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Product Description</th>
+                      <th style={{ padding: "12px 8px", fontSize: "0.72rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center" }}>Qty</th>
+                      <th style={{ padding: "12px 8px", fontSize: "0.72rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right" }}>Rate (₹)</th>
                       {billType === "TAX" && (
-                        <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center", width: "100px" }}>GST %</th>
+                        <th style={{ padding: "12px 8px", fontSize: "0.72rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "center" }}>GST %</th>
                       )}
-                      <th style={{ padding: "15px", fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right", width: "160px" }}>Total (₹)</th>
-                      <th style={{ padding: "15px", width: "50px" }}></th>
+                      <th style={{ padding: "12px 8px", fontSize: "0.72rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", textAlign: "right" }}>Total (₹)</th>
+                      <th />
                     </tr>
                   </thead>
                   <tbody>
                     <AnimatePresence>
                       {items.map((item, idx) => (
                         <motion.tr key={idx} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -10 }} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "10px" }}>
-                            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "#f1f5f9", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #e2e8f0" }}>
-                               {item.imageUrl ? <img src={item.imageUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <FaBox color="#cbd5e1" />}
-                            </div>
-                          </td>
-                          <td style={{ padding: "10px" }}>
+                          <td style={{ padding: "8px 10px" }}>
                             <ProductCombobox
                               products={products}
                               value={item.id}
@@ -693,34 +695,34 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                 setProducts((prev: any[]) => [...prev, { id, name }]);
                                 handleProductSelect(idx, name, id);
                               }}
-                              style={{ padding: "10px", borderRadius: "10px", fontSize: "0.95rem" }}
+                              style={{ padding: "9px 10px", borderRadius: "8px", fontSize: "0.88rem" }}
                               placeholder="Type or select product..."
                             />
                           </td>
-                          <td style={{ padding: "10px" }}>
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+                          <td style={{ padding: "8px 6px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                               <input type="number" value={item.qty} min={1} onChange={e => {
                                   const t = [...items]; t[idx].qty = parseFloat(e.target.value) || 0; setItems(t);
-                              }} style={{ width: "80px", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 600 }} />
-                              <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: 700 }}>{item.unit}</span>
+                              }} style={{ width: "100%", padding: "9px 6px", borderRadius: "8px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 700, fontSize: "0.9rem", boxSizing: "border-box" }} />
+                              <span style={{ fontSize: "0.6rem", color: "#94a3b8", fontWeight: 700 }}>{item.unit}</span>
                             </div>
                           </td>
-                          <td style={{ padding: "10px" }}>
-                            <input type="number" value={item.rate} min={0} onChange={e => {
+                          <td style={{ padding: "8px 6px" }}>
+                            <input type="number" value={item.rate || ""} min={0} placeholder="0" onChange={e => {
                                 const t = [...items]; t[idx].rate = parseFloat(e.target.value) || 0; setItems(t);
-                            }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }} />
+                            }} style={{ width: "100%", padding: "9px 8px", borderRadius: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700, fontSize: "0.9rem", boxSizing: "border-box" }} />
                           </td>
                           {billType === "TAX" && (
-                            <td style={{ padding: "10px" }}>
+                            <td style={{ padding: "8px 6px" }}>
                               <select value={item.gstRate} onChange={e => {
                                   const t = [...items]; t[idx].gstRate = parseInt(e.target.value); setItems(t);
-                              }} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid #e2e8f0", background: "#fff" }}>
+                              }} style={{ width: "100%", padding: "9px 6px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}>
                                 {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
                               </select>
                             </td>
                           )}
-                          <td style={{ padding: "10px", textAlign: "right" }}>
-                             <div style={{ fontWeight: 800, color: "#1e293b" }}>
+                          <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                             <div style={{ fontWeight: 800, color: "#1e293b", fontSize: "0.95rem" }}>
                                ₹{((item.qty * item.rate) + (billType === "TAX" ? (item.qty * item.rate * item.gstRate / 100) : 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                              </div>
                           </td>

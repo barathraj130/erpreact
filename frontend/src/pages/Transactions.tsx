@@ -125,8 +125,8 @@ const Transactions: React.FC = () => {
     });
 
     let refType = "general";
-    if (formData.type.includes("CUSTOMER")) refType = "customer";
-    if (formData.type.includes("SUPPLIER")) refType = "supplier";
+    if (formData.type.includes("CUSTOMER")) refType = "CUSTOMER_PAYMENT";
+    if (formData.type.includes("SUPPLIER")) refType = "SUPPLIER_PAYMENT";
     if (formData.type.includes("SALARY") || formData.type.includes("ADVANCE")) refType = "employee";
     data.set("reference_type", refType);
 
