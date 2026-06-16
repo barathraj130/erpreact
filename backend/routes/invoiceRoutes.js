@@ -637,6 +637,13 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         console.log(`[invoice-create] invoiceLevelBranchId=${invoiceLevelBranchId} isNameOnly=${isNameOnly}`);
         const allItems = [...processedItems, ...processedReturnItems];
+        // Ensure lot tracking columns exist (added after initial schema)
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_id INTEGER`).catch(() => {});
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS stock_type VARCHAR(50)`).catch(() => {});
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(15,2)`).catch(() => {});
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS profit_per_piece NUMERIC(15,2)`).catch(() => {});
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS total_profit NUMERIC(15,2)`).catch(() => {});
+
         for (const item of allItems) {
             console.log(`[invoice-create] item: product_id=${item.product_id} desc=${item.desc || item.description} qty=${item.qty}`);
             if (item.product_id) {
