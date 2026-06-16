@@ -780,10 +780,21 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     }
     const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
     const balDate = date || '2020-01-01';
+
+    // Use the same source-aware inflow logic as GET /cash and GET /bank
+    // so that netOthers matches exactly what the ledger display computes.
+    const CASH_INFLOWS_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+    const BANK_INFLOWS_SQL = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+    const inflowsSql = ledger_type === 'BANK' ? BANK_INFLOWS_SQL : CASH_INFLOWS_SQL;
+
     try {
         // Back-calculate the opening entry so that closing balance = desired
         const othersRow = await db.pgGet(
-            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+            `SELECT COALESCE(SUM(CASE
+                WHEN source IN (${inflowsSql}) THEN ABS(amount)
+                WHEN direction = 'in' THEN amount
+                ELSE -amount
+             END), 0) AS net
              FROM ${tbl} WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
             [companyId]
         );
