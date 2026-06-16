@@ -669,7 +669,7 @@ const Ledgers: React.FC = () => {
             </div>
 
             <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "20px", lineHeight: 1.5 }}>
-              Sets the starting balance for the selected ledger. All existing transactions are kept — only the opening balance figure changes.
+              Enter the actual balance you currently have. All existing transactions are kept — the system adjusts the opening entry so the final balance matches what you enter.
             </p>
 
             <form onSubmit={handleSetOpeningBalance}>
@@ -694,9 +694,10 @@ const Ledgers: React.FC = () => {
               </div>
 
               <div style={{ marginBottom: "20px" }}>
-                <label style={{ fontSize: "12px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "6px" }}>OPENING AMOUNT (₹)</label>
-                <input type="number" min="0" step="0.01" placeholder="e.g. 10000" value={obAmount} onChange={e => setObAmount(e.target.value)} required
+                <label style={{ fontSize: "12px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "6px" }}>CURRENT BALANCE (₹)</label>
+                <input type="number" min="0" step="0.01" placeholder="e.g. 3380" value={obAmount} onChange={e => setObAmount(e.target.value)} required
                   style={{ width: "100%", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "14px", boxSizing: "border-box" }} />
+                <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0 0" }}>Enter the actual cash/bank balance you have right now</p>
               </div>
 
               {obMsg && (

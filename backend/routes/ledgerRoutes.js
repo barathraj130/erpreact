@@ -781,18 +781,26 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
     const balDate = date || '2020-01-01';
     try {
-        // Directly set the opening balance entry to the user-specified amount
+        // Back-calculate the opening entry so that closing balance = desired
+        const othersRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+             FROM ${tbl} WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        const netOthers = parseFloat(othersRow?.net || 0);
+        const needed = desired - netOthers;
+
         await db.pgRun(
             `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
-        if (Math.abs(desired) > 0.001) {
+        if (Math.abs(needed) > 0.001) {
             await db.pgRun(
                 `INSERT INTO ${tbl} (company_id, source, amount, direction, date) VALUES ($1, 'OPENING_BALANCE', $2, $3, $4)`,
-                [companyId, Math.abs(desired), desired >= 0 ? 'in' : 'out', balDate]
+                [companyId, Math.abs(needed), needed >= 0 ? 'in' : 'out', balDate]
             );
         }
-        res.json({ success: true, message: `Opening balance set to ₹${desired.toFixed(2)}` });
+        res.json({ success: true, message: `Balance set to ₹${desired.toFixed(2)}` });
     } catch (err) {
         console.error('[set-opening-balance]', err.message);
         res.status(500).json({ error: 'Failed to set opening balance' });
