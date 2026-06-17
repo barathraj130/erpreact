@@ -317,17 +317,27 @@ const Ledgers: React.FC = () => {
     setObLoading(true);
     setObMsg(null);
     try {
+      console.log('[SetOpeningBalance] Calling API with:', { ledger_type: obLedgerType, amount: amt, date: obDate });
       const res = await apiFetch("/ledger/set-opening-balance", {
         method: "POST",
         body: { ledger_type: obLedgerType, amount: amt, date: obDate },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
-      setObMsg({ type: "success", text: data.message });
+      console.log('[SetOpeningBalance] Response:', res.status, data);
+      // Backend always returns HTTP 200 — must check data.success, not res.ok
+      if (!data.success) {
+        throw new Error(data.error || 'Backend failed to update balance. Check server logs.');
+      }
+      setObMsg({ type: "success", text: data.message || `Balance set to ₹${amt.toLocaleString('en-IN')}` });
       setObAmount("");
-      await fetchData();
+      // Reload after 1.5s so the ledger reflects the new balance
+      setTimeout(() => {
+        setShowObModal(false);
+        window.location.reload();
+      }, 1500);
     } catch (err: any) {
-      setObMsg({ type: "error", text: err.message });
+      console.error('[SetOpeningBalance] Error:', err);
+      setObMsg({ type: "error", text: err.message || 'Network error — check console' });
     } finally {
       setObLoading(false);
     }
