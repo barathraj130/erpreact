@@ -74,8 +74,9 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
 
         // Known inflow sources always count as positive regardless of stored direction
         // Self-heal: fix inflow sources stored with wrong direction='out'
-        // NOTE: CUSTOMER_PAYMENT is intentionally excluded — those entries are always deleted in Step 1
-        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // NOTE: OPENING_BALANCE excluded — direction='out' is intentional when back-calculation
+        // produces a negative needed value. Flipping it would destroy the balance correction.
+        const INFLOW_SET = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         await Promise.all([
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
@@ -459,10 +460,12 @@ router.get('/bank', authMiddleware, async (req, res) => {
         ).catch(()=>{});
 
         // ── Self-heal step 1: fix inflow sources stored with wrong direction='out' ──
+        // NOTE: OPENING_BALANCE is intentionally excluded — its direction may be 'out'
+        // when back-calculation produces a negative needed value.
         await db.pgRun(
             `UPDATE bank_ledger SET direction='in'
              WHERE company_id=$1
-               AND source IN ('OPENING_BALANCE','RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+               AND source IN ('RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
                AND direction='out' AND amount>0`,
             [companyId]
         ).catch(()=>{});
