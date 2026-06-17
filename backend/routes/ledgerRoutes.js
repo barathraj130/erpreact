@@ -771,10 +771,9 @@ router.patch('/:id/archive', authMiddleware, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// POST /ledger/set-opening-balance  — directly set the OPENING_BALANCE entry
-// Deletes any existing OPENING_BALANCE row and inserts a new one with the
-// exact desired amount. All other transactions remain untouched.
-// The Balance b/d shown in the ledger will reflect this entry directly.
+// POST /ledger/set-opening-balance  — set current balance to the desired value
+// Back-calculates: needed = desired - netOthers, stores as OPENING_BALANCE entry.
+// This ensures: OPENING_BALANCE + all other entries = desired (current balance).
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
@@ -790,18 +789,29 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     const balDate = date || '2020-01-01';
 
     try {
+        // Compute net of all non-OPENING transactions (all dates) so we can back-calculate
+        // the opening entry needed to make the closing balance equal `desired`.
+        // closing = OPENING_BALANCE + netOthers  →  OPENING_BALANCE = desired - netOthers
+        const othersRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+             FROM ${tbl} WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+            [companyId]
+        );
+        const netOthers = parseFloat(othersRow?.net || 0);
+        const needed = desired - netOthers;
+
         // Remove any existing OPENING_BALANCE entry for this company
         await db.pgRun(
             `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
 
-        // Directly insert the new opening balance entry with the exact desired amount
-        if (desired > 0.001) {
+        // Insert back-calculated opening entry (may be negative, stored as direction='out')
+        if (Math.abs(needed) > 0.001) {
             await db.pgRun(
                 `INSERT INTO ${tbl} (company_id, source, amount, direction, date)
-                 VALUES ($1, 'OPENING_BALANCE', $2, 'in', $3)`,
-                [companyId, desired, balDate]
+                 VALUES ($1, 'OPENING_BALANCE', $2, $3, $4)`,
+                [companyId, Math.abs(needed), needed >= 0 ? 'in' : 'out', balDate]
             );
         }
 
