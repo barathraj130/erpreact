@@ -62,6 +62,9 @@ const Transactions: React.FC = () => {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   // WhatsApp send state per transaction id
   const [waSending, setWaSending] = useState<Record<string, 'idle'|'sending'|'sent'|'error'>>({});
+  // Backdated confirmation modal
+  const [showBackdateModal, setShowBackdateModal] = useState(false);
+  const [pendingTxData, setPendingTxData] = useState<FormData | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -115,37 +118,68 @@ const Transactions: React.FC = () => {
     if (e.target.files?.[0]) setProofFile(e.target.files[0]);
   };
 
-  const handleCreateTx = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const buildTxFormData = () => {
     const data = new FormData();
     Object.keys(formData).forEach(key => {
-      // skip empty reference_id — DB column is integer, can't accept ""
       if (key === "reference_id" && !formData[key]) return;
       data.append(key, formData[key]);
     });
-
     let refType = "general";
     if (formData.type.includes("CUSTOMER")) refType = "CUSTOMER_PAYMENT";
     if (formData.type.includes("SUPPLIER")) refType = "SUPPLIER_PAYMENT";
     if (formData.type.includes("SALARY") || formData.type.includes("ADVANCE")) refType = "employee";
     data.set("reference_type", refType);
-
     if (proofFile) data.append("proof", proofFile);
+    return data;
+  };
 
+  const handleCreateTx = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const today = new Date().toISOString().split("T")[0];
+    const isBackdated = formData.date < today;
+    const data = buildTxFormData();
+
+    if (isBackdated) {
+      // Pause and ask user whether to adjust opening balance
+      setPendingTxData(data);
+      setShowBackdateModal(true);
+      return;
+    }
+    await postTransaction(data, false);
+  };
+
+  const postTransaction = async (data: FormData, adjustOpeningBalance: boolean) => {
     try {
-      const res = await apiFetch("/transactions", {
-        method: "POST",
-        body: data
-      }, false); // false = not JSON, it's FormData
-      if (res.ok) {
-        setShowNewTxModal(false);
-        setProofFile(null);
-        fetchData();
-        alert("Transaction recorded.");
-      } else {
+      // If adjusting opening balance: capture current balance before posting
+      const ledgerType: "CASH" | "BANK" = formData.mode === "BANK" ? "BANK" : "CASH";
+      let balanceBefore = 0;
+      if (adjustOpeningBalance) {
+        const balRes = await apiFetch("/ledger/balance/current");
+        const balData = await balRes.json();
+        balanceBefore = ledgerType === "BANK" ? Number(balData.bank || 0) : Number(balData.cash || 0);
+      }
+
+      const res = await apiFetch("/transactions", { method: "POST", body: data }, false);
+      if (!res.ok) {
         const err = await res.json();
         alert(err.error || "Failed to record transaction.");
+        return;
       }
+
+      // If user wants to keep current balance same → re-set opening balance to pre-tx value
+      if (adjustOpeningBalance && balanceBefore !== 0) {
+        await apiFetch("/ledger/set-opening-balance", {
+          method: "POST",
+          body: { ledger_type: ledgerType, amount: balanceBefore, date: "2024-04-01" },
+        });
+      }
+
+      setShowNewTxModal(false);
+      setShowBackdateModal(false);
+      setPendingTxData(null);
+      setProofFile(null);
+      fetchData();
+      alert("Transaction recorded.");
     } catch (err: any) {
       alert("Failed to record transaction: " + (err?.message || "Unknown error"));
     }
@@ -578,6 +612,46 @@ const Transactions: React.FC = () => {
                 <button type="submit" className="btn btn-primary" style={{ borderRadius: "10px" }} disabled={loading}><FaCheck size={12} /> Post Transaction</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Backdated Transaction Confirmation Modal ── */}
+      {showBackdateModal && pendingTxData && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "#fff", borderRadius: "18px", width: "100%", maxWidth: "460px", boxShadow: "0 24px 60px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+            <div style={{ padding: "24px 28px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+                <div style={{ width: "42px", height: "42px", borderRadius: "12px", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>📅</div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b" }}>Backdated Transaction</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Date: {formData.date}</div>
+                </div>
+              </div>
+              <p style={{ fontSize: "0.9rem", color: "#374151", lineHeight: 1.6, marginBottom: "8px" }}>
+                This transaction is dated <strong>before today</strong>. Should it adjust the opening balance so your <strong>current balance stays the same</strong>?
+              </p>
+              <div style={{ display: "grid", gap: "10px", marginBottom: "20px" }}>
+                <button
+                  onClick={() => postTransaction(pendingTxData, true)}
+                  style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #6366f1", background: "#eef2ff", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, color: "#4338ca", fontSize: "0.92rem" }}>✅ Yes — adjust opening balance</div>
+                  <div style={{ fontSize: "0.78rem", color: "#6366f1", marginTop: "3px" }}>This entry existed before — keep current balance unchanged</div>
+                </button>
+                <button
+                  onClick={() => postTransaction(pendingTxData, false)}
+                  style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "0.92rem" }}>➕ No — just add the transaction</div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "3px" }}>Current balance will change by this amount</div>
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: "14px 28px", borderTop: "1px solid #f1f5f9", background: "#fafafa", display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowBackdateModal(false); setPendingTxData(null); }}
+                style={{ padding: "8px 20px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
