@@ -588,11 +588,36 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
     try {
         console.log(`📊 Health Summary [Co:${companyId}] using Filter: ${branchFilter}`);
 
-        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','CUSTOMER_PAYMENT','INVOICE','Payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // ── Clean up duplicates before balance calc (same logic as bank ledger GET) ──
+        await db.pgRun(`
+            DELETE FROM bank_ledger
+            WHERE company_id = $1
+              AND source = 'INVOICE_PAYMENT'
+              AND EXISTS (
+                SELECT 1 FROM bank_ledger bl2
+                WHERE bl2.company_id = $1
+                  AND bl2.invoice_id IS NOT NULL
+                  AND bl2.amount = bank_ledger.amount
+                  AND bl2.date = bank_ledger.date
+              )
+        `, [companyId]).catch(()=>{});
+
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND source = 'CUSTOMER_PAYMENT'
+              AND (reference_id IS NULL OR EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id AND t.type = 'CUSTOMER_PAYMENT'
+              ))
+        `, [companyId]).catch(()=>{});
+
+        // Use same INFLOW_SET as balance/current — no CUSTOMER_PAYMENT, includes lowercase 'payment'
+        const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT','INVOICE_PAYMENT'`;
         const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalCash = Number(cashRows?.balance || 0);
 
-        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
+        const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction='in' THEN amount ELSE -amount END) WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalBank = Number(bankRows?.balance || 0);
 
         const invoiceRows = await db.pgAll(`
