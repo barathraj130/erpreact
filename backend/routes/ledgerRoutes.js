@@ -787,35 +787,43 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     }
     const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
     const balDate = date || '2020-01-01';
+    const { filter: branchFilter, branchId } = getBranchFilter(req);
+    const branchIdVal = typeof branchId === 'number' ? branchId : 1;
+
+    // Use identical formula to display query so netOthers matches exactly
+    const INFLOW_SRC = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
 
     try {
-        // Compute net of all non-OPENING transactions (all dates) so we can back-calculate
-        // the opening entry needed to make the closing balance equal `desired`.
-        // closing = OPENING_BALANCE + netOthers  →  OPENING_BALANCE = desired - netOthers
+        // Compute net of all non-OPENING transactions using the same formula as display.
+        // Display uses ABS(amount) for inflow sources — we must match that exactly.
         const othersRow = await db.pgGet(
-            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
-             FROM ${tbl} WHERE company_id = $1 AND source != 'OPENING_BALANCE'`,
+            `SELECT COALESCE(SUM(CASE
+                WHEN source IN (${INFLOW_SRC}) THEN ABS(amount)
+                WHEN direction='in' THEN amount
+                ELSE -amount
+             END), 0) AS net
+             FROM ${tbl} WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'`,
             [companyId]
         );
         const netOthers = parseFloat(othersRow?.net || 0);
         const needed = desired - netOthers;
 
-        // Remove any existing OPENING_BALANCE entry for this company
+        // Remove existing OPENING_BALANCE entries for this company+branch
         await db.pgRun(
             `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
 
-        // Insert back-calculated opening entry (may be negative, stored as direction='out')
+        // Insert back-calculated opening entry with branch_id so display query finds it
         if (Math.abs(needed) > 0.001) {
             await db.pgRun(
-                `INSERT INTO ${tbl} (company_id, source, amount, direction, date)
-                 VALUES ($1, 'OPENING_BALANCE', $2, $3, $4)`,
-                [companyId, Math.abs(needed), needed >= 0 ? 'in' : 'out', balDate]
+                `INSERT INTO ${tbl} (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1, $2, 'OPENING_BALANCE', $3, $4, $5)`,
+                [companyId, branchIdVal, Math.abs(needed), needed >= 0 ? 'in' : 'out', balDate]
             );
         }
 
-        res.json({ success: true, message: `Balance set to ₹${desired.toFixed(2)}` });
+        res.json({ success: true, message: `Balance set to ₹${desired.toFixed(2)}`, debug: { netOthers, needed, branchFilter } });
     } catch (err) {
         console.error('[set-opening-balance]', err.message);
         res.status(500).json({ error: 'Failed to set opening balance' });
