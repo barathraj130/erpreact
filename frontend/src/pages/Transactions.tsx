@@ -635,21 +635,21 @@ const Transactions: React.FC = () => {
                 <button
                   onClick={() => postTransaction(pendingTxData, true)}
                   style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #6366f1", background: "#eef2ff", cursor: "pointer", textAlign: "left" }}>
-                  <div style={{ fontWeight: 700, color: "#4338ca", fontSize: "0.92rem" }}>✅ Yes — adjust opening balance</div>
-                  <div style={{ fontSize: "0.78rem", color: "#6366f1", marginTop: "3px" }}>This entry existed before — keep current balance unchanged</div>
+                  <div style={{ fontWeight: 700, color: "#4338ca", fontSize: "0.92rem" }}>✅ Add &amp; adjust opening balance</div>
+                  <div style={{ fontSize: "0.78rem", color: "#6366f1", marginTop: "3px" }}>Transaction appears in ledger — current balance stays the same</div>
                 </button>
                 <button
                   onClick={() => postTransaction(pendingTxData, false)}
                   style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", textAlign: "left" }}>
-                  <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "0.92rem" }}>➕ No — just add the transaction</div>
-                  <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "3px" }}>Current balance will change by this amount</div>
+                  <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "0.92rem" }}>➕ Add to ledger normally</div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "3px" }}>Transaction appears in ledger — current balance will increase</div>
                 </button>
               </div>
             </div>
             <div style={{ padding: "14px 28px", borderTop: "1px solid #f1f5f9", background: "#fafafa", display: "flex", justifyContent: "flex-end" }}>
               <button onClick={() => { setShowBackdateModal(false); setPendingTxData(null); }}
-                style={{ padding: "8px 20px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer" }}>
-                Cancel
+                style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid #ef4444", background: "#fff", color: "#ef4444", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                ✕ Cancel — don't add this transaction
               </button>
             </div>
           </div>
