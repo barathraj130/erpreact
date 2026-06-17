@@ -325,6 +325,27 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
+        // ── Step 5: Sync missing CASH invoice payments into cash_ledger ──
+        //    If an invoice was paid via CASH but the cash_ledger entry was never created, back-fill it.
+        await db.pgRun(`
+            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id)
+            SELECT i.company_id, COALESCE(i.branch_id, 1), 'payment', ip.amount, 'in',
+                   COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE),
+                   i.id
+            FROM invoice_payments ip
+            JOIN invoices i ON i.id = ip.invoice_id
+            WHERE i.company_id = $1
+              AND UPPER(ip.payment_method) = 'CASH'
+              AND ip.amount > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM cash_ledger cl
+                WHERE cl.company_id = $1
+                  AND cl.invoice_id = i.id
+                  AND cl.amount = ip.amount
+                  AND cl.date = COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE)
+              )
+        `, [companyId]).catch(()=>{});
+
         // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
         // net of all other cash transactions strictly BEFORE startDate
         const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
@@ -485,6 +506,29 @@ router.get('/bank', authMiddleware, async (req, res) => {
                   AND bl2.invoice_id IS NOT NULL
                   AND bl2.amount = bank_ledger.amount
                   AND bl2.date = bank_ledger.date
+              )
+        `, [companyId]).catch(()=>{});
+
+        // ── Self-heal step 3: sync missing invoice payments into bank_ledger ──
+        //    If an invoice was paid via BANK or UPI but the bank_ledger entry was never created
+        //    (e.g. creation-time error), back-fill it now from invoice_payments.
+        await db.pgRun(`
+            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
+            SELECT i.company_id, COALESCE(i.branch_id, 1), 'payment', ip.amount, 'in',
+                   UPPER(ip.payment_method), COALESCE(ip.reference_no, '-'),
+                   COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE),
+                   i.id
+            FROM invoice_payments ip
+            JOIN invoices i ON i.id = ip.invoice_id
+            WHERE i.company_id = $1
+              AND UPPER(ip.payment_method) IN ('BANK','UPI')
+              AND ip.amount > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM bank_ledger bl
+                WHERE bl.company_id = $1
+                  AND bl.invoice_id = i.id
+                  AND bl.amount = ip.amount
+                  AND bl.date = COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE)
               )
         `, [companyId]).catch(()=>{});
 
