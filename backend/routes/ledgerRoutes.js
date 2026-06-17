@@ -324,9 +324,8 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
-        // Opening balance = net of ALL cash transactions strictly BEFORE startDate
-        // OPENING_BALANCE honours its stored direction (can be 'out' when back-calculated)
-        // Other known inflow sources always count as positive regardless of stored direction
+        // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
+        // net of all other cash transactions strictly BEFORE startDate
         const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
@@ -338,17 +337,21 @@ router.get('/cash', authMiddleware, async (req, res) => {
             END), 0) AS balance
             FROM cash_ledger
             WHERE company_id = $1 AND ${branchFilter}
+            AND (source = 'OPENING_BALANCE'
         `;
         if (startDate) {
-            openingSql += ` AND date < $${openingParams.length + 1}`;
+            openingSql += ` OR date < $${openingParams.length + 1}`;
             openingParams.push(startDate);
+        } else {
+            openingSql += ` OR 1=1`;
         }
+        openingSql += `)`;
         const openingRow = await db.pgGet(openingSql, openingParams);
         const opening_balance = Number(openingRow?.balance || 0);
 
-        // Entries within the requested date range
+        // Entries within the requested date range — exclude OPENING_BALANCE (always in b/d)
         const params = [companyId];
-        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'`;
         let pIndex = 2;
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
@@ -482,8 +485,8 @@ router.get('/bank', authMiddleware, async (req, res) => {
               )
         `, [companyId]).catch(()=>{});
 
-        // Opening balance = net of ALL bank transactions strictly BEFORE startDate
-        // OPENING_BALANCE honours its stored direction (can be 'out' when back-calculated)
+        // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
+        // net of all other bank transactions strictly BEFORE startDate
         const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
@@ -495,17 +498,21 @@ router.get('/bank', authMiddleware, async (req, res) => {
             END), 0) AS balance
             FROM bank_ledger
             WHERE company_id = $1 AND ${branchFilter}
+            AND (source = 'OPENING_BALANCE'
         `;
         if (startDate) {
-            openingSql += ` AND date < $${openingParams.length + 1}`;
+            openingSql += ` OR date < $${openingParams.length + 1}`;
             openingParams.push(startDate);
+        } else {
+            openingSql += ` OR 1=1`;
         }
+        openingSql += `)`;
         const openingRow = await db.pgGet(openingSql, openingParams);
         const opening_balance = Number(openingRow?.balance || 0);
 
-        // Entries within the requested date range
+        // Entries within the requested date range — exclude OPENING_BALANCE (always in b/d)
         const params = [companyId];
-        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter}`;
+        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'`;
         let pIndex = 2;
         if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
         if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
