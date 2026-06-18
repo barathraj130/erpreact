@@ -24,10 +24,9 @@ router.get('/vendor-performance', authMiddleware, async (req, res) => {
       SELECT
         COALESCE(s.name, pb.supplier_name, 'Unknown') AS vendor_name,
         COUNT(pb.id) AS bill_count,
-        COALESCE(SUM(COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)), 0) AS total_purchased,
-        COALESCE(SUM((SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id)), 0) AS total_paid,
-        COALESCE(SUM(COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)), 0) -
-          COALESCE(SUM((SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id)), 0) AS outstanding,
+        COALESCE(SUM(pb.total_amount), 0) AS total_purchased,
+        COALESCE(SUM(pb.paid_amount), 0) AS total_paid,
+        COALESCE(SUM(pb.balance_amount), 0) AS outstanding,
         MAX(pb.bill_date) AS last_purchase
       FROM purchase_bills pb
       LEFT JOIN suppliers s ON pb.supplier_id = s.id
@@ -67,28 +66,16 @@ router.get('/payment-aging', authMiddleware, async (req, res) => {
     const sql = `
       SELECT
         COALESCE(s.name, pb.supplier_name, 'Unknown') AS vendor_name,
-        COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.bill_date::date <= 30
-          THEN COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) -
-            (SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id) ELSE 0 END), 0) AS days_0_30,
-        COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.bill_date::date BETWEEN 31 AND 60
-          THEN COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) -
-            (SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id) ELSE 0 END), 0) AS days_31_60,
-        COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.bill_date::date > 60
-          THEN COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) -
-            (SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id) ELSE 0 END), 0) AS days_60_plus,
-        COALESCE(SUM(
-          COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) -
-          (SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id)
-        ), 0) AS total_outstanding
+        COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.bill_date::date <= 30 THEN pb.balance_amount ELSE 0 END), 0) AS days_0_30,
+        COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.bill_date::date BETWEEN 31 AND 60 THEN pb.balance_amount ELSE 0 END), 0) AS days_31_60,
+        COALESCE(SUM(CASE WHEN CURRENT_DATE - pb.bill_date::date > 60 THEN pb.balance_amount ELSE 0 END), 0) AS days_60_plus,
+        COALESCE(SUM(pb.balance_amount), 0) AS total_outstanding
       FROM purchase_bills pb
       LEFT JOIN suppliers s ON pb.supplier_id = s.id
       WHERE pb.company_id = $1
         AND COALESCE(pb.is_deleted, false) = false
       GROUP BY s.id, s.name, pb.supplier_name
-      HAVING COALESCE(SUM(
-        COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) -
-        (SELECT COALESCE(SUM(p.amount), 0) FROM purchase_bill_payments p WHERE p.purchase_bill_id = pb.id)
-      ), 0) > 0
+      HAVING COALESCE(SUM(pb.balance_amount), 0) > 0
       ORDER BY total_outstanding DESC
     `;
     const rawData = await db.pgAll(sql, [companyId]);
