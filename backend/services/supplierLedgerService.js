@@ -85,7 +85,7 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
          NULL::TEXT AS payment_method,
          pb.created_at AS sort_created_at
        FROM purchase_bills pb
-       WHERE pb.company_id = $1 AND pb.supplier_id = $2 AND pb.paid_amount > 0
+       WHERE ${payBillConditions.join(" AND ")}
 
        UNION ALL
 
