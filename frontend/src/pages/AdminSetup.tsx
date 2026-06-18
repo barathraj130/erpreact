@@ -15,6 +15,7 @@ import {
   FaPlus,
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
+import { useTenant } from "../context/TenantContext";
 import "./PageShared.css";
 
 interface CompanyProfile {
@@ -46,6 +47,7 @@ interface Branch {
 }
 
 const AdminSetup: React.FC = () => {
+  const { refreshBranches } = useTenant();
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,6 +262,7 @@ const AdminSetup: React.FC = () => {
         setShowBranchModal(false);
         setBranchToEdit(null);
         fetchData();
+        refreshBranches();
       } else {
         const error = await res.json();
         alert(error.error || "Failed to save branch");
