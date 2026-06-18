@@ -139,8 +139,22 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               )
         `, [companyId]).catch(()=>{});
 
+        // ── Self-heal step 4b: remove cash_ledger entries synced from PROPRIETOR_AC payments ──
+        //    PROPRIETOR_AC payments go to proprietor's personal account, never company cash
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND COALESCE(t.meta->>'payment_method', '') = 'PROPRIETOR_AC'
+              )
+        `, [companyId]).catch(()=>{});
+
         // ── Self-heal step 4: sync RECEIPT transactions (company cash receipts) ──
         //    Skip transactions marked bill_purpose='excluded' (permanently deleted by user)
+        //    Skip PROPRIETOR_AC payments — those go to proprietor's personal account, not company cash
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id,1), t.type, t.amount, 'in',
@@ -150,6 +164,7 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND t.type = 'RECEIPT'
               AND t.amount > 0
               AND COALESCE(t.bill_purpose, 'real') != 'excluded'
+              AND COALESCE(t.meta->>'payment_method', '') != 'PROPRIETOR_AC'
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
@@ -311,8 +326,22 @@ router.get('/cash', authMiddleware, async (req, res) => {
               )
         `, [companyId]).catch(()=>{});
 
+        // ── Step 4b: remove cash_ledger entries synced from PROPRIETOR_AC payments ──
+        //    PROPRIETOR_AC payments go to proprietor's personal account, never company cash
+        await db.pgRun(`
+            DELETE FROM cash_ledger
+            WHERE company_id = $1
+              AND reference_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM transactions t
+                WHERE t.id = cash_ledger.reference_id
+                  AND COALESCE(t.meta->>'payment_method', '') = 'PROPRIETOR_AC'
+              )
+        `, [companyId]).catch(()=>{});
+
         // ── Step 4: Sync RECEIPT transactions (company cash) ──
         //    Skip transactions marked bill_purpose='excluded' (permanently deleted by user)
+        //    Skip PROPRIETOR_AC payments — those go to proprietor's personal account, not company cash
         await db.pgRun(`
             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
             SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
@@ -322,6 +351,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
               AND t.type = 'RECEIPT'
               AND t.amount > 0
               AND COALESCE(t.bill_purpose, 'real') != 'excluded'
+              AND COALESCE(t.meta->>'payment_method', '') != 'PROPRIETOR_AC'
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
