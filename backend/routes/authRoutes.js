@@ -18,6 +18,19 @@ router.get("/verify", (req, res) => {
     res.json({ success: true, message: "Token is valid" });
 });
 
+// Public — returns the single active company's code so branch-login can auto-fill it
+router.get("/company", async (req, res) => {
+    try {
+        const company = await db.pgGet(
+            `SELECT company_name, company_code FROM companies WHERE is_active = TRUE ORDER BY id ASC LIMIT 1`
+        );
+        if (!company) return res.status(404).json({ error: "No active company" });
+        res.json({ company_name: company.company_name, company_code: company.company_code });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 /* ============================================================
    1. LOGIN ROUTE
 ============================================================ */

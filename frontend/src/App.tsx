@@ -41,6 +41,7 @@ import StockInventory from "./pages/StockInventory";
 import InvoiceDetails from "./pages/InvoiceDetails";
 import Ledgers from "./pages/Ledgers";
 import Login from "./pages/Login";
+import BranchLogin from "./pages/BranchLogin";
 import PlatformAdmin from "./pages/PlatformAdmin";
 import PurchaseBills from "./pages/PurchaseBills";
 import SimplifiedPurchaseBill from "./pages/SimplifiedPurchaseBill";
@@ -255,6 +256,7 @@ const App: React.FC = () => {
       <Router>
         <Routes>
           <Route path="/company-login" element={<Login />} />
+          <Route path="/branch-login" element={<BranchLogin />} />
           <Route path="/employee-login" element={<EmployeeLogin />} />
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
           <Route path="/customer-login" element={<CustomerLogin />} />
