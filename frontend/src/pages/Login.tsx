@@ -106,6 +106,8 @@ export default function Login() {
               window.location.href = "/platform-admin";
             } else if (role === "customer" || role === "user") {
               window.location.href = "/shop";
+            } else if (role === "branch_manager") {
+              window.location.href = "/branch/billing";
             } else {
               window.location.href = "/dashboard";
             }

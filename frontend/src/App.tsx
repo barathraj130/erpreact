@@ -65,6 +65,10 @@ import CustomerOrders from "./pages/customer/CustomerOrders";
 import CustomerLedgerPage from "./pages/customer/CustomerLedgerPage";
 import CustomerContact from "./pages/customer/CustomerContact";
 
+// Admin Module
+import UserManagement from "./pages/admin/UserManagement";
+import BranchDetail from "./pages/admin/BranchDetail";
+
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
 import CashReceipts from "./pages/finance/CashReceipts";
@@ -284,6 +288,8 @@ const App: React.FC = () => {
             <Route path="/admin/reset" element={<ERPReset />} />
             <Route path="/admin/reports" element={<Reports />} />
             <Route path="/admin/employees" element={<Employees />} />
+            <Route path="/admin/users" element={<UserManagement />} />
+            <Route path="/admin/branches/:id" element={<BranchDetail />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>

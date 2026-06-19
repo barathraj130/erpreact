@@ -45,34 +45,68 @@ router.get("/staff", authMiddleware, checkPermission("Settings", "access_setting
 
 // CREATE STAFF LOGIN (Links to Employee ID)
 router.post("/staff", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
-    const { username, password, role, employee_id } = req.body;
-    
-    if(!username || !password || !role) 
+    const { username, password, role, employee_id, email, branch_id } = req.body;
+
+    if(!username || !password || !role)
         return res.status(400).json({ error: "Username, Password, and Role are required." });
 
     try {
         const hashed = await bcrypt.hash(password, 10);
 
-        // Fetch the email from the employee record automatically if linked
-        let emailToUse = null;
-        if (employee_id) {
+        // Resolve email: use provided email, or pull from linked employee
+        let emailToUse = email || null;
+        if (!emailToUse && employee_id) {
             const emp = await db.pgGet("SELECT email FROM employees WHERE id = $1", [employee_id]);
             if (emp) emailToUse = emp.email;
         }
 
-        // Get current user's company_id to ensure staff is added to the same company
-        const companyId = req.user?.company_id || 1;
+        const companyId = req.user?.active_company_id || req.user?.company_id || 1;
 
-        // Insert User with proper company_id and active_company_id
         await db.pgRun(
-            `INSERT INTO users (company_id, username, email, password_hash, role, employee_id, active_company_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $1)`,
-            [companyId, username, emailToUse, hashed, role, employee_id || null]
+            `INSERT INTO users (company_id, username, email, password_hash, role, employee_id, active_company_id, branch_id, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, $1, $7, true)`,
+            [companyId, username, emailToUse, hashed, role, employee_id || null, branch_id || null]
         );
         res.json({ success: true, message: "Login created successfully" });
     } catch (err) {
         console.error("Create staff error:", err);
         res.status(500).json({ error: "Username already taken or database error." });
+    }
+});
+
+// UPDATE STAFF USER
+router.put("/staff/:id", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    const { username, email, role, branch_id, is_active } = req.body;
+    const companyId = req.user?.active_company_id || req.user?.company_id || 1;
+    try {
+        await db.pgRun(
+            `UPDATE users SET
+               username   = COALESCE($1, username),
+               email      = COALESCE($2, email),
+               role       = COALESCE($3, role),
+               branch_id  = $4,
+               is_active  = COALESCE($5, is_active)
+             WHERE id = $6 AND company_id = $7`,
+            [username || null, email || null, role || null, branch_id || null, is_active ?? null, req.params.id, companyId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Update staff error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// RESET STAFF PASSWORD
+router.post("/staff/:id/reset-password", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    const { new_password } = req.body;
+    if (!new_password || new_password.length < 6)
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+    try {
+        const hash = await bcrypt.hash(new_password, 10);
+        await db.pgRun(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
