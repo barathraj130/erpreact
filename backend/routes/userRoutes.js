@@ -19,23 +19,26 @@ const router = express.Router();
 
 // GET SYSTEM USERS (Staff/Admins) - Linked with HR Data
 router.get("/staff", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    const companyId = req.user?.active_company_id || req.user?.company_id || 1;
     try {
         const sql = `
-            SELECT 
-                u.id, 
-                u.username, 
-                u.email, 
-                u.role, 
+            SELECT
+                u.id,
+                u.username,
+                u.email,
+                u.role,
+                u.branch_id,
+                u.is_active,
+                u.last_login,
                 u.created_at,
-                u.employee_id,
-                e.name as employee_name,
-                e.designation as employee_designation
+                b.branch_name
             FROM users u
-            LEFT JOIN employees e ON u.employee_id = e.id
-            WHERE u.role IN ('admin', 'staff', 'manager') 
+            LEFT JOIN branches b ON b.id = u.branch_id
+            WHERE u.company_id = $1
+              AND u.role IN ('admin', 'superadmin', 'branch_manager', 'accountant', 'staff', 'manager', 'viewer')
             ORDER BY u.id ASC
         `;
-        const staff = await db.pgAll(sql);
+        const staff = await db.pgAll(sql, [companyId]);
         res.json(staff);
     } catch (err) {
         console.error("Fetch staff error:", err);
