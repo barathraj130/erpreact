@@ -419,9 +419,10 @@ const BranchBilling: React.FC = () => {
   const [requests, setRequests] = useState<any[]>([]);
 
   /* refs */
-  const productSearchRef = useRef<HTMLInputElement>(null);
-  const payAmountRef     = useRef<HTMLInputElement>(null);
-  const custSearchRef    = useRef<HTMLInputElement>(null);
+  const productSearchRef  = useRef<HTMLInputElement>(null);
+  const payAmountRef      = useRef<HTMLInputElement>(null);
+  const custSearchRef     = useRef<HTMLInputElement>(null);
+  const paySearchInputRef = useRef<HTMLInputElement>(null);
 
   /* ── fetch helpers ─────────────────────────────────────────────────────── */
   const fetchBalances = useCallback(async () => {
@@ -1225,42 +1226,71 @@ const BranchBilling: React.FC = () => {
 
       {/* ── RECEIVE PAYMENT MODE ─────────────────────────────────────────── */}
       {mode === "payment" && (
-        <div style={{ flex: 1, overflowY: "auto", padding: 32, maxWidth: 800, margin: "0 auto", width: "100%" }}>
+        <div style={{ flex: 1, padding: 32, maxWidth: 800, margin: "0 auto", width: "100%", overflowX: "hidden" }}>
           <h2 style={{ margin: "0 0 24px", fontSize: 22, fontWeight: 800 }}>Receive Payment</h2>
 
           {!payCustomer ? (
             <div style={{ position: "relative", marginBottom: 20 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, marginBottom: 6 }}>CUSTOMER</div>
-              <input type="text" placeholder="Search by name or phone…" value={payCustomerSearch}
+              <input
+                ref={paySearchInputRef}
+                type="text"
+                placeholder="Search by name or phone…"
+                value={payCustomerSearch}
+                autoFocus
+                autoComplete="off"
                 onChange={e => {
                   const q = e.target.value;
                   setPayCustomerSearch(q);
                   clearTimeout(searchTimeout.current);
                   if (!q.trim()) { setPayCustomerResults([]); return; }
-                  searchTimeout.current = setTimeout(() => searchCustomerFor(q, setPayCustomerResults), 250);
+                  searchTimeout.current = setTimeout(() => searchCustomerFor(q, setPayCustomerResults), 300);
                 }}
-                style={{ ...FIELD_INPUT, fontSize: 15, padding: "12px 16px", border: "2px solid #4f46e5" }} autoFocus />
-              {payCustomerSearch.length >= 1 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, backgroundColor: "#0f172a", border: "1px solid #4f46e5", borderRadius: 10, zIndex: 500, maxHeight: 280, overflowY: "auto", marginTop: 4, boxShadow: "0 16px 40px rgba(0,0,0,0.8)" }}>
-                  {payCustomerResults.length === 0 && (
-                    <div style={{ padding: "14px 16px", color: MUTED, fontSize: 13 }}>No customer found for "{payCustomerSearch}"</div>
-                  )}
-                  {payCustomerResults.map(c => (
-                    <div key={c.id}
-                      onClick={() => { setPayCustomer({ ...c, name: c.name || c.username }); fetchOutstanding({ ...c, name: c.name }); setPayCustomerSearch(""); setPayCustomerResults([]); }}
-                      style={{ padding: "12px 16px", cursor: "pointer", borderBottom: "1px solid #1e293b", backgroundColor: "transparent" }}
-                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
-                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: TEXT }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-                        {c.phone}
-                        {parseFloat(c.outstanding_balance || 0) > 0 &&
-                          <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
+                style={{ ...FIELD_INPUT, fontSize: 15, padding: "12px 16px", border: "2px solid #4f46e5" }}
+              />
+              {payCustomerSearch.length >= 1 && (() => {
+                const rect = paySearchInputRef.current?.getBoundingClientRect();
+                return (
+                  <div style={{
+                    position: "fixed",
+                    top: rect ? rect.bottom + 4 : 0,
+                    left: rect ? rect.left : 0,
+                    width: rect ? rect.width : 400,
+                    backgroundColor: "#0f172a",
+                    border: "1px solid #4f46e5",
+                    borderRadius: 10,
+                    zIndex: 9999,
+                    maxHeight: 300,
+                    overflowY: "auto",
+                    boxShadow: "0 20px 60px rgba(0,0,0,0.9)",
+                  }}>
+                    {payCustomerResults.length === 0 ? (
+                      <div style={{ padding: "14px 16px", color: MUTED, fontSize: 13 }}>
+                        No customer found for "{payCustomerSearch}"
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ) : payCustomerResults.map(c => (
+                      <div key={c.id}
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          setPayCustomer({ ...c, name: c.name || c.username });
+                          fetchOutstanding({ ...c, name: c.name || c.username });
+                          setPayCustomerSearch("");
+                          setPayCustomerResults([]);
+                        }}
+                        style={{ padding: "13px 16px", cursor: "pointer", borderBottom: "1px solid #1e293b", backgroundColor: "transparent" }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: TEXT }}>{c.name}</div>
+                        <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+                          {c.phone}
+                          {parseFloat(c.outstanding_balance || 0) > 0 &&
+                            <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div style={{ padding: "14px 18px", background: PANEL, borderRadius: 10, border: "2px solid #10b981", marginBottom: 20, display: "flex", justifyContent: "space-between" }}>

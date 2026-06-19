@@ -251,25 +251,68 @@ router.post('/reset-password', authMiddleware, async (req, res) => {
 // BRANCH BILLING — all routes use req.user.branch_id from JWT, never from body
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// GET /api/branches/billing/balances — branch-only cash + bank from ledger
+// GET /api/branches/billing/debug — admin-only diagnostic info
+router.get('/billing/debug', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id;
+    try {
+        const [cashBranches, bankBranches, roles, invoiceBranches] = await Promise.all([
+            db.pgAll(`SELECT branch_id, COUNT(*) AS rows, ROUND(SUM(amount)::numeric,0) AS total FROM cash_ledger WHERE company_id=$1 GROUP BY branch_id ORDER BY branch_id`, [companyId]),
+            db.pgAll(`SELECT branch_id, COUNT(*) AS rows, ROUND(SUM(amount)::numeric,0) AS total FROM bank_ledger WHERE company_id=$1 GROUP BY branch_id ORDER BY branch_id`, [companyId]),
+            db.pgAll(`SELECT DISTINCT role FROM users ORDER BY role`),
+            db.pgAll(`SELECT branch_id, COUNT(*) AS invoices FROM invoices WHERE company_id=$1 GROUP BY branch_id ORDER BY branch_id`, [companyId]),
+        ]);
+        res.json({ jwt_branch_id: branchId, cash_ledger: cashBranches, bank_ledger: bankBranches, roles, invoice_branches: invoiceBranches });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/branches/billing/balances — branch cash + bank
+// Primary: cash_ledger/bank_ledger filtered by branch_id
+// Fallback: sum from invoices (handles legacy rows with NULL/wrong branch_id)
 router.get('/billing/balances', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id;
     if (!branchId) return res.json({ cash: 0, bank: 0 });
     try {
+        // Try ledger first — covers branch_id exact match OR NULL (legacy rows)
         const [cashRow, bankRow] = await Promise.all([
             db.pgGet(`
                 SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)
                      - COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance
-                FROM cash_ledger WHERE company_id=$1 AND branch_id=$2
+                FROM cash_ledger
+                WHERE company_id=$1 AND (branch_id=$2 OR branch_id IS NULL)
             `, [companyId, branchId]),
             db.pgGet(`
                 SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)
                      - COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance
-                FROM bank_ledger WHERE company_id=$1 AND branch_id=$2
+                FROM bank_ledger
+                WHERE company_id=$1 AND (branch_id=$2 OR branch_id IS NULL)
             `, [companyId, branchId]),
         ]);
-        res.json({ cash: Number(cashRow?.balance || 0), bank: Number(bankRow?.balance || 0) });
+
+        let cash = Number(cashRow?.balance || 0);
+        let bank = Number(bankRow?.balance || 0);
+
+        // If ledger has nothing, compute from invoices (branch_id is always set on invoices)
+        if (cash === 0 && bank === 0) {
+            const invRow = await db.pgGet(`
+                SELECT
+                  COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'CASH')) IN ('CASH','SPLIT')
+                    THEN COALESCE(cash_amount, paid_amount, 0) ELSE 0 END), 0) AS cash,
+                  COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'')) IN ('BANK','UPI','NEFT','RTGS','IMPS')
+                    THEN COALESCE(paid_amount, 0) ELSE 0 END), 0) AS bank,
+                  COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'')) = 'SPLIT'
+                    THEN COALESCE(bank_amount, 0) ELSE 0 END), 0) AS split_bank
+                FROM invoices
+                WHERE company_id=$1 AND branch_id=$2 AND COALESCE(is_deleted,false)=false
+            `, [companyId, branchId]);
+            cash = Number(invRow?.cash || 0);
+            bank = Number(invRow?.bank || 0) + Number(invRow?.split_bank || 0);
+        }
+
+        res.json({ cash, bank });
     } catch (err) {
         console.error('[billing/balances]', err.message);
         res.json({ cash: 0, bank: 0 });
