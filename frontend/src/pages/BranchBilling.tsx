@@ -896,32 +896,29 @@ const BranchBilling: React.FC = () => {
                       onChange={e => handleCustomerSearch(e.target.value)}
                       style={{ ...FIELD_INPUT, border: "2px solid #4f46e5", fontSize: 15, padding: "12px 16px" }}
                     />
-                    {(customerResults.length > 0 || customerSearch.length > 1) && (
-                      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: PANEL, border: BORDER, borderRadius: 10, zIndex: 200, maxHeight: 300, overflowY: "auto", marginTop: 4 }}>
+                    {customerSearch.length > 0 && (
+                      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, backgroundColor: "#0f172a", border: "1px solid #4f46e5", borderRadius: 10, zIndex: 500, maxHeight: 320, overflowY: "auto", marginTop: 4, boxShadow: "0 16px 40px rgba(0,0,0,0.8)" }}>
                         {customerResults.map(c => (
                           <div key={c.id} onClick={() => selectCustomer(c)}
-                            style={{ padding: "12px 16px", cursor: "pointer", borderBottom: "1px solid #334155" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#334155")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                            <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+                            style={{ padding: "12px 16px", cursor: "pointer", borderBottom: "1px solid #1e293b", backgroundColor: "transparent" }}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
+                            onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: "#f1f5f9" }}>{c.name}</div>
                             <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
                               {c.phone}
                               {parseFloat(c.outstanding_balance || 0) > 0 &&
-                                <span style={{ color: "#f87171", marginLeft: 8 }}>· Outst: ₹{inr(c.outstanding_balance)}</span>}
+                                <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
                             </div>
                           </div>
                         ))}
-                        <div onClick={() => setShowNewCustomer(true)}
-                          style={{ padding: "12px 16px", cursor: "pointer", color: "#818cf8", fontWeight: 700, fontSize: 13 }}>
-                          + Create "{customerSearch}"
-                        </div>
-                      </div>
-                    )}
-                    {customerSearch.length > 0 && customerResults.length === 0 && (
-                      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: PANEL, border: BORDER, borderRadius: 10, zIndex: 200, padding: "12px 16px", marginTop: 4 }}>
-                        <div style={{ color: MUTED, fontSize: 13, marginBottom: 8 }}>No customer found</div>
-                        <div onClick={() => setShowNewCustomer(true)} style={{ color: "#818cf8", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                          + Create "{customerSearch}"
+                        {customerResults.length === 0 && (
+                          <div style={{ padding: "10px 16px", color: MUTED, fontSize: 13 }}>No customer found</div>
+                        )}
+                        <div onClick={() => { setShowNewCustomer(true); setCustomerResults([]); }}
+                          style={{ padding: "12px 16px", cursor: "pointer", color: "#818cf8", fontWeight: 700, fontSize: 13, borderTop: "1px solid #1e293b", backgroundColor: "transparent" }}
+                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
+                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                          + Create new "{customerSearch}"
                         </div>
                       </div>
                     )}
@@ -981,17 +978,17 @@ const BranchBilling: React.FC = () => {
                 />
               </div>
               {productSearch && filteredProducts.length > 0 && (
-                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: PANEL, border: BORDER, borderRadius: 10, zIndex: 200, maxHeight: 260, overflowY: "auto", marginTop: 4 }}>
+                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, backgroundColor: "#0f172a", border: "1px solid #4f46e5", borderRadius: 10, zIndex: 500, maxHeight: 280, overflowY: "auto", marginTop: 4, boxShadow: "0 16px 40px rgba(0,0,0,0.8)" }}>
                   {filteredProducts.slice(0, 10).map(p => (
                     <div key={p.product_id} onClick={() => addProductToItems(p)}
-                      style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "#334155")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                      style={{ padding: "10px 16px", cursor: "pointer", borderBottom: "1px solid #1e293b", display: "flex", justifyContent: "space-between", backgroundColor: "transparent" }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: "#f1f5f9" }}>{p.name}</div>
                         <div style={{ fontSize: 11, color: MUTED }}>Stock: {p.fresh_stock ?? p.current_stock ?? 0} | GST: {p.gst_percent || 5}%</div>
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>₹{inr(p.selling_price)}</div>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "#10b981" }}>₹{inr(p.selling_price)}</div>
                     </div>
                   ))}
                 </div>
@@ -1147,22 +1144,26 @@ const BranchBilling: React.FC = () => {
               </div>
 
               {payMode === "split" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px", background: "#0c1526", borderRadius: 10, border: "2px solid #4f46e5" }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#818cf8", letterSpacing: "0.08em" }}>SPLIT PAYMENT</div>
+                  <div style={{ display: "flex", gap: 10 }}>
                     <div style={{ flex: 1 }}>
-                      <label style={FIELD_LABEL}>Cash ₹</label>
+                      <label style={{ ...FIELD_LABEL, color: "#10b981" }}>CASH ₹</label>
                       <input type="number" value={cashAmount} onChange={e => setCashAmount(e.target.value)}
-                        style={{ ...FIELD_INPUT, textAlign: "right" }} placeholder="0" />
+                        autoFocus
+                        style={{ ...FIELD_INPUT, textAlign: "right", fontSize: 18, fontWeight: 800, border: "2px solid #10b981" }} placeholder="0" />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={FIELD_LABEL}>Bank ₹</label>
+                      <label style={{ ...FIELD_LABEL, color: "#3b82f6" }}>BANK / UPI ₹</label>
                       <input type="number" value={bankAmount} onChange={e => setBankAmount(e.target.value)}
-                        style={{ ...FIELD_INPUT, textAlign: "right" }} placeholder="0" />
+                        style={{ ...FIELD_INPUT, textAlign: "right", fontSize: 18, fontWeight: 800, border: "2px solid #3b82f6" }} placeholder="0" />
                     </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: "1px solid #1e293b", paddingTop: 8 }}>
                     <span style={{ color: MUTED }}>Total Paying</span>
-                    <span style={{ fontWeight: 700 }}>₹{inr((parseFloat(cashAmount || "0") + parseFloat(bankAmount || "0")))}</span>
+                    <span style={{ fontWeight: 800, fontSize: 16, color: (parseFloat(cashAmount || "0") + parseFloat(bankAmount || "0")) >= totals.net ? "#10b981" : "#f87171" }}>
+                      ₹{inr(parseFloat(cashAmount || "0") + parseFloat(bankAmount || "0"))}
+                    </span>
                   </div>
                 </div>
               ) : payMode !== "credit" ? (
