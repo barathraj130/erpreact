@@ -70,13 +70,17 @@ const NewCustomerModal: React.FC<{
     if (!form.username || !form.phone) return alert("Name and phone are required");
     setSaving(true);
     try {
-      const res = await apiFetch("/users", {
+      const res = await apiFetch("/users/create-customer", {
         method: "POST",
-        body: JSON.stringify({ ...form, role: "customer" }),
+        body: JSON.stringify(form),
       });
       const data = await res.json();
       if (res.ok && data.id) {
-        onCreated({ ...data, name: form.username, phone: form.phone, outstanding_balance: 0 });
+        onCreated({ ...data, name: data.username || form.username, phone: form.phone, outstanding_balance: 0 });
+        onClose();
+      } else if (res.status === 409 && data.id) {
+        // duplicate phone — just select existing customer
+        onCreated({ id: data.id, name: form.username, phone: form.phone, outstanding_balance: 0 });
         onClose();
       } else {
         alert(data.error || "Failed to create customer");

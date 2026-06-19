@@ -194,6 +194,31 @@ router.get("/search", authMiddleware, async (req, res) => {
     }
 });
 
+// CREATE CUSTOMER from billing screen (no permission gate — any logged-in staff can create a walk-in customer)
+router.post("/create-customer", authMiddleware, async (req, res) => {
+    const companyId = req.user?.active_company_id || req.user?.company_id;
+    const { username, phone, email, gstin, address_line1, state, state_code } = req.body;
+    if (!username || !phone) return res.status(400).json({ error: "Name and phone are required" });
+    try {
+        const existing = await db.pgGet(
+            `SELECT id FROM users WHERE company_id = $1 AND phone = $2 AND role IN ('user','customer') LIMIT 1`,
+            [companyId, phone]
+        );
+        if (existing) return res.status(409).json({ error: `A customer with phone ${phone} already exists`, id: existing.id });
+
+        const row = await db.pgGet(`
+            INSERT INTO users (company_id, username, nickname, phone, email, gstin, address_line1, state, state_code, role, is_active, created_at)
+            VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, 'customer', true, NOW())
+            RETURNING id, username, phone, email, gstin, state_code
+        `, [companyId, username.trim(), phone.trim(), email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33']);
+
+        res.json({ ...row, name: row.username, outstanding_balance: 0 });
+    } catch (err) {
+        console.error('[users/create-customer]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET ALL CUSTOMERS
 router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     const companyId = req.user.active_company_id || req.user.company_id;
