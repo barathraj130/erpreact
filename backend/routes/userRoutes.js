@@ -206,14 +206,21 @@ router.post("/create-customer", authMiddleware, async (req, res) => {
         );
         if (existing) return res.status(409).json({ error: `A customer with phone ${phone} already exists`, id: existing.id });
 
-        const name = username.trim();
+        const cleanPhone = phone.trim();
+        const baseName  = username.trim();
+        // Make username unique: try baseName first, then baseName_last4phone
+        const suffix    = cleanPhone.slice(-4);
+        const uniqueName = await db.pgGet(
+            `SELECT id FROM users WHERE username = $1 LIMIT 1`, [baseName]
+        ) ? `${baseName}_${suffix}` : baseName;
+
         const row = await db.pgGet(`
             INSERT INTO users (company_id, username, nickname, phone, email, gstin, address_line1, state, state_code, role, is_active, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'customer', true, NOW())
             RETURNING id, username, phone, email, gstin, state_code
-        `, [companyId, name, name, phone.trim(), email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33']);
+        `, [companyId, uniqueName, baseName, cleanPhone, email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33']);
 
-        res.json({ ...row, name: row.username, outstanding_balance: 0 });
+        res.json({ ...row, name: baseName, outstanding_balance: 0 });
     } catch (err) {
         console.error('[users/create-customer]', err.message);
         res.status(500).json({ error: err.message });
