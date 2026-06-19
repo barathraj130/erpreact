@@ -445,6 +445,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
                       onClick={() => {
                         setActiveBranch(branch);
                         setBranchDropdownOpen(false);
+                        if (user?.role === 'admin' || user?.role === 'superadmin') {
+                          navigate(`/admin/branches/${branch.id}`);
+                        }
                       }}
                       style={{
                         display: "flex",
