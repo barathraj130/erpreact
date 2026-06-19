@@ -163,4 +163,76 @@ router.post('/users/:id/reset-password', authMiddleware, requireAdmin, async (re
     }
 });
 
+// ── GET /api/admin/branches/:id/today-bills ───────────────────────────────────
+router.get('/branches/:id/today-bills', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = parseInt(req.params.id);
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    try {
+        const rows = await db.pgAll(`
+            SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.created_at,
+                   COALESCE(u.nickname, u.username, i.walk_in_name) AS customer_name,
+                   COALESCE(i.grand_total, i.net_payable, i.total_amount, 0) AS grand_total,
+                   COALESCE(i.paid_amount, 0) AS paid_amount,
+                   COALESCE(i.balance_amount, COALESCE(i.grand_total, i.net_payable, i.total_amount, 0) - COALESCE(i.paid_amount, 0)) AS balance_amount,
+                   COALESCE(i.payment_status, 'PENDING') AS payment_status,
+                   COALESCE(i.payment_mode, 'CASH') AS payment_mode,
+                   COALESCE(i.bill_type, i.invoice_type, 'NON_TAX') AS bill_type,
+                   (SELECT COUNT(*) FROM invoice_line_items WHERE invoice_id = i.id) AS item_count
+            FROM invoices i
+            LEFT JOIN users u ON i.customer_id = u.id
+            WHERE i.company_id = $1
+              AND (i.branch_id = $2 OR $2 = 0)
+              AND DATE(i.invoice_date) = $3
+              AND COALESCE(i.is_deleted, false) = false
+            ORDER BY i.created_at DESC
+        `, [companyId, branchId, date]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/admin/branches/:id/day-close ───────────────────────────────────
+router.post('/branches/:id/day-close', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = parseInt(req.params.id);
+    const { date, actual_cash, actual_bank, notes } = req.body;
+    const closeDate = date || new Date().toISOString().split('T')[0];
+    try {
+        // Summary stats
+        const summary = await db.pgGet(`
+            SELECT
+              COUNT(*)                                                   AS total_bills,
+              COALESCE(SUM(COALESCE(grand_total, net_payable, total_amount, 0)), 0) AS total_amount,
+              COALESCE(SUM(COALESCE(paid_amount, 0)), 0)                AS total_paid,
+              COALESCE(SUM(CASE WHEN COALESCE(payment_mode,'CASH')='CASH'   THEN COALESCE(paid_amount,0) ELSE 0 END), 0) AS cash_sales,
+              COALESCE(SUM(CASE WHEN COALESCE(payment_mode,'CASH') IN ('BANK','UPI') THEN COALESCE(paid_amount,0) ELSE 0 END), 0) AS bank_sales,
+              COALESCE(SUM(CASE WHEN COALESCE(payment_status,'PENDING')='PENDING' THEN 1 ELSE 0 END), 0) AS credit_bills
+            FROM invoices
+            WHERE company_id = $1
+              AND (branch_id = $2 OR $2 = 0)
+              AND DATE(invoice_date) = $3
+              AND COALESCE(is_deleted, false) = false
+        `, [companyId, branchId, closeDate]);
+
+        await db.pgRun(`
+            INSERT INTO day_close_records (company_id, branch_id, close_date, actual_cash, actual_bank,
+              total_bills, total_amount, total_paid, cash_sales, bank_sales, credit_bills, notes, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            ON CONFLICT (company_id, branch_id, close_date) DO UPDATE
+              SET actual_cash=$4, actual_bank=$5, notes=$12, updated_at=NOW()
+        `, [companyId, branchId, closeDate,
+            actual_cash || 0, actual_bank || 0,
+            summary.total_bills, summary.total_amount, summary.total_paid,
+            summary.cash_sales, summary.bank_sales, summary.credit_bills,
+            notes || '', req.user.id
+        ]).catch(() => {});
+
+        res.json({ success: true, summary });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;

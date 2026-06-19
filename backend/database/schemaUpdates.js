@@ -1062,6 +1062,28 @@ export const runSchemaUpdates = async () => {
             ON CONFLICT DO NOTHING
         `).catch(() => {});
 
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS day_close_records (
+                id           SERIAL PRIMARY KEY,
+                company_id   INTEGER NOT NULL,
+                branch_id    INTEGER NOT NULL DEFAULT 0,
+                close_date   DATE NOT NULL,
+                actual_cash  NUMERIC(12,2) DEFAULT 0,
+                actual_bank  NUMERIC(12,2) DEFAULT 0,
+                total_bills  INTEGER DEFAULT 0,
+                total_amount NUMERIC(12,2) DEFAULT 0,
+                total_paid   NUMERIC(12,2) DEFAULT 0,
+                cash_sales   NUMERIC(12,2) DEFAULT 0,
+                bank_sales   NUMERIC(12,2) DEFAULT 0,
+                credit_bills INTEGER DEFAULT 0,
+                notes        TEXT,
+                created_by   INTEGER,
+                updated_at   TIMESTAMP DEFAULT NOW(),
+                created_at   TIMESTAMP DEFAULT NOW(),
+                UNIQUE(company_id, branch_id, close_date)
+            )
+        `).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

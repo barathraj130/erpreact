@@ -168,6 +168,32 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
    - Includes Password Creation for Customer Portal
 ============================================================ */
 
+// CUSTOMER QUICK SEARCH (for billing)
+router.get("/search", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id || req.user.company_id;
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json([]);
+    try {
+        const rows = await db.pgAll(`
+            SELECT u.id,
+                   COALESCE(u.nickname, u.username) AS name,
+                   u.phone, u.gstin, u.state_code,
+                   COALESCE((
+                     SELECT SUM(COALESCE(grand_total, net_payable, total_amount, 0)) - SUM(COALESCE(paid_amount, 0))
+                     FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted,false)=false
+                   ), 0) AS outstanding_balance
+            FROM users u
+            WHERE u.company_id = $1
+              AND u.role IN ('user','customer')
+              AND (LOWER(COALESCE(u.nickname, u.username,'')) LIKE $2 OR u.phone LIKE $3)
+            ORDER BY u.username ASC LIMIT 10
+        `, [companyId, `%${q.toLowerCase()}%`, `%${q}%`]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET ALL CUSTOMERS
 router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     const companyId = req.user.active_company_id || req.user.company_id;
