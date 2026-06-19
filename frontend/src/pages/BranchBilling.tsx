@@ -426,8 +426,10 @@ const BranchBilling: React.FC = () => {
   /* ── fetch helpers ─────────────────────────────────────────────────────── */
   const fetchBalances = useCallback(async () => {
     try {
-      const branchParam = branchId ? `?branch_id=${branchId}` : "";
-      const res = await apiFetch(`/ledger/balance/current${branchParam}`);
+      const url = branchId
+        ? `/admin/branches/${branchId}/balance`
+        : `/ledger/balance/current`;
+      const res = await apiFetch(url);
       if (res.ok) { const d = await res.json(); setCashBal(d.cash || 0); setBankBal(d.bank || 0); }
     } catch {}
   }, []);

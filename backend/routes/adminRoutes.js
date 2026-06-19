@@ -163,6 +163,37 @@ router.post('/users/:id/reset-password', authMiddleware, requireAdmin, async (re
     }
 });
 
+// ── GET /api/admin/branches/:id/balance ───────────────────────────────────────
+// Returns this branch's cash and bank totals computed from invoices paid at this branch
+router.get('/branches/:id/balance', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = parseInt(req.params.id);
+    try {
+        const row = await db.pgGet(`
+            SELECT
+              COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'CASH')) = 'CASH'
+                               THEN COALESCE(paid_amount, 0) ELSE 0 END), 0) AS cash,
+              COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'')) IN ('BANK','UPI','NEFT','RTGS','IMPS')
+                               THEN COALESCE(paid_amount, 0) ELSE 0 END), 0) AS bank,
+              COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'')) = 'SPLIT'
+                               THEN COALESCE(cash_amount, 0) ELSE 0 END), 0) AS split_cash,
+              COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_mode,'')) = 'SPLIT'
+                               THEN COALESCE(bank_amount, 0) ELSE 0 END), 0) AS split_bank
+            FROM invoices
+            WHERE company_id = $1
+              AND branch_id = $2
+              AND COALESCE(is_deleted, false) = false
+        `, [companyId, branchId]);
+
+        res.json({
+            cash: Number(row?.cash || 0) + Number(row?.split_cash || 0),
+            bank: Number(row?.bank || 0) + Number(row?.split_bank || 0),
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── GET /api/admin/branches/:id/today-bills ───────────────────────────────────
 router.get('/branches/:id/today-bills', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;

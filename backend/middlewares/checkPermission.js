@@ -3,8 +3,8 @@ import db from "../database/pg.js";
 export default function checkPermission(module, action) {
     return async (req, res, next) => {
         try {
-            // Admin bypass - always allow
-            if (req.user.role === 'admin') return next();
+            // Admin / branch_manager bypass — operational roles with full billing access
+            if (['admin', 'superadmin', 'branch_manager'].includes(req.user.role)) return next();
 
             // 1. Get user's role ID from the DB (safer than trusting JWT payload for critical checks)
             const userRes = await db.pgGet("SELECT role_id FROM users WHERE id = $1", [req.user.id]);

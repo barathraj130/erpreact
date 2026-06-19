@@ -18,9 +18,10 @@ export const checkAccess = (moduleName, actionName) => {
 
             const user = req.user;
 
-            // 2. Admin / Superadmin Bypass
-            // These roles always have full access — no DB lookup needed
-            if (user.role === 'admin' || user.role === 'superadmin') {
+            // 2. Admin / Superadmin / Branch-Manager Bypass
+            // branch_manager is operational staff — they can create invoices/receipts
+            // but don't have a role_id in the roles table (role is managed via JWT)
+            if (['admin', 'superadmin', 'branch_manager'].includes(user.role)) {
                 return next();
             }
 
