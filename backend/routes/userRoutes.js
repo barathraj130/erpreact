@@ -206,11 +206,12 @@ router.post("/create-customer", authMiddleware, async (req, res) => {
         );
         if (existing) return res.status(409).json({ error: `A customer with phone ${phone} already exists`, id: existing.id });
 
+        const name = username.trim();
         const row = await db.pgGet(`
             INSERT INTO users (company_id, username, nickname, phone, email, gstin, address_line1, state, state_code, role, is_active, created_at)
-            VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, 'customer', true, NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'customer', true, NOW())
             RETURNING id, username, phone, email, gstin, state_code
-        `, [companyId, username.trim(), phone.trim(), email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33']);
+        `, [companyId, name, name, phone.trim(), email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33']);
 
         res.json({ ...row, name: row.username, outstanding_balance: 0 });
     } catch (err) {
