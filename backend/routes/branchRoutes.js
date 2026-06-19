@@ -247,4 +247,177 @@ router.post('/reset-password', authMiddleware, async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// BRANCH BILLING — all routes use req.user.branch_id from JWT, never from body
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/branches/billing/balances — branch-only cash + bank from ledger
+router.get('/billing/balances', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id;
+    if (!branchId) return res.json({ cash: 0, bank: 0 });
+    try {
+        const [cashRow, bankRow] = await Promise.all([
+            db.pgGet(`
+                SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)
+                     - COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance
+                FROM cash_ledger WHERE company_id=$1 AND branch_id=$2
+            `, [companyId, branchId]),
+            db.pgGet(`
+                SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)
+                     - COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance
+                FROM bank_ledger WHERE company_id=$1 AND branch_id=$2
+            `, [companyId, branchId]),
+        ]);
+        res.json({ cash: Number(cashRow?.balance || 0), bank: Number(bankRow?.balance || 0) });
+    } catch (err) {
+        console.error('[billing/balances]', err.message);
+        res.json({ cash: 0, bank: 0 });
+    }
+});
+
+// GET /api/branches/billing/day-summary?date=YYYY-MM-DD
+router.get('/billing/day-summary', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id;
+    const date      = req.query.date || new Date().toISOString().split('T')[0];
+    if (!branchId) return res.json({ cash: 0, bank: 0, bills_count: 0, today_sales: 0, cash_collected: 0, bank_collected: 0, credit_given: 0 });
+    try {
+        const [cashBal, bankBal, openCash, openBank, salesRow, cashIn, bankIn, creditRow] = await Promise.all([
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)-COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance FROM cash_ledger WHERE company_id=$1 AND branch_id=$2`, [companyId, branchId]),
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)-COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance FROM bank_ledger WHERE company_id=$1 AND branch_id=$2`, [companyId, branchId]),
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)-COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance FROM cash_ledger WHERE company_id=$1 AND branch_id=$2 AND date < $3`, [companyId, branchId, date]),
+            db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0)-COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance FROM bank_ledger WHERE company_id=$1 AND branch_id=$2 AND DATE(created_at) < $3`, [companyId, branchId, date]),
+            db.pgGet(`SELECT COUNT(*) AS bills_count, COALESCE(SUM(COALESCE(grand_total,net_payable,total_amount,0)),0) AS today_sales FROM invoices WHERE company_id=$1 AND branch_id=$2 AND DATE(invoice_date)=$3 AND COALESCE(is_deleted,false)=false`, [companyId, branchId, date]),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger WHERE company_id=$1 AND branch_id=$2 AND direction='in' AND date=$3`, [companyId, branchId, date]),
+            db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger WHERE company_id=$1 AND branch_id=$2 AND direction='in' AND DATE(created_at)=$3`, [companyId, branchId, date]),
+            db.pgGet(`SELECT COALESCE(SUM(COALESCE(balance_amount,0)),0) AS total FROM invoices WHERE company_id=$1 AND branch_id=$2 AND DATE(invoice_date)=$3 AND COALESCE(balance_amount,0)>0 AND COALESCE(is_deleted,false)=false`, [companyId, branchId, date]),
+        ]);
+        res.json({
+            date,
+            branch_id: branchId,
+            cash: Number(cashBal?.balance || 0),
+            bank: Number(bankBal?.balance || 0),
+            opening_cash: Number(openCash?.balance || 0),
+            opening_bank: Number(openBank?.balance || 0),
+            bills_count: Number(salesRow?.bills_count || 0),
+            today_sales: Number(salesRow?.today_sales || 0),
+            cash_collected: Number(cashIn?.total || 0),
+            bank_collected: Number(bankIn?.total || 0),
+            credit_given: Number(creditRow?.total || 0),
+        });
+    } catch (err) {
+        console.error('[billing/day-summary]', err.message);
+        res.json({ cash: 0, bank: 0, opening_cash: 0, opening_bank: 0, bills_count: 0, today_sales: 0, cash_collected: 0, bank_collected: 0, credit_given: 0 });
+    }
+});
+
+// GET /api/branches/billing/today-bills?date=YYYY-MM-DD
+router.get('/billing/today-bills', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id;
+    const date      = req.query.date || new Date().toISOString().split('T')[0];
+    if (!branchId) return res.json([]);
+    try {
+        const rows = await db.pgAll(`
+            SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.created_at,
+                   COALESCE(u.nickname, u.username, i.walk_in_name) AS customer_name,
+                   u.phone AS customer_phone,
+                   COALESCE(i.grand_total, i.net_payable, i.total_amount, 0) AS grand_total,
+                   COALESCE(i.paid_amount, 0) AS paid_amount,
+                   COALESCE(i.balance_amount, 0) AS balance_amount,
+                   COALESCE(i.payment_status, 'PENDING') AS payment_status,
+                   COALESCE(i.payment_mode, 'CASH') AS payment_mode,
+                   COALESCE(i.bill_type, i.invoice_type, 'NON_TAX') AS bill_type,
+                   (SELECT COUNT(*) FROM invoice_line_items WHERE invoice_id = i.id) AS item_count
+            FROM invoices i
+            LEFT JOIN users u ON i.customer_id = u.id
+            WHERE i.company_id = $1 AND i.branch_id = $2
+              AND DATE(i.invoice_date) = $3
+              AND COALESCE(i.is_deleted, false) = false
+            ORDER BY i.created_at DESC
+        `, [companyId, branchId, date]);
+        res.json(rows);
+    } catch (err) {
+        console.error('[billing/today-bills]', err.message);
+        res.json([]);
+    }
+});
+
+// GET /api/branches/billing/inventory
+router.get('/billing/inventory', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id;
+    if (!branchId) return res.json([]);
+    try {
+        const rows = await db.pgAll(`
+            SELECT p.id AS product_id, p.name, p.hsn_code, p.selling_price,
+                   COALESCE(p.gst_percent, 5) AS gst_percent,
+                   COALESCE(bi.fresh_stock, 0)   AS fresh_stock,
+                   COALESCE(bi.mistake_stock, 0)  AS mistake_stock,
+                   COALESCE(bi.fresh_stock, 0) + COALESCE(bi.mistake_stock, 0) AS total_stock
+            FROM products p
+            LEFT JOIN branch_inventory bi ON bi.product_id = p.id AND bi.branch_id = $1
+            WHERE p.company_id = $2 AND COALESCE(p.is_deleted, false) = false
+              AND (COALESCE(bi.fresh_stock, 0) + COALESCE(bi.mistake_stock, 0)) > 0
+            ORDER BY p.name
+        `, [branchId, companyId]);
+        res.json(rows);
+    } catch (err) {
+        console.error('[billing/inventory]', err.message);
+        res.json([]);
+    }
+});
+
+// POST /api/branches/billing/day-close
+router.post('/billing/day-close', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const branchId  = req.user.branch_id;
+    const userId    = req.user.id;
+    const { date, expected_cash, actual_cash, cash_difference, bank_balance,
+            today_sales, cash_collected, bank_collected, credit_given, bills_count, notes } = req.body;
+    const closeDate = date || new Date().toISOString().split('T')[0];
+    try {
+        await db.pgRun(`
+            CREATE TABLE IF NOT EXISTS branch_day_close (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                branch_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                expected_cash NUMERIC(12,2) DEFAULT 0,
+                actual_cash NUMERIC(12,2) DEFAULT 0,
+                cash_difference NUMERIC(12,2) DEFAULT 0,
+                bank_balance NUMERIC(12,2) DEFAULT 0,
+                today_sales NUMERIC(12,2) DEFAULT 0,
+                cash_collected NUMERIC(12,2) DEFAULT 0,
+                bank_collected NUMERIC(12,2) DEFAULT 0,
+                credit_given NUMERIC(12,2) DEFAULT 0,
+                bills_count INTEGER DEFAULT 0,
+                notes TEXT,
+                submitted_by INTEGER,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(company_id, branch_id, date)
+            )
+        `).catch(() => {});
+        await db.pgRun(`
+            INSERT INTO branch_day_close (company_id, branch_id, date, expected_cash, actual_cash, cash_difference,
+                bank_balance, today_sales, cash_collected, bank_collected, credit_given, bills_count, notes, submitted_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            ON CONFLICT (company_id, branch_id, date) DO UPDATE SET
+                expected_cash=$4, actual_cash=$5, cash_difference=$6,
+                bank_balance=$7, today_sales=$8, cash_collected=$9,
+                bank_collected=$10, credit_given=$11, bills_count=$12,
+                notes=$13, submitted_by=$14, created_at=NOW()
+        `, [companyId, branchId, closeDate,
+            expected_cash || 0, actual_cash || 0, cash_difference || 0,
+            bank_balance || 0, today_sales || 0, cash_collected || 0,
+            bank_collected || 0, credit_given || 0, bills_count || 0,
+            notes || '', userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[billing/day-close]', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 export default router;

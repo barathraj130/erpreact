@@ -426,27 +426,25 @@ const BranchBilling: React.FC = () => {
   /* ── fetch helpers ─────────────────────────────────────────────────────── */
   const fetchBalances = useCallback(async () => {
     try {
-      const url = branchId
-        ? `/admin/branches/${branchId}/balance`
-        : `/ledger/balance/current`;
-      const res = await apiFetch(url);
+      // branch-scoped: JWT branch_id is used server-side, no param needed
+      const res = await apiFetch("/branches/billing/balances");
       if (res.ok) { const d = await res.json(); setCashBal(d.cash || 0); setBankBal(d.bank || 0); }
     } catch {}
   }, []);
 
   const fetchProducts = useCallback(async () => {
     try {
-      const res = await apiFetch("/branch-inventory/inventory");
+      const res = await apiFetch("/branches/billing/inventory");
       if (res.ok) setProducts(await res.json());
     } catch {}
   }, []);
 
   const fetchTodayBills = useCallback(async () => {
     try {
-      const res = await apiFetch(`/admin/branches/${branchId}/today-bills?date=${today()}`);
+      const res = await apiFetch(`/branches/billing/today-bills?date=${today()}`);
       if (res.ok) setTodayBills(await res.json());
     } catch {}
-  }, [branchId]);
+  }, []);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -737,25 +735,38 @@ const BranchBilling: React.FC = () => {
   /* ── day close ─────────────────────────────────────────────────────────── */
   const fetchDaySummary = async () => {
     try {
-      const res = await apiFetch(`/admin/branches/${branchId}/today-bills?date=${today()}`);
+      const res = await apiFetch(`/branches/billing/day-summary?date=${today()}`);
       if (res.ok) {
-        const bills = await res.json();
-        const cashS  = bills.filter((b: any) => (b.payment_mode || "").toUpperCase() === "CASH").reduce((s: number, b: any) => s + parseFloat(b.paid_amount || 0), 0);
-        const bankS  = bills.filter((b: any) => ["BANK","UPI"].includes((b.payment_mode || "").toUpperCase())).reduce((s: number, b: any) => s + parseFloat(b.paid_amount || 0), 0);
-        const creditB = bills.filter((b: any) => parseFloat(b.balance_amount || 0) > 0);
-        setDcSummary({ total: bills.length, cashSales: cashS, bankSales: bankS, creditCount: creditB.length, totalAmount: bills.reduce((s: number, b: any) => s + parseFloat(b.grand_total || 0), 0) });
+        const d = await res.json();
+        setDcSummary(d);
+        if (!actualCash) setActualCash(String(Math.round(d.cash || 0)));
       }
     } catch {}
   };
 
   const handleDayClose = async () => {
+    if (!actualCash) return setFlash("Enter actual cash in hand");
     setDcSaving(true);
     try {
-      const res = await apiFetch(`/admin/branches/${branchId}/day-close`, {
+      const expected = dcSummary?.cash || 0;
+      const actual   = parseFloat(actualCash || "0");
+      const res = await apiFetch("/branches/billing/day-close", {
         method: "POST",
-        body: JSON.stringify({ date: today(), actual_cash: parseFloat(actualCash || "0"), notes: dcNotes }),
+        body: JSON.stringify({
+          date: today(),
+          expected_cash: expected,
+          actual_cash: actual,
+          cash_difference: actual - expected,
+          bank_balance: dcSummary?.bank || 0,
+          today_sales: dcSummary?.today_sales || 0,
+          cash_collected: dcSummary?.cash_collected || 0,
+          bank_collected: dcSummary?.bank_collected || 0,
+          credit_given: dcSummary?.credit_given || 0,
+          bills_count: dcSummary?.bills_count || 0,
+          notes: dcNotes,
+        }),
       });
-      if (res.ok) setFlash("Day close submitted successfully");
+      if (res.ok) { setFlash("Day close submitted successfully"); setDcSummary((p: any) => ({ ...p, submitted: true })); }
       else setFlash("Day close failed");
     } finally { setDcSaving(false); }
   };
@@ -1488,57 +1499,108 @@ const BranchBilling: React.FC = () => {
       )}
 
       {/* ── DAY CLOSE ────────────────────────────────────────────────────── */}
-      {mode === "day_close" && (
-        <div style={{ flex: 1, overflowY: "auto", padding: 32, maxWidth: 760, margin: "0 auto", width: "100%" }}>
-          <h2 style={{ margin: "0 0 24px", fontSize: 22, fontWeight: 800 }}>Day Close — {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</h2>
+      {mode === "day_close" && (() => {
+        const dc = dcSummary || {};
+        const expected    = parseFloat(dc.cash || 0);
+        const actual      = parseFloat(actualCash || "0");
+        const diff        = actual - expected;
+        const diffColor   = diff === 0 ? "#10b981" : diff > 0 ? "#f59e0b" : "#f87171";
+        const diffLabel   = diff === 0 ? "Cash matches perfectly" : diff > 0 ? "Cash EXCESS" : "Cash SHORTAGE";
 
-          {dcSummary && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
+        if (dc.submitted) return (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>✓</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#10b981" }}>Day Closed Successfully</div>
+            <div style={{ fontSize: 14, color: MUTED, marginTop: 8 }}>{new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+          </div>
+        );
+
+        return (
+          <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px", maxWidth: 700, margin: "0 auto", width: "100%" }}>
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Day Close</h2>
+              <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>
+                {activeBranch?.branch_name} — {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+              </div>
+            </div>
+
+            {/* Sales summary cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 20 }}>
               {[
-                { label: "Total Bills", value: dcSummary.total, color: TEXT },
-                { label: "Cash Sales", value: `₹${inr(dcSummary.cashSales)}`, color: "#10b981" },
-                { label: "Bank/UPI", value: `₹${inr(dcSummary.bankSales)}`, color: "#3b82f6" },
-                { label: "Credit Bills", value: dcSummary.creditCount, color: "#f87171" },
-                { label: "Total Billed", value: `₹${inr(dcSummary.totalAmount)}`, color: "#818cf8" },
-              ].map(({ label, value, color }) => (
-                <div key={label} style={{ background: PANEL, borderRadius: 10, border: BORDER, padding: "16px" }}>
-                  <div style={{ fontSize: 10, color: MUTED, fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
+                { label: "Total Bills Today",      value: dc.bills_count || 0,    color: "#818cf8", isCount: true },
+                { label: "Total Sales Value",       value: dc.today_sales || 0,    color: "#f1f5f9" },
+                { label: "Cash Collected",          value: dc.cash_collected || 0, color: "#10b981" },
+                { label: "Bank / UPI Collected",    value: dc.bank_collected || 0, color: "#3b82f6" },
+                { label: "Credit Given (Pending)",  value: dc.credit_given || 0,   color: "#f87171" },
+                { label: "Branch Cash Balance",     value: dc.cash || 0,           color: "#10b981" },
+              ].map((item, i) => (
+                <div key={i} style={{ background: PANEL, borderRadius: 10, padding: "14px 16px", border: BORDER }}>
+                  <div style={{ fontSize: 10, color: MUTED, fontWeight: 700, letterSpacing: "0.06em", marginBottom: 6, textTransform: "uppercase" }}>{item.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: item.color }}>
+                    {item.isCount ? Number(item.value).toLocaleString("en-IN") : `₹${inr(item.value)}`}
+                  </div>
                 </div>
               ))}
             </div>
-          )}
 
-          <div style={{ background: PANEL, borderRadius: 12, border: BORDER, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: MUTED }}>
-              <span>Cash Balance (from ledger)</span>
-              <span style={{ fontWeight: 700, color: "#10b981" }}>₹{inr(cashBal)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: MUTED }}>
-              <span>Bank Balance (from ledger)</span>
-              <span style={{ fontWeight: 700, color: "#3b82f6" }}>₹{inr(bankBal)}</span>
-            </div>
-            <div>
-              <label style={FIELD_LABEL}>Actual Cash in Hand ₹</label>
-              <input type="number" value={actualCash} onChange={e => setActualCash(e.target.value)}
-                placeholder={inr(cashBal)} style={{ ...FIELD_INPUT, fontSize: 20, fontWeight: 700, border: "2px solid #10b981" }} />
-              {actualCash && (
-                <div style={{ marginTop: 6, fontSize: 13, color: parseFloat(actualCash) >= cashBal ? "#10b981" : "#f87171", fontWeight: 600 }}>
-                  Difference: ₹{inr(Math.abs(parseFloat(actualCash) - cashBal))} {parseFloat(actualCash) < cashBal ? "(short)" : "(excess)"}
+            {/* Cash reconciliation */}
+            <div style={{ background: PANEL, borderRadius: 12, padding: 20, marginBottom: 14, border: BORDER }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, letterSpacing: "0.06em", marginBottom: 14, textTransform: "uppercase" }}>
+                Cash Reconciliation — This Branch Only
+              </div>
+              {[
+                { label: "Opening Cash (This Branch)", value: `₹${inr(dc.opening_cash || 0)}`, valueColor: TEXT },
+                { label: "+ Cash Collected Today",     value: `+₹${inr(dc.cash_collected || 0)}`, valueColor: "#10b981" },
+                { label: "Expected Closing Cash",      value: `₹${inr(dc.cash || 0)}`,   valueColor: TEXT, bold: true },
+              ].map(({ label, value, valueColor, bold }) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #334155" }}>
+                  <span style={{ fontSize: 13, color: MUTED }}>{label}</span>
+                  <span style={{ fontSize: bold ? 15 : 13, fontWeight: bold ? 700 : 600, color: valueColor }}>{value}</span>
                 </div>
-              )}
+              ))}
+
+              <div style={{ marginTop: 16 }}>
+                <label style={{ ...FIELD_LABEL, color: "#94a3b8" }}>Actual Cash in Hand (Count Now)</label>
+                <input type="number" value={actualCash} onChange={e => setActualCash(e.target.value)}
+                  placeholder="Count and enter…"
+                  style={{ ...FIELD_INPUT, fontSize: 22, fontWeight: 800, textAlign: "right", border: `2px solid ${diffColor}` }} />
+                {actualCash && (
+                  <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8,
+                    background: diff === 0 ? "#064e3b" : diff > 0 ? "#451a03" : "#450a0a",
+                    display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, color: MUTED }}>{diffLabel}</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: diffColor }}>
+                      {diff === 0 ? "✓ ₹0" : `${diff > 0 ? "+" : "-"}₹${inr(Math.abs(diff))}`}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <div>
-              <label style={FIELD_LABEL}>Notes</label>
-              <input value={dcNotes} onChange={e => setDcNotes(e.target.value)} placeholder="Day close notes…" style={FIELD_INPUT} />
+
+            {/* Bank balance */}
+            <div style={{ background: PANEL, borderRadius: 12, padding: "14px 20px", marginBottom: 14, border: BORDER, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 11, color: MUTED, fontWeight: 700, letterSpacing: "0.06em", marginBottom: 4, textTransform: "uppercase" }}>Bank Balance — This Branch</div>
+                <div style={{ fontSize: 12, color: MUTED }}>
+                  Opening ₹{inr(dc.opening_bank || 0)} &nbsp;+&nbsp; Today ₹{inr(dc.bank_collected || 0)}
+                </div>
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: "#3b82f6" }}>₹{inr(dc.bank || 0)}</div>
             </div>
-            <button onClick={handleDayClose} disabled={dcSaving}
-              style={{ ...BTN_PRIMARY, padding: "16px", fontSize: 16, background: "#4f46e5", flex: "unset" }}>
-              {dcSaving ? "Submitting…" : "Submit Day Close"}
+
+            <textarea value={dcNotes} onChange={e => setDcNotes(e.target.value)}
+              placeholder="Any notes for today (optional)…" rows={3}
+              style={{ ...FIELD_INPUT, width: "100%", resize: "none", marginBottom: 16, boxSizing: "border-box" } as any} />
+
+            <button onClick={handleDayClose} disabled={dcSaving || !actualCash}
+              style={{ width: "100%", padding: "18px", background: "#4f46e5", color: "#fff", border: "none",
+                borderRadius: 12, fontSize: 18, fontWeight: 800, cursor: "pointer", letterSpacing: "0.04em",
+                opacity: dcSaving || !actualCash ? 0.5 : 1 }}>
+              {dcSaving ? "SUBMITTING…" : "SUBMIT DAY CLOSE"}
             </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── MODALS ───────────────────────────────────────────────────────── */}
       {showNewCustomer && (
