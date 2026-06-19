@@ -76,7 +76,7 @@ const NewCustomerModal: React.FC<{
       });
       const data = await res.json();
       if (res.ok && data.id) {
-        onCreated({ ...data, name: data.username || form.username, phone: form.phone, outstanding_balance: 0 });
+        onCreated({ ...data, name: data.name || form.username, phone: form.phone, outstanding_balance: 0 });
         onClose();
       } else if (res.status === 409 && data.id) {
         // duplicate phone — just select existing customer
@@ -426,7 +426,8 @@ const BranchBilling: React.FC = () => {
   /* ── fetch helpers ─────────────────────────────────────────────────────── */
   const fetchBalances = useCallback(async () => {
     try {
-      const res = await apiFetch("/ledger/balance/current");
+      const branchParam = branchId ? `?branch_id=${branchId}` : "";
+      const res = await apiFetch(`/ledger/balance/current${branchParam}`);
       if (res.ok) { const d = await res.json(); setCashBal(d.cash || 0); setBankBal(d.bank || 0); }
     } catch {}
   }, []);

@@ -168,15 +168,18 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
               AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
         `, [companyId]).catch(()=>{});
 
+        const branchId = req.query.branch_id ? parseInt(req.query.branch_id) : null;
+        const branchFilter = branchId ? ` AND branch_id = ${branchId}` : '';
+
         const [cashRow, bankRow] = await Promise.all([
             db.pgGet(
                 `SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
-                 FROM cash_ledger WHERE company_id = $1`,
+                 FROM cash_ledger WHERE company_id = $1${branchFilter}`,
                 [companyId]
             ),
             db.pgGet(
                 `SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
-                 FROM bank_ledger WHERE company_id = $1`,
+                 FROM bank_ledger WHERE company_id = $1${branchFilter}`,
                 [companyId]
             ),
         ]);
