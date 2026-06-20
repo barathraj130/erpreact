@@ -140,7 +140,6 @@ router.post("/demo-login", async (req, res) => {
             demoUser = await db.pgGet(
                 `INSERT INTO users (username, email, password_hash, role, company_id, active_company_id, is_active)
                  VALUES ($1, $2, $3, 'admin', $4, $4, true)
-                 ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash
                  RETURNING *`,
                 [DEMO_USERNAME, DEMO_EMAIL, hash, company.id]
             );
@@ -161,9 +160,7 @@ router.post("/demo-login", async (req, res) => {
             }
         };
 
-        const { jwtSecret } = await import("../config/jwtConfig.js");
-        const { default: jwt2 } = await import("jsonwebtoken");
-        const token = jwt2.sign(tokenPayload, jwtSecret, { expiresIn: "2h" });
+        const token = jwt.sign(tokenPayload, jwtSecret, { expiresIn: "2h" });
 
         res.json({ success: true, token, user: tokenPayload.user });
     } catch (err) {
