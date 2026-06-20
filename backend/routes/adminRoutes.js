@@ -64,10 +64,12 @@ router.get('/branches-overview', authMiddleware, requireAdmin, async (req, res) 
 
 // ── GET /api/admin/branches/:id/detail ────────────────────────────────────────
 router.get('/branches/:id/detail', authMiddleware, requireAdmin, async (req, res) => {
-    const companyId = req.user.active_company_id;
+    const companyId = req.user.active_company_id || req.user.company_id;
     const branchId  = parseInt(req.params.id);
     try {
-        const branch  = await db.pgGet(`SELECT * FROM branches WHERE id = $1 AND company_id = $2`, [branchId, companyId]);
+        const branch = companyId
+            ? await db.pgGet(`SELECT * FROM branches WHERE id = $1 AND company_id = $2`, [branchId, companyId])
+            : await db.pgGet(`SELECT * FROM branches WHERE id = $1`, [branchId]);
         if (!branch) return res.status(404).json({ error: 'Branch not found' });
 
         const manager = await db.pgGet(`
@@ -75,6 +77,8 @@ router.get('/branches/:id/detail', authMiddleware, requireAdmin, async (req, res
             WHERE branch_id = $1 AND role = 'branch_manager' AND is_active = true LIMIT 1
         `, [branchId]);
 
+        const statsParams = companyId ? [branchId, companyId] : [branchId];
+        const statsWhere  = companyId ? 'branch_id = $1 AND company_id = $2' : 'branch_id = $1';
         const stats = await db.pgGet(`
             SELECT
                 COALESCE(SUM(CASE WHEN DATE(invoice_date) = CURRENT_DATE THEN COALESCE(grand_total, net_payable, 0) END), 0) AS today_sales,
@@ -82,13 +86,15 @@ router.get('/branches/:id/detail', authMiddleware, requireAdmin, async (req, res
                 COALESCE(SUM(CASE WHEN DATE_TRUNC('month', invoice_date) = DATE_TRUNC('month', CURRENT_DATE) THEN COALESCE(grand_total, net_payable, 0) END), 0) AS month_sales,
                 COALESCE(SUM(COALESCE(balance_amount, 0)), 0)                                                                  AS outstanding
             FROM invoices
-            WHERE branch_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false
-        `, [branchId, companyId]);
+            WHERE ${statsWhere} AND COALESCE(is_deleted, false) = false
+        `, statsParams);
 
+        const custParams = companyId ? [branchId, companyId] : [branchId];
+        const custWhere  = companyId ? 'branch_id = $1 AND company_id = $2' : 'branch_id = $1';
         const customerCount = await db.pgGet(`
             SELECT COUNT(*) AS customer_count FROM users
-            WHERE branch_id = $1 AND company_id = $2 AND role IN ('customer','user')
-        `, [branchId, companyId]);
+            WHERE ${custWhere} AND role IN ('customer','user')
+        `, custParams);
 
         res.json({
             branch,
