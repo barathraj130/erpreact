@@ -183,11 +183,9 @@ const InventoryReports = () => {
 
   const stockBreakdownCols = [
     { key: 'product_name', label: 'Product', wrap: true },
-    { key: 'stock_type', label: 'Type', align: 'center', render: stockTypeBadge },
-    { key: 'lot_number', label: 'Lot', align: 'center', render: v => v || '—' },
-    { key: 'quantity', label: 'Qty', align: 'right', render: v => formatNum(v) },
-    { key: 'avg_cost', label: 'Avg Cost', align: 'right', render: v => formatINR(v) },
-    { key: 'total_cost', label: 'Total Value', align: 'right', render: v => formatINR(v) },
+    { key: 'quantity', label: 'Stock Qty', align: 'right', render: v => formatNum(v) },
+    { key: 'avg_cost', label: 'Cost Price', align: 'right', render: v => formatINR(v) },
+    { key: 'total_cost', label: 'Stock Value', align: 'right', bold: true, render: v => formatINR(v), colorFn: () => '#1d4ed8' },
   ];
 
   const lotPLCols = [

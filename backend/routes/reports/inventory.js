@@ -105,7 +105,12 @@ router.get('/fast-moving', authMiddleware, async (req, res) => {
       ORDER BY qty_sold DESC
       LIMIT $4
     `;
-    const rawData = await db.pgAll(sql, [companyId, startDate, endDate, parseInt(limit)]);
+    let rawData = await db.pgAll(sql, [companyId, startDate, endDate, parseInt(limit)]);
+    // Auto-expand to last 3 months if no data in selected period
+    if (rawData.length === 0) {
+      const expandedSql = sql.replace('AND i.invoice_date BETWEEN $2::date AND $3::date', 'AND i.invoice_date >= (CURRENT_DATE - INTERVAL \'3 months\')');
+      rawData = await db.pgAll(expandedSql, [companyId, parseInt(limit)]).catch(() => []);
+    }
     const data = rawData.map(r => ({
       ...r,
       qty_sold: parseFloat(r.qty_sold || 0),
@@ -173,18 +178,18 @@ router.get('/reorder-alerts', authMiddleware, async (req, res) => {
       SELECT
         p.name AS product_name,
         COALESCE(p.current_stock, 0) AS current_stock,
-        COALESCE(p.min_stock_level, 0) AS min_stock_level,
+        COALESCE(p.min_stock_level, p.min_stock, p.low_stock_threshold, 0) AS min_stock_level,
         COALESCE(p.cost_price, 0) AS cost_price,
         CASE
           WHEN COALESCE(p.current_stock, 0) = 0 THEN 'OUT_OF_STOCK'
-          WHEN COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, 0) THEN 'CRITICAL'
-          WHEN COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, 0) * 1.5 THEN 'LOW'
+          WHEN COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, p.min_stock, p.low_stock_threshold, 0) THEN 'CRITICAL'
+          WHEN COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, p.min_stock, p.low_stock_threshold, 0) * 1.5 THEN 'LOW'
           ELSE 'OK'
         END AS alert_level
       FROM products p
       WHERE p.company_id = $1
         AND COALESCE(p.is_deleted, false) = false
-        AND (COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, 5) OR COALESCE(p.current_stock, 0) = 0)
+        AND (COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, p.min_stock, p.low_stock_threshold, 5) OR COALESCE(p.current_stock, 0) = 0)
       ORDER BY
         CASE WHEN COALESCE(p.current_stock, 0) = 0 THEN 0
              WHEN COALESCE(p.current_stock, 0) <= COALESCE(p.min_stock_level, 0) THEN 1
@@ -280,7 +285,7 @@ router.get('/aging', authMiddleware, async (req, res) => {
 
 /**
  * GET /api/reports/inventory/stock-breakdown
- * Per-product, per-stock-type breakdown
+ * Per-product breakdown from branch_inventory
  */
 router.get('/stock-breakdown', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
@@ -289,24 +294,22 @@ router.get('/stock-breakdown', authMiddleware, async (req, res) => {
       SELECT
         p.id AS product_id,
         p.name AS product_name,
-        i.stock_type,
-        i.lot_id,
-        sl.lot_number,
-        COALESCE(i.quantity, 0) AS quantity,
-        COALESCE(i.avg_cost, 0) AS avg_cost,
-        COALESCE(i.total_cost, 0) AS total_cost
-      FROM inventory i
-      JOIN products p ON i.product_id = p.id
-      LEFT JOIN stock_lots sl ON i.lot_id = sl.id
-      WHERE p.company_id = $1 AND COALESCE(p.is_deleted, false) = false AND i.quantity > 0
-      ORDER BY p.name, i.stock_type
+        b.branch_id,
+        COALESCE(b.current_stock, 0) AS quantity,
+        COALESCE(p.cost_price, 0) AS avg_cost,
+        COALESCE(b.current_stock, 0) * COALESCE(p.cost_price, 0) AS total_cost
+      FROM branch_inventory b
+      JOIN products p ON b.product_id = p.id
+      WHERE b.company_id = $1
+        AND COALESCE(p.is_deleted, false) = false
+        AND COALESCE(b.current_stock, 0) > 0
+      ORDER BY p.name
     `;
     const data = await db.pgAll(sql, [companyId]);
     const summary = {
-      total_fresh: data.filter(r => r.stock_type === 'fresh').reduce((s, r) => s + Number(r.quantity), 0),
-      total_mistake: data.filter(r => r.stock_type === 'mistake').reduce((s, r) => s + Number(r.quantity), 0),
-      total_repaired: data.filter(r => r.stock_type === 'fresh_repaired').reduce((s, r) => s + Number(r.quantity), 0),
+      total_qty: data.reduce((s, r) => s + Number(r.quantity), 0),
       total_value: data.reduce((s, r) => s + Number(r.total_cost), 0),
+      total_products: data.length,
     };
     res.json({ data: data || [], summary });
   } catch (err) {
