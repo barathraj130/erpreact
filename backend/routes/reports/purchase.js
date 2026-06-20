@@ -37,7 +37,12 @@ router.get('/vendor-performance', authMiddleware, async (req, res) => {
       ORDER BY total_purchased DESC
       LIMIT 20
     `;
-    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    let rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    // Auto-expand: show all-time if no data in selected period
+    if (rawData.length === 0) {
+      const allTimeSql = sql.replace('AND pb.bill_date BETWEEN $2::date AND $3::date', '');
+      rawData = await db.pgAll(allTimeSql, [companyId]);
+    }
     const data = rawData.map(r => ({
       ...r,
       bill_count: parseFloat(r.bill_count || 0),
@@ -103,21 +108,28 @@ router.get('/monthly-trend', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
   const { from, to } = req.query;
   const { from: startDate, to: endDate } = getDateRange(from, to);
+  const baseSql = `
+    SELECT
+      TO_CHAR(DATE_TRUNC('month', pb.bill_date), 'Mon YYYY') AS period,
+      DATE_TRUNC('month', pb.bill_date) AS period_sort,
+      COALESCE(SUM(COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)), 0) AS amount,
+      COUNT(pb.id) AS bill_count
+    FROM purchase_bills pb
+    WHERE pb.company_id = $1
+      AND COALESCE(pb.is_deleted, false) = false
+  `;
   try {
-    const sql = `
-      SELECT
-        TO_CHAR(DATE_TRUNC('month', pb.bill_date), 'Mon YYYY') AS period,
-        DATE_TRUNC('month', pb.bill_date) AS period_sort,
-        COALESCE(SUM(COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)), 0) AS amount,
-        COUNT(pb.id) AS bill_count
-      FROM purchase_bills pb
-      WHERE pb.company_id = $1
-        AND COALESCE(pb.is_deleted, false) = false
-        AND pb.bill_date BETWEEN $2::date AND $3::date
-      GROUP BY period_sort, period
-      ORDER BY period_sort ASC
-    `;
-    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    let rawData = await db.pgAll(
+      baseSql + ` AND pb.bill_date BETWEEN $2::date AND $3::date GROUP BY period_sort, period ORDER BY period_sort ASC`,
+      [companyId, startDate, endDate]
+    );
+    // Auto-expand to last 12 months if no data in selected period
+    if (rawData.length === 0) {
+      rawData = await db.pgAll(
+        baseSql + ` AND pb.bill_date >= (CURRENT_DATE - INTERVAL '12 months') GROUP BY period_sort, period ORDER BY period_sort ASC`,
+        [companyId]
+      );
+    }
     const data = rawData.map(r => ({
       ...r,
       amount: parseFloat(r.amount || 0),
