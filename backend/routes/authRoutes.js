@@ -115,6 +115,64 @@ router.post("/login", loginLimiter, async (req, res) => {
 });
 
 /* ============================================================
+   1D. DEMO LOGIN — one-click guest access for customer demos
+============================================================ */
+router.post("/demo-login", async (req, res) => {
+    try {
+        const DEMO_USERNAME = "demo";
+        const DEMO_PASSWORD = "Demo@1234";
+        const DEMO_EMAIL    = "demo@jbsknitwear.com";
+
+        // Get the first active company
+        const company = await db.pgGet(
+            `SELECT id, company_name, company_code FROM companies WHERE is_active = TRUE ORDER BY id ASC LIMIT 1`
+        );
+        if (!company) return res.status(404).json({ error: "No active company found" });
+
+        // Find or create demo user
+        let demoUser = await db.pgGet(
+            `SELECT * FROM users WHERE username = $1 AND company_id = $2`,
+            [DEMO_USERNAME, company.id]
+        );
+
+        if (!demoUser) {
+            const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
+            demoUser = await db.pgGet(
+                `INSERT INTO users (username, email, password_hash, role, company_id, active_company_id, is_active)
+                 VALUES ($1, $2, $3, 'admin', $4, $4, true)
+                 ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash
+                 RETURNING *`,
+                [DEMO_USERNAME, DEMO_EMAIL, hash, company.id]
+            );
+        }
+
+        const tokenPayload = {
+            user: {
+                id:                  demoUser.id,
+                username:            DEMO_USERNAME,
+                email:               DEMO_EMAIL,
+                role:                "admin",
+                company_id:          company.id,
+                active_company_id:   company.id,
+                branch_id:           demoUser.branch_id || null,
+                subscription_status: "active",
+                enabled_modules:     [],
+                permissions:         []
+            }
+        };
+
+        const { jwtSecret } = await import("../config/jwtConfig.js");
+        const { default: jwt2 } = await import("jsonwebtoken");
+        const token = jwt2.sign(tokenPayload, jwtSecret, { expiresIn: "2h" });
+
+        res.json({ success: true, token, user: tokenPayload.user });
+    } catch (err) {
+        console.error("Demo login error:", err.message);
+        res.status(500).json({ error: "Demo login failed: " + err.message });
+    }
+});
+
+/* ============================================================
    1B. REFRESH TOKEN ROUTE
 ============================================================ */
 router.post("/refresh", async (req, res) => {

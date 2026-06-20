@@ -1,7 +1,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import React, { useEffect, useState } from "react";
-import { Eye, EyeOff, ShieldCheck, Mail, Building2, ChevronRight } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, Mail, Building2, ChevronRight, Zap } from "lucide-react";
 import { login } from "../api/authApi";
+import { apiFetch } from "../utils/api";
 import loginImg from "../assets/login-image.png";
 import "./Login.css";
 
@@ -13,6 +14,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [shake, setShake] = useState(false);
 
@@ -123,6 +125,25 @@ export default function Login() {
         setIsAuthenticating(false);
       }
     }, 1500);
+  }
+
+  async function handleDemoLogin() {
+    setIsDemoLoading(true);
+    setLoginError("");
+    try {
+      const res = await apiFetch("/auth/demo-login", { method: "POST" });
+      const data = await res.json();
+      if (data.success && data.token) {
+        localStorage.setItem("erp-token", data.token);
+        window.location.href = "/dashboard";
+      } else {
+        setLoginError(data.error || "Demo login failed.");
+      }
+    } catch {
+      setLoginError("Demo login failed. Please try again.");
+    } finally {
+      setIsDemoLoading(false);
+    }
   }
 
   const shakeAnimation = {
@@ -261,6 +282,38 @@ export default function Login() {
                       <span className="action-text-flex">
                         Authenticate Access <ChevronRight size={18} />
                       </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* DEMO LOGIN */}
+                <div style={{ position: "relative", margin: "16px 0 0", textAlign: "center" }}>
+                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(148,163,184,0.25)", transform: "translateY(-50%)" }} />
+                  <span style={{ position: "relative", background: "white", padding: "0 12px", fontSize: 12, color: "#94a3b8", fontWeight: 500 }}>or</span>
+                </div>
+                <div className="interactive-wrapper-fix login-button-wrapper" style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={handleDemoLogin}
+                    disabled={isDemoLoading}
+                    style={{
+                      width: "100%", padding: "12px 20px", borderRadius: 10,
+                      border: "1.5px solid #e2e8f0", background: "#f8fafc",
+                      color: "#334155", fontSize: 14, fontWeight: 600,
+                      cursor: isDemoLoading ? "not-allowed" : "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      transition: "all 0.2s"
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f1f5f9"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#6366f1"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f8fafc"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#e2e8f0"; }}
+                  >
+                    {isDemoLoading ? (
+                      <span className="action-spinner" style={{ borderColor: "#6366f1", borderTopColor: "transparent" }}></span>
+                    ) : (
+                      <>
+                        <Zap size={16} style={{ color: "#6366f1" }} />
+                        Try Demo — No Login Required
+                      </>
                     )}
                   </button>
                 </div>
