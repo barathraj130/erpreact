@@ -26,10 +26,10 @@ router.get('/audit', authMiddleware, async (req, res) => {
         i.invoice_number AS invoice_no,
         COALESCE(u.username, 'Unknown') AS customer_name,
         COALESCE(i.total_amount, 0) AS total_amount,
-        COALESCE(i.cgst_amount, 0) AS cgst,
-        COALESCE(i.sgst_amount, 0) AS sgst,
-        COALESCE(i.igst_amount, 0) AS igst,
-        COALESCE(i.cgst_amount, 0) + COALESCE(i.sgst_amount, 0) + COALESCE(i.igst_amount, 0) AS total_gst,
+        COALESCE(i.cgst_total, 0) AS cgst,
+        COALESCE(i.sgst_total, 0) AS sgst,
+        COALESCE(i.igst_total, 0) AS igst,
+        COALESCE(i.cgst_total, 0) + COALESCE(i.sgst_total, 0) + COALESCE(i.igst_total, 0) AS total_gst,
         i.invoice_type
       FROM invoices i
       LEFT JOIN users u ON i.customer_id = u.id
@@ -75,9 +75,9 @@ router.get('/tax-liability', authMiddleware, async (req, res) => {
     const [outputGst, inputGst] = await Promise.all([
       db.pgGet(`
         SELECT
-          COALESCE(SUM(cgst_amount), 0) AS output_cgst,
-          COALESCE(SUM(sgst_amount), 0) AS output_sgst,
-          COALESCE(SUM(igst_amount), 0) AS output_igst
+          COALESCE(SUM(cgst_total), 0) AS output_cgst,
+          COALESCE(SUM(sgst_total), 0) AS output_sgst,
+          COALESCE(SUM(igst_total), 0) AS output_igst
         FROM invoices
         WHERE company_id = $1
           AND COALESCE(is_deleted, false) = false
@@ -130,10 +130,10 @@ router.get('/collection-trend', authMiddleware, async (req, res) => {
       SELECT
         TO_CHAR(DATE_TRUNC('month', invoice_date), 'Mon') AS month,
         EXTRACT(MONTH FROM invoice_date) AS month_num,
-        COALESCE(SUM(cgst_amount), 0) AS cgst,
-        COALESCE(SUM(sgst_amount), 0) AS sgst,
-        COALESCE(SUM(igst_amount), 0) AS igst,
-        COALESCE(SUM(cgst_amount), 0) + COALESCE(SUM(sgst_amount), 0) + COALESCE(SUM(igst_amount), 0) AS total_gst
+        COALESCE(SUM(cgst_total), 0) AS cgst,
+        COALESCE(SUM(sgst_total), 0) AS sgst,
+        COALESCE(SUM(igst_total), 0) AS igst,
+        COALESCE(SUM(cgst_total), 0) + COALESCE(SUM(sgst_total), 0) + COALESCE(SUM(igst_total), 0) AS total_gst
       FROM invoices
       WHERE company_id = $1
         AND COALESCE(is_deleted, false) = false

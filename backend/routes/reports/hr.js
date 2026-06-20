@@ -24,7 +24,7 @@ router.get('/productivity', authMiddleware, async (req, res) => {
       SELECT
         e.name AS employee_name,
         e.designation,
-        e.department,
+        e.designation AS department,
         COUNT(CASE WHEN UPPER(a.status) IN ('PRESENT', 'OD') THEN 1 END) AS days_present,
         COUNT(a.id) AS total_days,
         CASE WHEN COUNT(a.id) > 0
@@ -35,8 +35,8 @@ router.get('/productivity', authMiddleware, async (req, res) => {
         AND a.company_id = $1
         AND a.date BETWEEN $2::date AND $3::date
       WHERE e.company_id = $1
-        AND COALESCE(e.is_active, true) = true
-      GROUP BY e.id, e.name, e.designation, e.department
+        AND COALESCE(e.status, 'Active') = 'Active'
+      GROUP BY e.id, e.name, e.designation
       ORDER BY attendance_pct DESC
     `;
     const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
@@ -107,7 +107,7 @@ router.get('/salary-cost', authMiddleware, async (req, res) => {
       db.pgAll(`
         SELECT
           e.name AS employee_name,
-          e.department,
+          e.designation AS department,
           COALESCE(SUM(sp.amount), 0) AS salary_paid,
           COUNT(sp.id) AS payment_count
         FROM employees e
@@ -115,7 +115,7 @@ router.get('/salary-cost', authMiddleware, async (req, res) => {
         JOIN salary_payments sp ON sp.salary_id = s.id
         WHERE s.company_id = $1
           AND sp.date BETWEEN $2::date AND $3::date
-        GROUP BY e.id, e.name, e.department
+        GROUP BY e.id, e.name, e.designation
         ORDER BY salary_paid DESC
       `, [companyId, startDate, endDate]).catch(() => []),
       db.pgGet(`
@@ -153,7 +153,7 @@ router.get('/advance-analysis', authMiddleware, async (req, res) => {
     const sql = `
       SELECT
         e.name AS employee_name,
-        e.department,
+        e.designation AS department,
         COALESCE(SUM(sa.amount), 0) AS total_advanced,
         COALESCE(SUM(CASE WHEN COALESCE(sa.status,'ACTIVE') = 'ACTIVE' THEN COALESCE(sa.current_balance, sa.amount, 0) ELSE 0 END), 0) AS outstanding,
         COUNT(sa.id) AS advance_count
@@ -162,8 +162,8 @@ router.get('/advance-analysis', authMiddleware, async (req, res) => {
         AND sa.company_id = $1
         AND sa.created_at::date BETWEEN $2::date AND $3::date
       WHERE e.company_id = $1
-        AND COALESCE(e.is_active, true) = true
-      GROUP BY e.id, e.name, e.department
+        AND COALESCE(e.status, 'Active') = 'Active'
+      GROUP BY e.id, e.name, e.designation
       HAVING COALESCE(SUM(sa.amount), 0) > 0
       ORDER BY outstanding DESC
     `;
