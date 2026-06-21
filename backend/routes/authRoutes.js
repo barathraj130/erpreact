@@ -155,7 +155,7 @@ router.post("/demo-login", async (req, res) => {
                 active_company_id:   company.id,
                 branch_id:           demoUser.branch_id || null,
                 subscription_status: "active",
-                enabled_modules:     [],
+                enabled_modules:     "sales,purchase,inventory,finance,hr,reports",
                 permissions:         []
             }
         };
