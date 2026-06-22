@@ -368,6 +368,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST from frontend
         delivery_order_id, // Links back to the delivery order that spawned this invoice
         walk_in_name,     // Retail walk-in customer name (no account required)
+        credit_note_ids,  // Pending sales-return IDs to auto-settle in ledger (no line items needed)
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
@@ -858,6 +859,51 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             }
         }
 
+
+        // ── Auto-settle pending credit notes in the ledger ──────────────
+        // Instead of adding return line items to the invoice, credit notes are
+        // settled here as CREDIT_NOTE_APPLIED ledger events so the customer's
+        // outstanding balance is reduced automatically.
+        if (Array.isArray(credit_note_ids) && credit_note_ids.length > 0 && customer_id) {
+            for (const cnId of credit_note_ids) {
+                try {
+                    const cn = await client.query(
+                        `SELECT id, total_amount, applied_amount, return_number
+                         FROM sales_returns WHERE id = $1 AND company_id = $2`,
+                        [cnId, companyId]
+                    );
+                    if (!cn.rows.length) continue;
+                    const row = cn.rows[0];
+                    const remaining = Number(row.total_amount) - Number(row.applied_amount || 0);
+                    if (remaining <= 0) continue;
+
+                    // Mark the credit note as fully applied
+                    await client.query(
+                        `UPDATE sales_returns SET applied_amount = total_amount WHERE id = $1`,
+                        [cnId]
+                    );
+
+                    // Create a ledger event that reduces the customer's outstanding
+                    await createCustomerLedgerEvent(client, {
+                        companyId,
+                        branchId: req.user.branch_id || 1,
+                        customerId: Number(customer_id),
+                        type: "CREDIT_NOTE_APPLIED",
+                        category: "CREDIT_NOTE",
+                        amount: remaining,
+                        date: new Date().toISOString().split("T")[0],
+                        description: `Credit note ${row.return_number || '#' + cnId} applied to Invoice #${finalInvoiceNumber}`,
+                        relatedInvoiceId: invoiceId,
+                        referenceType: "SALES_RETURN",
+                        referenceId: cnId,
+                        createdBy: req.user.id,
+                        bill_purpose: 'real',
+                    });
+                } catch (cnErr) {
+                    console.warn('[invoice] credit note settlement failed for id', cnId, cnErr.message);
+                }
+            }
+        }
 
         // ─────────────────────────────────────────────────────────────────
         // ACCOUNTING ENGINE — per-bill-type ledger entries (spec-compliant)

@@ -456,28 +456,12 @@ const CreateInvoice: React.FC = () => {
       const advance = rawBalance < 0 ? Math.abs(rawBalance) : 0;
       setCustomerAdvance(advance);
 
-      // Fetch pending credit notes and auto-apply them as return items
+      // Fetch pending credit notes — they will be auto-settled in the ledger on save (not as return line items)
       apiFetch(`/sales-returns/pending-credits?customer_id=${id}`)
         .then(r => r.json())
         .then(data => {
           const credits = Array.isArray(data) ? data : [];
           setPendingCredits(credits);
-          if (credits.length > 0) {
-            const autoReturns: InvoiceItem[] = credits.flatMap((cr: any) => {
-              const crItems: any[] = Array.isArray(cr.items)
-                ? cr.items
-                : (typeof cr.items === 'string' ? JSON.parse(cr.items) : []);
-              return crItems.map((it: any) => ({
-                id: Date.now() + Math.random(),
-                desc: it.description || '',
-                hsn: '',
-                uom: 'Pcs',
-                qty: Number(it.qty) || 0,
-                rate: Number(it.rate) || 0,
-              }));
-            });
-            setReturnItems(autoReturns);
-          }
         })
         .catch(() => setPendingCredits([]));
     } else {
@@ -626,6 +610,8 @@ const CreateInvoice: React.FC = () => {
         broker_commission_rate: brokerCommRate || null,
         branch_id: (activeBranch && (activeBranch as any).id !== 'all') ? (activeBranch as any).id : null,
         ...(fromDeliveryOrderId ? { delivery_order_id: fromDeliveryOrderId } : {}),
+        // IDs of pending credit notes to auto-settle in the ledger (no return line items)
+        credit_note_ids: pendingCredits.map((cr: any) => cr.id),
       };
       const res = await apiFetch("/invoice", {
         method: "POST",
@@ -1455,7 +1441,7 @@ const CreateInvoice: React.FC = () => {
             {/* Auto-applied credit notes info */}
             {pendingCredits.length > 0 && (
               <div style={{ marginTop: '10px', padding: '7px 12px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.65rem', color: '#166534', fontWeight: 600 }}>
-                ✓ {pendingCredits.length} pending credit note{pendingCredits.length > 1 ? 's' : ''} auto-applied as returns (₹{pendingCredits.reduce((s: number, cr: any) => s + Number(cr.remaining_credit || 0), 0).toLocaleString('en-IN')})
+                ✓ {pendingCredits.length} pending credit note{pendingCredits.length > 1 ? 's' : ''} will be auto-settled in ledger on save (₹{pendingCredits.reduce((s: number, cr: any) => s + Number(cr.remaining_credit || 0), 0).toLocaleString('en-IN')})
               </div>
             )}
             
