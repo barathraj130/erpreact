@@ -137,17 +137,21 @@ router.post("/demo-login", async (req, res) => {
         }
         const companyId = demoCompany.id;
 
-        // Find or create demo user under the demo company
+        // Find or create demo user — look up by email to avoid username unique-constraint conflicts
         let demoUser = await db.pgGet(
-            `SELECT * FROM users WHERE username = $1 AND company_id = $2`,
-            [DEMO_USERNAME, companyId]
+            `SELECT * FROM users WHERE email = $1`,
+            [DEMO_EMAIL]
         );
         if (!demoUser) {
             const hash = await bcrypt.hash("Demo@1234", 10);
+            // Use company-scoped username (e.g. "demo_7") to avoid clashing with any existing "demo" user
+            const scopedUsername = `demo_${companyId}`;
             demoUser = await db.pgGet(
                 `INSERT INTO users (username, email, password_hash, role, company_id, active_company_id, is_active)
-                 VALUES ($1, $2, $3, 'admin', $4, $4, true) RETURNING *`,
-                [DEMO_USERNAME, DEMO_EMAIL, hash, companyId]
+                 VALUES ($1, $2, $3, 'admin', $4, $4, true)
+                 ON CONFLICT (username) DO UPDATE SET active_company_id = EXCLUDED.active_company_id
+                 RETURNING *`,
+                [scopedUsername, DEMO_EMAIL, hash, companyId]
             );
         }
 
