@@ -358,20 +358,49 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
             }
         }
 
-        // 6. Proprietor account receipts (customers paying into proprietor's personal account)
+        // 6. Proprietor cash/bank transactions
+        // Only sync entries that physically move cash or bank money.
+        // CAPITAL_INTRO via CASH → cash_ledger IN (source='PROPRIETOR')
+        // DRAWINGS via CASH      → cash_ledger OUT (source='PROPRIETOR')
+        // CAPITAL_INTRO via BANK → bank_ledger IN
+        // DRAWINGS via BANK      → bank_ledger OUT
+        // PERSONAL_RECEIPT/PERSONAL_ACCOUNT mode → skip (no physical cash movement)
         const propTxns = await db.pgAll(`
-            SELECT transaction_date AS date, amount, transaction_type, notes
+            SELECT transaction_date AS date, amount, transaction_type, payment_mode
             FROM proprietor_transactions
             WHERE company_id = $1
+              AND UPPER(COALESCE(payment_mode,'CASH')) IN ('CASH','BANK','UPI','ONLINE','CHEQUE')
+              AND transaction_type IN ('CAPITAL_INTRO','DRAWINGS')
         `, [companyId]).catch(() => []);
+
+        // First, remove any bad PROPRIETOR_PAYOUT rows created by old rebuild runs for CAPITAL_INTRO
+        await db.pgRun(
+            `DELETE FROM cash_ledger WHERE company_id=$1 AND source='PROPRIETOR_PAYOUT'`,
+            [companyId]
+        ).catch(() => {});
+
         for (const r of propTxns) {
-            const direction = r.transaction_type === 'PERSONAL_RECEIPT' ? 'in' : 'out';
-            const source    = r.transaction_type === 'PERSONAL_RECEIPT' ? 'PROPRIETOR_RECEIPT' : 'PROPRIETOR_PAYOUT';
-            // Proprietor receipts are NOT physical cash/bank — they represent amounts owed via personal account.
-            // We add them to cash_ledger with source PROPRIETOR so cash flow reflects them.
-            const existing = await db.pgGet(`SELECT id FROM cash_ledger WHERE company_id=$1 AND source=$2 AND date=$3 AND amount=$4 LIMIT 1`, [companyId, source, r.date, r.amount]);
+            const pMode     = (r.payment_mode || 'CASH').toUpperCase();
+            const isCapital = r.transaction_type === 'CAPITAL_INTRO';
+            const direction = isCapital ? 'in' : 'out';
+            const useCash   = pMode === 'CASH';
+            const tbl       = useCash ? 'cash_ledger' : 'bank_ledger';
+            const existing  = await db.pgGet(
+                `SELECT id FROM ${tbl} WHERE company_id=$1 AND source='PROPRIETOR' AND direction=$2 AND date=$3 AND amount=$4 LIMIT 1`,
+                [companyId, direction, r.date, r.amount]
+            );
             if (!existing) {
-                await db.pgRun(`INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,$3,$4,$5,$6)`, [companyId, branchId, source, r.amount, direction, r.date]);
+                if (useCash) {
+                    await db.pgRun(
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,$4,$5)`,
+                        [companyId, branchId, r.amount, direction, r.date]
+                    );
+                } else {
+                    await db.pgRun(
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date) VALUES ($1,$2,'PROPRIETOR',$3,$4,'Main Account',$5)`,
+                        [companyId, branchId, r.amount, direction, r.date]
+                    );
+                }
                 inserted++;
             }
         }
