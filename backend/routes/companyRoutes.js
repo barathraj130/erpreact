@@ -376,6 +376,48 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
             }
         }
 
+        // 7. Restore orphaned CASH_TRANSFER entries
+        // If a Bank→Cash transfer's bank_ledger 'out' was deleted, cash_ledger still has the 'in'.
+        // Find every cash_ledger CASH_TRANSFER 'in' with no matching bank_ledger 'out' on the same date+amount.
+        const orphanCashIn = await db.pgAll(`
+            SELECT cl.amount, cl.date, cl.branch_id
+            FROM cash_ledger cl
+            WHERE cl.company_id = $1 AND cl.source = 'CASH_TRANSFER' AND cl.direction = 'in'
+              AND NOT EXISTS (
+                SELECT 1 FROM bank_ledger bl
+                WHERE bl.company_id = cl.company_id AND bl.source = 'CASH_TRANSFER'
+                  AND bl.direction = 'out' AND bl.date = cl.date AND bl.amount = cl.amount
+              )
+        `, [companyId]).catch(() => []);
+        for (const r of orphanCashIn) {
+            await db.pgRun(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+                 VALUES ($1,$2,'CASH_TRANSFER',$3,'out','Main Account',$4)`,
+                [companyId, r.branch_id || branchId, r.amount, r.date]
+            );
+            inserted++;
+        }
+
+        // If a Cash→Bank transfer's cash_ledger 'out' was deleted, bank_ledger still has the 'in'.
+        const orphanBankIn = await db.pgAll(`
+            SELECT bl.amount, bl.date, bl.branch_id
+            FROM bank_ledger bl
+            WHERE bl.company_id = $1 AND bl.source = 'CASH_TRANSFER' AND bl.direction = 'in'
+              AND NOT EXISTS (
+                SELECT 1 FROM cash_ledger cl
+                WHERE cl.company_id = bl.company_id AND cl.source = 'CASH_TRANSFER'
+                  AND cl.direction = 'out' AND cl.date = bl.date AND cl.amount = bl.amount
+              )
+        `, [companyId]).catch(() => []);
+        for (const r of orphanBankIn) {
+            await db.pgRun(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
+                 VALUES ($1,$2,'CASH_TRANSFER',$3,'out',$4)`,
+                [companyId, r.branch_id || branchId, r.amount, r.date]
+            );
+            inserted++;
+        }
+
         res.json({ success: true, inserted, message: `Ledger rebuilt — ${inserted} entries restored.` });
     } catch (err) {
         console.error('Rebuild ledger error:', err.message);
