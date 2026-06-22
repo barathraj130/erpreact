@@ -235,7 +235,9 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
             SELECT
                 u.id, u.username, u.nickname, u.email, u.phone, u.role, u.gstin,
                 u.address_line1, u.city_pincode, u.state, u.state_code,
-                u.initial_balance,
+                -- Use the effective opening balance (meta takes priority over raw column).
+                -- This ensures the Edit Customer form shows the same value used in outstanding calculations.
+                COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0)) AS initial_balance,
                 CASE WHEN u.meta IS NOT NULL AND (u.meta->>'customer_ledger_id') IS NOT NULL AND (u.meta->>'customer_ledger_id') != ''
                      THEN (u.meta->>'customer_ledger_id')::INTEGER ELSE NULL END as ledger_id,
                 u.bank_name, u.bank_account_no, u.bank_ifsc_code, u.created_at,
