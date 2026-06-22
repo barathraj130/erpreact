@@ -252,6 +252,12 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
+        // ── Ensure notes/created_by_name columns exist ──
+        await Promise.all([
+            db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
+            db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+        ]);
+
         // ── Self-heal step 0: fix NULL dates so they appear in date-filtered queries ──
         await db.pgRun(
             `UPDATE cash_ledger SET date = created_at::date
@@ -506,6 +512,12 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
+        // ── Ensure notes/created_by_name columns exist ──
+        await Promise.all([
+            db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
+            db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+        ]);
+
         // ── Self-heal step 0: fix NULL dates ──
         await db.pgRun(
             `UPDATE bank_ledger SET date = created_at::date

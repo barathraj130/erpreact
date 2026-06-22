@@ -365,15 +365,26 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
         // CAPITAL_INTRO via BANK → bank_ledger IN
         // DRAWINGS via BANK      → bank_ledger OUT
         // PERSONAL_RECEIPT/PERSONAL_ACCOUNT mode → skip (no physical cash movement)
+
+        // Ensure notes/created_by_name columns exist
+        await Promise.all([
+            db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
+            db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+            db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
+            db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+        ]);
+
         const propTxns = await db.pgAll(`
-            SELECT transaction_date AS date, amount, transaction_type, payment_mode
-            FROM proprietor_transactions
-            WHERE company_id = $1
-              AND UPPER(COALESCE(payment_mode,'CASH')) IN ('CASH','BANK','UPI','ONLINE','CHEQUE')
-              AND transaction_type IN ('CAPITAL_INTRO','DRAWINGS')
+            SELECT pt.transaction_date AS date, pt.amount, pt.transaction_type, pt.payment_mode,
+                   pt.notes, COALESCE(u.username, 'System') AS created_by_name
+            FROM proprietor_transactions pt
+            LEFT JOIN users u ON u.id = pt.created_by
+            WHERE pt.company_id = $1
+              AND UPPER(COALESCE(pt.payment_mode,'CASH')) IN ('CASH','BANK','UPI','ONLINE','CHEQUE')
+              AND pt.transaction_type IN ('CAPITAL_INTRO','DRAWINGS')
         `, [companyId]).catch(() => []);
 
-        // First, remove any bad PROPRIETOR_PAYOUT rows created by old rebuild runs for CAPITAL_INTRO
+        // Remove any bad PROPRIETOR_PAYOUT rows created by old rebuild runs
         await db.pgRun(
             `DELETE FROM cash_ledger WHERE company_id=$1 AND source='PROPRIETOR_PAYOUT'`,
             [companyId]
@@ -385,20 +396,40 @@ router.post('/rebuild-ledger', authMiddleware, async (req, res) => {
             const direction = isCapital ? 'in' : 'out';
             const useCash   = pMode === 'CASH';
             const tbl       = useCash ? 'cash_ledger' : 'bank_ledger';
-            const existing  = await db.pgGet(
+
+            // If a CASH_TRANSFER entry exists for same amount+date, reclassify it as PROPRIETOR
+            const cashTransfer = await db.pgGet(
+                `SELECT id FROM ${tbl} WHERE company_id=$1 AND source='CASH_TRANSFER' AND amount=$2 AND date=$3 LIMIT 1`,
+                [companyId, r.amount, r.date]
+            ).catch(() => null);
+            if (cashTransfer) {
+                await db.pgRun(
+                    `UPDATE ${tbl} SET source='PROPRIETOR', direction=$1, notes=$2, created_by_name=$3 WHERE id=$4`,
+                    [direction, r.notes || null, r.created_by_name || null, cashTransfer.id]
+                ).catch(() => {});
+                continue;
+            }
+
+            const existing = await db.pgGet(
                 `SELECT id FROM ${tbl} WHERE company_id=$1 AND source='PROPRIETOR' AND direction=$2 AND date=$3 AND amount=$4 LIMIT 1`,
                 [companyId, direction, r.date, r.amount]
             );
-            if (!existing) {
+            if (existing) {
+                // Update notes/created_by_name on existing entry
+                await db.pgRun(
+                    `UPDATE ${tbl} SET notes=$1, created_by_name=$2 WHERE id=$3`,
+                    [r.notes || null, r.created_by_name || null, existing.id]
+                ).catch(() => {});
+            } else {
                 if (useCash) {
                     await db.pgRun(
-                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,$4,$5)`,
-                        [companyId, branchId, r.amount, direction, r.date]
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes, created_by_name) VALUES ($1,$2,'PROPRIETOR',$3,$4,$5,$6,$7)`,
+                        [companyId, branchId, r.amount, direction, r.date, r.notes || null, r.created_by_name || null]
                     );
                 } else {
                     await db.pgRun(
-                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date) VALUES ($1,$2,'PROPRIETOR',$3,$4,'Main Account',$5)`,
-                        [companyId, branchId, r.amount, direction, r.date]
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date, notes, created_by_name) VALUES ($1,$2,'PROPRIETOR',$3,$4,'Main Account',$5,$6,$7)`,
+                        [companyId, branchId, r.amount, direction, r.date, r.notes || null, r.created_by_name || null]
                     );
                 }
                 inserted++;

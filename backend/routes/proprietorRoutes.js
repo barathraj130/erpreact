@@ -36,9 +36,11 @@ router.get('/', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
         const rows = await db.pgAll(
-            `SELECT pt.*, pa.account_name as personal_account_name, pa.account_type as personal_account_type
+            `SELECT pt.*, pa.account_name as personal_account_name, pa.account_type as personal_account_type,
+                    COALESCE(u.username, 'System') as created_by_name
              FROM proprietor_transactions pt
              LEFT JOIN personal_accounts pa ON pa.id = pt.personal_account_id
+             LEFT JOIN users u ON u.id = pt.created_by
              WHERE pt.company_id = $1 ORDER BY pt.transaction_date DESC, pt.created_at DESC`,
             [companyId]
         );
@@ -87,15 +89,17 @@ router.post('/drawings', authMiddleware, async (req, res) => {
             ]);
         }
 
+        const creatorRow = await client.query(`SELECT username FROM users WHERE id=$1`, [req.user.id]).catch(() => ({ rows: [] }));
+        const creatorName = creatorRow.rows[0]?.username || null;
         if (pMode === 'CASH') {
             await client.query(
-                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,'out',$4)`,
-                [companyId, branchId, amt, tDate]
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes, created_by_name) VALUES ($1,$2,'PROPRIETOR',$3,'out',$4,$5,$6)`,
+                [companyId, branchId, amt, tDate, notes || null, creatorName]
             );
         } else {
             await client.query(
-                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'PROPRIETOR',$3,'out','Main Account',$4,$5)`,
-                [companyId, branchId, amt, `PROP-${record.id}`, tDate]
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, notes, created_by_name) VALUES ($1,$2,'PROPRIETOR',$3,'out','Main Account',$4,$5,$6,$7)`,
+                [companyId, branchId, amt, `PROP-${record.id}`, tDate, notes || null, creatorName]
             );
         }
 
@@ -149,15 +153,17 @@ router.post('/capital', authMiddleware, async (req, res) => {
             ]);
         }
 
+        const creatorRow2 = await client.query(`SELECT username FROM users WHERE id=$1`, [req.user.id]).catch(() => ({ rows: [] }));
+        const creatorName2 = creatorRow2.rows[0]?.username || null;
         if (pMode === 'CASH') {
             await client.query(
-                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'PROPRIETOR',$3,'in',$4)`,
-                [companyId, branchId, amt, tDate]
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes, created_by_name) VALUES ($1,$2,'PROPRIETOR',$3,'in',$4,$5,$6)`,
+                [companyId, branchId, amt, tDate, notes || null, creatorName2]
             );
         } else {
             await client.query(
-                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date) VALUES ($1,$2,'PROPRIETOR',$3,'in','Main Account',$4,$5)`,
-                [companyId, branchId, amt, `PROP-${record.id}`, tDate]
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, notes, created_by_name) VALUES ($1,$2,'PROPRIETOR',$3,'in','Main Account',$4,$5,$6,$7)`,
+                [companyId, branchId, amt, `PROP-${record.id}`, tDate, notes || null, creatorName2]
             );
         }
 

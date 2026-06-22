@@ -242,13 +242,14 @@ const ProprietorAccount: React.FC = () => {
               <th>Party / Account</th>
               <th className="text-right">Amount</th>
               <th>Mode</th>
-              <th>Notes</th>
+              <th>Notes / Reason</th>
+              <th>By</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: "center", color: "#94a3b8", padding: "40px" }}>No transactions recorded yet.</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: "center", color: "#94a3b8", padding: "40px" }}>No transactions recorded yet.</td></tr>
             ) : filtered.map((t: any) => {
               const meta = TX_META[t.transaction_type as TxType] || { color: "#64748b", bg: "#f1f5f9", label: t.transaction_type };
               return (
@@ -273,6 +274,7 @@ const ProprietorAccount: React.FC = () => {
                     )}
                   </td>
                   <td style={{ color: "#64748b", fontSize: "13px" }}>{t.notes || "—"}</td>
+                  <td style={{ color: "#64748b", fontSize: "13px" }}>{t.created_by_name || "—"}</td>
                   <td>
                     <div style={{ display: "flex", gap: "6px" }}>
                       <button

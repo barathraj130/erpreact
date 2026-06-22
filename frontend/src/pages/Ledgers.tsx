@@ -15,6 +15,8 @@ interface LedgerEntry {
   bank_name?: string;
   transaction_id?: string;
   description?: string;
+  notes?: string;
+  created_by_name?: string;
   created_at: string;
 }
 
@@ -226,7 +228,17 @@ const Ledgers: React.FC = () => {
                   <span style={{ background: "#ede9fe", color: "#6d28d9", fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", letterSpacing: "0.04em" }}>RECONCILED</span>
                   <span style={{ color: "#6d28d9", fontWeight: 600 }}>Cash Reconciliation</span>
                 </span>
-              ) : sourceLabel(entry.source)}
+              ) : (
+                <div>
+                  <div>{sourceLabel(entry.source)}</div>
+                  {(entry.notes || entry.created_by_name) && (
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {entry.notes && <span title="Reason">📝 {entry.notes}</span>}
+                      {entry.created_by_name && <span title="Recorded by">👤 {entry.created_by_name}</span>}
+                    </div>
+                  )}
+                </div>
+              )}
             </td>
             {type === "BANK" && (
               <td style={{ padding: "14px 16px" }}>
@@ -357,6 +369,9 @@ const Ledgers: React.FC = () => {
       LOAN_RECEIVED: "Loan Received",
       LOAN_DISBURSEMENT: "Loan Disbursement",
       CASH_RECONCILIATION: "Cash Reconciliation",
+      PROPRIETOR: "Proprietor",
+      CASH_TRANSFER: "Cash Transfer",
+      PURCHASE_RETURN: "Purchase Return",
       Payment: "Payment",
       payment: "Payment",
     };
