@@ -13,6 +13,7 @@ import {
   FaSync,
   FaTimes,
   FaTrash,
+  FaUndo,
 } from "react-icons/fa";
 import { PurchaseBill, fetchPurchaseBills } from "../api/purchaseBillApi";
 import { scanProductFromBill } from "../api/productApi";
@@ -44,6 +45,63 @@ const PurchaseBills: React.FC = () => {
   const [billFile, setBillFile] = useState<File | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+
+  // Purchase Return Modal
+  const [returnBill, setReturnBill] = useState<any | null>(null);
+  const [returnItems, setReturnItems] = useState<any[]>([]);
+  const [returnNotes, setReturnNotes] = useState("");
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [returnSuccess, setReturnSuccess] = useState("");
+
+  const openReturnModal = async (bill: any) => {
+    setReturnSuccess("");
+    setReturnNotes("");
+    setReturnBill(bill);
+    // Load bill items
+    try {
+      const res = await apiFetch(`/purchase-bills/${bill.id}`);
+      const data = await res.json();
+      const items = (data.items || []).map((i: any) => ({
+        product_id: i.product_id,
+        description: i.description || i.product_name || "Item",
+        qty: 0,
+        max_qty: Number(i.quantity) || 0,
+        rate: Number(i.unit_price) || Number(i.rate) || 0,
+      }));
+      setReturnItems(items);
+    } catch {
+      setReturnItems([]);
+    }
+  };
+
+  const submitReturn = async () => {
+    const toReturn = returnItems.filter(i => i.qty > 0);
+    if (toReturn.length === 0) { alert("Enter qty to return for at least one item."); return; }
+    setReturnLoading(true);
+    try {
+      const res = await apiFetch("/purchase-bills/returns", {
+        method: "POST",
+        body: JSON.stringify({
+          original_bill_id: returnBill.id,
+          supplier_id: returnBill.supplier_id,
+          supplier_name: returnBill.supplier_name,
+          return_date: new Date().toISOString().split("T")[0],
+          items: toReturn.map(i => ({ product_id: i.product_id, description: i.description, qty: i.qty, rate: i.rate })),
+          notes: returnNotes,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReturnSuccess(`Debit Note ${data.return.return_number} created — ₹${toReturn.reduce((s,i)=>s+i.qty*i.rate,0).toLocaleString("en-IN")} returned to supplier.`);
+        setReturnItems(prev => prev.map(i => ({ ...i, qty: 0 })));
+      } else {
+        alert(data.error || "Return failed");
+      }
+    } catch {
+      alert("Return failed. Please try again.");
+    }
+    setReturnLoading(false);
+  };
 
   // View Bill Detail Modal
   const [viewBill, setViewBill] = useState<any | null>(null);
@@ -388,6 +446,7 @@ const PurchaseBills: React.FC = () => {
                     </div>
                     <div style={{ display: "flex", gap: "8px" }}>
                       <button className="control-btn" style={{ background: "#f8fafc" }} onClick={() => handleViewBill(bill)} title="View"><FaEye /></button>
+                      <button className="control-btn" style={{ background: "#fff7ed", color: "#f97316" }} onClick={() => openReturnModal(bill)} title="Return to Supplier"><FaUndo /></button>
                       <button className="control-btn" style={{ background: "var(--primary-glow)", color: "var(--primary)" }} onClick={() => handleEdit(bill)} title="Edit"><FaEdit /></button>
                       <button className="control-btn" style={{ background: "#fef2f2", color: "#ef4444" }} onClick={() => handleDelete(bill)} title="Delete"><FaTrash /></button>
                     </div>
@@ -480,33 +539,10 @@ const PurchaseBills: React.FC = () => {
                           justifyContent: "center",
                         }}
                       >
-                        <button
-                          className="control-btn"
-                          style={{ background: "var(--bg-body)" }}
-                          title="View"
-                          onClick={() => handleViewBill(bill)}
-                        >
-                          <FaEye />
-                        </button>
-                        <button
-                          className="control-btn"
-                          style={{
-                            background: "var(--primary-glow)",
-                            color: "var(--primary)",
-                          }}
-                          onClick={() => handleEdit(bill)}
-                          title="Edit"
-                        >
-                          <FaEdit />
-                        </button>
-                        <button
-                          className="control-btn"
-                          style={{ background: "#fef2f2", color: "#ef4444" }}
-                          onClick={() => handleDelete(bill)}
-                          title="Delete"
-                        >
-                          <FaTrash />
-                        </button>
+                        <button className="control-btn" style={{ background: "var(--bg-body)" }} title="View" onClick={() => handleViewBill(bill)}><FaEye /></button>
+                        <button className="control-btn" style={{ background: "#fff7ed", color: "#f97316" }} onClick={() => openReturnModal(bill)} title="Return to Supplier"><FaUndo /></button>
+                        <button className="control-btn" style={{ background: "var(--primary-glow)", color: "var(--primary)" }} onClick={() => handleEdit(bill)} title="Edit"><FaEdit /></button>
+                        <button className="control-btn" style={{ background: "#fef2f2", color: "#ef4444" }} onClick={() => handleDelete(bill)} title="Delete"><FaTrash /></button>
                       </div>
                     </td>
                   </motion.tr>
@@ -1000,6 +1036,95 @@ const PurchaseBills: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── PURCHASE RETURN MODAL ── */}
+      {returnBill && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 580, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+            {/* Header */}
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#0f172a" }}>Return to Supplier</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>
+                  Bill #{returnBill.bill_number} · {returnBill.supplier_name}
+                </p>
+              </div>
+              <button onClick={() => setReturnBill(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#94a3b8" }}>×</button>
+            </div>
+
+            <div style={{ padding: "20px 24px" }}>
+              {returnSuccess ? (
+                <div style={{ padding: "16px", background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac", color: "#166534", fontSize: 14, fontWeight: 600, textAlign: "center" }}>
+                  ✓ {returnSuccess}
+                  <br />
+                  <button onClick={() => setReturnBill(null)} style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", fontWeight: 600, cursor: "pointer" }}>Close</button>
+                </div>
+              ) : (
+                <>
+                  {/* Items */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, fontSize: 11, fontWeight: 700, color: "#64748b", padding: "0 0 8px", borderBottom: "1px solid #f1f5f9" }}>
+                      <span>PRODUCT</span><span style={{ textAlign: "center" }}>PURCHASED</span><span style={{ textAlign: "center" }}>RETURN QTY</span><span style={{ textAlign: "right" }}>SUBTOTAL</span>
+                    </div>
+                    {returnItems.length === 0 && <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No items found for this bill.</div>}
+                    {returnItems.map((item, idx) => (
+                      <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f8fafc" }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{item.description}</div>
+                          <div style={{ fontSize: 11, color: "#94a3b8" }}>₹{item.rate}/unit</div>
+                        </div>
+                        <div style={{ textAlign: "center", fontSize: 13, color: "#64748b" }}>{item.max_qty}</div>
+                        <div>
+                          <input
+                            type="number" min={0} max={item.max_qty}
+                            value={item.qty || ""}
+                            onChange={e => {
+                              const v = Math.min(Number(e.target.value) || 0, item.max_qty);
+                              setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: v } : it));
+                            }}
+                            style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1.5px solid #e2e8f0", textAlign: "center", fontSize: 13, fontWeight: 600 }}
+                            placeholder="0"
+                          />
+                        </div>
+                        <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: item.qty > 0 ? "#f97316" : "#94a3b8" }}>
+                          {item.qty > 0 ? `₹${(item.qty * item.rate).toLocaleString("en-IN")}` : "—"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Total */}
+                  <div style={{ background: "#fff7ed", borderRadius: 8, padding: "12px 16px", display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "#92400e" }}>Total Debit Note</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: "#f97316" }}>
+                      ₹{returnItems.reduce((s,i) => s + (i.qty||0)*i.rate, 0).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+
+                  {/* Notes */}
+                  <textarea
+                    value={returnNotes}
+                    onChange={e => setReturnNotes(e.target.value)}
+                    placeholder="Reason for return (optional)..."
+                    rows={2}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: 13, resize: "none", boxSizing: "border-box", marginBottom: 16 }}
+                  />
+
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => setReturnBill(null)} style={{ flex: 1, padding: "11px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
+                      Cancel
+                    </button>
+                    <button onClick={submitReturn} disabled={returnLoading || returnItems.every(i => !i.qty)} style={{ flex: 2, padding: "11px", borderRadius: 8, border: "none", background: "#f97316", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14, opacity: returnItems.every(i => !i.qty) ? 0.5 : 1 }}>
+                      {returnLoading ? "Saving..." : "📦 Record Return (Debit Note)"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

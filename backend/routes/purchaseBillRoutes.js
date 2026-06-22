@@ -1076,4 +1076,123 @@ router.patch("/:id/archive", authMiddleware, async (req, res) => {
     }
 });
 
+// ─────────────────────────────────────────────────────────
+// PURCHASE RETURNS (Debit Notes to Supplier)
+// ─────────────────────────────────────────────────────────
+
+// Ensure purchase_returns table exists
+async function ensurePurchaseReturnsTable() {
+    await db.pgRun(`
+        CREATE TABLE IF NOT EXISTS purchase_returns (
+            id               SERIAL PRIMARY KEY,
+            company_id       INTEGER NOT NULL,
+            branch_id        INTEGER DEFAULT 1,
+            return_number    VARCHAR(50),
+            original_bill_id INTEGER REFERENCES purchase_bills(id) ON DELETE SET NULL,
+            supplier_id      INTEGER,
+            supplier_name    VARCHAR(255),
+            return_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+            items            JSONB NOT NULL DEFAULT '[]',
+            total_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
+            notes            TEXT,
+            created_by       INTEGER,
+            created_at       TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+}
+
+// GET /purchase-bills/returns — list all purchase returns for this company
+router.get("/returns/list", authMiddleware, async (req, res) => {
+    await ensurePurchaseReturnsTable();
+    const companyId = req.user.active_company_id;
+    try {
+        const rows = await db.pgAll(`
+            SELECT pr.*, pb.bill_number AS original_bill_number
+            FROM purchase_returns pr
+            LEFT JOIN purchase_bills pb ON pb.id = pr.original_bill_id
+            WHERE pr.company_id = $1
+            ORDER BY pr.return_date DESC, pr.id DESC
+        `, [companyId]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /purchase-bills/returns — record a return to supplier
+router.post("/returns", authMiddleware, async (req, res) => {
+    await ensurePurchaseReturnsTable();
+    const companyId = sanitizeInt(req.user.active_company_id);
+    const branchId  = sanitizeInt(req.user.branch_id) || 1;
+
+    const { original_bill_id, supplier_id, supplier_name, return_date, items, notes } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'At least one return item is required' });
+    }
+
+    const processedItems = items.map(i => ({
+        product_id:  i.product_id || null,
+        description: i.description || 'Returned item',
+        qty:         Number(i.qty) || 0,
+        rate:        Number(i.rate) || 0,
+        total:       (Number(i.qty) || 0) * (Number(i.rate) || 0),
+    }));
+
+    const totalAmt = processedItems.reduce((s, i) => s + i.total, 0);
+    if (totalAmt <= 0) return res.status(400).json({ error: 'Return amount must be > 0' });
+
+    const rDate = return_date || new Date().toISOString().split('T')[0];
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        // Generate return number
+        const countRow = await client.query(
+            `SELECT COUNT(*) AS cnt FROM purchase_returns WHERE company_id = $1`, [companyId]
+        );
+        const retNum = `DN-${String(parseInt(countRow.rows[0].cnt) + 1).padStart(4, '0')}`;
+
+        // Insert purchase return record
+        const retRow = await client.query(
+            `INSERT INTO purchase_returns
+                (company_id, branch_id, return_number, original_bill_id, supplier_id, supplier_name, return_date, items, total_amount, notes, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+            [companyId, branchId, retNum, original_bill_id || null, supplier_id || null,
+             supplier_name || null, rDate, JSON.stringify(processedItems), totalAmt, notes || null, req.user.id]
+        );
+        const record = retRow.rows[0];
+
+        // Deduct returned items from branch_inventory (they're going back to supplier)
+        for (const item of processedItems) {
+            if (item.product_id && item.qty > 0) {
+                await client.query(
+                    `UPDATE branch_inventory
+                     SET current_stock = GREATEST(0, current_stock - $1), last_updated = NOW()
+                     WHERE company_id = $2 AND branch_id = $3 AND product_id = $4`,
+                    [item.qty, companyId, branchId, item.product_id]
+                );
+            }
+        }
+
+        // Ledger: reduce what we owe the supplier (debit the supplier payable)
+        await client.query(
+            `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
+             VALUES ($1,$2,'PURCHASE_RETURN',$3,'in','Supplier Debit Note',$4)`,
+            [companyId, branchId, totalAmt, rDate]
+        ).catch(() => {}); // non-fatal
+
+        await client.query('COMMIT');
+        res.status(201).json({ success: true, return: record });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('[purchase-return]', err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 export default router;
