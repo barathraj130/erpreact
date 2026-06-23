@@ -416,7 +416,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
             SELECT cl.*,
               CASE
                 WHEN cl.invoice_id IS NOT NULL THEN
-                  (SELECT u.username FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = cl.invoice_id LIMIT 1)
+                  (SELECT u.username FROM invoices i JOIN users u ON u.id = i.customer_id WHERE i.id = cl.invoice_id LIMIT 1)
                 WHEN cl.reference_id IS NOT NULL AND cl.source = 'RECEIPT' THEN
                   (SELECT u.username FROM transactions t JOIN users u ON u.id = t.user_id WHERE t.id = cl.reference_id LIMIT 1)
                 WHEN cl.source = 'PROPRIETOR' THEN 'Proprietor'
@@ -623,7 +623,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
             SELECT bl.*,
               CASE
                 WHEN bl.invoice_id IS NOT NULL THEN
-                  (SELECT u.username FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = bl.invoice_id LIMIT 1)
+                  (SELECT u.username FROM invoices i JOIN users u ON u.id = i.customer_id WHERE i.id = bl.invoice_id LIMIT 1)
                 WHEN bl.source = 'CUSTOMER_PAYMENT' AND bl.reference_id IS NOT NULL THEN
                   (SELECT u.username FROM transactions t JOIN users u ON u.id = t.user_id WHERE t.id = bl.reference_id LIMIT 1)
                 WHEN bl.source = 'PROPRIETOR' THEN 'Proprietor'
