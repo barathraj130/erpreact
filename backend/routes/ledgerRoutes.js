@@ -412,11 +412,26 @@ router.get('/cash', authMiddleware, async (req, res) => {
 
         // Entries within the requested date range — exclude OPENING_BALANCE (always in b/d)
         const params = [companyId];
-        let sql = `SELECT * FROM cash_ledger WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'`;
+        let sql = `
+            SELECT cl.*,
+              CASE
+                WHEN cl.invoice_id IS NOT NULL THEN
+                  (SELECT u.username FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = cl.invoice_id LIMIT 1)
+                WHEN cl.reference_id IS NOT NULL AND cl.source = 'RECEIPT' THEN
+                  (SELECT u.username FROM transactions t JOIN users u ON u.id = t.user_id WHERE t.id = cl.reference_id LIMIT 1)
+                WHEN cl.source = 'PROPRIETOR' THEN 'Proprietor'
+                WHEN cl.source = 'CASH_TRANSFER' AND cl.direction = 'in' THEN 'From Bank'
+                WHEN cl.source = 'CASH_TRANSFER' AND cl.direction = 'out' THEN 'To Bank'
+                WHEN cl.source IN ('EXPENSE','SALARY','WAGES','PURCHASE') AND cl.reference_id IS NOT NULL THEN
+                  (SELECT COALESCE(t.description, t.type) FROM transactions t WHERE t.id = cl.reference_id LIMIT 1)
+                ELSE NULL
+              END AS party_name
+            FROM cash_ledger cl
+            WHERE cl.company_id = $1 AND ${branchFilter} AND cl.source != 'OPENING_BALANCE'`;
         let pIndex = 2;
-        if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
-        if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
-        sql += ` ORDER BY date ASC, created_at ASC`;
+        if (startDate) { sql += ` AND cl.date >= $${pIndex++}`; params.push(startDate); }
+        if (endDate)   { sql += ` AND cl.date <= $${pIndex++}`; params.push(endDate); }
+        sql += ` ORDER BY cl.date ASC, cl.created_at ASC`;
 
         // NOTE: CUSTOMER_PAYMENT excluded — purged in Step 1, never reaches direction mapping
         // NOTE: CASH_RECONCILIATION is also excluded — it can be 'in' (excess) or 'out' (shortage), direction field controls it
@@ -604,11 +619,28 @@ router.get('/bank', authMiddleware, async (req, res) => {
 
         // Entries within the requested date range — exclude OPENING_BALANCE (always in b/d)
         const params = [companyId];
-        let sql = `SELECT * FROM bank_ledger WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'`;
+        let sql = `
+            SELECT bl.*,
+              CASE
+                WHEN bl.invoice_id IS NOT NULL THEN
+                  (SELECT u.username FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = bl.invoice_id LIMIT 1)
+                WHEN bl.source = 'CUSTOMER_PAYMENT' AND bl.reference_id IS NOT NULL THEN
+                  (SELECT u.username FROM transactions t JOIN users u ON u.id = t.user_id WHERE t.id = bl.reference_id LIMIT 1)
+                WHEN bl.source = 'PROPRIETOR' THEN 'Proprietor'
+                WHEN bl.source = 'CASH_TRANSFER' AND bl.direction = 'in' THEN 'From Cash'
+                WHEN bl.source = 'CASH_TRANSFER' AND bl.direction = 'out' THEN 'To Cash'
+                WHEN bl.source = 'PURCHASE_RETURN' AND bl.reference_id IS NOT NULL THEN
+                  (SELECT pr.supplier_name FROM purchase_returns pr WHERE pr.id = bl.reference_id LIMIT 1)
+                WHEN bl.source IN ('EXPENSE','SALARY','WAGES','PURCHASE') AND bl.reference_id IS NOT NULL THEN
+                  (SELECT COALESCE(t.description, t.type) FROM transactions t WHERE t.id = bl.reference_id LIMIT 1)
+                ELSE NULL
+              END AS party_name
+            FROM bank_ledger bl
+            WHERE bl.company_id = $1 AND ${branchFilter} AND bl.source != 'OPENING_BALANCE'`;
         let pIndex = 2;
-        if (startDate) { sql += ` AND date >= $${pIndex++}`; params.push(startDate); }
-        if (endDate)   { sql += ` AND date <= $${pIndex++}`; params.push(endDate); }
-        sql += ` ORDER BY date ASC, created_at ASC`;
+        if (startDate) { sql += ` AND bl.date >= $${pIndex++}`; params.push(startDate); }
+        if (endDate)   { sql += ` AND bl.date <= $${pIndex++}`; params.push(endDate); }
+        sql += ` ORDER BY bl.date ASC, bl.created_at ASC`;
 
         const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'INVOICE_PAYMENT']);
         const rawEntries = await db.pgAll(sql, params);

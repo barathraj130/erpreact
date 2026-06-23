@@ -17,6 +17,7 @@ interface LedgerEntry {
   description?: string;
   notes?: string;
   created_by_name?: string;
+  party_name?: string;
   created_at: string;
 }
 
@@ -231,6 +232,11 @@ const Ledgers: React.FC = () => {
               ) : (
                 <div>
                   <div>{sourceLabel(entry.source)}</div>
+                  {entry.party_name && (
+                    <div style={{ fontSize: "12px", color: entry.direction === "in" ? "#16a34a" : "#dc2626", fontWeight: 600, marginTop: "2px" }}>
+                      {entry.direction === "in" ? "↙ From: " : "↗ To: "}{entry.party_name}
+                    </div>
+                  )}
                   {(entry.notes || entry.created_by_name) && (
                     <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       {entry.notes && <span title="Reason">📝 {entry.notes}</span>}
