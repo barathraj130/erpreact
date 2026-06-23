@@ -531,6 +531,21 @@ router.get('/bank', authMiddleware, async (req, res) => {
         await Promise.all([
             db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
             db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+            db.pgRun(`CREATE TABLE IF NOT EXISTS purchase_returns (
+                id               SERIAL PRIMARY KEY,
+                company_id       INTEGER NOT NULL,
+                branch_id        INTEGER DEFAULT 1,
+                return_number    VARCHAR(50),
+                original_bill_id INTEGER,
+                supplier_id      INTEGER,
+                supplier_name    VARCHAR(255),
+                return_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+                items            JSONB NOT NULL DEFAULT '[]',
+                total_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
+                notes            TEXT,
+                created_by       INTEGER,
+                created_at       TIMESTAMP DEFAULT NOW()
+            )`).catch(() => {}),
         ]);
 
         // ── Self-heal step 0: fix NULL dates ──
