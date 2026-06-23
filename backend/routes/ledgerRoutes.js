@@ -753,38 +753,87 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
 
 
 
-        // Aggregation for Daily Chart (Current Month)
-        const chartRows = await db.pgAll(`
-            SELECT 
-                DATE(date) as day,
-                SUM(CASE WHEN direction = 'in' THEN amount ELSE 0 END) as income,
-                SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) as expense
-            FROM (
-                SELECT date, amount, direction FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}
-                UNION ALL
-                SELECT date, amount, direction FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}
-            ) as combined
-            WHERE date >= date_trunc('month', CURRENT_DATE)
-            GROUP BY DATE(date)
-            ORDER BY DATE(date) ASC
+        // ── Daily Sales from invoices (last 30 days) ──
+        const dailySalesRows = await db.pgAll(`
+            SELECT
+                DATE(invoice_date) AS day,
+                COALESCE(SUM(total_amount), 0) AS sales
+            FROM invoices
+            WHERE company_id=$1 AND ${branchFilter}
+              AND COALESCE(is_deleted, false) = false
+              AND bill_purpose != 'name_only'
+              AND invoice_date >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY DATE(invoice_date)
+            ORDER BY day ASC
         `, queryParams);
+
+        // ── Daily Expenses from transactions (last 30 days) ──
+        const dailyExpenseRows = await db.pgAll(`
+            SELECT
+                DATE(COALESCE(date, created_at::date)) AS day,
+                COALESCE(SUM(amount), 0) AS expenses
+            FROM transactions
+            WHERE company_id=$1 AND ${branchFilter}
+              AND type IN ('EXPENSE','EXPENSE_PAYMENT','SALARY','WAGES','DAILY_WAGE')
+              AND COALESCE(date, created_at::date) >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY 1
+            ORDER BY 1 ASC
+        `, queryParams);
+
+        // ── Daily Cash Flow — exclude OPENING_BALANCE & CASH_TRANSFER ──
+        const dailyCashFlowRows = await db.pgAll(`
+            SELECT
+                DATE(date) AS day,
+                SUM(CASE WHEN direction = 'in'  THEN amount ELSE 0 END) AS inflow,
+                SUM(CASE WHEN direction = 'out' THEN amount ELSE 0 END) AS outflow
+            FROM (
+                SELECT date, amount, direction FROM cash_ledger
+                WHERE company_id=$1 AND ${branchFilter}
+                  AND source NOT IN ('OPENING_BALANCE','CASH_TRANSFER')
+                  AND date >= CURRENT_DATE - INTERVAL '30 days'
+                UNION ALL
+                SELECT date, amount, direction FROM bank_ledger
+                WHERE company_id=$1 AND ${branchFilter}
+                  AND source NOT IN ('OPENING_BALANCE','CASH_TRANSFER')
+                  AND date >= CURRENT_DATE - INTERVAL '30 days'
+            ) AS combined
+            WHERE date IS NOT NULL
+            GROUP BY DATE(date)
+            ORDER BY day ASC
+        `, queryParams);
+
+        // Merge daily sales + expenses into one array keyed by date
+        const salesByDay: Record<string, number> = {};
+        const expensesByDay: Record<string, number> = {};
+        dailySalesRows.forEach((r: any) => { salesByDay[String(r.day)] = Number(r.sales); });
+        dailyExpenseRows.forEach((r: any) => { expensesByDay[String(r.day)] = Number(r.expenses); });
+        const allSalesDays = Array.from(new Set([
+            ...Object.keys(salesByDay),
+            ...Object.keys(expensesByDay)
+        ])).sort();
+        const salesChartData = allSalesDays.map(day => ({
+            month: new Date(day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+            sales: salesByDay[day] || 0,
+            expenses: expensesByDay[day] || 0,
+        }));
+
+        const cashFlowChartData = dailyCashFlowRows.map((r: any) => ({
+            month: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+            inflow: Number(r.inflow),
+            outflow: Number(r.outflow),
+        }));
 
         res.json({
             baseMetrics: { totalCash, totalBank, totalSales, totalPayments, totalExpenses },
-            chartData: chartRows.map(r => ({
-                month: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-                sales: Number(r.income),
-                expenses: Number(r.expense),
-                inflow: Number(r.income),
-                outflow: Number(r.expense),
-                payments: Number(r.income),
-            })),
+            salesChartData,
+            cashFlowChartData,
+            // Legacy field kept for any other consumers
+            chartData: salesChartData,
             debugInfo: {
                 companyId,
                 branchId: branchId || 'ALL',
                 filter: branchFilter
             }
-
         });
 
 

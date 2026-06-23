@@ -15,7 +15,8 @@ const FinanceDashboard: React.FC = () => {
     totalCash: 0,
     totalBank: 0,
   });
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [salesChartData, setSalesChartData] = useState<any[]>([]);
+  const [cashFlowChartData, setCashFlowChartData] = useState<any[]>([]);
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -43,7 +44,8 @@ const FinanceDashboard: React.FC = () => {
             totalCash: data.baseMetrics?.totalCash || 0,
             totalBank: data.baseMetrics?.totalBank || 0,
           });
-          setChartData(data.chartData || []);
+          setSalesChartData(data.salesChartData || data.chartData || []);
+          setCashFlowChartData(data.cashFlowChartData || data.chartData || []);
           setDebugInfo(data.debugInfo || { companyId: '?', branchId: '?', filter: '?' });
         }
 
@@ -342,18 +344,18 @@ const LiquidityCard = ({ label, value, subtext, icon: Icon, cardBg }: any) => (
           </div>
           <div style={{ width: "100%", height: "280px" }}>
            <ResponsiveContainer width="100%" height="100%">
-             <BarChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
+             <BarChart data={salesChartData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontFamily: "Satoshi", fontSize: 12, fill: "#94a3b8" }} dy={10} />
-               <YAxis axisLine={false} tickLine={false} tick={{ fontFamily: "Satoshi", fontSize: 12, fill: "#94a3b8" }} tickFormatter={(val) => `₹${val/1000}k`} />
-               <Tooltip 
+               <YAxis axisLine={false} tickLine={false} tick={{ fontFamily: "Satoshi", fontSize: 12, fill: "#94a3b8" }} tickFormatter={(val) => `₹${(val/1000).toFixed(0)}k`} />
+               <Tooltip
                  cursor={{ fill: "#f8fafc" }}
                  contentStyle={{ fontFamily: "Satoshi", borderRadius: "14px", border: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.12)", fontWeight: 600 }}
-                 formatter={(value: any) => [`₹ ${Number(value || 0).toLocaleString()}`, ""]}
+                 formatter={(value: any, name: string) => [`₹${Number(value || 0).toLocaleString('en-IN')}`, name === "sales" ? "Sales" : "Expenses"]}
                />
                <Legend iconType="circle" wrapperStyle={{ fontFamily: "Satoshi", fontSize: "12px", paddingTop: "20px" }} />
                <Bar dataKey="sales" name="Sales" fill="#3b82f6" radius={[6, 6, 0, 0]} maxBarSize={50} />
-               <Bar dataKey="expenses" name="Expenses" fill="#1e40af" radius={[6, 6, 0, 0]} maxBarSize={50} />
+               <Bar dataKey="expenses" name="Expenses" fill="#f97316" radius={[6, 6, 0, 0]} maxBarSize={50} />
              </BarChart>
            </ResponsiveContainer>
          </div>
@@ -375,13 +377,13 @@ const LiquidityCard = ({ label, value, subtext, icon: Icon, cardBg }: any) => (
           </div>
           <div style={{ width: "100%", height: "280px" }}>
            <ResponsiveContainer width="100%" height="100%">
-             <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
+             <LineChart data={cashFlowChartData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontFamily: "Satoshi", fontSize: 12, fill: "#94a3b8" }} dy={10} />
-               <YAxis axisLine={false} tickLine={false} tick={{ fontFamily: "Satoshi", fontSize: 12, fill: "#94a3b8" }} tickFormatter={(val) => `₹${val/1000}k`} />
-               <Tooltip 
+               <YAxis axisLine={false} tickLine={false} tick={{ fontFamily: "Satoshi", fontSize: 12, fill: "#94a3b8" }} tickFormatter={(val) => `₹${(val/1000).toFixed(0)}k`} />
+               <Tooltip
                  contentStyle={{ fontFamily: "Satoshi", borderRadius: "14px", border: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.12)", fontWeight: 600 }}
-                 formatter={(value: any) => [`₹ ${Number(value || 0).toLocaleString()}`, ""]}
+                 formatter={(value: any, name: string) => [`₹${Number(value || 0).toLocaleString('en-IN')}`, name === "inflow" ? "Inflow" : "Outflow"]}
                />
                <Legend iconType="circle" wrapperStyle={{ fontFamily: "Satoshi", fontSize: "12px", paddingTop: "20px" }} />
                <Line type="monotone" dataKey="inflow" name="Inflow" stroke="#10b981" strokeWidth={3} dot={{ r: 5, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 7 }} />
