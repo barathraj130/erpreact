@@ -803,10 +803,10 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
         `, queryParams);
 
         // Merge daily sales + expenses into one array keyed by date
-        const salesByDay: Record<string, number> = {};
-        const expensesByDay: Record<string, number> = {};
-        dailySalesRows.forEach((r: any) => { salesByDay[String(r.day)] = Number(r.sales); });
-        dailyExpenseRows.forEach((r: any) => { expensesByDay[String(r.day)] = Number(r.expenses); });
+        const salesByDay = {};
+        const expensesByDay = {};
+        dailySalesRows.forEach(r => { salesByDay[String(r.day)] = Number(r.sales); });
+        dailyExpenseRows.forEach(r => { expensesByDay[String(r.day)] = Number(r.expenses); });
         const allSalesDays = Array.from(new Set([
             ...Object.keys(salesByDay),
             ...Object.keys(expensesByDay)
@@ -817,7 +817,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
             expenses: expensesByDay[day] || 0,
         }));
 
-        const cashFlowChartData = dailyCashFlowRows.map((r: any) => ({
+        const cashFlowChartData = dailyCashFlowRows.map(r => ({
             month: new Date(r.day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
             inflow: Number(r.inflow),
             outflow: Number(r.outflow),
