@@ -227,6 +227,34 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         await recomputeCustomerBalance(client, invoice.customer_id, companyId);
 
+        // ── Insert into cash_ledger or bank_ledger so balances and transactions page update ──
+        const ledgerBranchId = req.user.branch_id || invoice.branch_id || 1;
+        const payDate = payment_date || new Date().toISOString().split('T')[0];
+        const pMethod = (payment_method || 'CASH').toUpperCase();
+        const ledgerNotes = notes || `Payment for Invoice #${invoice.invoice_number}`;
+
+        if (pMethod === 'CASH') {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id, invoice_id, notes)
+                 SELECT $1,$2,'Payment',$3,'in',$4,$5,$6,$7
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM cash_ledger WHERE company_id=$1 AND reference_id=$5
+                 )`,
+                [companyId, ledgerBranchId, amount, payDate, newPayment.id, invoice_id, ledgerNotes]
+            );
+        } else if (['BANK','UPI','CHEQUE','NEFT','RTGS','IMPS'].includes(pMethod)) {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, date, reference_id, invoice_id, bank_name, transaction_id, notes)
+                 SELECT $1,$2,'Payment',$3,'in',$4,$5,$6,$7,$8,$9
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM bank_ledger WHERE company_id=$1 AND reference_id=$5
+                 )`,
+                [companyId, ledgerBranchId, amount, payDate, newPayment.id, invoice_id,
+                 bank_name || pMethod, reference_no || null, ledgerNotes]
+            );
+        }
+        // CREDIT mode — no cash/bank entry; credit terms handled separately
+
         await client.query("COMMIT");
 
         res.status(201).json({

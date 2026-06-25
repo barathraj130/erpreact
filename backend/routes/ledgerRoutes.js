@@ -596,7 +596,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
             FROM invoice_payments ip
             JOIN invoices i ON i.id = ip.invoice_id
             WHERE i.company_id = $1
-              AND UPPER(ip.payment_method) IN ('BANK','UPI')
+              AND UPPER(ip.payment_method) IN ('BANK','UPI','CHEQUE','NEFT','RTGS','IMPS')
               AND ip.amount > 0
               AND NOT EXISTS (
                 SELECT 1 FROM bank_ledger bl

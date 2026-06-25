@@ -2044,6 +2044,34 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
             ]);
         }
 
+        // ── Insert into cash_ledger or bank_ledger ──
+        const ledgerBranchId = inv.branch_id || req.user.branch_id || 1;
+        const ledgerDate = payment_date || new Date().toISOString().split('T')[0];
+        const ledgerMode = (mode || 'CASH').toUpperCase();
+        const ledgerNote = `Payment for Invoice #${inv.invoice_number}`;
+
+        if (ledgerMode === 'CASH') {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id, notes)
+                 SELECT $1,$2,'Payment',$3,'in',$4,$5,$6
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM cash_ledger
+                     WHERE company_id=$1 AND invoice_id=$5 AND amount=$3 AND date=$4
+                 )`,
+                [companyId, ledgerBranchId, amount, ledgerDate, id, ledgerNote]
+            );
+        } else if (['BANK','UPI','CHEQUE','NEFT','RTGS','IMPS'].includes(ledgerMode)) {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, date, invoice_id, notes)
+                 SELECT $1,$2,'Payment',$3,'in',$4,$5,$6
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM bank_ledger
+                     WHERE company_id=$1 AND invoice_id=$5 AND amount=$3 AND date=$4
+                 )`,
+                [companyId, ledgerBranchId, amount, ledgerDate, id, ledgerNote]
+            );
+        }
+
         await client.query("COMMIT");
 
         // Capture final values after commit for WhatsApp (newPaid and status are already correct)
