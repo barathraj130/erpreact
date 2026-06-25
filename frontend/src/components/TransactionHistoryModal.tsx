@@ -215,6 +215,110 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
     }
   };
 
+  const handlePrint = () => {
+    const summary = customerSummary;
+    const rows = entityType === "customer" ? customerRows : supplierTransactions;
+    const ob = entityType === "customer"
+      ? (summary?.opening_balance || 0)
+      : (supplierLedger?.summary?.opening_balance || 0);
+
+    const rowsHtml = rows.map((row: any) => `
+      <tr>
+        <td>${formatDate(row.date)}</td>
+        <td>
+          <div style="font-weight:600">${row.description || row.type || "—"}</div>
+          ${row.invoice_number ? `<div style="font-size:11px;color:#64748b">${row.invoice_number}</div>` : ""}
+        </td>
+        <td>${row.reference_no || row.bank_transaction_id || "—"}</td>
+        <td style="text-align:right;color:#dc2626">${row.debit ? fmt(row.debit) : "—"}</td>
+        <td style="text-align:right;color:#059669">${row.credit ? fmt(row.credit) : "—"}</td>
+        <td style="text-align:right;font-weight:700">${row.running_balance !== undefined ? fmt(row.running_balance) : "—"}</td>
+      </tr>
+    `).join("");
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Account Ledger — ${entityName}</title>
+        <meta charset="utf-8"/>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #1e293b; padding: 32px; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #0f172a; }
+          .company { font-size: 22px; font-weight: 800; color: #0f172a; }
+          .doc-title { font-size: 14px; font-weight: 600; color: #64748b; margin-top: 4px; }
+          .customer-block { text-align: right; }
+          .customer-name { font-size: 16px; font-weight: 700; }
+          .print-date { font-size: 11px; color: #64748b; margin-top: 4px; }
+          .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+          .summary-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+          .summary-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+          .summary-value { font-size: 15px; font-weight: 800; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th { background: #f8fafc; padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+          td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+          tr:last-child td { border-bottom: none; }
+          .ob-row td { background: #f0fdf4; font-weight: 600; }
+          .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; }
+          @media print { body { padding: 16px; } @page { margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="company">Account Statement</div>
+            <div class="doc-title">Customer Ledger</div>
+          </div>
+          <div class="customer-block">
+            <div class="customer-name">${entityName}</div>
+            <div class="customer-block" style="text-transform:uppercase;font-size:11px;color:#64748b;margin-top:2px">${entityType}</div>
+            <div class="print-date">Printed: ${new Date().toLocaleString("en-IN")}</div>
+          </div>
+        </div>
+
+        <div class="summary">
+          ${ob !== 0 ? `<div class="summary-card"><div class="summary-label">Opening Balance</div><div class="summary-value" style="color:#6366f1">${fmt(ob)}</div></div>` : ""}
+          ${summary ? `
+            <div class="summary-card"><div class="summary-label">Total Billed</div><div class="summary-value" style="color:#0f766e">${fmt(summary.total_billed)}</div></div>
+            <div class="summary-card"><div class="summary-label">Total Paid</div><div class="summary-value" style="color:#2563eb">${fmt(summary.total_paid)}</div></div>
+            <div class="summary-card"><div class="summary-label">Total Returns</div><div class="summary-value" style="color:#d97706">${fmt(summary.total_returns || 0)}</div></div>
+            <div class="summary-card"><div class="summary-label">${(summary.pending_amount || 0) < 0 ? "Advance Balance" : "Pending Amount"}</div>
+              <div class="summary-value" style="color:${(summary.pending_amount || 0) < 0 ? "#059669" : "#dc2626"}">${fmt(Math.abs(summary.pending_amount || 0))}</div></div>
+          ` : ""}
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Particulars</th>
+              <th>Reference</th>
+              <th style="text-align:right">Debit (₹)</th>
+              <th style="text-align:right">Credit (₹)</th>
+              <th style="text-align:right">Balance (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ob !== 0 ? `<tr class="ob-row"><td>—</td><td><div style="font-weight:700;color:#15803d">Opening Balance</div><div style="font-size:11px;color:#64748b">Balance brought forward</div></td><td>—</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right;color:#15803d;font-weight:700">${fmt(ob)}</td></tr>` : ""}
+            ${rowsHtml}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <span>${rows.length} entries · Formula: Opening + Bills − Payments − Returns − Round Offs</span>
+          <span>Generated by Fluxora ERP</span>
+        </div>
+
+        <script>window.onload = () => { window.print(); }<\/script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const handleDeleteEntry = async (entryId: number, entryType: string, description: string) => {
     if (!window.confirm(`Delete "${description}" entry? This cannot be undone.`)) return;
     try {
@@ -623,7 +727,20 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                 </button>
               )}
             </div>
-            <button className="thm-btn-done" onClick={onClose}>Done</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                onClick={handlePrint}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0",
+                  background: "#f8fafc", color: "#374151", fontSize: 13, fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                <FaPrint size={13} /> Print Statement
+              </button>
+              <button className="thm-btn-done" onClick={onClose}>Done</button>
+            </div>
           </div>
         </div>
       </div>
