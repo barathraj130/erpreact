@@ -82,6 +82,42 @@ const Customers: React.FC = () => {
   }, 0);
   const totalCustomers = displayedCustomers.length;
 
+  const handleExportExcel = () => {
+    const fmt = (n: number) => Number(n || 0).toFixed(2);
+    const today = new Date().toLocaleDateString("en-IN");
+
+    const headers = ["S.No", "Name", "Display Name", "Phone", "Net Balance (₹)"];
+
+    const rows = displayedCustomers.map((c, i) => {
+      const bal = Number(c.remaining_balance) || 0;
+      return [
+        i + 1,
+        c.username || "",
+        c.nickname || "",
+        c.phone || "",
+        fmt(bal),
+      ];
+    });
+
+    const csvContent = [
+      [`Customer Outstanding Report — Exported on ${today}`],
+      [],
+      headers,
+      ...rows,
+    ]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const bom = "﻿"; // UTF-8 BOM so Excel reads ₹ correctly
+    const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Customer_Outstanding_${today.replace(/\//g, "-")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleEdit = (customer: any) => {
     setCustomerToEdit(customer);
     setShowModal(true);
@@ -224,6 +260,18 @@ const Customers: React.FC = () => {
             }}
           >
             🔄 Sync Balances
+          </button>
+          <button
+            onClick={handleExportExcel}
+            title="Export all customers with outstanding balances to Excel/CSV"
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 14px", borderRadius: "50px",
+              background: "#16a34a", color: "#fff", border: "none",
+              fontWeight: 600, fontSize: "13px", cursor: "pointer"
+            }}
+          >
+            📊 Export Excel
           </button>
           <button
             onClick={openReminderModal}
