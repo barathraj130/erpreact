@@ -15,13 +15,12 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
         const today = now.toISOString().split('T')[0];
 
         const [loans, sales, expenses, outstanding, cash, bank, customers, stock, pendingInvoices] = await Promise.all([
-            // Total outstanding loan principal + estimate monthly EMI
+            // Total outstanding loan principal — no company filter (matches existing Loans page behaviour)
             db.pgGet(`
                 SELECT
                     COALESCE(SUM(
                         GREATEST(0, l.principal_amount - COALESCE((
-                            SELECT SUM(lp.principal_component)
-                            FROM loan_payments lp WHERE lp.loan_id = l.id AND lp.company_id = $1
+                            SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id
                         ), 0))
                     ), 0) AS total_loan,
                     COALESCE(SUM(
@@ -29,24 +28,24 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
                             WHEN l.duration_months > 0 AND l.interest_rate > 0 THEN
                                 ROUND(
                                     (GREATEST(0, l.principal_amount - COALESCE((
-                                        SELECT SUM(lp.principal_component)
-                                        FROM loan_payments lp WHERE lp.loan_id = l.id AND lp.company_id = $1
+                                        SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id
                                     ), 0)) *
                                     (l.interest_rate/12/100) *
                                     POWER(1 + l.interest_rate/12/100, l.duration_months)) /
-                                    (POWER(1 + l.interest_rate/12/100, l.duration_months) - 1)
+                                    NULLIF(POWER(1 + l.interest_rate/12/100, l.duration_months) - 1, 0)
                                 , 2)
-                            ELSE ROUND(
-                                GREATEST(0, l.principal_amount - COALESCE((
-                                    SELECT SUM(lp.principal_component)
-                                    FROM loan_payments lp WHERE lp.loan_id = l.id AND lp.company_id = $1
-                                ), 0)) / NULLIF(l.duration_months, 0)
-                            , 2)
+                            WHEN l.duration_months > 0 THEN
+                                ROUND(
+                                    GREATEST(0, l.principal_amount - COALESCE((
+                                        SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id
+                                    ), 0)) / l.duration_months
+                                , 2)
+                            ELSE 0
                         END
                     ), 0) AS monthly_emi
                 FROM loans l
-                WHERE l.company_id = $1 AND l.status = 'ACTIVE'
-            `, [companyId]),
+                WHERE l.status = 'ACTIVE'
+            `),
 
             // Monthly sales from invoices
             db.pgGet(`
@@ -55,7 +54,6 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
                 WHERE company_id = $1
                   AND COALESCE(is_deleted, false) = false
                   AND COALESCE(is_nominal, false) = false
-                  AND COALESCE(bill_purpose, '') != 'name_only'
                   AND invoice_date >= $2 AND invoice_date <= $3
             `, [companyId, monthStart, today]),
 
@@ -74,10 +72,8 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
                 FROM invoices
                 WHERE company_id = $1
                   AND COALESCE(is_deleted, false) = false
-                  AND COALESCE(is_nominal, false) = false
                   AND balance_due > 0
-                  AND payment_status IN ('PENDING', 'PARTIAL', 'pending', 'partial')
-            `, [companyId]),
+            `, [companyId]).catch(() => ({ customer_outstanding: 0 })),
 
             // Cash balance (net from cash_ledger)
             db.pgGet(`
@@ -118,8 +114,8 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
                 FROM invoices
                 WHERE company_id = $1
                   AND COALESCE(is_deleted, false) = false
-                  AND payment_status IN ('PENDING', 'PARTIAL', 'pending', 'partial')
-            `, [companyId]),
+                  AND balance_due > 0
+            `, [companyId]).catch(() => ({ pending_invoices: 0 })),
         ]);
 
         res.json({
