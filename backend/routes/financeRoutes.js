@@ -66,13 +66,13 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
                   AND COALESCE(date, created_at::date) >= $2
             `, [companyId, monthStart]).catch(() => ({ monthly_expenses: 0 })),
 
-            // Customer outstanding (unpaid invoice balance)
+            // Customer outstanding — sum of (total_amount - paid_amount) across unpaid invoices
             db.pgGet(`
-                SELECT COALESCE(SUM(balance_due), 0) AS customer_outstanding
+                SELECT COALESCE(SUM(GREATEST(0, total_amount - COALESCE(paid_amount, 0))), 0) AS customer_outstanding
                 FROM invoices
                 WHERE company_id = $1
                   AND COALESCE(is_deleted, false) = false
-                  AND balance_due > 0
+                  AND COALESCE(is_nominal, false) = false
             `, [companyId]).catch(() => ({ customer_outstanding: 0 })),
 
             // Cash balance (net from cash_ledger)
@@ -108,13 +108,14 @@ router.get('/loan-snapshot', authMiddleware, async (req, res) => {
                   AND pi.stock_type IN ('fresh', 'fresh_converted', 'mistake')
             `, [companyId]).catch(() => ({ stock_value: 0 })),
 
-            // Pending invoice count
+            // Pending invoice count — invoices not fully paid
             db.pgGet(`
                 SELECT COUNT(*) AS pending_invoices
                 FROM invoices
                 WHERE company_id = $1
                   AND COALESCE(is_deleted, false) = false
-                  AND balance_due > 0
+                  AND COALESCE(is_nominal, false) = false
+                  AND GREATEST(0, total_amount - COALESCE(paid_amount, 0)) > 0
             `, [companyId]).catch(() => ({ pending_invoices: 0 })),
         ]);
 
