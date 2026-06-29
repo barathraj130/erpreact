@@ -5,8 +5,10 @@ import { apiFetch } from "../../utils/api";
 import { FaPlus, FaHandHoldingUsd, FaPercentage, FaExclamationCircle, FaSearch, FaSync, FaHistory, FaTimes, FaListAlt } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import "../PageShared.css";
+import LoanRepaymentIdeas from "./LoanRepaymentIdeas";
 
 const LoanManagement: React.FC = () => {
+  const [pageTab, setPageTab] = useState<"loans" | "ai-ideas">("loans");
   const [loans, setLoans] = useState<any[]>([]);
   const [lenders, setLenders] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -297,11 +299,35 @@ const LoanManagement: React.FC = () => {
           >
             ⚡ Sync Lenders
           </button>
-          <button className="page-btn-round page-btn-round-primary" onClick={() => setShowModal(true)}>
-            <FaPlus size={11} /> New Loan
-          </button>
+          {pageTab === "loans" && (
+            <button className="page-btn-round page-btn-round-primary" onClick={() => setShowModal(true)}>
+              <FaPlus size={11} /> New Loan
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Page-level tab toggle */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 24, background: "#f1f5f9", borderRadius: 12, padding: 4, width: "fit-content" }}>
+        {([
+          { key: "loans",    label: "📋 Loans" },
+          { key: "ai-ideas", label: "✨ AI Repayment Ideas" },
+        ] as const).map(t => (
+          <button key={t.key} onClick={() => setPageTab(t.key)} style={{
+            padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 700,
+            background: pageTab === t.key ? "#4f46e5" : "transparent",
+            color:      pageTab === t.key ? "#fff"    : "#64748b",
+            transition: "all 0.15s",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* AI Ideas tab */}
+      {pageTab === "ai-ideas" && <LoanRepaymentIdeas />}
+
+      {/* Loans tab — existing content */}
+      {pageTab === "loans" && <>
 
       <div className="premium-stats-grid">
         <div className="stat-card card-rose">
@@ -1121,6 +1147,8 @@ const LoanManagement: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      </> /* end pageTab === "loans" */}
     </div>
   );
 };
