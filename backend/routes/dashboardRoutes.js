@@ -181,7 +181,23 @@ router.get('/summary', authMiddleware, async (req, res) => {
             FROM stock_lots WHERE is_deleted = false AND company_id = $1
         `;
 
-        const [cashRes, bankRes, totalRevRes, monthRevRes, outstandingRes, salesRes, outstandingCountRes, stockRes, pipelineRes] = await Promise.all([
+        const retailMonthSql = `
+            SELECT
+                COALESCE(SUM(total_amount), 0) AS retail_revenue,
+                COUNT(*) AS retail_bills
+            FROM invoices
+            WHERE company_id = $1
+              AND COALESCE(is_deleted, false) = false
+              AND COALESCE(is_nominal, false) = false
+              AND (
+                  UPPER(COALESCE(invoice_type, '')) = 'RETAIL_SALE'
+                  OR invoice_number ILIKE 'RET/%'
+              )
+              AND invoice_date >= DATE_TRUNC('month', CURRENT_DATE)
+              AND invoice_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
+        `;
+
+        const [cashRes, bankRes, totalRevRes, monthRevRes, outstandingRes, salesRes, outstandingCountRes, stockRes, pipelineRes, retailRes] = await Promise.all([
             db.pgGet(cashSql, [companyId]),
             db.pgGet(bankSql, [companyId]),
             db.pgGet(totalRevSql, [companyId]),
@@ -191,6 +207,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
             db.pgGet(outstandingCountSql, [companyId]),
             db.pgGet(stockSql, [companyId]).catch(() => null),
             db.pgGet(pipelineSql, [companyId]).catch(() => null),
+            db.pgGet(retailMonthSql, [companyId]).catch(() => null),
         ]);
 
         const cashBalance = Number(cashRes?.balance || 0);
@@ -232,6 +249,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
                 ready:        parseInt(pipelineRes?.ready        || 0),
                 partial_sold: parseInt(pipelineRes?.partial_sold || 0),
                 sold_out:     parseInt(pipelineRes?.sold_out     || 0),
+            },
+            retail_this_month: {
+                revenue:     parseFloat(retailRes?.retail_revenue || 0),
+                bills_count: parseInt(retailRes?.retail_bills    || 0),
             },
         };
 

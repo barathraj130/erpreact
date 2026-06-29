@@ -12,6 +12,7 @@ import ReportTable from '../../components/reports/ReportTable';
 import ChartCard from '../../components/reports/ChartCard';
 import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
+import RetailRevenue from '../RetailRevenue';
 
 const nowMonth = () => {
   const now = new Date();
@@ -19,7 +20,7 @@ const nowMonth = () => {
   return { from: `${now.getFullYear()}-${m}-01`, to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0] };
 };
 
-const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance'];
+const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', '🛍️ Retail'];
 
 const SalesReports = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -230,34 +231,41 @@ const SalesReports = () => {
         ))}
       </div>
 
-      {/* Filters (for tabs that support date range) */}
-      {[0, 1, 4].includes(activeTab) && (
-        <FilterBar
-          filters={[
-            { key: 'from', label: 'From', type: 'date' },
-            { key: 'to', label: 'To', type: 'date' },
-          ]}
-          values={filters}
-          onChange={setFilters}
-          onApply={() => fetchTab(activeTab, filters)}
-          onReset={() => { setFilters(defaults); fetchTab(activeTab, defaults); }}
-        />
+      {/* Retail tab — full inline component */}
+      {activeTab === 5 ? (
+        <RetailRevenue />
+      ) : (
+        <>
+          {/* Filters (for tabs that support date range) */}
+          {[0, 1, 4].includes(activeTab) && (
+            <FilterBar
+              filters={[
+                { key: 'from', label: 'From', type: 'date' },
+                { key: 'to', label: 'To', type: 'date' },
+              ]}
+              values={filters}
+              onChange={setFilters}
+              onApply={() => fetchTab(activeTab, filters)}
+              onReset={() => { setFilters(defaults); fetchTab(activeTab, defaults); }}
+            />
+          )}
+
+          {/* KPIs */}
+          {renderKPIs()}
+
+          {/* Chart */}
+          <div style={{ marginBottom: '20px' }}>
+            {renderChart()}
+          </div>
+
+          {/* Table */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#374151', margin: 0 }}>Detail View</h3>
+            <ExportButtons data={rankedData} filename={`sales-${TABS[activeTab].toLowerCase().replace(/\s+/g, '-')}`} />
+          </div>
+          <ReportTable columns={COLUMNS[activeTab] || []} data={rankedData} loading={loading} />
+        </>
       )}
-
-      {/* KPIs */}
-      {renderKPIs()}
-
-      {/* Chart */}
-      <div style={{ marginBottom: '20px' }}>
-        {renderChart()}
-      </div>
-
-      {/* Table */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#374151', margin: 0 }}>Detail View</h3>
-        <ExportButtons data={rankedData} filename={`sales-${TABS[activeTab].toLowerCase().replace(/\s+/g, '-')}`} />
-      </div>
-      <ReportTable columns={COLUMNS[activeTab] || []} data={rankedData} loading={loading} />
     </ReportShell>
   );
 };

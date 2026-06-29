@@ -54,6 +54,7 @@ const Dashboard: React.FC = () => {
   const [lotPipeline, setLotPipeline] = useState<Record<string, number> | null>(null);
   const [invStockSummary, setInvStockSummary] = useState<{ fresh_qty: number; mistake_qty: number; repaired_qty: number; total_value: number } | null>(null);
 
+  const [retailThisMonth, setRetailThisMonth] = useState<{ revenue: number; bills_count: number }>({ revenue: 0, bills_count: 0 });
   const [monthlyTrend, setMonthlyTrend] = useState<any[]>([]);
   const [expenseData, setExpenseData] = useState<any[]>([]);
   const [outstandingCustomers, setOutstandingCustomers] = useState<any[]>([]);
@@ -74,8 +75,9 @@ const Dashboard: React.FC = () => {
           apiFetch("/invoice/nsb/gst-pending").then(r => r.json()).catch(() => ({ summary: {} })),
         ]);
 
-        if (kpiRes?.stock_summary) setStockSummary(kpiRes.stock_summary);
-        if (kpiRes?.lot_pipeline)  setLotPipeline(kpiRes.lot_pipeline);
+        if (kpiRes?.stock_summary)     setStockSummary(kpiRes.stock_summary);
+        if (kpiRes?.lot_pipeline)      setLotPipeline(kpiRes.lot_pipeline);
+        if (kpiRes?.retail_this_month) setRetailThisMonth(kpiRes.retail_this_month);
         apiFetch("/inventory/stock-summary").then(r => r.ok ? r.json() : null).then(d => { if (d) setInvStockSummary(d); }).catch(() => {});
 
         if (kpiRes) {
@@ -174,7 +176,7 @@ const Dashboard: React.FC = () => {
         )}
 
         {/* ── KPI Row ── */}
-        <div className="db-kpi-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+        <div className="db-kpi-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
           <KPICard
             title="TOTAL REVENUE"
             value={stats.totalRevenue}
@@ -188,6 +190,13 @@ const Dashboard: React.FC = () => {
             trend={calcTrend(stats.monthlyRevenue, monthlyTrend[monthlyTrend.length - 2]?.revenue)}
             sub={new Date().toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
             icon="📅"
+            color="blue"
+          />
+          <KPICard
+            title="RETAIL (MONTH)"
+            value={retailThisMonth.revenue}
+            sub={`${retailThisMonth.bills_count} bills · RET/`}
+            icon="🛍️"
             color="blue"
           />
           <KPICard

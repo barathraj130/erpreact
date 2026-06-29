@@ -1382,6 +1382,190 @@ router.post("/nsb/:id/mark-gst-paid", authMiddleware, async (req, res) => {
 });
 
 /* ============================================================
+   RETAIL SUMMARY — GET /invoices/retail-summary
+   Aggregates all RETAIL_SALE / RET/ invoices for the company
+   Must be placed before /:id to avoid route capture
+============================================================ */
+router.get('/retail-summary', authMiddleware, async (req, res) => {
+    try {
+        const companyId = req.user.active_company_id;
+        const { from, to, period } = req.query;
+
+        let fromDate, toDate;
+        const now = new Date();
+
+        if (from && to) {
+            fromDate = from;
+            toDate   = to;
+        } else if (period === 'today') {
+            fromDate = toDate = now.toISOString().split('T')[0];
+        } else if (period === 'week') {
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay());
+            fromDate = weekStart.toISOString().split('T')[0];
+            toDate   = now.toISOString().split('T')[0];
+        } else {
+            fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            toDate   = now.toISOString().split('T')[0];
+        }
+
+        const retailFilter = `
+            COALESCE(is_deleted, false) = false
+            AND COALESCE(is_nominal, false) = false
+            AND company_id = $1
+            AND (
+                UPPER(COALESCE(invoice_type, '')) = 'RETAIL_SALE'
+                OR invoice_number ILIKE 'RET/%'
+            )
+            AND invoice_date BETWEEN $2 AND $3
+        `;
+
+        const [summary, daily, topProducts, recentBills, wholesaleRow, totalRow] = await Promise.all([
+
+            db.pgGet(`
+                SELECT
+                    COUNT(*) AS total_bills,
+                    COALESCE(SUM(total_amount), 0) AS total_revenue,
+                    COALESCE(SUM(paid_amount), 0) AS total_collected,
+                    COALESCE(SUM(GREATEST(0, total_amount - COALESCE(paid_amount, 0))), 0) AS total_pending,
+                    COALESCE(AVG(total_amount), 0) AS avg_bill_value,
+                    COUNT(CASE WHEN LOWER(COALESCE(status,'')) = 'paid'    THEN 1 END) AS paid_count,
+                    COUNT(CASE WHEN LOWER(COALESCE(status,'')) = 'partial' THEN 1 END) AS partial_count,
+                    COUNT(CASE WHEN LOWER(COALESCE(status,'')) IN ('pending','unpaid','') OR status IS NULL THEN 1 END) AS pending_count,
+                    COALESCE(SUM(CASE WHEN LOWER(COALESCE(status,'')) = 'paid' THEN total_amount ELSE 0 END), 0) AS paid_revenue,
+                    COUNT(DISTINCT customer_id) AS unique_customers
+                FROM invoices
+                WHERE ${retailFilter}
+            `, [companyId, fromDate, toDate]),
+
+            db.pgAll(`
+                SELECT
+                    DATE(invoice_date) AS date,
+                    COUNT(*) AS bills,
+                    COALESCE(SUM(total_amount), 0) AS revenue,
+                    COALESCE(SUM(paid_amount), 0) AS collected
+                FROM invoices
+                WHERE ${retailFilter}
+                GROUP BY DATE(invoice_date)
+                ORDER BY date ASC
+            `, [companyId, fromDate, toDate]),
+
+            db.pgAll(`
+                SELECT
+                    li.description AS product_name,
+                    SUM(li.quantity) AS total_qty,
+                    SUM(li.line_total) AS total_revenue,
+                    COUNT(DISTINCT i.id) AS bill_count,
+                    ROUND(AVG(li.unit_price), 2) AS avg_rate
+                FROM invoice_line_items li
+                JOIN invoices i ON i.id = li.invoice_id
+                WHERE i.company_id = $1
+                  AND COALESCE(i.is_deleted, false) = false
+                  AND COALESCE(i.is_nominal, false) = false
+                  AND (
+                      UPPER(COALESCE(i.invoice_type, '')) = 'RETAIL_SALE'
+                      OR i.invoice_number ILIKE 'RET/%'
+                  )
+                  AND i.invoice_date BETWEEN $2 AND $3
+                  AND li.description IS NOT NULL
+                  AND li.description != ''
+                  AND COALESCE(li.is_return, false) = false
+                GROUP BY li.description
+                ORDER BY total_revenue DESC
+                LIMIT 20
+            `, [companyId, fromDate, toDate]),
+
+            db.pgAll(`
+                SELECT
+                    i.id,
+                    i.invoice_number,
+                    i.invoice_date,
+                    i.total_amount,
+                    i.paid_amount,
+                    GREATEST(0, i.total_amount - COALESCE(i.paid_amount, 0)) AS balance_amount,
+                    i.status,
+                    COALESCE(i.walk_in_name, u.nickname, u.username, 'Walk-in') AS customer_name,
+                    COUNT(li.id) AS item_count,
+                    COALESCE(SUM(li.quantity), 0) AS total_qty
+                FROM invoices i
+                LEFT JOIN users u ON u.id = i.customer_id
+                LEFT JOIN invoice_line_items li ON li.invoice_id = i.id AND COALESCE(li.is_return, false) = false
+                WHERE ${retailFilter.replace(/\$2/g, '$2').replace(/\$3/g, '$3')}
+                GROUP BY i.id, i.invoice_number, i.invoice_date, i.total_amount,
+                         i.paid_amount, i.status, i.walk_in_name, u.nickname, u.username
+                ORDER BY i.invoice_date DESC, i.id DESC
+                LIMIT 50
+            `, [companyId, fromDate, toDate]),
+
+            // Wholesale revenue (exclude retail, gift)
+            db.pgGet(`
+                SELECT COALESCE(SUM(total_amount), 0) AS wholesale_revenue
+                FROM invoices
+                WHERE company_id = $1
+                  AND COALESCE(is_deleted, false) = false
+                  AND COALESCE(is_nominal, false) = false
+                  AND UPPER(COALESCE(invoice_type, '')) NOT IN ('RETAIL_SALE','GIFTED_ITEM','SALES_RETURN')
+                  AND invoice_number NOT ILIKE 'RET/%'
+                  AND invoice_number NOT ILIKE 'GFT/%'
+                  AND invoice_date BETWEEN $2 AND $3
+            `, [companyId, fromDate, toDate]),
+
+            // All revenue for % calculation
+            db.pgGet(`
+                SELECT COALESCE(SUM(total_amount), 0) AS total_revenue
+                FROM invoices
+                WHERE company_id = $1
+                  AND COALESCE(is_deleted, false) = false
+                  AND COALESCE(is_nominal, false) = false
+                  AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'
+                  AND invoice_date BETWEEN $2 AND $3
+            `, [companyId, fromDate, toDate]),
+        ]);
+
+        const retailRevenue   = parseFloat(summary?.total_revenue  || 0);
+        const wholesaleRevenue = parseFloat(wholesaleRow?.wholesale_revenue || 0);
+        const totalRevenue    = parseFloat(totalRow?.total_revenue  || 0);
+        const retailPercent   = totalRevenue > 0
+            ? ((retailRevenue / totalRevenue) * 100).toFixed(1)
+            : '0.0';
+
+        res.json({
+            period:       { from: fromDate, to: toDate },
+            summary: {
+                total_bills:       parseInt(summary?.total_bills       || 0),
+                total_revenue:     retailRevenue,
+                total_collected:   parseFloat(summary?.total_collected || 0),
+                total_pending:     parseFloat(summary?.total_pending   || 0),
+                avg_bill_value:    parseFloat(summary?.avg_bill_value  || 0),
+                paid_count:        parseInt(summary?.paid_count        || 0),
+                partial_count:     parseInt(summary?.partial_count     || 0),
+                pending_count:     parseInt(summary?.pending_count     || 0),
+                paid_revenue:      parseFloat(summary?.paid_revenue    || 0),
+                unique_customers:  parseInt(summary?.unique_customers  || 0),
+                retail_percent:    retailPercent,
+                wholesale_revenue: wholesaleRevenue,
+                total_revenue_all: totalRevenue,
+            },
+            daily_trend:   daily        || [],
+            top_products:  topProducts  || [],
+            recent_bills:  recentBills  || [],
+        });
+    } catch (e) {
+        console.error('GET /invoices/retail-summary error:', e.message);
+        res.json({
+            period: {},
+            summary: {
+                total_bills: 0, total_revenue: 0, total_collected: 0, total_pending: 0,
+                avg_bill_value: 0, paid_count: 0, partial_count: 0, pending_count: 0,
+                paid_revenue: 0, unique_customers: 0, retail_percent: '0.0',
+                wholesale_revenue: 0, total_revenue_all: 0,
+            },
+            daily_trend: [], top_products: [], recent_bills: [],
+        });
+    }
+});
+
+/* ============================================================
    2b. GET /invoice/:id/pdf  — generate & download PDF
 ============================================================ */
 router.get("/:id/pdf", authMiddleware, async (req, res) => {

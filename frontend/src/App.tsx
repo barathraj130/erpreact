@@ -41,6 +41,7 @@ import StockInventory from "./pages/StockInventory";
 import ProductionLots from "./pages/production/ProductionLots";
 import ProductionLotDetail from "./pages/production/ProductionLotDetail";
 import ProductionInventory from "./pages/production/ProductionInventory";
+import RetailRevenue from "./pages/RetailRevenue";
 import InvoiceDetails from "./pages/InvoiceDetails";
 import Ledgers from "./pages/Ledgers";
 import Login from "./pages/Login";
@@ -310,6 +311,7 @@ const App: React.FC = () => {
             <Route path="/delivery-orders/:id/edit" element={<EditDeliveryOrder />} />
             <Route path="/delivery-orders/:id" element={<DeliveryOrderDetail />} />
             <Route path="/sales/returns" element={<SalesReturns />} />
+            <Route path="/sales/retail" element={<RetailRevenue />} />
             <Route path="/stock-lots" element={<StockLots />} />
             <Route path="/stock-lots/:id" element={<StockLotDetail />} />
             <Route path="/stock-inventory" element={<StockInventory />} />

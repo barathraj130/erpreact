@@ -73,17 +73,18 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
   ];
 
   if (hasModule("sales")) {
-      baseItems.push({ 
-          name: "Sales", 
-          icon: <FaShoppingCart />, 
+      baseItems.push({
+          name: "Sales",
+          icon: <FaShoppingCart />,
           section: "Operations",
           subItems: [
               { name: "Orders", path: "/invoices" },
               { name: "Delivery Orders", path: "/delivery-orders" },
               { name: "Sales Returns", path: "/sales/returns" },
+              { name: "🛍️ Retail Revenue", path: "/sales/retail" },
               { name: "Customers", path: "/customers" },
               { name: "Portal Alerts", path: "/sales/customer-notifications" }
-          ] 
+          ]
       });
   }
 
