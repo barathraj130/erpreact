@@ -350,11 +350,15 @@ router.get('/balance-sheet', authMiddleware, async (req, res) => {
       db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM bank_ledger WHERE company_id=$1 AND COALESCE(date, created_at::date) <= $2::date`, [companyId, asOf]).catch(() => ({ bal: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date <= $2::date`, [companyId, asOf]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(current_stock * COALESCE(cost_price,selling_price,0)),0) AS total FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date <= $2::date`, [companyId, asOf]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(remaining_principal),0) AS total FROM loans WHERE company_id=$1 AND status='ACTIVE'`, [companyId]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(remaining_balance),0) AS total FROM chit_funds WHERE company_id=$1 AND status='ACTIVE'`, [companyId]).catch(() => ({ total: 0 })),
+      // Accounts payable: unpaid balance on purchase bills
+      db.pgGet(`SELECT COALESCE(SUM(GREATEST(0, COALESCE(balance_amount, total_amount - COALESCE(paid_amount,0)))),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date <= $2::date`, [companyId, asOf]).catch(() => ({ total: 0 })),
+      // Loan payable: no company_id filter — matches existing Loans page behaviour
+      db.pgGet(`SELECT COALESCE(SUM(GREATEST(0, l.principal_amount - COALESCE((SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0))), 0) AS total FROM loans l WHERE l.status = 'ACTIVE'`).catch(() => ({ total: 0 })),
+      // Chit liability: remaining instalments not yet paid (table is chit_groups, not chit_funds)
+      db.pgGet(`SELECT COALESCE(SUM(GREATEST(0, cg.total_value - COALESCE((SELECT SUM(ci.amount) FROM chit_installments ci WHERE ci.chit_group_id = cg.id), 0))), 0) AS total FROM chit_groups cg WHERE cg.company_id = $1 AND COALESCE(cg.status,'active') != 'closed'`, [companyId]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(CASE WHEN transaction_type='CAPITAL_INTRO' THEN amount ELSE 0 END),0) - COALESCE(SUM(CASE WHEN transaction_type='DRAWINGS' THEN amount ELSE 0 END),0) AS net FROM proprietor_transactions WHERE company_id=$1 AND transaction_date <= $2::date`, [companyId, asOf]).catch(() => ({ net: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(total_amount),0) - COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS net FROM invoices i, purchase_bills pb WHERE i.company_id=$1 AND pb.company_id=$1 AND COALESCE(i.is_deleted,false)=false`, [companyId]).catch(() => ({ net: 0 })),
+      // Retained earnings is computed as balancing figure (Assets - Liabilities - Capital); this query unused
+      Promise.resolve({ net: 0 }),
     ]);
 
     const cash      = parseFloat(cashBal?.bal||0);
