@@ -130,6 +130,17 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
       ]
   });
 
+  // Production Inventory — JBS Knit Wear production house flow
+  baseItems.push({
+      name: "Production",
+      icon: <FaBox />,
+      section: "Stock Management",
+      subItems: [
+          { name: "Production Lots", path: "/production/lots" },
+          { name: "Production Inventory", path: "/production/inventory" },
+      ]
+  });
+
   if (hasModule("finance")) {
       baseItems.push({ 
           name: "Finance", 

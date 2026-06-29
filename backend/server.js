@@ -81,6 +81,7 @@ import stockConversionsRoutes from "./routes/stockConversions.js";
 import transactionCategoriesRoutes from "./routes/transactionCategoriesRoutes.js";
 import stockInventoryRoutes from "./routes/stockInventory.js";
 import stockReportRoutes from "./routes/reports/stock.js";
+import productionRoutes from "./routes/production.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -203,6 +204,7 @@ app.use("/api/stock-inspections", stockInspectionsRoutes);
 app.use("/api/stock-conversions", stockConversionsRoutes);
 app.use("/api/stock-inventory", stockInventoryRoutes);
 app.use("/api/reports/stock", stockReportRoutes);
+app.use("/api/production", productionRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");
