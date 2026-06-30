@@ -1,37 +1,44 @@
-import db from "../database/pg.js";
+// backend/middlewares/checkPermission.js
+// Granular permission check against user_permissions table.
+// Admins always bypass. Non-admins with no row configured also pass through
+// (safe rollout default — once permissions are set up for a user, that user
+// is fully restricted to only what's granted).
+import * as db from '../database/pg.js';
 
-export default function checkPermission(module, action) {
+const checkPermission = (moduleKey, action = 'view') => {
     return async (req, res, next) => {
         try {
-            // Admin / branch_manager bypass — operational roles with full billing access
-            if (['admin', 'superadmin', 'branch_manager'].includes(req.user.role)) return next();
+            if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
 
-            // 1. Get user's role ID from the DB (safer than trusting JWT payload for critical checks)
-            const userRes = await db.pgGet("SELECT role_id FROM users WHERE id = $1", [req.user.id]);
-            if (!userRes || !userRes.role_id) {
-                return res.status(403).json({ error: "Access Denied. No role assigned." });
-            }
+            const role = req.user?.role?.toLowerCase();
 
-            // 2. Check if this role has the required permission
-            const result = await db.pgGet(`
-                SELECT 1 
-                FROM role_permissions rp
-                JOIN permissions p ON rp.permission_id = p.id
-                WHERE rp.role_id = $1
-                AND p.module = $2
-                AND p.action = $3
-            `, [userRes.role_id, module, action]);
+            // Admins always pass
+            if (['admin', 'superadmin'].includes(role)) return next();
 
-            if (!result) {
+            const actionColumn = `can_${action}`;
+
+            const perm = await db.pgGet(
+                `SELECT ${actionColumn} AS allowed FROM user_permissions WHERE user_id = $1 AND module_key = $2`,
+                [req.user.id, moduleKey]
+            );
+
+            // No row = user has no custom permissions configured yet → allow through (safe default)
+            if (!perm) return next();
+
+            if (perm.allowed !== true) {
                 return res.status(403).json({
-                    error: `Access Denied. You do not have permission to ${action.replace('_', ' ')}.`
+                    error: `You don't have permission to ${action} ${moduleKey}`,
+                    required_module: moduleKey,
+                    required_action: action,
                 });
             }
 
             next();
-        } catch (err) {
-            console.error("❌ Permission Check Error:", err);
-            res.status(500).json({ error: "Permission check failed: " + err.message });
+        } catch (e) {
+            console.error('checkPermission error:', e.message);
+            return res.status(403).json({ error: 'Permission check failed' });
         }
     };
-}
+};
+
+export default checkPermission;

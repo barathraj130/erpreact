@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
-import { FaPlus, FaEdit, FaKey, FaUserSlash, FaUserCheck } from "react-icons/fa";
+import { FaPlus, FaEdit, FaKey, FaUserSlash, FaUserCheck, FaShieldAlt } from "react-icons/fa";
 
 interface User {
   id: number;
@@ -35,6 +36,7 @@ const fmt = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 const UserManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [users, setUsers]     = useState<User[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,7 +173,7 @@ const UserManagement: React.FC = () => {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#f9fafb", borderBottom: "0.5px solid #e5e7eb" }}>
-                {["Name", "Email", "Role", "Branch", "Last Login", "Status", "Actions"].map(h => (
+                {["Name", "Email", "Role", "Branch", "Last Login", "Status", "Permissions", "Actions"].map(h => (
                   <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 600,
                     color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                 ))}
@@ -193,6 +195,15 @@ const UserManagement: React.FC = () => {
                       color: u.is_active ? "#065f46" : "#dc2626" }}>
                       {u.is_active ? "Active" : "Inactive"}
                     </span>
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <button onClick={() => navigate(`/admin/users/${u.id}/permissions`)}
+                      title="Manage Permissions"
+                      style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px",
+                        borderRadius: 6, border: "0.5px solid #c7d2fe", background: "#eef2ff",
+                        cursor: "pointer", color: "#4f46e5", fontSize: 12, fontWeight: 600 }}>
+                      <FaShieldAlt size={11} /> Permissions
+                    </button>
                   </td>
                   <td style={{ padding: "14px 16px" }}>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -218,7 +229,7 @@ const UserManagement: React.FC = () => {
                 </tr>
               ))}
               {users.length === 0 && (
-                <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>No users found</td></tr>
+                <tr><td colSpan={8} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>No users found</td></tr>
               )}
             </tbody>
           </table>

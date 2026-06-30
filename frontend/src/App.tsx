@@ -10,6 +10,7 @@ import {
 import Sidebar from "./components/Layout/Sidebar";
 import "./components/Layout/Layout.css";
 import { TenantProvider, useTenant } from "./context/TenantContext";
+import { PermissionsProvider } from "./context/PermissionsContext";
 import { useAuthUser } from "./hooks/useAuthUser";
 import AdvancedReports from "./pages/AdvancedReports"; // Added here
 import { Toaster } from "react-hot-toast";
@@ -73,6 +74,7 @@ import CustomerContact from "./pages/customer/CustomerContact";
 // Admin Module
 import UserManagement from "./pages/admin/UserManagement";
 import BranchDetail from "./pages/admin/BranchDetail";
+import UserPermissionsEditor from "./pages/admin/UserPermissionsEditor";
 
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
@@ -187,7 +189,9 @@ const EnterpriseLayout: React.FC<{
 
         <main style={{ flex: 1 }}>
           <PageTransition>
-            <Outlet />
+            <PermissionsProvider>
+              <Outlet />
+            </PermissionsProvider>
           </PageTransition>
         </main>
         <Toaster position="top-right" />
@@ -284,6 +288,7 @@ const App: React.FC = () => {
           </Route>
 
           <Route element={<AdminRoute />}>
+            <Route path="/admin/users/:id/permissions" element={<UserPermissionsEditor />} />
             <Route path="/admin/setup" element={<AdminSetup />} />
             <Route path="/admin/branches" element={<Branches />} />
             <Route path="/admin/subscriptions" element={<Subscriptions />} />

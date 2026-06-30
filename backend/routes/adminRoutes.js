@@ -272,4 +272,131 @@ router.post('/branches/:id/day-close', authMiddleware, async (req, res) => {
     }
 });
 
+// ── GET /api/admin/permission-modules ─────────────────────────────────────────
+router.get('/permission-modules', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const modules = await db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`);
+        res.json(modules || []);
+    } catch (e) {
+        console.error('[admin/permission-modules]', e.message);
+        res.json([]);
+    }
+});
+
+// ── GET /api/admin/permission-templates ───────────────────────────────────────
+router.get('/permission-templates', authMiddleware, requireAdmin, async (req, res) => {
+    try {
+        const templates = await db.pgAll(`SELECT * FROM permission_templates ORDER BY id`);
+        res.json(templates || []);
+    } catch (e) {
+        console.error('[admin/permission-templates]', e.message);
+        res.json([]);
+    }
+});
+
+// ── GET /api/admin/users/:id/permissions ──────────────────────────────────────
+router.get('/users/:id/permissions', authMiddleware, requireAdmin, async (req, res) => {
+    const userId = parseInt(req.params.id);
+    try {
+        const [userRow, modules, perms] = await Promise.all([
+            db.pgGet(`SELECT username FROM users WHERE id = $1`, [userId]),
+            db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`),
+            db.pgAll(`SELECT * FROM user_permissions WHERE user_id = $1`, [userId]),
+        ]);
+
+        const permsMap = {};
+        (perms || []).forEach(p => { permsMap[p.module_key] = p; });
+
+        res.json({
+            username:    userRow?.username || '',
+            modules:     (modules || []).map(m => ({
+                module_key:   m.module_key,
+                display_name: m.module_name,
+                category:     m.category,
+                description:  '',
+            })),
+            permissions: (modules || []).map(m => ({
+                module_key: m.module_key,
+                can_view:   permsMap[m.module_key]?.can_view   || false,
+                can_create: permsMap[m.module_key]?.can_create || false,
+                can_edit:   permsMap[m.module_key]?.can_edit   || false,
+                can_delete: permsMap[m.module_key]?.can_delete || false,
+            })),
+        });
+    } catch (e) {
+        console.error('[admin/users/:id/permissions]', e.message);
+        res.json({ username: '', modules: [], permissions: [] });
+    }
+});
+
+// ── POST /api/admin/users/:id/permissions ─────────────────────────────────────
+router.post('/users/:id/permissions', authMiddleware, requireAdmin, async (req, res) => {
+    const userId = parseInt(req.params.id);
+    const { permissions } = req.body;
+    if (!Array.isArray(permissions)) return res.json({ success: false, error: 'permissions must be an array' });
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        for (const p of permissions) {
+            await client.query(`
+                INSERT INTO user_permissions
+                    (user_id, module_key, can_view, can_create, can_edit, can_delete, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                ON CONFLICT (user_id, module_key) DO UPDATE SET
+                    can_view = $3, can_create = $4, can_edit = $5, can_delete = $6, updated_at = NOW()
+            `, [userId, p.module_key, p.can_view || false, p.can_create || false, p.can_edit || false, p.can_delete || false]);
+        }
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Permissions saved' });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('[admin/users/:id/permissions POST]', e.message);
+        res.json({ success: false, error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
+// ── POST /api/admin/users/:id/apply-template ──────────────────────────────────
+router.post('/users/:id/apply-template', authMiddleware, requireAdmin, async (req, res) => {
+    const userId     = parseInt(req.params.id);
+    const { template_id } = req.body;
+    if (!template_id) return res.json({ success: false, error: 'template_id required' });
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const items = await client.query(
+            `SELECT * FROM permission_template_items WHERE template_id = $1`,
+            [template_id]
+        );
+
+        await client.query('DELETE FROM user_permissions WHERE user_id = $1', [userId]);
+
+        for (const item of items.rows) {
+            await client.query(`
+                INSERT INTO user_permissions
+                    (user_id, module_key, can_view, can_create, can_edit, can_delete)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [userId, item.module_key, item.can_view, item.can_create, item.can_edit, item.can_delete]);
+        }
+
+        await client.query(
+            `UPDATE users SET permission_template_id = $1 WHERE id = $2`,
+            [template_id, userId]
+        );
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Template applied' });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('[admin/users/:id/apply-template]', e.message);
+        res.json({ success: false, error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
 export default router;

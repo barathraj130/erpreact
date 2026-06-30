@@ -408,4 +408,53 @@ router.get("/me", async (req, res) => {
     }
 });
 
+// ── GET /api/auth/my-permissions ──────────────────────────────────────────────
+// Returns the logged-in user's module permissions. Admins get full access to all.
+// Non-admins with no rows in user_permissions get has_custom_permissions=false
+// so the frontend knows to show everything (safe default during rollout).
+router.get('/my-permissions', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const decoded = jwt.verify(authHeader.split(' ')[1], jwtSecret);
+        const userId = decoded.user?.id;
+        const role   = decoded.user?.role?.toLowerCase();
+
+        if (!userId) return res.status(401).json({ error: 'Invalid token' });
+
+        // Admins get full access map
+        if (['admin', 'superadmin'].includes(role)) {
+            const allModules = await db.pgAll('SELECT module_key FROM permission_modules');
+            const fullAccess = {};
+            (allModules || []).forEach(m => {
+                fullAccess[m.module_key] = { can_view: true, can_create: true, can_edit: true, can_delete: true };
+            });
+            return res.json({ is_admin: true, has_custom_permissions: true, permissions: fullAccess });
+        }
+
+        const rows = await db.pgAll(
+            `SELECT module_key, can_view, can_create, can_edit, can_delete
+             FROM user_permissions WHERE user_id = $1`,
+            [userId]
+        );
+
+        const hasCustomPermissions = (rows || []).length > 0;
+        const permissions = {};
+        (rows || []).forEach(p => {
+            permissions[p.module_key] = {
+                can_view:   p.can_view,
+                can_create: p.can_create,
+                can_edit:   p.can_edit,
+                can_delete: p.can_delete,
+            };
+        });
+
+        res.json({ is_admin: false, has_custom_permissions: hasCustomPermissions, permissions });
+    } catch (e) {
+        console.error('[auth/my-permissions]', e.message);
+        res.json({ is_admin: false, has_custom_permissions: false, permissions: {} });
+    }
+});
+
 export default router;
