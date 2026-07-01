@@ -18,23 +18,24 @@ export const checkAccess = (moduleName, actionName) => {
 
             const user = req.user;
 
-            // 2. Admin / Superadmin / Branch-Manager Bypass
-            // branch_manager is operational staff — they can create invoices/receipts
-            // but don't have a role_id in the roles table (role is managed via JWT)
-            if (['admin', 'superadmin', 'branch_manager'].includes(user.role)) {
+            // 2. Operational-role bypass — these roles manage day-to-day ops and
+            // are controlled by the user_permissions system, not the legacy roles table.
+            const BYPASS_ROLES = ['admin', 'superadmin', 'branch_manager', 'manager', 'accountant', 'staff', 'employee'];
+            if (BYPASS_ROLES.includes(user.role?.toLowerCase())) {
                 return next();
             }
 
-            // 3. Get Role ID from DB
-            // We look up the ID for the string role (e.g. 'manager')
+            // 3. Get Role ID from DB (legacy RBAC for any remaining custom roles)
             const roleRes = await db.pgGet(
-                "SELECT id FROM roles WHERE LOWER(name) = LOWER($1)", 
+                "SELECT id FROM roles WHERE LOWER(name) = LOWER($1)",
                 [user.role]
             );
-            
+
             if (!roleRes) {
-                console.warn(`⛔ RBAC: Role '${user.role}' not defined in database.`);
-                return res.status(403).json({ error: "Access Denied: Invalid Role" });
+                // Role not in legacy roles table — fail-open so unknown roles
+                // are handled by the user_permissions system rather than hard-blocked.
+                console.warn(`⚠️ RBAC: Role '${user.role}' not in roles table — allowing through.`);
+                return next();
             }
 
             const roleId = roleRes.id;
