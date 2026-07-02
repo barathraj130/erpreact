@@ -86,6 +86,11 @@ const DailySalary: React.FC = () => {
   const [showPayModal, setShowPayModal] = useState(false);
   const [payItems, setPayItems]         = useState<PayItem[]>([]);
   const [processing, setProcessing]     = useState(false);
+  // Deduction/Extra Pay inputs stay hidden until explicitly opened per employee —
+  // most days nobody has an adjustment, so don't show an empty ₹0 box for everyone.
+  const [openFields, setOpenFields] = useState<Record<number, { deduction?: boolean; extra?: boolean }>>({});
+  const openField = (employeeId: number, field: "deduction" | "extra") =>
+    setOpenFields(prev => ({ ...prev, [employeeId]: { ...prev[employeeId], [field]: true } }));
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
@@ -175,6 +180,7 @@ const DailySalary: React.FC = () => {
       payment_mode:  r.payment_mode,
       is_temp:       r.is_temp,
     })));
+    setOpenFields({});
     setShowPayModal(true);
   };
 
@@ -495,42 +501,58 @@ const DailySalary: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Deduction + Extra Pay inputs */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", alignItems: "center" }}>
-                    <div>
-                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
-                        Deduction (₹)
-                      </label>
-                      <div style={{ position: "relative" }}>
-                        <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: "0.85rem" }}>₹</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={p.gross_wage}
-                          value={p.deduction || ""}
-                          placeholder="0"
-                          onChange={e => updateDeduction(idx, e.target.value)}
-                          style={{ width: "100%", padding: "10px 12px 10px 28px", borderRadius: "10px", border: "1.5px solid #e2e8f0", fontSize: "0.95rem", outline: "none", boxSizing: "border-box" }}
-                        />
+                  {/* Deduction + Extra Pay — hidden by default, revealed only when needed */}
+                  <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap" }}>
+                    {openFields[p.employee_id]?.deduction ? (
+                      <div style={{ flex: "1 1 120px" }}>
+                        <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
+                          Deduction (₹)
+                        </label>
+                        <div style={{ position: "relative" }}>
+                          <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", fontSize: "0.85rem" }}>₹</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={p.gross_wage}
+                            value={p.deduction || ""}
+                            placeholder="0"
+                            autoFocus
+                            onChange={e => updateDeduction(idx, e.target.value)}
+                            style={{ width: "100%", padding: "10px 12px 10px 28px", borderRadius: "10px", border: "1.5px solid #e2e8f0", fontSize: "0.95rem", outline: "none", boxSizing: "border-box" }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
-                        Extra Pay (₹)
-                      </label>
-                      <div style={{ position: "relative" }}>
-                        <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#a78bfa", fontSize: "0.85rem" }}>₹</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={p.extra_pay || ""}
-                          placeholder="0"
-                          onChange={e => updateExtraPay(idx, e.target.value)}
-                          style={{ width: "100%", padding: "10px 12px 10px 28px", borderRadius: "10px", border: "1.5px solid #ddd6fe", fontSize: "0.95rem", outline: "none", boxSizing: "border-box", background: "#faf5ff" }}
-                        />
+                    ) : (
+                      <button onClick={() => openField(p.employee_id, "deduction")}
+                        style={{ display: "flex", alignItems: "center", gap: "5px", padding: "9px 14px", borderRadius: "10px", border: "1.5px dashed #cbd5e1", background: "none", color: "#64748b", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
+                        <FaCut size={11} /> Deduct
+                      </button>
+                    )}
+                    {openFields[p.employee_id]?.extra ? (
+                      <div style={{ flex: "1 1 120px" }}>
+                        <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
+                          Extra Pay (₹)
+                        </label>
+                        <div style={{ position: "relative" }}>
+                          <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#a78bfa", fontSize: "0.85rem" }}>₹</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={p.extra_pay || ""}
+                            placeholder="0"
+                            autoFocus
+                            onChange={e => updateExtraPay(idx, e.target.value)}
+                            style={{ width: "100%", padding: "10px 12px 10px 28px", borderRadius: "10px", border: "1.5px solid #ddd6fe", fontSize: "0.95rem", outline: "none", boxSizing: "border-box", background: "#faf5ff" }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ background: (p.deduction > 0 || p.extra_pay > 0) ? (p.extra_pay > 0 ? "#f5f3ff" : "#fef9c3") : "#f0fdf4", borderRadius: "10px", padding: "10px 14px", textAlign: "center" }}>
+                    ) : (
+                      <button onClick={() => openField(p.employee_id, "extra")}
+                        style={{ display: "flex", alignItems: "center", gap: "5px", padding: "9px 14px", borderRadius: "10px", border: "1.5px dashed #ddd6fe", background: "none", color: "#7c3aed", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
+                        + Bonus
+                      </button>
+                    )}
+                    <div style={{ flex: "1 1 120px", background: (p.deduction > 0 || p.extra_pay > 0) ? (p.extra_pay > 0 ? "#f5f3ff" : "#fef9c3") : "#f0fdf4", borderRadius: "10px", padding: "10px 14px", textAlign: "center" }}>
                       <div style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 600, textTransform: "uppercase", marginBottom: "2px" }}>Net Pay</div>
                       <div style={{ fontSize: "1.25rem", fontWeight: 800, color: p.extra_pay > 0 ? "#7c3aed" : p.deduction > 0 ? "#d97706" : "#10b981" }}>{fmt(p.net_wage)}</div>
                     </div>
