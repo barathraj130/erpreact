@@ -3,6 +3,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { seedPermissionModules, seedPermissionTemplates } from '../config/permissionModulesSeed.js';
 
 const router = express.Router();
 
@@ -275,7 +276,12 @@ router.post('/branches/:id/day-close', authMiddleware, async (req, res) => {
 // ── GET /api/admin/permission-modules ─────────────────────────────────────────
 router.get('/permission-modules', authMiddleware, requireAdmin, async (req, res) => {
     try {
-        const modules = await db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`);
+        let modules = await db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`);
+        if (!modules || modules.length === 0) {
+            // Self-heal: startup seeding may have failed silently on this environment.
+            await seedPermissionModules(db);
+            modules = await db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`);
+        }
         res.json(modules || []);
     } catch (e) {
         console.error('[admin/permission-modules]', e.message);
@@ -286,7 +292,13 @@ router.get('/permission-modules', authMiddleware, requireAdmin, async (req, res)
 // ── GET /api/admin/permission-templates ───────────────────────────────────────
 router.get('/permission-templates', authMiddleware, requireAdmin, async (req, res) => {
     try {
-        const templates = await db.pgAll(`SELECT * FROM permission_templates ORDER BY id`);
+        let templates = await db.pgAll(`SELECT * FROM permission_templates ORDER BY id`);
+        if (!templates || templates.length === 0) {
+            // Self-heal: startup seeding may have failed silently on this environment.
+            await seedPermissionModules(db);
+            await seedPermissionTemplates(db);
+            templates = await db.pgAll(`SELECT * FROM permission_templates ORDER BY id`);
+        }
         res.json(templates || []);
     } catch (e) {
         console.error('[admin/permission-templates]', e.message);
@@ -298,11 +310,17 @@ router.get('/permission-templates', authMiddleware, requireAdmin, async (req, re
 router.get('/users/:id/permissions', authMiddleware, requireAdmin, async (req, res) => {
     const userId = parseInt(req.params.id);
     try {
-        const [userRow, modules, perms] = await Promise.all([
+        let [userRow, modules, perms] = await Promise.all([
             db.pgGet(`SELECT username FROM users WHERE id = $1`, [userId]),
             db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`),
             db.pgAll(`SELECT * FROM user_permissions WHERE user_id = $1`, [userId]),
         ]);
+
+        if (!modules || modules.length === 0) {
+            // Self-heal: startup seeding may have failed silently on this environment.
+            await seedPermissionModules(db);
+            modules = await db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`);
+        }
 
         const permsMap = {};
         (perms || []).forEach(p => { permsMap[p.module_key] = p; });

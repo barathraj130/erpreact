@@ -1,5 +1,6 @@
 // backend/database/schemaUpdates.js
 import * as db from "./pg.js";
+import { seedPermissionModules, seedPermissionTemplates } from "../config/permissionModulesSeed.js";
 
 export const runSchemaUpdates = async () => {
     console.log("🚀 Running Schema Updates...");
@@ -1095,35 +1096,9 @@ export const runSchemaUpdates = async () => {
             )
         `).catch(() => {});
 
-        await db.query(`
-            INSERT INTO permission_modules (module_key, module_name, category, display_order) VALUES
-            ('dashboard',            'Dashboard',              'Overview',   1),
-            ('invoices',             'Invoices / Sales',       'Sales',      2),
-            ('customers',            'Customers',              'Sales',      3),
-            ('sales_returns',        'Sales Returns',          'Sales',      4),
-            ('delivery_orders',      'Delivery Orders',        'Sales',      5),
-            ('purchase_bills',       'Purchase Bills',         'Purchases',  6),
-            ('suppliers',            'Suppliers',              'Purchases',  7),
-            ('inventory',            'Inventory',              'Stock',      8),
-            ('production_lots',      'Production Lots',        'Stock',      9),
-            ('production_inventory', 'Production Inventory',   'Stock',     10),
-            ('cash_ledger',          'Cash Ledger',            'Finance',   11),
-            ('bank_ledger',          'Bank Ledger',            'Finance',   12),
-            ('finance_reports',      'Finance Reports',        'Finance',   13),
-            ('loans',                'Loans',                  'Finance',   14),
-            ('lenders',              'Lenders',                'Finance',   15),
-            ('chits',                'Chits',                  'Finance',   16),
-            ('proprietor_account',   'Proprietor Account',     'Finance',   17),
-            ('transactions',         'Transactions',           'Finance',   18),
-            ('employees',            'Employees',              'HR',        19),
-            ('attendance',           'Attendance',             'HR',        20),
-            ('salary',               'Salary / Payroll',       'HR',        21),
-            ('reports',              'Reports',                'Analytics', 22),
-            ('gst_reports',          'GST Reports',            'Analytics', 23),
-            ('user_management',      'User Management',        'System',    24),
-            ('admin_setup',          'Admin Setup',            'System',    25)
-            ON CONFLICT (module_key) DO NOTHING
-        `).catch(() => {});
+        await seedPermissionModules(db).catch(e => {
+            console.error("❌ permission_modules seed failed:", e.message);
+        });
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS user_permissions (
@@ -1165,56 +1140,9 @@ export const runSchemaUpdates = async () => {
         `).catch(() => {});
 
         // System permission templates (idempotent — skip if names already exist)
-        await db.query(`
-            INSERT INTO permission_templates (template_name, description, is_system)
-            SELECT v.name, v.desc, true FROM (VALUES
-                ('Full Admin',      'Complete access to everything'),
-                ('Sales Staff',     'Invoices, customers, returns only'),
-                ('Purchase Staff',  'Purchase bills, suppliers, inventory only'),
-                ('Accountant',      'Finance, reports, ledgers only'),
-                ('Branch Cashier',  'Billing interface only, no admin panel')
-            ) AS v(name, desc)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM permission_templates WHERE template_name = v.name AND is_system = true
-            )
-        `).catch(() => {});
-
-        // Seed template items (only if template has no items yet)
-        await db.query(`
-            INSERT INTO permission_template_items (template_id, module_key, can_view, can_create, can_edit, can_delete)
-            SELECT t.id, m.module_key, true, true, true, false
-            FROM permission_templates t, permission_modules m
-            WHERE t.template_name = 'Sales Staff' AND t.is_system = true
-              AND m.module_key IN ('dashboard','invoices','customers','sales_returns','delivery_orders')
-              AND NOT EXISTS (SELECT 1 FROM permission_template_items WHERE template_id = t.id LIMIT 1)
-        `).catch(() => {});
-
-        await db.query(`
-            INSERT INTO permission_template_items (template_id, module_key, can_view, can_create, can_edit, can_delete)
-            SELECT t.id, m.module_key, true, true, true, false
-            FROM permission_templates t, permission_modules m
-            WHERE t.template_name = 'Purchase Staff' AND t.is_system = true
-              AND m.module_key IN ('dashboard','purchase_bills','suppliers','inventory','production_lots','production_inventory')
-              AND NOT EXISTS (SELECT 1 FROM permission_template_items WHERE template_id = t.id LIMIT 1)
-        `).catch(() => {});
-
-        await db.query(`
-            INSERT INTO permission_template_items (template_id, module_key, can_view, can_create, can_edit, can_delete)
-            SELECT t.id, m.module_key, true, true, true, false
-            FROM permission_templates t, permission_modules m
-            WHERE t.template_name = 'Accountant' AND t.is_system = true
-              AND m.module_key IN ('dashboard','cash_ledger','bank_ledger','finance_reports','loans','lenders','proprietor_account','transactions','reports','gst_reports')
-              AND NOT EXISTS (SELECT 1 FROM permission_template_items WHERE template_id = t.id LIMIT 1)
-        `).catch(() => {});
-
-        await db.query(`
-            INSERT INTO permission_template_items (template_id, module_key, can_view, can_create, can_edit, can_delete)
-            SELECT t.id, m.module_key, true, true, false, false
-            FROM permission_templates t, permission_modules m
-            WHERE t.template_name = 'Branch Cashier' AND t.is_system = true
-              AND m.module_key IN ('invoices','customers')
-              AND NOT EXISTS (SELECT 1 FROM permission_template_items WHERE template_id = t.id LIMIT 1)
-        `).catch(() => {});
+        await seedPermissionTemplates(db).catch(e => {
+            console.error("❌ permission_templates seed failed:", e.message);
+        });
 
         await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permission_template_id INTEGER REFERENCES permission_templates(id)`).catch(() => {});
         await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(100)`).catch(() => {});
