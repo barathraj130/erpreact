@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   FaEdit,
+  FaEllipsisV,
   FaHistory,
   FaMapMarkerAlt,
   FaPhone,
@@ -42,12 +44,37 @@ const Customers: React.FC = () => {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderList, setReminderList] = useState<any[]>([]);
   const [sentIds, setSentIds] = useState<Set<number>>(new Set());
+  const [menuAnchor, setMenuAnchor] = useState<{ id: number; top: number; left: number } | null>(null);
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Close the row action overflow menu on outside click or scroll (menu is portaled
+  // to document.body with fixed coordinates, so it won't track a scrolling table).
+  React.useEffect(() => {
+    if (menuAnchor === null) return;
+    const close = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (e.type === "scroll" || !target.closest(`[data-action-menu="${menuAnchor.id}"]`)) {
+        setMenuAnchor(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("scroll", close, true);
+    };
+  }, [menuAnchor]);
+
+  const toggleActionMenu = (userId: number, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (menuAnchor?.id === userId) { setMenuAnchor(null); return; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuAnchor({ id: userId, top: rect.bottom + 4, left: rect.right - 170 });
+  };
 
   const displayedCustomers = React.useMemo(() => {
     if (!Array.isArray(customers)) return [];
@@ -413,9 +440,7 @@ const Customers: React.FC = () => {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div className="tx-desc" style={{ fontSize: "14.5px" }}>{user.nickname || user.username}</div>
-                    <div className="tx-poster">
-                      GSTIN: {user.gstin || "N/A"}
-                    </div>
+                    {user.gstin && <div className="tx-poster">GSTIN: {user.gstin}</div>}
                   </div>
                   {user.branch_id ? (
                     <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#eff6ff", color: "#2563eb", fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -537,13 +562,19 @@ const Customers: React.FC = () => {
                       </div>
                     </td>
                     <td>
-                      <span className="font-mono">{user.gstin || "N/A"}</span>
+                      {user.gstin
+                        ? <span className="font-mono">{user.gstin}</span>
+                        : <span style={{ color: "var(--text-3)" }}>—</span>}
                     </td>
                     <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-3)" }}>
-                        <FaMapMarkerAlt size={11} />
-                        {user.city_pincode || user.state || "Not specified"}
-                      </div>
+                      {(user.city_pincode || user.state) ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--text-3)" }}>
+                          <FaMapMarkerAlt size={11} />
+                          {user.city_pincode || user.state}
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--text-3)" }}>—</span>
+                      )}
                     </td>
                     <td>
                       {user.branch_id ? (
@@ -572,7 +603,7 @@ const Customers: React.FC = () => {
                       })()}
                     </td>
                     <td className="text-center">
-                      <div style={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "6px" }}>
                         {/* WhatsApp Reminder */}
                         <button
                           onClick={() => sendRowReminder(user)}
@@ -626,32 +657,20 @@ const Customers: React.FC = () => {
                         )}
                         <button
                           className="page-btn-round-sm"
-                          onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); }}
-                          title="View History"
-                        >
-                          <FaHistory size={12} />
-                        </button>
-                        <Link
-                          className="page-btn-round-sm"
-                          style={{ color: '#6366f1' }}
-                          to={`/customers/${user.id}/ledger`}
-                          title="View Ledger"
-                        >
-                          <FaFileInvoice size={12} />
-                        </Link>
-                        <button
-                          className="page-btn-round-sm"
                           onClick={() => handleEdit(user)}
                           title="Edit Customer"
                         >
                           <FaEdit size={12} />
                         </button>
+
+                        {/* Overflow menu trigger — History / Ledger / Delete (menu itself is portaled below) */}
                         <button
-                          className="page-btn-round-danger"
-                          onClick={() => handleDelete(user.id)}
-                          title="Delete Customer"
+                          className="page-btn-round-sm"
+                          data-action-menu={user.id}
+                          onClick={(e) => toggleActionMenu(user.id, e)}
+                          title="More actions"
                         >
-                          <FaTrash size={12} />
+                          <FaEllipsisV size={12} />
                         </button>
                       </div>
                     </td>
@@ -668,6 +687,58 @@ const Customers: React.FC = () => {
           <p style={{ margin: "4px 0 0", color: "var(--text-3)", fontSize: "12px" }}>Add your first corporate client to get started.</p>
         </div>
       )}
+
+      {/* Row action overflow menu — portaled to body so it isn't clipped by the
+          table wrapper's overflow:hidden (needed for its rounded corners) */}
+      {menuAnchor && (() => {
+        const user = displayedCustomers.find((c) => c.id === menuAnchor.id);
+        if (!user) return null;
+        return createPortal(
+          <div
+            data-action-menu={menuAnchor.id}
+            style={{
+              position: "fixed", top: menuAnchor.top, left: Math.max(8, menuAnchor.left),
+              background: "#fff", border: "1px solid #e2e8f0", borderRadius: "10px",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.16)", zIndex: 2000,
+              minWidth: "170px", overflow: "hidden", textAlign: "left"
+            }}
+          >
+            <button
+              onClick={() => { setSelectedCustomer(user); setShowTransactionModal(true); setMenuAnchor(null); }}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                padding: "10px 14px", border: "none", background: "none",
+                fontSize: "13px", color: "var(--text-2)", cursor: "pointer"
+              }}
+            >
+              <FaHistory size={12} /> View History
+            </button>
+            <Link
+              to={`/customers/${user.id}/ledger`}
+              onClick={() => setMenuAnchor(null)}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                padding: "10px 14px", fontSize: "13px", color: "#6366f1",
+                textDecoration: "none", boxSizing: "border-box"
+              }}
+            >
+              <FaFileInvoice size={12} /> View Ledger
+            </Link>
+            <button
+              onClick={() => { handleDelete(user.id); setMenuAnchor(null); }}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                padding: "10px 14px", border: "none", background: "none",
+                borderTop: "1px solid #f1f5f9",
+                fontSize: "13px", color: "#dc2626", cursor: "pointer"
+              }}
+            >
+              <FaTrash size={12} /> Delete Customer
+            </button>
+          </div>,
+          document.body
+        );
+      })()}
 
       {showModal && (
         <AddCustomerModal
