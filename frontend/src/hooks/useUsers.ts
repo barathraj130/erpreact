@@ -14,7 +14,7 @@ interface UseUsersState {
  * Custom React Hook to fetch and manage the state of all customers/parties.
  * Replaces the monolithic usersDataCache loading logic.
  */
-export const useUsers = (): UseUsersState => {
+export const useUsers = (scope?: "all"): UseUsersState => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export const useUsers = (): UseUsersState => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchCustomers();
+      const data = await fetchCustomers(scope ? { scope } : undefined);
 
       // Assuming the backend already filters out the 'admin' user.
       setCustomers(Array.isArray(data) ? data : []);
@@ -38,7 +38,7 @@ export const useUsers = (): UseUsersState => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   // Load data only on initial component mount
   useEffect(() => {

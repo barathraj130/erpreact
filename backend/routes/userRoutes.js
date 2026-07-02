@@ -169,25 +169,29 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
 ============================================================ */
 
 // CUSTOMER QUICK SEARCH (for billing)
+// Scoped to the requester's active branch: branch staff only see their own branch's
+// walk-in customers, company-level users (no active branch) only see company customers.
 router.get("/search", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id || req.user.company_id;
+    const branchId = req.user.branch_id || null;
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
     try {
         const rows = await db.pgAll(`
             SELECT u.id,
                    COALESCE(u.nickname, u.username) AS name,
-                   u.phone, u.gstin, u.state_code,
+                   u.phone, u.gstin, u.state_code, u.branch_id,
                    COALESCE((
-                     SELECT SUM(COALESCE(grand_total, net_payable, total_amount, 0)) - SUM(COALESCE(paid_amount, 0))
+                     SELECT SUM(total_amount) - SUM(COALESCE(paid_amount, 0))
                      FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted,false)=false
                    ), 0) AS outstanding_balance
             FROM users u
             WHERE u.company_id = $1
               AND u.role IN ('user','customer')
               AND (LOWER(COALESCE(u.nickname, u.username,'')) LIKE $2 OR u.phone LIKE $3)
+              AND ($4::INTEGER IS NOT DISTINCT FROM u.branch_id)
             ORDER BY u.username ASC LIMIT 10
-        `, [companyId, `%${q.toLowerCase()}%`, `%${q}%`]);
+        `, [companyId, `%${q.toLowerCase()}%`, `%${q}%`, branchId]);
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -195,8 +199,12 @@ router.get("/search", authMiddleware, async (req, res) => {
 });
 
 // CREATE CUSTOMER from billing screen (no permission gate — any logged-in staff can create a walk-in customer)
+// Customer inherits the creator's active branch — walk-in/retail customers created from
+// branch billing get branch_id set; customers created from the main (no-branch) admin context
+// get branch_id = NULL and stay company-wide.
 router.post("/create-customer", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id || req.user?.company_id;
+    const branchId = req.user?.branch_id || null;
     const { username, phone, email, gstin, address_line1, state, state_code } = req.body;
     if (!username || !phone) return res.status(400).json({ error: "Name and phone are required" });
     try {
@@ -214,11 +222,16 @@ router.post("/create-customer", authMiddleware, async (req, res) => {
             `SELECT id FROM users WHERE username = $1 LIMIT 1`, [baseName]
         ) ? `${baseName}_${suffix}` : baseName;
 
+        // Walk-in customers get no portal login — store a disabled placeholder hash
+        // (users.password_hash is NOT NULL on some environments; this keeps the insert
+        // safe everywhere without granting an actual usable password).
+        const password_hash = await bcrypt.hash(`disabled-${uniqueName}-${Date.now()}`, 10);
+
         const row = await db.pgGet(`
-            INSERT INTO users (company_id, username, nickname, phone, email, gstin, address_line1, state, state_code, role, is_active, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'customer', true, NOW())
-            RETURNING id, username, phone, email, gstin, state_code
-        `, [companyId, uniqueName, baseName, cleanPhone, email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33']);
+            INSERT INTO users (company_id, username, nickname, phone, email, gstin, address_line1, state, state_code, branch_id, role, is_active, created_at, password_hash)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'customer', true, NOW(), $11)
+            RETURNING id, username, phone, email, gstin, state_code, branch_id
+        `, [companyId, uniqueName, baseName, cleanPhone, email || null, gstin || null, address_line1 || null, state || 'Tamil Nadu', state_code || '33', branchId, password_hash]);
 
         res.json({ ...row, name: baseName, outstanding_balance: 0 });
     } catch (err) {
@@ -228,13 +241,34 @@ router.post("/create-customer", authMiddleware, async (req, res) => {
 });
 
 // GET ALL CUSTOMERS
+// Scope rules (matches /search and /create-customer branch isolation):
+//   ?scope=all        -> every customer, company + all branches (admin/reporting use)
+//   ?branch_id=X       -> only that branch's customers (used by Branch detail page)
+//   (no params)         -> customers for the requester's active branch, or
+//                          company-wide (branch_id IS NULL) if no branch is active
 router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     const companyId = req.user.active_company_id || req.user.company_id;
+    const { scope, branch_id: branchFilterRaw } = req.query;
     try {
+        const params = [companyId];
+        let branchClause = '';
+        if (scope === 'all') {
+            // no filter — company-wide across every branch
+        } else if (branchFilterRaw !== undefined) {
+            params.push(parseInt(branchFilterRaw));
+            branchClause = ` AND u.branch_id = $${params.length}`;
+        } else if (req.user.branch_id) {
+            params.push(req.user.branch_id);
+            branchClause = ` AND u.branch_id = $${params.length}`;
+        } else {
+            branchClause = ` AND u.branch_id IS NULL`;
+        }
+
         const users = await db.pgAll(`
             SELECT
                 u.id, u.username, u.nickname, u.email, u.phone, u.role, u.gstin,
                 u.address_line1, u.city_pincode, u.state, u.state_code,
+                u.branch_id, b.branch_name,
                 -- Use the effective opening balance (meta takes priority over raw column).
                 -- This ensures the Edit Customer form shows the same value used in outstanding calculations.
                 COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0)) AS initial_balance,
@@ -277,9 +311,10 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                       AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'
                 ), 0) as remaining_balance
             FROM users u
-            WHERE u.role IN ('user', 'customer') AND u.company_id = $1
+            LEFT JOIN branches b ON b.id = u.branch_id
+            WHERE u.role IN ('user', 'customer') AND u.company_id = $1${branchClause}
             ORDER BY u.id ASC
-        `, [companyId]);
+        `, params);
         res.json(users);
     } catch (err) {
         console.error("Fetch customers error:", err);
@@ -311,6 +346,7 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
             : await bcrypt.hash(`disabled-${username}-${Date.now()}`, 10);
 
         const companyId = req.user.active_company_id || req.user.company_id;
+        const branchId = req.user.branch_id || null;
 
         // username has a global unique constraint — try up to 9 suffixed variants
         // so two customers named "BARATH" become "BARATH" and "BARATH_2" automatically.
@@ -328,9 +364,9 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
                         company_id, username, nickname, email, phone, gstin,
                         address_line1, city_pincode, state, state_code,
                         bank_name, bank_account_no, bank_ifsc_code,
-                        initial_balance, role, active_company_id, password_hash
+                        initial_balance, role, active_company_id, password_hash, branch_id
                     )
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customer',$15,$16)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customer',$15,$16,$17)
                      RETURNING id`,
                     [
                         companyId,
@@ -343,7 +379,8 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
                         bank_name || null, bank_account_no || null, bank_ifsc_code || null,
                         opening_balance || 0,
                         companyId,
-                        password_hash
+                        password_hash,
+                        branchId
                     ]
                 );
                 await client.query(`RELEASE SAVEPOINT sp_username`);

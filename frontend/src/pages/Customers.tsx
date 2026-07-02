@@ -25,7 +25,8 @@ import AddCustomerModal from "./AddCustomerModal";
 import "./PageShared.css";
 
 const Customers: React.FC = () => {
-  const { customers = [], loading, error: fetchError, refresh } = useUsers();
+  const [scopeFilter, setScopeFilter] = useState<"active" | "all">("active");
+  const { customers = [], loading, error: fetchError, refresh } = useUsers(scopeFilter === "all" ? "all" : undefined);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -335,6 +336,28 @@ const Customers: React.FC = () => {
         </div>
       </div>
 
+      {/* Scope tabs — Company (wholesale/B2B) vs All (company + every branch's walk-in customers) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[
+          { key: "active" as const, label: "🏢 Company Customers" },
+          { key: "all" as const, label: "👥 All Customers" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setScopeFilter(tab.key)}
+            style={{
+              padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              border: `1.5px solid ${scopeFilter === tab.key ? "#4f46e5" : "var(--border-soft)"}`,
+              background: scopeFilter === tab.key ? "#4f46e5" : "transparent",
+              color: scopeFilter === tab.key ? "#fff" : "var(--text-2)",
+              cursor: "pointer",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Search */}
       <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
         <div className="page-search-bar" style={{ width: isMobile ? "100%" : "340px" }}>
@@ -394,6 +417,15 @@ const Customers: React.FC = () => {
                       GSTIN: {user.gstin || "N/A"}
                     </div>
                   </div>
+                  {user.branch_id ? (
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#eff6ff", color: "#2563eb", fontWeight: 600, whiteSpace: "nowrap" }}>
+                      {user.branch_name || `Branch #${user.branch_id}`}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", fontWeight: 600, whiteSpace: "nowrap" }}>
+                      Company
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-soft)" }}>
                   <span style={{ fontSize: "12px", color: "var(--text-3)", display: "flex", alignItems: "center", gap: "4px" }}>
@@ -471,6 +503,7 @@ const Customers: React.FC = () => {
                   <th>Customer</th>
                   <th>GSTIN</th>
                   <th>Location</th>
+                  <th>Scope</th>
                   <th className="text-right">Balance</th>
                   <th className="text-center">Actions</th>
                 </tr>
@@ -511,6 +544,17 @@ const Customers: React.FC = () => {
                         <FaMapMarkerAlt size={11} />
                         {user.city_pincode || user.state || "Not specified"}
                       </div>
+                    </td>
+                    <td>
+                      {user.branch_id ? (
+                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#eff6ff", color: "#2563eb", fontWeight: 600 }}>
+                          {user.branch_name || `Branch #${user.branch_id}`}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", fontWeight: 600 }}>
+                          Company
+                        </span>
+                      )}
                     </td>
                     <td className="text-right">
                       {(() => {

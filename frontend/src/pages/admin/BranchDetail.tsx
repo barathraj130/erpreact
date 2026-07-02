@@ -9,8 +9,8 @@ const fmt = (n: number) =>
 const fmtDate = (d: string) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
-const KPI = ({ label, value, color = "#1e293b", sub }: { label: string; value: string; color?: string; sub?: string }) => (
-  <div style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 12, padding: "18px 22px" }}>
+const KPI = ({ label, value, color = "#1e293b", sub, onClick }: { label: string; value: string; color?: string; sub?: string; onClick?: () => void }) => (
+  <div onClick={onClick} style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 12, padding: "18px 22px", cursor: onClick ? "pointer" : "default" }}>
     <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>{label}</div>
     <div style={{ fontSize: 24, fontWeight: 800, color }}>{value}</div>
     {sub && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{sub}</div>}
@@ -23,24 +23,27 @@ const BranchDetail: React.FC = () => {
   const [detail, setDetail] = useState<any>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [stock, setStock] = useState<any[]>([]);
+  const [branchCustomers, setBranchCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"invoices" | "stock" | "ledger">("invoices");
+  const [activeTab, setActiveTab] = useState<"invoices" | "stock" | "ledger" | "customers">("invoices");
   const [cashLedger, setCashLedger] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [dRes, iRes, sRes, cRes] = await Promise.all([
+        const [dRes, iRes, sRes, cRes, custRes] = await Promise.all([
           apiFetch(`/admin/branches/${id}/detail`),
           apiFetch(`/admin/branches/${id}/invoices`),
           apiFetch(`/admin/branches/${id}/stock`),
           apiFetch(`/ledgers/cash`),
+          apiFetch(`/admin/branches/${id}/customers`),
         ]);
         if (dRes.ok) setDetail(await dRes.json());
         if (iRes.ok) setInvoices(await iRes.json());
         if (sRes.ok) setStock(await sRes.json());
         if (cRes.ok) setCashLedger(await cRes.json());
+        if (custRes.ok) setBranchCustomers(await custRes.json());
       } finally {
         setLoading(false);
       }
@@ -54,9 +57,10 @@ const BranchDetail: React.FC = () => {
   const { branch, stats, manager } = detail;
 
   const TABS = [
-    { key: "invoices", label: "Invoices", icon: <FaFileInvoiceDollar /> },
-    { key: "stock",    label: "Stock",    icon: <FaBoxes /> },
-    { key: "ledger",   label: "Ledger",   icon: <FaChartBar /> },
+    { key: "invoices",  label: "Invoices",  icon: <FaFileInvoiceDollar /> },
+    { key: "customers", label: "Customers", icon: <FaUsers /> },
+    { key: "stock",     label: "Stock",     icon: <FaBoxes /> },
+    { key: "ledger",    label: "Ledger",    icon: <FaChartBar /> },
   ];
 
   return (
@@ -94,7 +98,7 @@ const BranchDetail: React.FC = () => {
         <KPI label="Month Sales"   value={fmt(stats?.month_sales)}    color="#4f46e5" />
         <KPI label="Outstanding"   value={fmt(stats?.outstanding)}    color="#dc2626" />
         <KPI label="Bills Today"   value={String(stats?.today_count || 0)} />
-        <KPI label="Customers"     value={String(stats?.customer_count || 0)} />
+        <KPI label="Customers"     value={String(stats?.customer_count || 0)} onClick={() => setActiveTab("customers")} />
       </div>
 
       {/* Tabs */}
@@ -144,6 +148,42 @@ const BranchDetail: React.FC = () => {
               ))}
               {invoices.length === 0 && (
                 <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>No invoices found</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Customers Tab */}
+      {activeTab === "customers" && (
+        <div style={{ background: "#fff", borderRadius: 12, border: "0.5px solid #e5e7eb", overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: "0.5px solid #e5e7eb", display: "flex",
+            justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Branch Customers ({branchCustomers.length})</span>
+            <span style={{ fontSize: 12, color: "#9ca3af" }}>Walk-in and local buyers for this branch</span>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb", borderBottom: "0.5px solid #e5e7eb" }}>
+                {["Name", "Phone", "Total Bills", "Total Billed", "Outstanding"].map((h, i) => (
+                  <th key={h} style={{ padding: "12px 16px", textAlign: i >= 2 ? "right" : "left", fontSize: 11, fontWeight: 600,
+                    color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {branchCustomers.map((c: any) => (
+                <tr key={c.id} style={{ borderBottom: "0.5px solid #f3f4f6" }}>
+                  <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ padding: "12px 16px", fontSize: 13 }}>{c.phone || "—"}</td>
+                  <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "right" }}>{parseInt(c.total_invoices || 0)}</td>
+                  <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{fmt(c.total_billed)}</td>
+                  <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, textAlign: "right",
+                    color: Number(c.outstanding_balance) > 0 ? "#dc2626" : "#64748b" }}>{fmt(c.outstanding_balance)}</td>
+                </tr>
+              ))}
+              {branchCustomers.length === 0 && (
+                <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>No customers for this branch yet</td></tr>
               )}
             </tbody>
           </table>

@@ -24,10 +24,10 @@ router.get('/branches-overview', authMiddleware, requireAdmin, async (req, res) 
                 b.id,
                 b.branch_name,
                 b.branch_code,
-                b.address,
+                b.address_line1 AS address,
                 b.is_active,
-                u.username AS manager_name,
-                u.email    AS manager_email,
+                COALESCE(u.username, b.manager_name) AS manager_name,
+                COALESCE(u.email, b.manager_email)   AS manager_email,
                 COALESCE(ts.amount, 0)       AS today_sales,
                 COALESCE(ts.bill_count, 0)   AS today_bills,
                 COALESCE(out.amount, 0)      AS outstanding
@@ -35,7 +35,7 @@ router.get('/branches-overview', authMiddleware, requireAdmin, async (req, res) 
             LEFT JOIN users u ON u.branch_id = b.id AND u.role = 'branch_manager' AND u.is_active = true
             LEFT JOIN (
                 SELECT branch_id,
-                       SUM(COALESCE(grand_total, net_payable, 0)) AS amount,
+                       SUM(total_amount) AS amount,
                        COUNT(*) AS bill_count
                 FROM invoices
                 WHERE DATE(invoice_date) = CURRENT_DATE
@@ -45,10 +45,10 @@ router.get('/branches-overview', authMiddleware, requireAdmin, async (req, res) 
             ) ts ON ts.branch_id = b.id
             LEFT JOIN (
                 SELECT branch_id,
-                       SUM(COALESCE(balance_amount, 0)) AS amount
+                       SUM(total_amount - COALESCE(paid_amount, 0)) AS amount
                 FROM invoices
                 WHERE COALESCE(is_deleted, false) = false
-                  AND COALESCE(balance_amount, 0) > 0
+                  AND (total_amount - COALESCE(paid_amount, 0)) > 0
                   AND company_id = $1
                 GROUP BY branch_id
             ) out ON out.branch_id = b.id
@@ -73,19 +73,22 @@ router.get('/branches/:id/detail', authMiddleware, requireAdmin, async (req, res
             : await db.pgGet(`SELECT * FROM branches WHERE id = $1`, [branchId]);
         if (!branch) return res.status(404).json({ error: 'Branch not found' });
 
-        const manager = await db.pgGet(`
+        const managerUser = await db.pgGet(`
             SELECT id, username, email, last_login FROM users
             WHERE branch_id = $1 AND role = 'branch_manager' AND is_active = true LIMIT 1
         `, [branchId]);
+        const manager = managerUser || (branch.manager_name
+            ? { id: null, username: branch.manager_name, email: branch.manager_email, last_login: null }
+            : null);
 
         const statsParams = companyId ? [branchId, companyId] : [branchId];
         const statsWhere  = companyId ? 'branch_id = $1 AND company_id = $2' : 'branch_id = $1';
         const stats = await db.pgGet(`
             SELECT
-                COALESCE(SUM(CASE WHEN DATE(invoice_date) = CURRENT_DATE THEN COALESCE(grand_total, net_payable, 0) END), 0) AS today_sales,
-                COUNT(CASE WHEN DATE(invoice_date) = CURRENT_DATE THEN 1 END)                                                  AS today_count,
-                COALESCE(SUM(CASE WHEN DATE_TRUNC('month', invoice_date) = DATE_TRUNC('month', CURRENT_DATE) THEN COALESCE(grand_total, net_payable, 0) END), 0) AS month_sales,
-                COALESCE(SUM(COALESCE(balance_amount, 0)), 0)                                                                  AS outstanding
+                COALESCE(SUM(CASE WHEN DATE(invoice_date) = CURRENT_DATE THEN total_amount END), 0) AS today_sales,
+                COUNT(CASE WHEN DATE(invoice_date) = CURRENT_DATE THEN 1 END)                          AS today_count,
+                COALESCE(SUM(CASE WHEN DATE_TRUNC('month', invoice_date) = DATE_TRUNC('month', CURRENT_DATE) THEN total_amount END), 0) AS month_sales,
+                COALESCE(SUM(total_amount - COALESCE(paid_amount, 0)), 0)                              AS outstanding
             FROM invoices
             WHERE ${statsWhere} AND COALESCE(is_deleted, false) = false
         `, statsParams);
@@ -114,22 +117,51 @@ router.get('/branches/:id/invoices', authMiddleware, requireAdmin, async (req, r
     const branchId  = parseInt(req.params.id);
     const { from, to } = req.query;
     try {
-        let sql = `SELECT id, invoice_number, invoice_date, customer_name,
-                          COALESCE(grand_total, net_payable, 0) AS grand_total,
-                          COALESCE(paid_amount, 0) AS paid_amount,
-                          COALESCE(balance_amount, 0) AS balance_amount,
-                          payment_status, bill_type
-                   FROM invoices
-                   WHERE branch_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`;
+        let sql = `SELECT i.id, i.invoice_number, i.invoice_date,
+                          COALESCE(cu.nickname, cu.username) AS customer_name,
+                          i.total_amount AS grand_total,
+                          COALESCE(i.paid_amount, 0) AS paid_amount,
+                          (i.total_amount - COALESCE(i.paid_amount, 0)) AS balance_amount,
+                          CASE
+                              WHEN COALESCE(i.paid_amount, 0) >= i.total_amount THEN 'PAID'
+                              WHEN COALESCE(i.paid_amount, 0) > 0 THEN 'PARTIAL'
+                              ELSE 'PENDING'
+                          END AS payment_status
+                   FROM invoices i
+                   LEFT JOIN users cu ON cu.id = i.customer_id
+                   WHERE i.branch_id = $1 AND i.company_id = $2 AND COALESCE(i.is_deleted, false) = false`;
         const params = [branchId, companyId];
-        if (from) { params.push(from); sql += ` AND invoice_date >= $${params.length}`; }
-        if (to)   { params.push(to);   sql += ` AND invoice_date <= $${params.length}`; }
-        sql += ` ORDER BY invoice_date DESC LIMIT 200`;
+        if (from) { params.push(from); sql += ` AND i.invoice_date >= $${params.length}`; }
+        if (to)   { params.push(to);   sql += ` AND i.invoice_date <= $${params.length}`; }
+        sql += ` ORDER BY i.invoice_date DESC LIMIT 200`;
         const rows = await db.pgAll(sql, params);
         res.json(rows);
     } catch (err) {
         console.error('[admin/branches/:id/invoices]', err.message);
         res.status(500).json({ error: 'Failed to fetch branch invoices' });
+    }
+});
+
+// ── GET /api/admin/branches/:id/customers ─────────────────────────────────────
+router.get('/branches/:id/customers', authMiddleware, requireAdmin, async (req, res) => {
+    const companyId = req.user.active_company_id || req.user.company_id;
+    const branchId  = parseInt(req.params.id);
+    try {
+        const rows = await db.pgAll(`
+            SELECT u.id, COALESCE(u.nickname, u.username) AS name, u.phone,
+                   COUNT(i.id) AS total_invoices,
+                   COALESCE(SUM(i.total_amount), 0) AS total_billed,
+                   COALESCE(SUM(i.total_amount - COALESCE(i.paid_amount, 0)), 0) AS outstanding_balance
+            FROM users u
+            LEFT JOIN invoices i ON i.customer_id = u.id AND COALESCE(i.is_deleted, false) = false
+            WHERE u.branch_id = $1 AND u.company_id = $2 AND u.role IN ('customer', 'user')
+            GROUP BY u.id
+            ORDER BY u.username ASC
+        `, [branchId, companyId]);
+        res.json(rows);
+    } catch (err) {
+        console.error('[admin/branches/:id/customers]', err.message);
+        res.status(500).json({ error: 'Failed to fetch branch customers' });
     }
 });
 

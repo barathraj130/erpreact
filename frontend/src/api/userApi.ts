@@ -13,6 +13,8 @@ export interface Customer {
   company?: string;
   initial_balance: number;
   remaining_balance: number; // Calculated field from backend SQL
+  branch_id?: number | null;
+  branch_name?: string | null;
   address_line1?: string;
   address_line2?: string;
   city_pincode?: string;
@@ -67,10 +69,20 @@ export interface CustomerLedgerResponse {
 // --- API Functions (CRUD) ---
 
 /**
- * Fetches all non-admin users (Customers/Parties) for the active company.
+ * Fetches non-admin users (Customers/Parties) for the active company.
+ *
+ * By default, scoped to the requester's active branch (or company-wide if no
+ * branch is active). Pass `{ scope: "all" }` to see every customer across all
+ * branches, or `{ branchId }` to view a specific branch's customers.
  */
-export const fetchCustomers = async (): Promise<Customer[]> => {
-  const res = await apiFetch("/users");
+export const fetchCustomers = async (
+  opts?: { scope?: "all"; branchId?: number },
+): Promise<Customer[]> => {
+  const params = new URLSearchParams();
+  if (opts?.scope) params.set("scope", opts.scope);
+  if (opts?.branchId != null) params.set("branch_id", String(opts.branchId));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const res = await apiFetch(`/users${suffix}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error || `Failed to load customers (${res.status})`);
