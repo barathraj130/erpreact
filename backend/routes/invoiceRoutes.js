@@ -1770,6 +1770,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
     let client;
     try {
         client = await db.getClient();
+        await ensureNSBSchema(client);
         await client.query("BEGIN");
 
         // 0. Fetch Old Invoice for Balance Adjustment (only active, same company)
