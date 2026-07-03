@@ -575,6 +575,7 @@ const CreateInvoice: React.FC = () => {
         // Send invoice_number only if user typed a custom one; omit for auto-generation
         ...(!isAutoMode && invoiceNo.trim() ? { invoice_number: invoiceNo.trim() } : {}),
         invoice_type: invoiceType,
+        invoice_date: meta.invoiceDate,
         customer_id: customerId,
         walk_in_name: invoiceType === 'RETAIL_SALE' ? retailCustomerName.trim() || null : null,
         // For each item, ensure gst_rate is set. If the product has no GST rate (0 or null),
@@ -605,7 +606,12 @@ const CreateInvoice: React.FC = () => {
             reference: p.reference || ""
         })),
         tax_details: gstState,
-        logistics: meta,
+        transport_details: {
+          vehicle_number: meta.vehicle,
+          mode: meta.transportation,
+          supply_date: meta.supplyDate,
+          reverse_charge: meta.reverseCharge,
+        },
         broker_id: brokerId || null,
         broker_commission_rate: brokerCommRate || null,
         branch_id: (activeBranch && (activeBranch as any).id !== 'all') ? (activeBranch as any).id : null,
