@@ -105,41 +105,41 @@ function buildPrintHTML(p: {
     if (isNonTax) {
       return `
         <tr style="font-size:10px">
-          <td style="text-align:center;border:1px solid #000;padding:2px 3px">${i + 1}</td>
-          <td style="text-align:left;border:1px solid #000;padding:2px 4px;font-weight:500">${r.name}</td>
-          <td style="text-align:center;border:1px solid #000;padding:2px 3px">${r.hsn}</td>
-          <td style="text-align:center;border:1px solid #000;padding:2px 3px">${r.uom || "Pcs"}</td>
-          <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.qty)}</td>
-          <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.rate)}</td>
-          <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.taxable)}</td>
-          <td style="text-align:right;border:1px solid #000;padding:2px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
+          <td style="text-align:center;border:1px solid #000;padding:1px 3px">${i + 1}</td>
+          <td style="text-align:left;border:1px solid #000;padding:1px 4px;font-weight:500">${r.name}</td>
+          <td style="text-align:center;border:1px solid #000;padding:1px 3px">${r.hsn}</td>
+          <td style="text-align:center;border:1px solid #000;padding:1px 3px">${r.uom || "Pcs"}</td>
+          <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.qty)}</td>
+          <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.rate)}</td>
+          <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.taxable)}</td>
+          <td style="text-align:right;border:1px solid #000;padding:1px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
         </tr>`;
     }
     return `
       <tr style="font-size:10px">
-        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${i + 1}</td>
-        <td style="text-align:left;border:1px solid #000;padding:2px 4px;font-weight:500">${r.name}</td>
-        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${r.hsn}</td>
-        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${r.uom || "Pcs"}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.qty)}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.rate)}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.taxable)}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${discount || ""}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.taxable)}</td>
-        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemCGSTRate || 0}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.cgst)}</td>
-        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemSGSTRate || 0}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.sgst)}</td>
-        <td style="text-align:center;border:1px solid #000;padding:2px 3px">${itemIGSTRate || 0}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px">${fmtInt(r.igst)}</td>
-        <td style="text-align:right;border:1px solid #000;padding:2px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
+        <td style="text-align:center;border:1px solid #000;padding:1px 3px">${i + 1}</td>
+        <td style="text-align:left;border:1px solid #000;padding:1px 4px;font-weight:500">${r.name}</td>
+        <td style="text-align:center;border:1px solid #000;padding:1px 3px">${r.hsn}</td>
+        <td style="text-align:center;border:1px solid #000;padding:1px 3px">${r.uom || "Pcs"}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.qty)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.rate)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.taxable)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${discount || ""}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.taxable)}</td>
+        <td style="text-align:center;border:1px solid #000;padding:1px 3px">${itemCGSTRate || 0}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.cgst)}</td>
+        <td style="text-align:center;border:1px solid #000;padding:1px 3px">${itemSGSTRate || 0}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.sgst)}</td>
+        <td style="text-align:center;border:1px solid #000;padding:1px 3px">${itemIGSTRate || 0}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px">${fmtInt(r.igst)}</td>
+        <td style="text-align:right;border:1px solid #000;padding:1px 4px;font-weight:600">${fmtInt(r.lineTotal)}</td>
       </tr>`;
   }).join("");
 
   const colCount = isNonTax ? 8 : 16;
   const emptyRowsHTML = Array(emptyCount).fill(`
-    <tr style="height:18px">
-      ${Array(colCount).fill('<td style="border:1px solid #000;padding:2px 3px"></td>').join("")}
+    <tr style="height:14px">
+      ${Array(colCount).fill('<td style="border:1px solid #000;padding:1px 3px"></td>').join("")}
     </tr>`).join("");
 
   return `<!DOCTYPE html>
@@ -149,7 +149,7 @@ function buildPrintHTML(p: {
   <title>Invoice ${data.invoice_number || ""}</title>
   <style>
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; margin:0; padding:0; }
-    @page { size: A4; margin: 8mm 10mm; }
+    @page { size: A4; margin: 6mm 8mm; }
     body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; }
     table { width: 100%; border-collapse: collapse; }
     @media print { body { margin: 0; } }
@@ -300,7 +300,7 @@ function buildPrintHTML(p: {
         ${data.bank_upi_id     ? `<tr><td style="padding:1px 4px 1px 0;font-weight:600;color:#333;white-space:nowrap;">UPI ID</td><td style="padding:1px 4px;color:#333;">:</td><td style="padding:1px 0;font-weight:700;">${data.bank_upi_id}</td></tr>` : ""}
       </table>
       ${data.notes ? `<div style="margin-top:4px;font-size:9px;color:#444">${data.notes}</div>` : ""}
-      <div style="margin-top:auto;padding-top:20px;text-align:center;font-size:9px;color:#666">(Common Seal)</div>
+      <div style="margin-top:auto;padding-top:8px;text-align:center;font-size:9px;color:#666">(Common Seal)</div>
     </div>
 
     <!-- RIGHT: Totals + Signature -->
@@ -362,7 +362,7 @@ function buildPrintHTML(p: {
         <div style="margin-top:4px;font-weight:700">For, ${data.company_name || ""}</div>
       </div>
 
-      <div style="margin-top:auto;padding-top:30px;text-align:right">
+      <div style="margin-top:auto;padding-top:10px;text-align:right">
         <div style="font-weight:700;font-size:11px">Authorised Signatory</div>
         <div style="font-size:9px;margin-top:2px">[E &amp; OE]</div>
       </div>
