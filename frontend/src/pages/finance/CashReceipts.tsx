@@ -13,6 +13,7 @@ const CashReceipts: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    let receiptId: number | null = null;
     try {
       const res = await financeApi.createCashReceipt({
         company_id: companyId,
@@ -21,15 +22,25 @@ const CashReceipts: React.FC = () => {
         purpose,
         created_by: 1,
       });
+      receiptId = res.data.id;
       alert("Cash Receipt Generated!");
-      window.open(financeApi.getReceiptPdfUrl(res.data.id), "_blank");
-      // Reset form
+      // Reset form — the receipt is already saved at this point regardless of
+      // whether the PDF below opens successfully.
       setPartyName("");
       setAmount(0);
       setPurpose("");
     } catch (err) {
       console.error(err);
       alert("Failed to generate receipt.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await financeApi.openReceiptPdf(receiptId!);
+    } catch (err) {
+      console.error(err);
+      alert("Receipt was created, but the PDF could not be opened.");
     } finally {
       setLoading(false);
     }

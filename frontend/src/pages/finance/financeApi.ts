@@ -96,8 +96,19 @@ export const financeApi = {
     return handleResponse(res);
   },
 
-  getReceiptPdfUrl: (id: number) =>
-    `${import.meta.env.VITE_API_URL || "http://localhost:3001/api"}/transactions/${id}/pdf`,
+  // Fetches the receipt PDF with the auth token attached (the route requires it) and
+  // opens it as a blob URL — a plain window.open(url) would hit the API unauthenticated
+  // and always return "Authentication token required."
+  openReceiptPdf: async (id: number) => {
+    const res = await apiFetch(`/transactions/${id}/pdf`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "Failed to generate receipt PDF");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+  },
 
   // Report: Trial Balance
   getTrialBalance: async (companyId: number) => {
