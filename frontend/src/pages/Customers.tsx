@@ -655,6 +655,14 @@ const Customers: React.FC = () => {
                             <FaPhone size={11} />
                           </span>
                         )}
+                        <Link
+                          className="page-btn-round-sm"
+                          style={{ color: '#6366f1' }}
+                          to={`/customers/${user.id}/ledger`}
+                          title="View Ledger"
+                        >
+                          <FaFileInvoice size={12} />
+                        </Link>
                         <button
                           className="page-btn-round-sm"
                           onClick={() => handleEdit(user)}
@@ -663,7 +671,7 @@ const Customers: React.FC = () => {
                           <FaEdit size={12} />
                         </button>
 
-                        {/* Overflow menu trigger — History / Ledger / Delete (menu itself is portaled below) */}
+                        {/* Overflow menu trigger — History / Delete (menu itself is portaled below) */}
                         <button
                           className="page-btn-round-sm"
                           data-action-menu={user.id}
@@ -713,17 +721,6 @@ const Customers: React.FC = () => {
             >
               <FaHistory size={12} /> View History
             </button>
-            <Link
-              to={`/customers/${user.id}/ledger`}
-              onClick={() => setMenuAnchor(null)}
-              style={{
-                display: "flex", alignItems: "center", gap: "8px", width: "100%",
-                padding: "10px 14px", fontSize: "13px", color: "#6366f1",
-                textDecoration: "none", boxSizing: "border-box"
-              }}
-            >
-              <FaFileInvoice size={12} /> View Ledger
-            </Link>
             <button
               onClick={() => { handleDelete(user.id); setMenuAnchor(null); }}
               style={{
