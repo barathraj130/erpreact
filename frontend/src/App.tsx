@@ -101,6 +101,7 @@ import SalesReports from "./pages/reports/SalesReports";
 import PurchaseReports from "./pages/reports/PurchaseReports";
 import InventoryReports from "./pages/reports/InventoryReports";
 import FinanceReports from "./pages/reports/FinanceReports";
+import ExpenseReports from "./pages/reports/ExpenseReports";
 import GSTReports from "./pages/reports/GSTReports";
 import HRReports from "./pages/reports/HRReports";
 import ExecutiveDashboard from "./pages/reports/ExecutiveDashboard";
@@ -372,6 +373,7 @@ const App: React.FC = () => {
             <Route path="/reports/purchase" element={<PurchaseReports />} />
             <Route path="/reports/inventory" element={<InventoryReports />} />
             <Route path="/reports/finance" element={<FinanceReports />} />
+            <Route path="/reports/expense" element={<ExpenseReports />} />
             <Route path="/reports/gst" element={<GSTReports />} />
             <Route path="/reports/hr" element={<HRReports />} />
             <Route path="/reports/executive" element={<ExecutiveDashboard />} />
