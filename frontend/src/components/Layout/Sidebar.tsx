@@ -16,7 +16,6 @@ import {
 } from "react-icons/fa";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuthUser } from "../../hooks/useAuthUser";
-import { useTenant } from "../../context/TenantContext";
 import { apiFetch } from "../../utils/api";
 import { closeDayLedger } from "../../api/ledgerApi";
 import { FaBell } from "react-icons/fa";
@@ -204,7 +203,6 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, isCollapsed, setIsCollapsed }) => {
   const { user } = useAuthUser();
-  const { activeBranch, branches, setActiveBranch } = useTenant();
   const location = useLocation();
   const navigate = useNavigate();
   const MENU_ITEMS = useMemo(() => getMenuItems(mode, user), [mode, user]);
@@ -215,7 +213,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
   }, [location.pathname, isMobile, setIsOpen]);
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const [companyName, setCompanyName] = useState<string>("");
 
   useEffect(() => {
@@ -360,171 +357,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
           </span>
         )}
       </div>
-
-      {/* ── Branch Selector (Non-Host Mode) ── */}
-      {!isCollapsed && mode !== "HOST" && (branches.length > 1 || user?.role === "admin") && (
-        <div className="sb-branch-container" style={{ position: "relative" }}>
-          <div className="branch-label-v2">Active Branch</div>
-          <button
-            className="branch-btn-v2"
-            onClick={() => setBranchDropdownOpen(o => !o)}
-            style={{ width: "100%", justifyContent: "space-between" }}
-          >
-            <span>
-              <FaBuilding style={{ opacity: 0.6 }} />
-              {activeBranch?.branch_name || "Select branch…"}
-            </span>
-            <FaChevronDown
-              style={{
-                fontSize: "10px",
-                opacity: 0.5,
-                transform: branchDropdownOpen ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "0.2s"
-              }}
-            />
-          </button>
-          {branchDropdownOpen && (
-            <div style={{
-              position: "absolute",
-              top: "calc(100% + 4px)",
-              left: 0,
-              right: 0,
-              background: "#fff",
-              border: "1px solid #e8e8e5",
-              borderRadius: "12px",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-              zIndex: 10000,
-              overflow: "hidden",
-            }}>
-              {branches.length === 0 ? (
-                <div style={{ padding: "12px 16px", fontSize: "0.8rem", color: "#94a3b8" }}>
-                  No branches found
-                </div>
-              ) : (
-                <>
-                  {user?.role === "admin" && (
-                    <button
-                      onClick={() => {
-                        setActiveBranch({
-                          id: "all",
-                          branch_name: "All Branches",
-                          branch_code: "ALL",
-                        } as any);
-
-                        setBranchDropdownOpen(false);
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        width: "100%",
-                        padding: "10px 14px",
-                        background:
-                          String(activeBranch?.id) === "all"
-                            ? "#f0f9ff"
-                            : "transparent",
-                        border: "none",
-                        borderBottom: "1px solid #f1f5f9",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: "0.82rem",
-                        fontWeight:
-                          String(activeBranch?.id) === "all" ? 700 : 500,
-                        color:
-                          String(activeBranch?.id) === "all"
-                            ? "#0284c7"
-                            : "#374151",
-                      }}
-                    >
-                      <FaBuilding style={{ opacity: 0.6 }} />
-                      <div>
-                        <div>All Branches (Consolidated)</div>
-                        <div
-                          style={{
-                            fontSize: "0.72rem",
-                            color: "#9ca3af",
-                            fontWeight: 400,
-                          }}
-                        >
-                          GLOBAL VIEW
-                        </div>
-                      </div>
-                    </button>
-                  )}
-                  {branches.map((branch) => (
-                    <button
-                      key={branch.id}
-                      onClick={() => {
-                        setActiveBranch(branch);
-                        setBranchDropdownOpen(false);
-                        if (user?.role === 'admin' || user?.role === 'superadmin') {
-                          navigate(`/admin/branches/${branch.id}`);
-                        }
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        width: "100%",
-                        padding: "10px 14px",
-                        background:
-                          activeBranch?.id === branch.id
-                            ? "#f0f9ff"
-                            : "transparent",
-                        border: "none",
-                        borderBottom: "1px solid #f1f5f9",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: "0.82rem",
-                        fontWeight: activeBranch?.id === branch.id ? 700 : 500,
-                        color:
-                          activeBranch?.id === branch.id ? "#0284c7" : "#374151",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: "50%",
-                          background:
-                            activeBranch?.id === branch.id
-                              ? "#10b981"
-                              : "#d1d5db",
-                          flexShrink: 0,
-                        }}
-                      />
-                      <div>
-                        <div>{branch.branch_name}</div>
-                        <div
-                          style={{
-                            fontSize: "0.72rem",
-                            color: "#9ca3af",
-                            fontWeight: 400,
-                          }}
-                        >
-                          {branch.branch_code}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </>
-              )}
-
-              <button
-                onClick={() => { setBranchDropdownOpen(false); navigate('/admin/branches'); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  width: "100%", padding: "10px 14px", background: "#f8fafc",
-                  border: "none", cursor: "pointer", fontSize: "0.78rem",
-                  color: "#6366f1", fontWeight: 600,
-                }}
-              >
-                <FaBuilding size={11} /> Manage Branches
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
 
       {/* ── Navigation ── */}

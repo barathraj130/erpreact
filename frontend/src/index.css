@@ -32,8 +32,8 @@
   --amber-bg: #fffbeb;
 
   /* Layout */
-  --sidebar-w: 260px;
-  --sidebar-w-collapsed: 80px;
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 60px;
   --header-h: 52px;
   --r: 8px;
 

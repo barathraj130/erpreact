@@ -8,6 +8,7 @@ import {
   Routes,
 } from "react-router-dom";
 import Sidebar from "./components/Layout/Sidebar";
+import Topbar from "./components/Layout/Topbar";
 import "./components/Layout/Layout.css";
 import { TenantProvider, useTenant } from "./context/TenantContext";
 import { PermissionsProvider } from "./context/PermissionsContext";
@@ -162,7 +163,7 @@ const EnterpriseLayout: React.FC<{
       <div
         className={`shell-main ${sidebarOpen ? "blur-content" : ""}`}
         style={{
-          marginLeft: (isMobile || hideSidebar) ? "0" : (sidebarCollapsed ? "80px" : "260px"),
+          marginLeft: (isMobile || hideSidebar) ? "0" : (sidebarCollapsed ? "60px" : "220px"),
           transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           display: "flex",
           flexDirection: "column",
@@ -186,6 +187,8 @@ const EnterpriseLayout: React.FC<{
             <FaBars size={17} />
           </button>
         )}
+
+        {!hideSidebar && <Topbar mode={mode} />}
 
         <main style={{ flex: 1 }}>
           <PageTransition>
