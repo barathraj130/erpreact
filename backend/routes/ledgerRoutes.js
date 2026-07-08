@@ -387,7 +387,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
 
         // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
         // net of all other cash transactions strictly BEFORE startDate
-        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE
@@ -435,7 +435,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
 
         // NOTE: CUSTOMER_PAYMENT excluded — purged in Step 1, never reaches direction mapping
         // NOTE: CASH_RECONCILIATION is also excluded — it can be 'in' (excess) or 'out' (shortage), direction field controls it
-        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment']);
+        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment', 'INVOICE_PAYMENT']);
         const rawEntries = await db.pgAll(sql, params);
         // Correct direction for known inflow sources (fixes historically mis-recorded entries)
         // OPENING_BALANCE must always be 'in' regardless of how it was stored
@@ -609,7 +609,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
 
         // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
         // net of all other bank transactions strictly BEFORE startDate
-        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const openingParams = [companyId];
         let openingSql = `
             SELECT COALESCE(SUM(CASE
@@ -657,7 +657,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
         if (endDate)   { sql += ` AND bl.date <= $${pIndex++}`; params.push(endDate); }
         sql += ` ORDER BY bl.date ASC, bl.created_at ASC`;
 
-        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'INVOICE_PAYMENT']);
+        const INFLOW_SOURCES = new Set(['OPENING_BALANCE', 'RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment', 'INVOICE_PAYMENT']);
         const rawEntries = await db.pgAll(sql, params);
         // OPENING_BALANCE must always be 'in' regardless of how it was stored
         const entries = rawEntries.map(e => ({
@@ -1003,20 +1003,24 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     const { filter: branchFilter, branchId } = getBranchFilter(req);
     const branchIdVal = typeof branchId === 'number' ? branchId : 1;
 
-    // Use identical formula to display query so netOthers matches exactly
-    const INFLOW_SRC = `'RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+    // Use identical formula (and identical date scoping) to the display query so
+    // netOthers matches exactly — otherwise the balance shown right after saving
+    // silently disagrees with what was just set.
+    const INFLOW_SRC = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
 
     try {
-        // Compute net of all non-OPENING transactions using the same formula as display.
-        // Display uses ABS(amount) for inflow sources — we must match that exactly.
+        // Compute net of all non-OPENING transactions strictly BEFORE balDate — the
+        // display query (GET /ledger/cash|bank) only folds pre-startDate entries into
+        // "opening balance", so entries on/after balDate must be excluded here too.
         const othersRow = await db.pgGet(
             `SELECT COALESCE(SUM(CASE
                 WHEN source IN (${INFLOW_SRC}) THEN ABS(amount)
                 WHEN direction='in' THEN amount
                 ELSE -amount
              END), 0) AS net
-             FROM ${tbl} WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'`,
-            [companyId]
+             FROM ${tbl} WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'
+               AND date < $2`,
+            [companyId, balDate]
         );
         const netOthers = parseFloat(othersRow?.net || 0);
         const needed = desired - netOthers;
