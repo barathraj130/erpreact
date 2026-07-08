@@ -346,13 +346,17 @@ const Ledgers: React.FC = () => {
       if (!data.success) {
         throw new Error(data.error || 'Backend failed to update balance. Check server logs.');
       }
-      setObMsg({ type: "success", text: data.message || `Balance set to ₹${amt.toLocaleString('en-IN')}` });
+      const debugText = data.debug
+        ? ` [debug: netOthers=₹${data.debug.netOthers}, needed=₹${data.debug.needed}, filter="${data.debug.branchFilter}"]`
+        : '';
+      setObMsg({ type: "success", text: (data.message || `Balance set to ₹${amt.toLocaleString('en-IN')}`) + debugText });
       setObAmount("");
-      // Reload after 1.5s so the ledger reflects the new balance
+      // Reload after 8s (was 1.5s) so there's time to actually read the debug info above
+      // before the page navigates away and this message disappears.
       setTimeout(() => {
         setShowObModal(false);
         window.location.reload();
-      }, 1500);
+      }, 8000);
     } catch (err: any) {
       console.error('[SetOpeningBalance] Error:', err);
       setObMsg({ type: "error", text: err.message || 'Network error — check console' });
