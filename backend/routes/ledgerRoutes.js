@@ -245,6 +245,202 @@ const getBranchFilter = (req) => {
     return { filter: '1=1', branchId: 'ALL' };
 };
 
+/**
+ * Idempotent self-heal/sync pass for cash_ledger — same statements GET /cash runs
+ * on every load. Extracted so POST /set-opening-balance can run it FIRST and see
+ * the exact same table state GET will see immediately after (the reload the
+ * frontend triggers on save). Without this, a sync insert/delete landing between
+ * the POST's calculation and the following GET silently shifts the displayed
+ * balance away from what was just set.
+ */
+const syncCashLedger = async (companyId) => {
+    await Promise.all([
+        db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
+        db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+    ]);
+
+    await db.pgRun(
+        `UPDATE cash_ledger SET date = created_at::date
+         WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
+        [companyId]
+    ).catch(()=>{});
+
+    await db.pgRun(
+        `UPDATE cash_ledger SET direction='in'
+         WHERE company_id=$1
+           AND source IN ('OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+           AND direction='out' AND amount>0`,
+        [companyId]
+    ).catch(()=>{});
+
+    await db.pgRun(`
+        DELETE FROM cash_ledger
+        WHERE company_id = $1
+          AND source = 'CUSTOMER_PAYMENT'
+          AND (
+            reference_id IS NULL
+            OR EXISTS (
+              SELECT 1 FROM transactions t
+              WHERE t.id = cash_ledger.reference_id AND t.type = 'CUSTOMER_PAYMENT'
+            )
+          )
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        DELETE FROM cash_ledger
+        WHERE company_id = $1
+          AND reference_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM transactions t
+            WHERE t.id = cash_ledger.reference_id
+              AND t.related_invoice_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM cash_ledger cl2
+                WHERE cl2.company_id = $1
+                  AND cl2.invoice_id = t.related_invoice_id
+                  AND cl2.reference_id IS NULL
+              )
+          )
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        UPDATE cash_ledger cl
+        SET reference_id = t.id
+        FROM transactions t
+        WHERE cl.company_id = $1
+          AND cl.invoice_id IS NOT NULL
+          AND cl.reference_id IS NULL
+          AND t.company_id = $1
+          AND t.type = 'RECEIPT'
+          AND t.related_invoice_id = cl.invoice_id
+          AND ABS(t.amount) = cl.amount
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        DELETE FROM cash_ledger
+        WHERE company_id = $1
+          AND reference_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM transactions t
+            WHERE t.id = cash_ledger.reference_id
+              AND t.bill_purpose = 'excluded'
+          )
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        DELETE FROM cash_ledger
+        WHERE company_id = $1
+          AND reference_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM transactions t
+            WHERE t.id = cash_ledger.reference_id
+              AND COALESCE(t.meta->>'payment_method', '') = 'PROPRIETOR_AC'
+          )
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
+        SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
+               COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
+        FROM transactions t
+        WHERE t.company_id = $1
+          AND t.type = 'RECEIPT'
+          AND t.amount > 0
+          AND COALESCE(t.bill_purpose, 'real') != 'excluded'
+          AND COALESCE(t.meta->>'payment_method', '') != 'PROPRIETOR_AC'
+          AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id)
+        SELECT i.company_id, COALESCE(i.branch_id, 1), 'payment', ip.amount, 'in',
+               COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE),
+               i.id
+        FROM invoice_payments ip
+        JOIN invoices i ON i.id = ip.invoice_id
+        WHERE i.company_id = $1
+          AND UPPER(ip.payment_method) = 'CASH'
+          AND ip.amount > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM cash_ledger cl
+            WHERE cl.company_id = $1
+              AND cl.invoice_id = i.id
+              AND cl.amount = ip.amount
+              AND cl.date = COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE)
+          )
+    `, [companyId]).catch(()=>{});
+};
+
+/** Same idea as syncCashLedger, for bank_ledger — see GET /bank for the original inline version. */
+const syncBankLedger = async (companyId) => {
+    await Promise.all([
+        db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
+        db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+        db.pgRun(`CREATE TABLE IF NOT EXISTS purchase_returns (
+            id               SERIAL PRIMARY KEY,
+            company_id       INTEGER NOT NULL,
+            branch_id        INTEGER DEFAULT 1,
+            return_number    VARCHAR(50),
+            original_bill_id INTEGER,
+            supplier_id      INTEGER,
+            supplier_name    VARCHAR(255),
+            return_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+            items            JSONB NOT NULL DEFAULT '[]',
+            total_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
+            notes            TEXT,
+            created_by       INTEGER,
+            created_at       TIMESTAMP DEFAULT NOW()
+        )`).catch(() => {}),
+    ]);
+
+    await db.pgRun(
+        `UPDATE bank_ledger SET date = created_at::date
+         WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
+        [companyId]
+    ).catch(()=>{});
+
+    await db.pgRun(
+        `UPDATE bank_ledger SET direction='in'
+         WHERE company_id=$1
+           AND source IN ('RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+           AND direction='out' AND amount>0`,
+        [companyId]
+    ).catch(()=>{});
+
+    await db.pgRun(`
+        DELETE FROM bank_ledger
+        WHERE company_id = $1
+          AND source = 'INVOICE_PAYMENT'
+          AND EXISTS (
+            SELECT 1 FROM bank_ledger bl2
+            WHERE bl2.company_id = $1
+              AND bl2.invoice_id IS NOT NULL
+              AND bl2.amount = bank_ledger.amount
+              AND bl2.date = bank_ledger.date
+          )
+    `, [companyId]).catch(()=>{});
+
+    await db.pgRun(`
+        INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
+        SELECT i.company_id, COALESCE(i.branch_id, 1), 'payment', ip.amount, 'in',
+               UPPER(ip.payment_method), COALESCE(ip.reference_no, '-'),
+               COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE),
+               i.id
+        FROM invoice_payments ip
+        JOIN invoices i ON i.id = ip.invoice_id
+        WHERE i.company_id = $1
+          AND UPPER(ip.payment_method) IN ('BANK','UPI','CHEQUE','NEFT','RTGS','IMPS')
+          AND ip.amount > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM bank_ledger bl
+            WHERE bl.company_id = $1
+              AND bl.invoice_id = i.id
+              AND bl.amount = ip.amount
+              AND bl.date = COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE)
+          )
+    `, [companyId]).catch(()=>{});
+};
+
 
 router.get('/cash', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
@@ -252,138 +448,7 @@ router.get('/cash', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // ── Ensure notes/created_by_name columns exist ──
-        await Promise.all([
-            db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
-            db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
-        ]);
-
-        // ── Self-heal step 0: fix NULL dates so they appear in date-filtered queries ──
-        await db.pgRun(
-            `UPDATE cash_ledger SET date = created_at::date
-             WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
-            [companyId]
-        ).catch(()=>{});
-
-        // Self-heal: fix inflow sources stored with wrong direction='out'
-        // NOTE: CUSTOMER_PAYMENT intentionally excluded — those entries are deleted in Step 1
-        await db.pgRun(
-            `UPDATE cash_ledger SET direction='in'
-             WHERE company_id=$1
-               AND source IN ('OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
-               AND direction='out' AND amount>0`,
-            [companyId]
-        ).catch(()=>{});
-
-        // ── Step 1: Remove ALL CUSTOMER_PAYMENT entries from cash ledger
-        //    CUSTOMER_PAYMENT = money into proprietor's personal account, NEVER company cash
-        //    Deletes both auto-synced (reference_id IS NOT NULL) and old entries (reference_id IS NULL)
-        await db.pgRun(`
-            DELETE FROM cash_ledger
-            WHERE company_id = $1
-              AND source = 'CUSTOMER_PAYMENT'
-              AND (
-                reference_id IS NULL
-                OR EXISTS (
-                  SELECT 1 FROM transactions t
-                  WHERE t.id = cash_ledger.reference_id AND t.type = 'CUSTOMER_PAYMENT'
-                )
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 2: Remove invoice-payment duplicates ──
-        await db.pgRun(`
-            DELETE FROM cash_ledger
-            WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.related_invoice_id IS NOT NULL
-                  AND EXISTS (
-                    SELECT 1 FROM cash_ledger cl2
-                    WHERE cl2.company_id = $1
-                      AND cl2.invoice_id = t.related_invoice_id
-                      AND cl2.reference_id IS NULL
-                  )
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 3: Link invoice-creation entries to their transactions ──
-        await db.pgRun(`
-            UPDATE cash_ledger cl
-            SET reference_id = t.id
-            FROM transactions t
-            WHERE cl.company_id = $1
-              AND cl.invoice_id IS NOT NULL
-              AND cl.reference_id IS NULL
-              AND t.company_id = $1
-              AND t.type = 'RECEIPT'
-              AND t.related_invoice_id = cl.invoice_id
-              AND ABS(t.amount) = cl.amount
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 4a: remove cash_ledger entries whose transaction was marked excluded ──
-        await db.pgRun(`
-            DELETE FROM cash_ledger
-            WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND t.bill_purpose = 'excluded'
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 4b: remove cash_ledger entries synced from PROPRIETOR_AC payments ──
-        //    PROPRIETOR_AC payments go to proprietor's personal account, never company cash
-        await db.pgRun(`
-            DELETE FROM cash_ledger
-            WHERE company_id = $1
-              AND reference_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1 FROM transactions t
-                WHERE t.id = cash_ledger.reference_id
-                  AND COALESCE(t.meta->>'payment_method', '') = 'PROPRIETOR_AC'
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 4: Sync RECEIPT transactions (company cash) ──
-        //    Skip transactions marked bill_purpose='excluded' (permanently deleted by user)
-        //    Skip PROPRIETOR_AC payments — those go to proprietor's personal account, not company cash
-        await db.pgRun(`
-            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
-            SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
-                   COALESCE(t.date::date, t.transaction_date::date, CURRENT_DATE), t.id
-            FROM transactions t
-            WHERE t.company_id = $1
-              AND t.type = 'RECEIPT'
-              AND t.amount > 0
-              AND COALESCE(t.bill_purpose, 'real') != 'excluded'
-              AND COALESCE(t.meta->>'payment_method', '') != 'PROPRIETOR_AC'
-              AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
-        `, [companyId]).catch(()=>{});
-
-        // ── Step 5: Sync missing CASH invoice payments into cash_ledger ──
-        //    If an invoice was paid via CASH but the cash_ledger entry was never created, back-fill it.
-        await db.pgRun(`
-            INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id)
-            SELECT i.company_id, COALESCE(i.branch_id, 1), 'payment', ip.amount, 'in',
-                   COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE),
-                   i.id
-            FROM invoice_payments ip
-            JOIN invoices i ON i.id = ip.invoice_id
-            WHERE i.company_id = $1
-              AND UPPER(ip.payment_method) = 'CASH'
-              AND ip.amount > 0
-              AND NOT EXISTS (
-                SELECT 1 FROM cash_ledger cl
-                WHERE cl.company_id = $1
-                  AND cl.invoice_id = i.id
-                  AND cl.amount = ip.amount
-                  AND cl.date = COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE)
-              )
-        `, [companyId]).catch(()=>{});
+        await syncCashLedger(companyId);
 
         // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
         // net of all other cash transactions strictly BEFORE startDate
@@ -527,85 +592,7 @@ router.get('/bank', authMiddleware, async (req, res) => {
     const { filter: branchFilter } = getBranchFilter(req);
 
     try {
-        // ── Ensure notes/created_by_name columns exist ──
-        await Promise.all([
-            db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
-            db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
-            db.pgRun(`CREATE TABLE IF NOT EXISTS purchase_returns (
-                id               SERIAL PRIMARY KEY,
-                company_id       INTEGER NOT NULL,
-                branch_id        INTEGER DEFAULT 1,
-                return_number    VARCHAR(50),
-                original_bill_id INTEGER,
-                supplier_id      INTEGER,
-                supplier_name    VARCHAR(255),
-                return_date      DATE NOT NULL DEFAULT CURRENT_DATE,
-                items            JSONB NOT NULL DEFAULT '[]',
-                total_amount     NUMERIC(14,2) NOT NULL DEFAULT 0,
-                notes            TEXT,
-                created_by       INTEGER,
-                created_at       TIMESTAMP DEFAULT NOW()
-            )`).catch(() => {}),
-        ]);
-
-        // ── Self-heal step 0: fix NULL dates ──
-        await db.pgRun(
-            `UPDATE bank_ledger SET date = created_at::date
-             WHERE company_id = $1 AND date IS NULL AND created_at IS NOT NULL`,
-            [companyId]
-        ).catch(()=>{});
-
-        // ── Self-heal step 1: fix inflow sources stored with wrong direction='out' ──
-        // NOTE: OPENING_BALANCE is intentionally excluded — its direction may be 'out'
-        // when back-calculation produces a negative needed value.
-        await db.pgRun(
-            `UPDATE bank_ledger SET direction='in'
-             WHERE company_id=$1
-               AND source IN ('RECEIPT','INVOICE','Payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
-               AND direction='out' AND amount>0`,
-            [companyId]
-        ).catch(()=>{});
-
-        // ── Self-heal step 2: remove INVOICE_PAYMENT duplicates ──
-        //    invoiceRoutes.js inserts source='Payment' with invoice_id when a bank payment is recorded.
-        //    companyRoutes sync also inserts source='INVOICE_PAYMENT' for the same invoice_payment row
-        //    without knowing a 'Payment' row already exists → double entry.
-        //    Fix: delete INVOICE_PAYMENT rows where an invoice_id-linked row exists for same date+amount.
-        await db.pgRun(`
-            DELETE FROM bank_ledger
-            WHERE company_id = $1
-              AND source = 'INVOICE_PAYMENT'
-              AND EXISTS (
-                SELECT 1 FROM bank_ledger bl2
-                WHERE bl2.company_id = $1
-                  AND bl2.invoice_id IS NOT NULL
-                  AND bl2.amount = bank_ledger.amount
-                  AND bl2.date = bank_ledger.date
-              )
-        `, [companyId]).catch(()=>{});
-
-        // ── Self-heal step 3: sync missing invoice payments into bank_ledger ──
-        //    If an invoice was paid via BANK or UPI but the bank_ledger entry was never created
-        //    (e.g. creation-time error), back-fill it now from invoice_payments.
-        await db.pgRun(`
-            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
-            SELECT i.company_id, COALESCE(i.branch_id, 1), 'payment', ip.amount, 'in',
-                   UPPER(ip.payment_method), COALESCE(ip.reference_no, '-'),
-                   COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE),
-                   i.id
-            FROM invoice_payments ip
-            JOIN invoices i ON i.id = ip.invoice_id
-            WHERE i.company_id = $1
-              AND UPPER(ip.payment_method) IN ('BANK','UPI','CHEQUE','NEFT','RTGS','IMPS')
-              AND ip.amount > 0
-              AND NOT EXISTS (
-                SELECT 1 FROM bank_ledger bl
-                WHERE bl.company_id = $1
-                  AND bl.invoice_id = i.id
-                  AND bl.amount = ip.amount
-                  AND bl.date = COALESCE(ip.payment_date::date, i.invoice_date::date, CURRENT_DATE)
-              )
-        `, [companyId]).catch(()=>{});
+        await syncBankLedger(companyId);
 
         // Opening balance = OPENING_BALANCE entry (always, regardless of date) +
         // net of all other bank transactions strictly BEFORE startDate
@@ -1009,6 +996,16 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
     const INFLOW_SRC = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
 
     try {
+        // Run the SAME self-heal/sync pass GET /cash|bank runs on every load, so
+        // netOthers is computed against the exact table state the frontend's
+        // post-save reload will see — otherwise a sync insert landing between this
+        // save and that reload silently shifts the displayed balance again.
+        if (ledger_type === 'BANK') {
+            await syncBankLedger(companyId);
+        } else {
+            await syncCashLedger(companyId);
+        }
+
         // Compute net of all non-OPENING transactions strictly BEFORE balDate — the
         // display query (GET /ledger/cash|bank) only folds pre-startDate entries into
         // "opening balance", so entries on/after balDate must be excluded here too.
