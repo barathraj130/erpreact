@@ -265,10 +265,13 @@ const syncCashLedger = async (companyId) => {
         [companyId]
     ).catch(()=>{});
 
+    // NOTE: OPENING_BALANCE deliberately excluded — it's a signed back-calculated
+    // adjustment (see set-opening-balance) and can legitimately be direction='out'.
+    // Force-flipping it to 'in' here silently undoes that calculation on every load.
     await db.pgRun(
         `UPDATE cash_ledger SET direction='in'
          WHERE company_id=$1
-           AND source IN ('OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+           AND source IN ('RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
            AND direction='out' AND amount>0`,
         [companyId]
     ).catch(()=>{});
