@@ -751,6 +751,16 @@ const Ledgers: React.FC = () => {
                   {obLoading ? "Saving…" : "Save Opening Balance"}
                 </button>
               </div>
+              <button type="button"
+                onClick={async () => {
+                  const res = await apiFetch(`/ledger/debug-opening?ledger_type=${obLedgerType}&date=${obDate}`);
+                  const data = await res.json();
+                  console.log('[debug-opening]', data);
+                  alert(JSON.stringify(data, null, 2));
+                }}
+                style={{ width: "100%", marginTop: "10px", padding: "8px", borderRadius: "8px", border: "1px dashed #cbd5e1", background: "#fff", color: "#94a3b8", fontWeight: 600, fontSize: "11px", cursor: "pointer" }}>
+                🔍 Debug: show raw ledger state
+              </button>
             </form>
           </div>
         </div>

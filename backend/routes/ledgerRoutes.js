@@ -1045,6 +1045,75 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TEMPORARY DIAGNOSTIC — GET /ledger/debug-opening?ledger_type=CASH&date=YYYY-MM-DD
+// Dumps raw state so we can see exactly what's stored instead of inferring from
+// arithmetic. Safe to remove once the opening-balance display bug is found.
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/debug-opening', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const ledger_type = (req.query.ledger_type === 'BANK') ? 'BANK' : 'CASH';
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    const tbl = ledger_type === 'BANK' ? 'bank_ledger' : 'cash_ledger';
+    const { filter: branchFilter, branchId } = getBranchFilter(req);
+    const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+
+    try {
+        // Every OPENING_BALANCE row in this table, for ANY company/branch — to catch
+        // stale rows the DELETE might have missed due to a company_id/branch mismatch.
+        const allOpeningRows = await db.pgAll(
+            `SELECT id, company_id, branch_id, source, amount, direction, date, created_at
+             FROM ${tbl} WHERE source = 'OPENING_BALANCE' ORDER BY id`
+        );
+
+        const rowCount = await db.pgGet(
+            `SELECT COUNT(*)::int AS n FROM ${tbl} WHERE company_id = $1 AND ${branchFilter}`,
+            [companyId]
+        );
+
+        // Exact same netOthers formula/scoping as POST /set-opening-balance
+        const netOthersRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE
+                WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
+                WHEN direction='in' THEN amount
+                ELSE -amount
+             END), 0) AS net
+             FROM ${tbl} WHERE company_id = $1 AND ${branchFilter} AND source != 'OPENING_BALANCE'
+               AND date < $2`,
+            [companyId, date]
+        );
+
+        // Exact same opening_balance formula/scoping as GET /cash|bank
+        const openingRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE
+                WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
+                WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
+                WHEN direction = 'in' THEN amount
+                ELSE -amount
+            END), 0) AS balance
+            FROM ${tbl}
+            WHERE company_id = $1 AND ${branchFilter}
+            AND (source = 'OPENING_BALANCE' OR date < $2)`,
+            [companyId, date]
+        );
+
+        res.json({
+            companyId,
+            branchId,
+            branchFilter,
+            ledger_type,
+            date,
+            rowCountForThisCompanyBranch: rowCount?.n,
+            allOpeningBalanceRowsInTable: allOpeningRows,
+            netOthers_matchingPostFormula: parseFloat(netOthersRow?.net || 0),
+            opening_balance_matchingGetFormula: parseFloat(openingRow?.balance || 0),
+        });
+    } catch (err) {
+        console.error('[debug-opening]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // DELETE /ledger/entry/:table/:id  — permanently remove a cash or bank ledger row
 // table must be 'cash' or 'bank'
 // Only allows deleting entries that are not OPENING_BALANCE
