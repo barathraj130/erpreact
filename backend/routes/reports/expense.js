@@ -90,7 +90,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
     const ledgerOutSql = (table, dateClause = 'date BETWEEN $2 AND $3') => `
       SELECT source, amount, date
       FROM ${table}
-      WHERE company_id = $1 AND direction = 'out' AND COALESCE(is_deleted, false) = false
+      WHERE company_id = $1 AND direction = 'out'
         AND ${excludeSql}
         AND ${dateClause}
         ${branchClause}
@@ -126,10 +126,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
       `, unionParams),
 
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger
-                 WHERE company_id = $1 AND direction='out' AND COALESCE(is_deleted,false)=false
+                 WHERE company_id = $1 AND direction='out'
                    AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}`, unionParams),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger
-                 WHERE company_id = $1 AND direction='out' AND COALESCE(is_deleted,false)=false
+                 WHERE company_id = $1 AND direction='out'
                    AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}`, unionParams),
     ]);
 
@@ -195,12 +195,12 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     const rows = await db.pgAll(`
       SELECT id, source, amount, date, 'cash' AS mode
       FROM cash_ledger
-      WHERE company_id = $1 AND direction = 'out' AND COALESCE(is_deleted,false)=false
+      WHERE company_id = $1 AND direction = 'out'
         AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}
       UNION ALL
       SELECT id, source, amount, date, 'bank' AS mode
       FROM bank_ledger
-      WHERE company_id = $1 AND direction = 'out' AND COALESCE(is_deleted,false)=false
+      WHERE company_id = $1 AND direction = 'out'
         AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}
       ORDER BY date DESC, amount DESC
       LIMIT 1000
