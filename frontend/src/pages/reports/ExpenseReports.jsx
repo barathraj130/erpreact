@@ -140,6 +140,7 @@ const ExpenseReports = () => {
   const [summaryData, setSummaryData] = useState(null);
   const [tabData, setTabData] = useState({});
   const [expandedCategory, setExpandedCategory] = useState(null);
+  const [debugError, setDebugError] = useState(null);
 
   const range = period === 'custom' ? filters : periodToRange(period);
 
@@ -149,7 +150,8 @@ const ExpenseReports = () => {
       const res = await apiFetch(`/reports/expense/summary?from=${r.from}&to=${r.to}`);
       const json = await res.json();
       setSummaryData(json);
-    } catch (e) { console.error(e); }
+      setDebugError(json.error || null);
+    } catch (e) { console.error(e); setDebugError(e.message); }
     setLoading(false);
   }, []);
 
@@ -204,6 +206,12 @@ const ExpenseReports = () => {
         { label: 'Expense Reports' },
       ]}
     >
+      {debugError && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, fontWeight: 600 }}>
+          Server error: {debugError}
+        </div>
+      )}
+
       {/* Period presets */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         {PERIODS.map(p => (

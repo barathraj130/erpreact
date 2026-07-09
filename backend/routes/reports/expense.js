@@ -173,7 +173,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[reports/expense/summary]', err.message);
-    res.json({ summary: {}, category_breakdown: [], daily_trend: [] });
+    res.json({ summary: {}, category_breakdown: [], daily_trend: [], error: err.message });
   }
 });
 
@@ -218,7 +218,7 @@ router.get('/transactions', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[reports/expense/transactions]', err.message);
-    res.json({ data: [] });
+    res.json({ data: [], error: err.message });
   }
 });
 
@@ -309,7 +309,7 @@ router.get('/salary', authMiddleware, async (req, res) => {
     res.json({ data, summary });
   } catch (err) {
     console.error('[reports/expense/salary]', err.message);
-    res.json({ data: [], summary: {} });
+    res.json({ data: [], summary: {}, error: err.message });
   }
 });
 
@@ -356,7 +356,7 @@ router.get('/purchases', authMiddleware, async (req, res) => {
     res.json({ data, summary });
   } catch (err) {
     console.error('[reports/expense/purchases]', err.message);
-    res.json({ data: [], summary: {} });
+    res.json({ data: [], summary: {}, error: err.message });
   }
 });
 
@@ -405,7 +405,7 @@ router.get('/loans', authMiddleware, async (req, res) => {
     res.json({ data, summary });
   } catch (err) {
     console.error('[reports/expense/loans]', err.message);
-    res.json({ data: [], summary: {} });
+    res.json({ data: [], summary: {}, error: err.message });
   }
 });
 
