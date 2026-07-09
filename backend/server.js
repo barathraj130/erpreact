@@ -84,6 +84,7 @@ import stockInventoryRoutes from "./routes/stockInventory.js";
 import stockReportRoutes from "./routes/reports/stock.js";
 import productionRoutes from "./routes/production.js";
 import financeRoutes from "./routes/financeRoutes.js";
+import expenseEntryRoutes from "./routes/expenseEntryRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -209,6 +210,7 @@ app.use("/api/stock-inventory", stockInventoryRoutes);
 app.use("/api/reports/stock", stockReportRoutes);
 app.use("/api/production", productionRoutes);
 app.use("/api/finance", financeRoutes);
+app.use("/api/expense-entries", expenseEntryRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");
