@@ -102,7 +102,6 @@ import PurchaseReports from "./pages/reports/PurchaseReports";
 import InventoryReports from "./pages/reports/InventoryReports";
 import FinanceReports from "./pages/reports/FinanceReports";
 import ExpenseReports from "./pages/reports/ExpenseReports";
-import RecordExpense from "./pages/expenses/RecordExpense";
 import ExpenseList from "./pages/expenses/ExpenseList";
 import GSTReports from "./pages/reports/GSTReports";
 import HRReports from "./pages/reports/HRReports";
@@ -334,7 +333,6 @@ const App: React.FC = () => {
             <Route path="/ai-insights" element={<AIInsights />} />
             <Route path="/ledgers" element={<Ledgers />} />
             <Route path="/expenses" element={<ExpenseList />} />
-            <Route path="/expenses/new" element={<RecordExpense />} />
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/purchase-bills" element={<PurchaseBills />} />
             <Route path="/purchase-bills/new" element={<SimplifiedPurchaseBill />} />

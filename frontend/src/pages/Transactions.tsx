@@ -53,8 +53,20 @@ const Transactions: React.FC = () => {
     date: new Date().toISOString().split('T')[0],
     description: "",
     reference_id: "",
-    expense_category: "Rent"
+    expense_category: "Rent",
+    // Strict expense fields — used only when type === 'EXPENSE_PAYMENT'
+    category: "",
+    sub_category: "",
+    paid_to: "",
+    contact_phone: "",
+    receipt_number: "",
   });
+
+  // Grouped expense categories for the strict expense form, loaded from the
+  // same backend used by the (now-folded-in) dedicated expense recording flow.
+  const [expenseCategoryGroups, setExpenseCategoryGroups] = useState<{ group: string; items: { key: string; label: string; icon: string }[] }[]>([]);
+  const [expenseTouched, setExpenseTouched] = useState<Record<string, boolean>>({});
+  const BLOCKED_PAID_TO = new Set(["person", "someone", "misc", "other", "unknown", "na", "n/a", "nobody"]);
 
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -69,6 +81,10 @@ const Transactions: React.FC = () => {
   useEffect(() => {
     fetchData();
     loadReferences();
+    apiFetch("/expense-entries/categories")
+      .then(r => r.json())
+      .then(d => setExpenseCategoryGroups(d.groups || []))
+      .catch(() => setExpenseCategoryGroups([]));
   }, []);
 
   const fetchData = async () => {
@@ -133,8 +149,64 @@ const Transactions: React.FC = () => {
     return data;
   };
 
+  // Strict validation for the Expense Payment fields — mirrors the backend's
+  // own validateExpense() so the user sees errors before submitting.
+  const expenseErrors = (): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (!formData.category) errors.category = "Select a category";
+    if (!formData.sub_category || formData.sub_category.trim().length < 3) errors.sub_category = "Minimum 3 characters required";
+    const paidToNorm = (formData.paid_to || "").trim().toLowerCase();
+    if (!formData.paid_to || formData.paid_to.trim().length < 3) errors.paid_to = "Minimum 3 characters required";
+    else if (BLOCKED_PAID_TO.has(paidToNorm)) errors.paid_to = "Please enter the actual name of the person or business";
+    if (!formData.description || formData.description.trim().length < 20)
+      errors.description = `Minimum 20 characters required (${formData.description.trim().length}/20)`;
+    return errors;
+  };
+
+  const postExpenseEntry = async () => {
+    try {
+      const paymentModeMap: Record<string, string> = { CASH: "cash", BANK: "bank", PROPRIETOR: "personal" };
+      const res = await apiFetch("/expense-entries", {
+        method: "POST",
+        body: {
+          expense_date: formData.date,
+          category: formData.category,
+          sub_category: formData.sub_category,
+          amount: parseFloat(formData.amount),
+          payment_mode: paymentModeMap[formData.mode] || "cash",
+          paid_to: formData.paid_to,
+          contact_phone: formData.contact_phone,
+          description: formData.description,
+          receipt_number: formData.receipt_number,
+        },
+      });
+      const json = await res.json();
+      if (!json.success) {
+        alert(json.error || "Failed to record expense.");
+        return;
+      }
+      setShowNewTxModal(false);
+      setExpenseTouched({});
+      fetchData();
+      alert(`Expense recorded — ${json.data.reference_number}`);
+    } catch (err: any) {
+      alert("Failed to record expense: " + (err?.message || "Unknown error"));
+    }
+  };
+
   const handleCreateTx = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (formData.type === "EXPENSE_PAYMENT") {
+      const errors = expenseErrors();
+      if (Object.keys(errors).length > 0) {
+        setExpenseTouched({ category: true, sub_category: true, paid_to: true, description: true });
+        return;
+      }
+      await postExpenseEntry();
+      return;
+    }
+
     const today = new Date().toISOString().split("T")[0];
     const isBackdated = formData.date < today;
     const data = buildTxFormData();
@@ -576,18 +648,82 @@ const Transactions: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Strict expense fields — every rupee logged here needs a real
+                      category, specific type, and the actual name of who was paid. */}
+                  {formData.type === 'EXPENSE_PAYMENT' && (
+                    <>
+                      <div className="form-group form-item-full">
+                        <label>Category</label>
+                        <select className="form-input" style={{ borderRadius: "10px" }}
+                          value={formData.category}
+                          onChange={e => setFormData({ ...formData, category: e.target.value })}
+                          onBlur={() => setExpenseTouched(t => ({ ...t, category: true }))}>
+                          <option value="">Select category...</option>
+                          {expenseCategoryGroups.map(g => (
+                            <optgroup key={g.group} label={g.group}>
+                              {g.items.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
+                            </optgroup>
+                          ))}
+                        </select>
+                        {expenseTouched.category && expenseErrors().category && (
+                          <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4, fontWeight: 600 }}>{expenseErrors().category}</div>
+                        )}
+                      </div>
+
+                      <div className="form-group form-item-full">
+                        <label>Sub Category / Specific Type</label>
+                        <input type="text" className="form-input" style={{ borderRadius: "10px" }}
+                          placeholder="Be specific — e.g. June rent, Morning shift wages, ICICI EMI #5"
+                          value={formData.sub_category}
+                          onChange={e => setFormData({ ...formData, sub_category: e.target.value })}
+                          onBlur={() => setExpenseTouched(t => ({ ...t, sub_category: true }))} />
+                        {expenseTouched.sub_category && expenseErrors().sub_category && (
+                          <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4, fontWeight: 600 }}>{expenseErrors().sub_category}</div>
+                        )}
+                      </div>
+
+                      <div className="form-group">
+                        <label>Paid To (who received this money)</label>
+                        <input type="text" className="form-input" style={{ borderRadius: "10px" }}
+                          placeholder="e.g. Kumar Electricals, Rajan (driver)"
+                          value={formData.paid_to}
+                          onChange={e => setFormData({ ...formData, paid_to: e.target.value })}
+                          onBlur={() => setExpenseTouched(t => ({ ...t, paid_to: true }))} />
+                        {expenseTouched.paid_to && expenseErrors().paid_to && (
+                          <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4, fontWeight: 600 }}>{expenseErrors().paid_to}</div>
+                        )}
+                      </div>
+
+                      <div className="form-group">
+                        <label>Phone / Contact (optional)</label>
+                        <input type="text" className="form-input" style={{ borderRadius: "10px" }}
+                          placeholder="Vendor phone number if available"
+                          value={formData.contact_phone}
+                          onChange={e => setFormData({ ...formData, contact_phone: e.target.value })} />
+                      </div>
+
+                      <div className="form-group form-item-full">
+                        <label>Receipt Number (optional)</label>
+                        <input type="text" className="form-input" style={{ borderRadius: "10px" }}
+                          placeholder="Bill number, voucher number, receipt number if you have it"
+                          value={formData.receipt_number}
+                          onChange={e => setFormData({ ...formData, receipt_number: e.target.value })} />
+                      </div>
+                    </>
+                  )}
+
                   <div className="form-group">
                     <label>Payment Channel</label>
                     <select className="form-input" style={{ borderRadius: "10px" }} value={formData.mode} onChange={e => setFormData({...formData, mode: e.target.value})}>
                       <option value="CASH">Liquid Cash</option>
                       <option value="BANK">Bank Digital Transfer</option>
-                      <option value="PROPRIETOR">Proprietor Personal Account</option>
+                      <option value="PROPRIETOR">{formData.type === 'EXPENSE_PAYMENT' ? 'Personal (no ledger impact)' : 'Proprietor Personal Account'}</option>
                     </select>
                   </div>
-                  
+
                   <div className="form-group">
                     <label>Effective Date</label>
-                    <input type="date" className="form-input" style={{ borderRadius: "10px" }} value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required />
+                    <input type="date" className="form-input" style={{ borderRadius: "10px" }} max={new Date().toISOString().split('T')[0]} value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required />
                   </div>
 
                   <div className="form-group">
@@ -595,14 +731,30 @@ const Transactions: React.FC = () => {
                     <input type="number" className="form-input" style={{ borderRadius: "10px" }} placeholder="0.00" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} required />
                   </div>
 
-                  <div className="form-group">
-                     <label>Verification Proof</label>
-                     <input type="file" className="form-input" style={{ borderRadius: "10px" }} onChange={handleFileChange} />
-                  </div>
+                  {formData.type !== 'EXPENSE_PAYMENT' && (
+                    <div className="form-group">
+                       <label>Verification Proof</label>
+                       <input type="file" className="form-input" style={{ borderRadius: "10px" }} onChange={handleFileChange} />
+                    </div>
+                  )}
 
                   <div className="form-group form-item-full">
-                    <label>Transaction Remark / Memo</label>
-                    <textarea className="form-input" style={{ borderRadius: "10px" }} rows={2} placeholder="Explain the purpose of this transaction..." value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                    <label>{formData.type === 'EXPENSE_PAYMENT' ? 'Description (what exactly was this for)' : 'Transaction Remark / Memo'}</label>
+                    <textarea className="form-input" style={{ borderRadius: "10px" }} rows={2}
+                      placeholder={formData.type === 'EXPENSE_PAYMENT'
+                        ? 'Write full detail — e.g. Electricity bill for main showroom for June 2026, bill number EB-2847.'
+                        : 'Explain the purpose of this transaction...'}
+                      value={formData.description}
+                      onChange={e => setFormData({...formData, description: e.target.value})}
+                      onBlur={() => setExpenseTouched(t => ({ ...t, description: true }))} />
+                    {formData.type === 'EXPENSE_PAYMENT' && (
+                      <div style={{ fontSize: 11, color: formData.description.trim().length >= 20 ? "#16a34a" : "#94a3b8", marginTop: 4, fontWeight: 600 }}>
+                        {formData.description.trim().length} / 20 minimum
+                      </div>
+                    )}
+                    {formData.type === 'EXPENSE_PAYMENT' && expenseTouched.description && expenseErrors().description && (
+                      <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4, fontWeight: 600 }}>{expenseErrors().description}</div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -70,7 +70,7 @@ const ExpenseList: React.FC = () => {
           <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0 0" }}>{entries.length} entries — {fmt(total)} total</p>
         </div>
         <Link
-          to="/expenses/new"
+          to="/transactions"
           style={{ padding: "10px 16px", background: "#4f46e5", color: "#fff", borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: "none" }}
         >
           + Record Expense
