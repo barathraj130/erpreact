@@ -134,12 +134,16 @@ function buildPrintHTML(p: {
   }).join("");
 
   const colCount = isNonTax ? 8 : 16;
-  // Fixed-count empty rows — matches the on-screen InvoicePreview component
-  // (EMPTY_ROWS=15, 18px each) exactly, so what prints matches what the Print
-  // Preview modal shows. An earlier flex/table-height:100% "stretch to fill
-  // the page" approach worked in normal on-screen rendering but did not
-  // reliably reproduce in Chrome's actual print engine, so it's not used here.
-  const EMPTY_ROWS = 15;
+  // Fixed-count empty rows, deliberately NOT flex/percentage-height based — an
+  // earlier "stretch to fill the page" approach using flexbox worked in normal
+  // on-screen rendering but did not reproduce in Chrome's actual print engine.
+  // Plain arithmetic is deterministic in every render path: at 18px/row, A4
+  // (285mm content height) minus the header/title/meta/party/footer sections
+  // (~464px, measured) leaves ~613px for the items table; minus its own
+  // header/total rows (~56px) that's ~557px, i.e. ~30 rows, to reach the
+  // bottom of the page for a small/empty invoice. Matches InvoicePreview's
+  // on-screen count exactly so Print Preview and the real printout agree.
+  const EMPTY_ROWS = 30;
   const emptyCount = Math.max(0, EMPTY_ROWS - rows.length);
   const emptyRowsHTML = Array(emptyCount).fill(`
     <tr style="height:18px">
@@ -516,7 +520,7 @@ const InvoiceDetails: React.FC = () => {
   const cgstRate = totalTaxable > 0 ? ((totalCGST / totalTaxable) * 100).toFixed(2) : "0.00";
   const sgstRate = totalTaxable > 0 ? ((totalSGST / totalTaxable) * 100).toFixed(2) : "0.00";
   const igstRate = totalTaxable > 0 ? ((totalIGST / totalTaxable) * 100).toFixed(2) : "0.00";
-  const EMPTY_ROWS = 15;
+  const EMPTY_ROWS = 30; // kept in sync with buildPrintHTML's EMPTY_ROWS above
   const emptyCount = Math.max(0, EMPTY_ROWS - rows.length);
 
   const doPrint = () => {
