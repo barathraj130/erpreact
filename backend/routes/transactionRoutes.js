@@ -13,6 +13,34 @@ const router = express.Router();
 const applyAlias = (filter, alias) =>
     filter.includes('t.') ? filter.replace(/\bt\./g, alias + '.') : filter;
 
+// expense_entries is lazily created by expenseEntryRoutes.js — guard against
+// environments where no expense has been recorded yet (table wouldn't exist).
+const ensureExpenseEntriesTable = async () => {
+    await db.pgRun(`
+        CREATE TABLE IF NOT EXISTS expense_entries (
+            id               SERIAL PRIMARY KEY,
+            company_id       INTEGER NOT NULL,
+            branch_id        INTEGER,
+            reference_number VARCHAR(50),
+            expense_date     DATE NOT NULL,
+            category         VARCHAR(50) NOT NULL,
+            sub_category     VARCHAR(255) NOT NULL,
+            amount           NUMERIC(14,2) NOT NULL,
+            payment_mode     VARCHAR(20) NOT NULL,
+            paid_to          VARCHAR(255) NOT NULL,
+            contact_phone    VARCHAR(30),
+            description      TEXT NOT NULL,
+            receipt_number   VARCHAR(100),
+            admin_notes      TEXT,
+            status           VARCHAR(20) NOT NULL DEFAULT 'approved',
+            recorded_by      INTEGER,
+            cash_ledger_ref  INTEGER,
+            bank_ledger_ref  INTEGER,
+            created_at       TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(() => {});
+};
+
 // Helper for branch filtering
 const getBranchFilter = (req) => {
     const headerBranch = req.headers['x-branch-id'];
@@ -43,6 +71,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const blFilter  = applyAlias(rawFilter, 'bl');
 
     try {
+        await ensureExpenseEntriesTable();
         // ── Cash + bank ledger enriched with party names ──────────────────
         // reference_id column exists on both tables (added via schemaUpdates).
         // invoice_id column also exists on both tables.
@@ -59,19 +88,29 @@ router.get('/', authMiddleware, async (req, res) => {
                 cl.source               AS description,
                 cl.direction            AS ledger_direction,
                 COALESCE(
+                    ee.paid_to,
                     u.username,
                     s.name,
                     emp.name,
                     ln.lender_name
                 )                       AS display_party,
                 COALESCE(
+                    ee.paid_to,
                     u.username,
                     s.name,
                     emp.name,
                     ln.lender_name
                 )                       AS party_name,
                 NULL                    AS proof_url,
-                cl.created_at
+                cl.created_at,
+                ee.reference_number     AS expense_reference,
+                ee.category             AS expense_category,
+                ee.sub_category         AS expense_sub_category,
+                ee.paid_to              AS expense_paid_to,
+                ee.contact_phone        AS expense_contact_phone,
+                ee.description          AS expense_description,
+                ee.receipt_number       AS expense_receipt_number,
+                eeu.username            AS expense_recorded_by_name
             FROM cash_ledger cl
             -- invoice payment → customer
             LEFT JOIN invoices      inv ON cl.invoice_id  = inv.id
@@ -86,6 +125,9 @@ router.get('/', authMiddleware, async (req, res) => {
             LEFT JOIN loan_payments lp    ON cl.source ILIKE '%loan%' AND cl.reference_id = lp.id
             LEFT JOIN loans         lo    ON lp.loan_id = lo.id
             LEFT JOIN lenders       ln    ON lo.lender_id = ln.id
+            -- strict expense entry → full audit detail (who, what, why)
+            LEFT JOIN expense_entries ee  ON ee.cash_ledger_ref = cl.id
+            LEFT JOIN users         eeu   ON eeu.id = ee.recorded_by
             WHERE cl.company_id = $1 AND ${clFilter}
 
             UNION ALL
@@ -100,6 +142,7 @@ router.get('/', authMiddleware, async (req, res) => {
                 COALESCE(bl.bank_name, bl.source)    AS description,
                 bl.direction                         AS ledger_direction,
                 COALESCE(
+                    ee2.paid_to,
                     u2.username,
                     s2.name,
                     emp2.name,
@@ -107,6 +150,7 @@ router.get('/', authMiddleware, async (req, res) => {
                     bl.bank_name
                 )                                    AS display_party,
                 COALESCE(
+                    ee2.paid_to,
                     u2.username,
                     s2.name,
                     emp2.name,
@@ -114,7 +158,15 @@ router.get('/', authMiddleware, async (req, res) => {
                     bl.bank_name
                 )                                    AS party_name,
                 NULL                                 AS proof_url,
-                bl.created_at
+                bl.created_at,
+                ee2.reference_number                 AS expense_reference,
+                ee2.category                         AS expense_category,
+                ee2.sub_category                     AS expense_sub_category,
+                ee2.paid_to                           AS expense_paid_to,
+                ee2.contact_phone                     AS expense_contact_phone,
+                ee2.description                       AS expense_description,
+                ee2.receipt_number                    AS expense_receipt_number,
+                eeu2.username                         AS expense_recorded_by_name
             FROM bank_ledger bl
             LEFT JOIN invoices      inv2 ON bl.invoice_id   = inv2.id
             LEFT JOIN users         u2   ON inv2.customer_id = u2.id
@@ -125,6 +177,8 @@ router.get('/', authMiddleware, async (req, res) => {
             LEFT JOIN loan_payments lp2    ON bl.source ILIKE '%loan%' AND bl.reference_id = lp2.id
             LEFT JOIN loans         lo2    ON lp2.loan_id = lo2.id
             LEFT JOIN lenders       ln2    ON lo2.lender_id = ln2.id
+            LEFT JOIN expense_entries ee2  ON ee2.bank_ledger_ref = bl.id
+            LEFT JOIN users         eeu2   ON eeu2.id = ee2.recorded_by
             WHERE bl.company_id = $1 AND ${blFilter}
 
             ORDER BY date DESC, created_at DESC

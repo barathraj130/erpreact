@@ -35,6 +35,15 @@ interface Transaction {
   lender_name?: string;
   user_name?: string;
   party_name?: string;
+  // Populated when this ledger row was recorded via the strict expense form
+  // (linked through expense_entries.cash_ledger_ref / bank_ledger_ref)
+  expense_reference?: string;
+  expense_sub_category?: string;
+  expense_paid_to?: string;
+  expense_contact_phone?: string;
+  expense_description?: string;
+  expense_receipt_number?: string;
+  expense_recorded_by_name?: string;
 }
 
 const Transactions: React.FC = () => {
@@ -293,9 +302,28 @@ const Transactions: React.FC = () => {
     doc.text('TRANSACTION VOUCHER', 105, 45, { align: 'center' });
     doc.line(15, 48, 195, 48);
 
-    // Detail rows
+    // Detail rows — if this row was recorded through the strict expense form
+    // (linked via expense_entries), show its full audit detail instead of the
+    // generic ledger source label.
     doc.setFontSize(10);
-    const details: [string, string][] = [
+    const isStrictExpense = !!tx.expense_reference;
+    const expenseCategoryLabel = expenseCategoryGroups
+      .flatMap((g) => g.items)
+      .find((c) => c.key === (tx as any).expense_category)?.label;
+    const details: [string, string][] = isStrictExpense ? [
+      ['Reference',      tx.expense_reference || '-'],
+      ['Date',           dateStr],
+      ['Category',       expenseCategoryLabel || category],
+      ['Specific Type',  tx.expense_sub_category || '-'],
+      ['Paid To',        tx.expense_paid_to || partyLabel],
+      ['Phone',          tx.expense_contact_phone || '-'],
+      ['Description',    tx.expense_description || tx.description || '-'],
+      ['Receipt No',     tx.expense_receipt_number || '-'],
+      ['Mode',           modeLabel],
+      ['Type',           flowLabel],
+      ['Amount',         amountStr],
+      ['Recorded By',    tx.expense_recorded_by_name || '-'],
+    ] : [
       ['Transaction ID', txnId],
       ['Date',           dateStr],
       ['Category',       category],
