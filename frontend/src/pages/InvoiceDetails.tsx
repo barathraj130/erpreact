@@ -94,9 +94,6 @@ function buildPrintHTML(p: {
     data.invoice_type === "NOMINAL_TAX_INVOICE" ? "TAX INVOICE" :
     "INVOICE";
 
-  const EMPTY_ROWS = 15;
-  const emptyCount = Math.max(0, EMPTY_ROWS - rows.length);
-
   const itemRowsHTML = rows.map((r: any, i: number) => {
     const discount = 0;
     const itemCGSTRate = (!isNonTax && isSameState) ? (r.gstRate / 2) : 0;
@@ -137,10 +134,16 @@ function buildPrintHTML(p: {
   }).join("");
 
   const colCount = isNonTax ? 8 : 16;
-  const emptyRowsHTML = Array(emptyCount).fill(`
-    <tr style="height:14px">
-      ${Array(colCount).fill('<td style="border:1px solid #000;padding:1px 3px"></td>').join("")}
-    </tr>`).join("");
+  // Single auto-height filler row (not a fixed count of skinny rows) — combined
+  // with `table { height:100% }` inside a flex-grown wrapper below, the browser
+  // distributes any leftover vertical space into this row, so a short invoice
+  // stretches to fill the A4 page instead of leaving a large blank gap under a
+  // tiny table. On a long invoice this row just collapses to ~0 height and rows
+  // overflow onto page 2 as before.
+  const fillerRowHTML = `
+    <tr>
+      ${Array(colCount).fill('<td style="border:1px solid #000;padding:0"></td>').join("")}
+    </tr>`;
 
   return `<!DOCTYPE html>
 <html>
@@ -150,13 +153,13 @@ function buildPrintHTML(p: {
   <style>
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; margin:0; padding:0; }
     @page { size: A4; margin: 6mm 8mm; }
-    body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; }
+    body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: white; display: flex; flex-direction: column; min-height: 285mm; }
     table { width: 100%; border-collapse: collapse; }
     @media print { body { margin: 0; } }
   </style>
 </head>
 <body>
-<div style="border:1.5px solid #000;width:100%;position:relative">
+<div style="border:1.5px solid #000;width:100%;position:relative;display:flex;flex-direction:column;flex:1">
 
   <!-- ══ HEADER ══ -->
   <div style="padding:6px 10px;text-align:center;border-bottom:1px solid #000;position:relative">
@@ -217,8 +220,10 @@ function buildPrintHTML(p: {
     </div>
   </div>
 
-  <!-- ══ ITEMS TABLE ══ -->
-  <table style="width:100%;border-collapse:collapse;font-size:10px">
+  <!-- ══ ITEMS TABLE — flex:1 wrapper lets the table stretch to fill leftover
+       page height on short invoices (see fillerRowHTML below) ══ -->
+  <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column">
+  <table style="width:100%;flex:1 1 auto;border-collapse:collapse;font-size:10px">
     <thead>
       ${isNonTax ? `
       <tr style="background:#f0f0f0">
@@ -257,7 +262,7 @@ function buildPrintHTML(p: {
     </thead>
     <tbody>
       ${itemRowsHTML}
-      ${emptyRowsHTML}
+      ${fillerRowHTML}
       ${isNonTax ? `
       <tr style="font-weight:700;background:#f5f5f5;font-size:10px">
         <td colspan="4" style="border:1px solid #000;padding:3px 4px;text-align:center">Total</td>
@@ -283,6 +288,7 @@ function buildPrintHTML(p: {
       </tr>`}
     </tbody>
   </table>
+  </div>
 
   <!-- ══ FOOTER ══ -->
   <div style="display:grid;grid-template-columns:1.15fr 1fr;border-top:1px solid #000;font-size:10px">
