@@ -26,6 +26,9 @@ const emptyItem = () => ({
   taxable_amount: 0,
   gst_amount: 0,
   total: 0,
+  available_fresh: 0,
+  available_mistake: 0,
+  from_inventory: false,
 });
 
 const BILL_TYPES = [
@@ -303,6 +306,90 @@ const PrintModal: React.FC<{ bill: any; customer: any; branchName: string; onClo
   );
 };
 
+/* Round Off Request Modal — Rule 3: branch billing can only request a round
+   off; it takes effect on the invoice only once head office approves it. */
+const RoundOffRequestModal: React.FC<{
+  invoice: any;
+  customer: any;
+  onClose: () => void;
+  onRequested: () => void;
+}> = ({ invoice, customer, onClose, onRequested }) => {
+  const [roundoffAmount, setRoundoffAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const maxRoundoff = invoice ? parseFloat(invoice.total_amount || 0) * 0.1 : 0;
+
+  const handleSubmit = async () => {
+    setError("");
+    if (!roundoffAmount || parseFloat(roundoffAmount) <= 0) return setError("Enter round off amount");
+    if (parseFloat(roundoffAmount) > maxRoundoff) return setError(`Maximum round off allowed is ₹${inr(maxRoundoff)} (10% of invoice)`);
+    if (!reason || reason.trim().length < 5) return setError("Please give a reason (min 5 characters)");
+    setSubmitting(true);
+    try {
+      const res = await apiFetch("/roundoff/request", {
+        method: "POST",
+        body: JSON.stringify({
+          invoice_id: invoice?.id,
+          customer_id: customer?.id,
+          original_amount: invoice?.total_amount,
+          requested_roundoff: parseFloat(roundoffAmount),
+          reason: reason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        onRequested();
+        onClose();
+      } else {
+        setError(data.error || "Request failed");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={OVERLAY}>
+      <div style={{ ...MODAL, width: 420 }}>
+        <div style={MODAL_HEADER}>
+          <span style={{ fontWeight: 800, fontSize: 16 }}>Request Round Off</span>
+          <button onClick={onClose} style={ICON_BTN}>×</button>
+        </div>
+        <p style={{ fontSize: 12, color: "#94a3b8", marginBottom: 16 }}>
+          This request goes to head office for approval. The discount only appears on the invoice after it's approved.
+        </p>
+
+        <div style={{ background: "#0f172a", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>INVOICE TOTAL</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#10b981" }}>₹{inr(invoice?.total_amount)}</div>
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>Max round off: ₹{inr(maxRoundoff)} (10%)</div>
+        </div>
+
+        <label style={FIELD_LABEL}>ROUND OFF AMOUNT (₹)</label>
+        <input type="number" value={roundoffAmount} onChange={e => setRoundoffAmount(e.target.value)}
+          placeholder="e.g. 50" max={maxRoundoff} autoFocus
+          style={{ ...FIELD_INPUT, fontSize: 16, fontWeight: 700, marginBottom: 12 }} />
+
+        <label style={FIELD_LABEL}>REASON FOR ROUND OFF</label>
+        <textarea value={reason} onChange={e => setReason(e.target.value)}
+          placeholder="Why is round off needed? e.g. Customer requested, exact change not available"
+          rows={3} style={{ ...FIELD_INPUT, resize: "none", marginBottom: error ? 8 : 20 }} />
+
+        {error && <div style={{ color: "#f87171", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={BTN_GHOST}>Cancel</button>
+          <button onClick={handleSubmit} disabled={submitting} style={BTN_PRIMARY}>
+            {submitting ? "Sending…" : "Send Request →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ─── style constants ──────────────────────────────────────────────────────── */
 const BG    = "#0f172a";
 const PANEL = "#1e293b";
@@ -347,6 +434,21 @@ const BranchBilling: React.FC = () => {
   const { activeBranch } = useTenant();
   const { user } = useAuthUser();
   const branchId = activeBranch?.id || user?.branch_id || 0;
+
+  /* strict branch billing controls — role gates */
+  const isBillingStaff = user?.role === "billing_staff";
+  const isBranchManager = user?.role === "branch_manager";
+  const isAdmin = user?.role === "admin";
+  // Rule 1: only admin may freely add manual (non-inventory) line items.
+  const restrictToInventory = !isAdmin;
+  // Rule 3: no direct discount for any branch billing role — round off must be requested.
+  const canApplyDiscountDirectly = isAdmin;
+  // Rule 4: only branch manager / admin see phone, GSTIN, outstanding balance.
+  const canSeeCustomerDetails = !isBillingStaff;
+
+  // { invoice: {...}, customer: {...} } for the bill currently being requested
+  // a round off on, from the Today's Bills list — null when the modal is closed.
+  const [roundoffTarget, setRoundoffTarget] = useState<{ invoice: any; customer: any } | null>(null);
 
   /* mode */
   type Mode = "billing" | "payment" | "return" | "today_bills" | "inventory" | "day_close";
@@ -535,6 +637,11 @@ const BranchBilling: React.FC = () => {
         taxable_amount: parseFloat(p.selling_price || 0),
         gst_amount: billType === "tax" ? parseFloat(p.selling_price || 0) * (parseFloat(p.gst_percent || 5) / 100) : 0,
         total: parseFloat(p.selling_price || 0),
+        // Rule 1: remember available stock so handleSaveBill can validate
+        // quantity against it before the invoice is even submitted.
+        available_fresh: parseFloat(p.fresh_stock || 0),
+        available_mistake: parseFloat(p.mistake_stock || 0),
+        from_inventory: true,
       };
       newItem.total = newItem.taxable_amount + newItem.gst_amount;
       // Remove empty placeholder row if present
@@ -572,6 +679,24 @@ const BranchBilling: React.FC = () => {
     if (!customer) { custSearchRef.current?.focus(); return setFlash("Select a customer first"); }
     const validItems = items.filter(it => it.description && it.quantity > 0 && it.rate > 0);
     if (!validItems.length) { productSearchRef.current?.focus(); return setFlash("Add at least one item"); }
+
+    // Rule 1: branch billing can only sell inventory products, and never more
+    // than what's actually in stock. The server re-checks this too, but
+    // catching it here avoids a round-trip for the common case.
+    if (restrictToInventory) {
+      for (const it of validItems) {
+        if (!it.product_id) {
+          return setFlash(`"${it.description}" is not from inventory — search and select a product first`);
+        }
+        if (it.from_inventory) {
+          const maxQty = it.stock_type === "mistake" ? it.available_mistake : it.available_fresh;
+          if (it.quantity > maxQty) {
+            setFlash(`${it.description}: only ${maxQty} ${it.stock_type} pcs available in stock, cannot bill ${it.quantity} pcs`);
+            return;
+          }
+        }
+      }
+    }
 
     setSaving(true);
     try {
@@ -838,11 +963,14 @@ const BranchBilling: React.FC = () => {
         <nav style={{ display: "flex", gap: 2, background: "#0f172a", borderRadius: 10, padding: 4 }}>
           {[
             { id: "billing",     label: "New Bill",   icon: <FaBolt size={12} /> },
-            { id: "payment",     label: "Receive ₹",  icon: <FaMoneyBillWave size={12} /> },
-            { id: "return",      label: "Return",     icon: <FaUndo size={12} /> },
+            // Rule 5: billing staff can only create bills and view today's own
+            // bills/inventory — receiving payment, processing returns, and day
+            // close are branch_manager (and admin) only.
+            ...(!isBillingStaff ? [{ id: "payment",     label: "Receive ₹",  icon: <FaMoneyBillWave size={12} /> }] : []),
+            ...(!isBillingStaff ? [{ id: "return",      label: "Return",     icon: <FaUndo size={12} /> }] : []),
             { id: "today_bills", label: "Today's Bills", icon: <FaListAlt size={12} /> },
             { id: "inventory",   label: "Inventory",  icon: <FaBox size={12} /> },
-            { id: "day_close",   label: "Day Close",  icon: <FaCalendarCheck size={12} /> },
+            ...(!isBillingStaff ? [{ id: "day_close",   label: "Day Close",  icon: <FaCalendarCheck size={12} /> }] : []),
           ].map(tab => (
             <button key={tab.id} onClick={() => setMode(tab.id as Mode)}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 7, border: "none",
@@ -858,11 +986,17 @@ const BranchBilling: React.FC = () => {
         <div style={{ display: "flex", gap: 20, marginLeft: "auto", alignItems: "center" }}>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>CASH</div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: "#10b981" }}>₹{inr(cashBal)}</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: cashBal >= 0 ? "#10b981" : "#ef4444" }}>
+              {cashBal < 0 ? "⚠️ " : ""}₹{inr(Math.abs(cashBal))}
+              {cashBal < 0 && <span style={{ fontSize: 9, marginLeft: 2 }}>DEFICIT</span>}
+            </div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 10, color: MUTED, fontWeight: 600 }}>BANK</div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: "#3b82f6" }}>₹{inr(bankBal)}</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: bankBal >= 0 ? "#3b82f6" : "#ef4444" }}>
+              {bankBal < 0 ? "⚠️ " : ""}₹{inr(Math.abs(bankBal))}
+              {bankBal < 0 && <span style={{ fontSize: 9, marginLeft: 2 }}>DEFICIT</span>}
+            </div>
           </div>
           <div style={{ width: 1, height: 32, background: "#334155" }} />
           <button onClick={() => navigate("/inventory/requests")}
@@ -923,11 +1057,13 @@ const BranchBilling: React.FC = () => {
                             onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
                             onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
                             <div style={{ fontWeight: 700, fontSize: 14, color: "#f1f5f9" }}>{c.name}</div>
-                            <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-                              {c.phone}
-                              {parseFloat(c.outstanding_balance || 0) > 0 &&
-                                <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
-                            </div>
+                            {canSeeCustomerDetails && (
+                              <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+                                {c.phone}
+                                {parseFloat(c.outstanding_balance || 0) > 0 &&
+                                  <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
+                              </div>
+                            )}
                           </div>
                         ))}
                         {customerResults.length === 0 && (
@@ -946,18 +1082,26 @@ const BranchBilling: React.FC = () => {
                   <div style={{ padding: "12px 16px", background: PANEL, borderRadius: 10, border: "2px solid #10b981", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{customer.name}</div>
-                      <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-                        {customer.phone}
-                        {customer.gstin && ` · ${customer.gstin}`}
-                        {parseFloat(customer.outstanding_balance || 0) > 0 &&
-                          <span style={{ color: "#f87171", marginLeft: 8 }}>Outst: ₹{inr(customer.outstanding_balance)}</span>}
-                      </div>
+                      {canSeeCustomerDetails ? (
+                        <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+                          {customer.phone}
+                          {customer.gstin && ` · ${customer.gstin}`}
+                          {parseFloat(customer.outstanding_balance || 0) > 0 &&
+                            <span style={{ color: "#f87171", marginLeft: 8 }}>Outst: ₹{inr(customer.outstanding_balance)}</span>}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                          Customer details visible to branch manager only
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => setShowCustLedger(true)}
-                        style={{ padding: "5px 10px", background: "transparent", border: "1px solid #475569", color: MUTED, borderRadius: 6, fontSize: 11, cursor: "pointer" }}>
-                        <FaHistory size={10} /> Ledger
-                      </button>
+                      {canSeeCustomerDetails && (
+                        <button onClick={() => setShowCustLedger(true)}
+                          style={{ padding: "5px 10px", background: "transparent", border: "1px solid #475569", color: MUTED, borderRadius: 6, fontSize: 11, cursor: "pointer" }}>
+                          <FaHistory size={10} /> Ledger
+                        </button>
+                      )}
                       <button onClick={() => { setCustomer(null); setCustomerSearch(""); }}
                         style={{ ...ICON_BTN, fontSize: 18 }}>×</button>
                     </div>
@@ -1029,12 +1173,21 @@ const BranchBilling: React.FC = () => {
                     <tr key={idx} style={{ borderBottom: "1px solid #334155" }}>
                       <td style={{ padding: "10px 12px", color: MUTED, fontSize: 12 }}>{idx + 1}</td>
                       <td style={{ padding: "10px 12px", minWidth: 160 }}>
-                        <input
-                          value={item.description}
-                          onChange={e => updateItem(idx, "description", e.target.value)}
-                          placeholder="Item name…"
-                          style={{ background: "transparent", border: "none", color: TEXT, fontSize: 13, fontWeight: 600, outline: "none", width: "100%" }}
-                        />
+                        {restrictToInventory ? (
+                          // Rule 1: branch billing can only sell inventory products —
+                          // no free-text item names, description comes from the
+                          // inventory search selection and cannot be hand-edited.
+                          <span style={{ fontSize: 13, fontWeight: 600, color: item.product_id ? TEXT : "#f87171" }}>
+                            {item.description || "— select from inventory search above —"}
+                          </span>
+                        ) : (
+                          <input
+                            value={item.description}
+                            onChange={e => updateItem(idx, "description", e.target.value)}
+                            placeholder="Item name…"
+                            style={{ background: "transparent", border: "none", color: TEXT, fontSize: 13, fontWeight: 600, outline: "none", width: "100%" }}
+                          />
+                        )}
                       </td>
                       <td style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", gap: 4 }}>
@@ -1087,10 +1240,13 @@ const BranchBilling: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-              <button onClick={() => setItems([...items, emptyItem()])}
-                style={{ width: "100%", padding: "12px", background: "transparent", border: "none", color: "#818cf8", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <FaPlus size={11} /> Add Row
-              </button>
+              {/* Rule 1: blank manual rows bypass inventory entirely — only admin gets this */}
+              {!restrictToInventory && (
+                <button onClick={() => setItems([...items, emptyItem()])}
+                  style={{ width: "100%", padding: "12px", background: "transparent", border: "none", color: "#818cf8", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <FaPlus size={11} /> Add Row
+                </button>
+              )}
             </div>
 
             {/* Notes */}
@@ -1134,15 +1290,25 @@ const BranchBilling: React.FC = () => {
                     </div>
                   </>
                 )}
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED, alignItems: "center" }}>
-                  <span>Discount</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span>₹</span>
-                    <input type="number" min={0} value={discount || ""} placeholder="0"
-                      onChange={e => setDiscount(parseFloat(e.target.value) || 0)}
-                      style={{ width: 70, padding: "3px 6px", borderRadius: 5, border: "1px solid #475569", background: "#0f172a", color: TEXT, fontSize: 13, textAlign: "right", outline: "none" }} />
+                {canApplyDiscountDirectly ? (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED, alignItems: "center" }}>
+                    <span>Discount</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span>₹</span>
+                      <input type="number" min={0} value={discount || ""} placeholder="0"
+                        onChange={e => setDiscount(parseFloat(e.target.value) || 0)}
+                        style={{ width: 70, padding: "3px 6px", borderRadius: 5, border: "1px solid #475569", background: "#0f172a", color: TEXT, fontSize: 13, textAlign: "right", outline: "none" }} />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  // Rule 3: no direct discount/round-off at branch level. Once this
+                  // bill is saved, a round off can be requested from Today's Bills —
+                  // it only appears on the invoice after head office approves it.
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b", alignItems: "center" }}>
+                    <span>Discount</span>
+                    <span style={{ fontStyle: "italic" }}>Save bill, then request round off from Today's Bills</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, fontWeight: 900, borderTop: BORDER, paddingTop: 10 }}>
                   <span>NET TOTAL</span><span style={{ color: "#10b981" }}>₹{inr(totals.net)}</span>
                 </div>
@@ -1281,11 +1447,13 @@ const BranchBilling: React.FC = () => {
                         onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1e293b")}
                         onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
                         <div style={{ fontWeight: 700, fontSize: 14, color: TEXT }}>{c.name}</div>
-                        <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-                          {c.phone}
-                          {parseFloat(c.outstanding_balance || 0) > 0 &&
-                            <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
-                        </div>
+                        {canSeeCustomerDetails && (
+                          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+                            {c.phone}
+                            {parseFloat(c.outstanding_balance || 0) > 0 &&
+                              <span style={{ color: "#f87171", marginLeft: 8 }}>· Due ₹{inr(c.outstanding_balance)}</span>}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1296,7 +1464,9 @@ const BranchBilling: React.FC = () => {
             <div style={{ padding: "14px 18px", background: PANEL, borderRadius: 10, border: "2px solid #10b981", marginBottom: 20, display: "flex", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{payCustomer.name}</div>
-                <div style={{ fontSize: 12, color: MUTED }}>{payCustomer.phone} · Outstanding: ₹{inr(payCustomer.outstanding_balance)}</div>
+                {canSeeCustomerDetails && (
+                  <div style={{ fontSize: 12, color: MUTED }}>{payCustomer.phone} · Outstanding: ₹{inr(payCustomer.outstanding_balance)}</div>
+                )}
               </div>
               <button onClick={() => { setPayCustomer(null); setOutstandingInvs([]); }} style={ICON_BTN}>×</button>
             </div>
@@ -1462,7 +1632,7 @@ const BranchBilling: React.FC = () => {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "#0f172a", fontSize: 11, color: MUTED, textTransform: "uppercase" }}>
-                  {["Bill #", "Time", "Customer", "Type", "Items", "Total", "Paid", "Balance", "Mode", "Status"].map(h => (
+                  {["Bill #", "Time", "Customer", "Type", "Items", "Total", "Paid", "Balance", "Mode", "Status", ...(!isAdmin ? ["Actions"] : [])].map(h => (
                     <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontWeight: 600, letterSpacing: "0.04em" }}>{h}</th>
                   ))}
                 </tr>
@@ -1491,10 +1661,22 @@ const BranchBilling: React.FC = () => {
                         {b.payment_status || "PENDING"}
                       </span>
                     </td>
+                    {!isAdmin && (
+                      <td style={{ padding: "12px 14px" }}>
+                        <button
+                          onClick={() => setRoundoffTarget({
+                            invoice: { id: b.id, total_amount: b.grand_total },
+                            customer: { id: b.customer_id, name: b.customer_name },
+                          })}
+                          style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #475569", background: "transparent", color: "#94a3b8", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>
+                          Request Round Off
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {filteredTodayBills.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: MUTED }}>No bills today</td></tr>
+                  <tr><td colSpan={isAdmin ? 10 : 11} style={{ padding: 40, textAlign: "center", color: MUTED }}>No bills today</td></tr>
                 )}
               </tbody>
             </table>
@@ -1665,6 +1847,15 @@ const BranchBilling: React.FC = () => {
           customer={customer || {}}
           branchName={activeBranch?.branch_name || "Branch"}
           onClose={() => setShowPrint(false)}
+        />
+      )}
+
+      {roundoffTarget && (
+        <RoundOffRequestModal
+          invoice={roundoffTarget.invoice}
+          customer={roundoffTarget.customer}
+          onClose={() => setRoundoffTarget(null)}
+          onRequested={() => setFlash("Round off request sent to head office for approval")}
         />
       )}
     </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { FaPlus, FaSearch, FaBook, FaFingerprint, FaMoneyBillWave, FaBuilding, FaWallet, FaFilter, FaTimes, FaBalanceScale } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../utils/api";
+import { useAuthUser } from "../hooks/useAuthUser";
 import "./finance/Finance.css";
 import "./PageShared.css";
 import CustomSelect from "../components/CustomSelect";
@@ -30,6 +31,11 @@ interface Account {
 }
 
 const Ledgers: React.FC = () => {
+  const { user } = useAuthUser();
+  // Rule 2/6 (strict branch billing): ledger writes (opening balance, cash
+  // reconciliation) are admin-only. Branch manager/billing staff get a
+  // read-only view; corrections go through a request to admin instead.
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const [activeTab, setActiveTab] = useState<"CASH" | "BANK" | "ACCOUNTS">("CASH");
   const [cashEntries, setCashEntries] = useState<LedgerEntry[]>([]);
   const [bankEntries, setBankEntries] = useState<LedgerEntry[]>([]);
@@ -410,7 +416,7 @@ const Ledgers: React.FC = () => {
                 <span style={{ color: "#cbd5e1" }}>–</span>
                 <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontSize: "14px", fontWeight: 600, color: "#334155" }} />
               </div>
-              {activeTab === "CASH" && (
+              {isAdmin && activeTab === "CASH" && (
                 <button
                   onClick={() => { setShowReconcile(v => !v); setReconcileMsg(null); }}
                   style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "12px", background: showReconcile ? "#7c3aed" : "#ede9fe", color: showReconcile ? "white" : "#7c3aed", border: "1.5px solid #c4b5fd", fontWeight: 700, fontSize: "13px", cursor: "pointer", transition: "all 0.2s" }}
@@ -418,13 +424,18 @@ const Ledgers: React.FC = () => {
                   <FaBalanceScale size={13} /> Reconcile Cash
                 </button>
               )}
-              {(activeTab === "CASH" || activeTab === "BANK") && (
+              {isAdmin && (activeTab === "CASH" || activeTab === "BANK") && (
                 <button
                   onClick={() => { setObLedgerType(activeTab as "CASH" | "BANK"); setShowObModal(true); setObMsg(null); }}
                   style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "12px", background: "#ecfdf5", color: "#059669", border: "1.5px solid #6ee7b7", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
                 >
                   <FaWallet size={13} /> Set Opening Balance
                 </button>
+              )}
+              {!isAdmin && (activeTab === "CASH" || activeTab === "BANK") && (
+                <span style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic" }}>
+                  Read-only — ledger corrections go through a request to head office
+                </span>
               )}
             </div>
           </div>

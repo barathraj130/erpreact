@@ -393,16 +393,22 @@ router.get('/billing/inventory', authMiddleware, async (req, res) => {
     const branchId  = req.user.branch_id;
     if (!branchId) return res.json([]);
     try {
+        // NOTE: branch_inventory only tracks a single current_stock total (used by
+        // stock-transfer/request features) — it has no fresh/mistake split at all.
+        // The fresh/mistake model billing needs lives in the `inventory` table
+        // instead (branch_id + product_id + stock_type='fresh'|'mistake').
         const rows = await db.pgAll(`
-            SELECT p.id AS product_id, p.name, p.hsn_code, p.selling_price,
-                   COALESCE(p.gst_percent, 5) AS gst_percent,
-                   COALESCE(bi.fresh_stock, 0)   AS fresh_stock,
-                   COALESCE(bi.mistake_stock, 0)  AS mistake_stock,
-                   COALESCE(bi.fresh_stock, 0) + COALESCE(bi.mistake_stock, 0) AS total_stock
+            SELECT p.id AS product_id, p.name, p.hsn_code,
+                   COALESCE(inv_f.selling_price, inv_m.selling_price, p.selling_price) AS selling_price,
+                   COALESCE(inv_f.gst_percent, inv_m.gst_percent, p.gst_percent, 5) AS gst_percent,
+                   COALESCE(inv_f.current_stock, 0) AS fresh_stock,
+                   COALESCE(inv_m.current_stock, 0) AS mistake_stock,
+                   COALESCE(inv_f.current_stock, 0) + COALESCE(inv_m.current_stock, 0) AS total_stock
             FROM products p
-            LEFT JOIN branch_inventory bi ON bi.product_id = p.id AND bi.branch_id = $1
+            LEFT JOIN inventory inv_f ON inv_f.product_id = p.id AND inv_f.branch_id = $1 AND inv_f.stock_type = 'fresh'
+            LEFT JOIN inventory inv_m ON inv_m.product_id = p.id AND inv_m.branch_id = $1 AND inv_m.stock_type = 'mistake'
             WHERE p.company_id = $2 AND COALESCE(p.is_deleted, false) = false
-              AND (COALESCE(bi.fresh_stock, 0) + COALESCE(bi.mistake_stock, 0)) > 0
+              AND (COALESCE(inv_f.current_stock, 0) + COALESCE(inv_m.current_stock, 0)) > 0
             ORDER BY p.name
         `, [branchId, companyId]);
         res.json(rows);

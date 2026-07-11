@@ -1164,6 +1164,49 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permission_template_id INTEGER REFERENCES permission_templates(id)`).catch(() => {});
         await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(100)`).catch(() => {});
 
+        // ── Strict branch billing controls: round-off approval + ledger correction requests ──
+        // customer_id references users(id) — this schema has no separate customers table,
+        // customers are users with role IN ('user','customer').
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS roundoff_requests (
+                id                      SERIAL PRIMARY KEY,
+                company_id              INTEGER NOT NULL,
+                invoice_id              INTEGER REFERENCES invoices(id),
+                branch_id               INTEGER REFERENCES branches(id),
+                requested_by            INTEGER REFERENCES users(id),
+                customer_id             INTEGER REFERENCES users(id),
+                original_amount         NUMERIC(12,2) NOT NULL,
+                requested_roundoff      NUMERIC(12,2) NOT NULL,
+                requested_final_amount  NUMERIC(12,2) NOT NULL,
+                reason                  TEXT NOT NULL,
+                status                  VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+                approved_by             INTEGER REFERENCES users(id),
+                approved_at             TIMESTAMP,
+                rejection_reason        TEXT,
+                created_at              TIMESTAMP DEFAULT NOW(),
+                updated_at              TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS ledger_correction_requests (
+                id               SERIAL PRIMARY KEY,
+                company_id       INTEGER NOT NULL,
+                branch_id        INTEGER REFERENCES branches(id),
+                requested_by     INTEGER REFERENCES users(id),
+                correction_type  VARCHAR(50) NOT NULL,
+                description      TEXT NOT NULL,
+                amount           NUMERIC(12,2),
+                payment_mode     VARCHAR(20),
+                reference_date   DATE,
+                status           VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+                approved_by      INTEGER REFERENCES users(id),
+                approved_at      TIMESTAMP,
+                rejection_reason TEXT,
+                created_at       TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

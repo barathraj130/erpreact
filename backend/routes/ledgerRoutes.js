@@ -525,7 +525,12 @@ router.get('/cash', authMiddleware, async (req, res) => {
 // Reads current computer balance up to and including `date`, computes variance,
 // inserts one cash_ledger entry with source='CASH_RECONCILIATION'
 // ══════════════════════════════════════════════════════════════════════════════
+// Rule 2/6 (strict branch billing): ledger corrections are admin-only. Branch
+// manager/billing staff must go through POST /ledger-corrections/request instead.
 router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Only admin can reconcile cash. Branch users must submit a ledger correction request.' });
+    }
     const companyId = req.user.active_company_id;
     const branchId  = req.user.branch_id || 1;
     const { date, actual_cash, notes } = req.body;
@@ -979,6 +984,9 @@ router.patch('/:id/archive', authMiddleware, async (req, res) => {
 // This ensures: OPENING_BALANCE + all other entries = desired (current balance).
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/set-opening-balance', authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Only admin can set the opening balance. Branch users must submit a ledger correction request.' });
+    }
     const companyId = req.user.active_company_id;
     const { ledger_type, amount, date } = req.body;
     if (!['CASH', 'BANK'].includes(ledger_type)) {

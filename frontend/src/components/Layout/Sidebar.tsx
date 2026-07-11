@@ -39,7 +39,7 @@ interface SidebarProps {
   setIsCollapsed: (isCollapsed: boolean) => void;
 }
 
-const getMenuItems = (mode: string, user: any): MenuItem[] => {
+const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0): MenuItem[] => {
   if (mode === "HOST")
     return [
       { name: "Dashboard", path: "/platform-admin", icon: <FaTachometerAlt />, section: "Overview" },
@@ -194,6 +194,7 @@ const getMenuItems = (mode: string, user: any): MenuItem[] => {
             { name: "Payment Methods", path: "/admin/payment-methods" },
             { name: "Branches", path: "/admin/branches" },
             { name: "User Management", path: "/admin/users" },
+            { name: roundoffPendingCount > 0 ? `Round Off Requests (${roundoffPendingCount})` : "Round Off Requests", path: "/admin/roundoff-requests" },
             { name: "Subscriptions", path: "/admin/subscriptions" },
             { name: "🧪 System Test", path: "/admin/system-test" },
         ]
@@ -207,7 +208,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
   const { user } = useAuthUser();
   const location = useLocation();
   const navigate = useNavigate();
-  const MENU_ITEMS = useMemo(() => getMenuItems(mode, user), [mode, user]);
+  const [roundoffPendingCount, setRoundoffPendingCount] = useState(0);
+  const MENU_ITEMS = useMemo(() => getMenuItems(mode, user, roundoffPendingCount), [mode, user, roundoffPendingCount]);
 
   // Close sidebar on route change in mobile
   useEffect(() => {
@@ -258,6 +260,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
         };
         fetchRequests();
         const interval = setInterval(fetchRequests, 30000);
+        return () => clearInterval(interval);
+    }
+  }, [user, mode]);
+
+  useEffect(() => {
+    if (user?.role === 'admin' || mode === 'ADMIN') {
+        const fetchRoundoffCount = async () => {
+            try {
+                const res = await apiFetch("/roundoff/pending");
+                if (res.ok) {
+                    const data = await res.json();
+                    setRoundoffPendingCount(Array.isArray(data) ? data.length : 0);
+                }
+            } catch (e) {}
+        };
+        fetchRoundoffCount();
+        const interval = setInterval(fetchRoundoffCount, 30000);
         return () => clearInterval(interval);
     }
   }, [user, mode]);

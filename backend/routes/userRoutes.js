@@ -176,22 +176,32 @@ router.get("/search", authMiddleware, async (req, res) => {
     const branchId = req.user.branch_id || null;
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
+    // Rule 4 (strict branch billing): billing_staff can search by name only and
+    // must never see phone/GSTIN/outstanding balance — branch_manager and admin
+    // still get full detail. Filtered server-side so it can't be bypassed by
+    // reading the network response.
+    const isBillingStaff = req.user.role === 'billing_staff';
     try {
         const rows = await db.pgAll(`
             SELECT u.id,
                    COALESCE(u.nickname, u.username) AS name,
-                   u.phone, u.gstin, u.state_code, u.branch_id,
-                   COALESCE((
+                   CASE WHEN $5 THEN NULL ELSE u.phone END AS phone,
+                   CASE WHEN $5 THEN NULL ELSE u.gstin END AS gstin,
+                   u.state_code, u.branch_id,
+                   CASE WHEN $5 THEN 0 ELSE COALESCE((
                      SELECT SUM(total_amount) - SUM(COALESCE(paid_amount, 0))
                      FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted,false)=false
-                   ), 0) AS outstanding_balance
+                   ), 0) END AS outstanding_balance
             FROM users u
             WHERE u.company_id = $1
               AND u.role IN ('user','customer')
-              AND (LOWER(COALESCE(u.nickname, u.username,'')) LIKE $2 OR u.phone LIKE $3)
+              AND (
+                LOWER(COALESCE(u.nickname, u.username,'')) LIKE $2
+                OR ($5 = false AND u.phone LIKE $3)
+              )
               AND ($4::INTEGER IS NOT DISTINCT FROM u.branch_id)
             ORDER BY u.username ASC LIMIT 10
-        `, [companyId, `%${q.toLowerCase()}%`, `%${q}%`, branchId]);
+        `, [companyId, `%${q.toLowerCase()}%`, `%${q}%`, branchId, isBillingStaff]);
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });

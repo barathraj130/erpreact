@@ -20,7 +20,7 @@ export const checkAccess = (moduleName, actionName) => {
 
             // 2. Operational-role bypass — these roles manage day-to-day ops and
             // are controlled by the user_permissions system, not the legacy roles table.
-            const BYPASS_ROLES = ['admin', 'superadmin', 'branch_manager', 'manager', 'accountant', 'staff', 'employee'];
+            const BYPASS_ROLES = ['admin', 'superadmin', 'branch_manager', 'billing_staff', 'manager', 'accountant', 'staff', 'employee'];
             if (BYPASS_ROLES.includes(user.role?.toLowerCase())) {
                 return next();
             }

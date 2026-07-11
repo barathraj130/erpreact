@@ -392,6 +392,44 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         const safeBrokerId = sanitizeInt(broker_id);
         const safeBrokerCommission = isNaN(parseFloat(broker_commission_rate)) ? 0 : parseFloat(broker_commission_rate);
 
+        // BranchBilling.tsx sends `quantity`; everything below (and CreateInvoice.tsx)
+        // uses `qty`. Normalize in place so both frontends work through this one handler.
+        (items || []).forEach(it => { it.qty = it.qty ?? it.quantity; });
+
+        // ── Strict branch billing controls ──────────────────────────────────
+        // Rule 1: branch billing can only sell products that exist in inventory
+        // (no free-text/manual line items). Rule 3: no direct discount at branch
+        // level — round-off must go through POST /roundoff/request + admin approval.
+        // Gated on the AUTHENTICATED user's role (from the verified JWT), not on
+        // anything the request body claims, so it can't be bypassed client-side.
+        const isBranchBillingRole = req.user.role === 'billing_staff' || req.user.role === 'branch_manager';
+        if (isBranchBillingRole) {
+            if (discountAmt > 0) {
+                throw new Error('Branch billing cannot apply a discount directly — use "Request Round Off", which requires head office approval');
+            }
+            for (const it of (items || [])) {
+                if (!it.product_id) {
+                    throw new Error(`"${it.description || it.desc || 'Item'}" is not from inventory — branch billing can only sell products that exist in inventory`);
+                }
+            }
+            const productIds = (items || []).map(it => it.product_id).filter(Boolean);
+            if (productIds.length > 0) {
+                const stockRes = await client.query(
+                    `SELECT product_id, stock_type, current_stock FROM inventory WHERE branch_id = $1 AND product_id = ANY($2::int[])`,
+                    [branchId, productIds]
+                );
+                const stockMap = {};
+                stockRes.rows.forEach(r => { stockMap[`${r.product_id}_${r.stock_type}`] = parseFloat(r.current_stock) || 0; });
+                for (const it of items) {
+                    const stockType = it.stock_type || 'fresh';
+                    const available = stockMap[`${it.product_id}_${stockType}`] || 0;
+                    if (parseFloat(it.qty || 0) > available) {
+                        throw new Error(`${it.description || it.desc}: only ${available} ${stockType} pcs available in stock, cannot bill ${it.qty} pcs`);
+                    }
+                }
+            }
+        }
+
         // Always auto-generate — frontend invoice_number field is intentionally ignored.
         // Each bill type (TAX/NSB/INV/RET/GFT) has its own independent counter per month.
         let finalInvoiceNumber, financial_month, seriesPrefix, seriesNumber;

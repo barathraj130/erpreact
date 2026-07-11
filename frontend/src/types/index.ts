@@ -1,6 +1,6 @@
 // frontend/src/types/index.ts
 
-export type UserRole = 'admin' | 'staff' | 'customer' | 'superadmin' | 'branch_manager';
+export type UserRole = 'admin' | 'staff' | 'customer' | 'superadmin' | 'branch_manager' | 'billing_staff';
 
 export interface User {
   id: number;

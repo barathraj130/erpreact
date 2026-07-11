@@ -76,6 +76,7 @@ import CustomerContact from "./pages/customer/CustomerContact";
 import UserManagement from "./pages/admin/UserManagement";
 import BranchDetail from "./pages/admin/BranchDetail";
 import UserPermissionsEditor from "./pages/admin/UserPermissionsEditor";
+import RoundOffRequests from "./pages/admin/RoundOffRequests";
 
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
@@ -294,6 +295,7 @@ const App: React.FC = () => {
 
           <Route element={<AdminRoute />}>
             <Route path="/admin/users/:id/permissions" element={<UserPermissionsEditor />} />
+            <Route path="/admin/roundoff-requests" element={<RoundOffRequests />} />
             <Route path="/admin/setup" element={<AdminSetup />} />
             <Route path="/admin/branches" element={<Branches />} />
             <Route path="/admin/subscriptions" element={<Subscriptions />} />
