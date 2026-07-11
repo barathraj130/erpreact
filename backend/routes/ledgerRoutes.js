@@ -696,7 +696,7 @@ router.get('/health-summary', authMiddleware, async (req, res) => {
 
         // Use same INFLOW_SET as balance/current — no CUSTOMER_PAYMENT, includes lowercase 'payment'
         const INFLOW_SET = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT','INVOICE_PAYMENT'`;
-        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
+        const cashRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction='in' THEN amount ELSE -amount END) WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM cash_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);
         let totalCash = Number(cashRows?.balance || 0);
 
         const bankRows = await db.pgGet(`SELECT COALESCE(SUM(CASE WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction='in' THEN amount ELSE -amount END) WHEN source IN (${INFLOW_SET}) THEN ABS(amount) WHEN direction = 'in' THEN amount ELSE -amount END), 0) as balance FROM bank_ledger WHERE company_id=$1 AND ${branchFilter}`, queryParams);

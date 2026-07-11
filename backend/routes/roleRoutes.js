@@ -1,6 +1,7 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { seedPermissions } from "../database/seedPermissions.js";
 
 const router = express.Router();
 
@@ -8,11 +9,20 @@ const router = express.Router();
 router.get("/matrix", authMiddleware, async (req, res) => {
     try {
         // 1. Get All Roles (excluding Admin, as Admin usually has full access)
-        const roles = await db.pgAll("SELECT * FROM roles WHERE name != 'admin' ORDER BY id");
-        
+        let roles = await db.pgAll("SELECT * FROM roles WHERE name != 'admin' ORDER BY id");
+
         // 2. Get All Permissions
-        const permissions = await db.pgAll("SELECT * FROM permissions ORDER BY module, id");
-        
+        let permissions = await db.pgAll("SELECT * FROM permissions ORDER BY module, id");
+
+        // Self-heal: seedPermissions() was never wired into server startup, so
+        // on any environment where it's never run, both tables are empty and
+        // the Role Matrix / Employee Overrides screens render with no rows.
+        if (roles.length === 0 || permissions.length === 0) {
+            await seedPermissions();
+            roles = await db.pgAll("SELECT * FROM roles WHERE name != 'admin' ORDER BY id");
+            permissions = await db.pgAll("SELECT * FROM permissions ORDER BY module, id");
+        }
+
         // 3. Get Active Mappings
         const mappings = await db.pgAll("SELECT role_id, permission_id FROM role_permissions");
 
