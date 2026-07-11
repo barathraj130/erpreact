@@ -1116,6 +1116,23 @@ export const runSchemaUpdates = async () => {
             )
         `).catch(() => {});
 
+        // The CREATE TABLE above is a no-op wherever user_permissions already
+        // exists in the old permission_id-based shape (schemaDef.js's original
+        // definition — true in every environment, including fresh installs,
+        // since that definition was never updated). Migrate it forward here
+        // instead of leaving the module_key/can_* columns permanently missing.
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS module_key VARCHAR(50) REFERENCES permission_modules(module_key)`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_view BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_create BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_edit BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_delete BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS branch_restricted BOOLEAN DEFAULT false`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`).catch(() => {});
+        // Old schema's permission_id was NOT NULL — new module_key-based rows
+        // don't supply it, so it must become optional.
+        await db.query(`ALTER TABLE user_permissions ALTER COLUMN permission_id DROP NOT NULL`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD CONSTRAINT user_permissions_user_module_unique UNIQUE (user_id, module_key)`).catch(() => {});
+
         await db.query(`
             CREATE TABLE IF NOT EXISTS permission_templates (
                 id             SERIAL PRIMARY KEY,

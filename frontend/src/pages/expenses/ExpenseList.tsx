@@ -20,6 +20,8 @@ interface ExpenseEntry {
   admin_notes: string | null;
   status: string;
   recorded_by_name: string | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
   branch_name: string | null;
   cash_ledger_ref: number | null;
   bank_ledger_ref: number | null;
@@ -50,6 +52,8 @@ const ExpenseList: React.FC = () => {
   const [entries, setEntries] = useState<ExpenseEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [canApprove, setCanApprove] = useState(false);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
 
   const today = new Date().toISOString().split("T")[0];
   const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
@@ -73,6 +77,30 @@ const ExpenseList: React.FC = () => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
+
+  useEffect(() => {
+    apiFetch("/expense-entries/can-approve")
+      .then((r) => r.json())
+      .then((d) => setCanApprove(!!d.canApprove))
+      .catch(() => setCanApprove(false));
+  }, []);
+
+  const handleApprove = async (id: number) => {
+    setApprovingId(id);
+    try {
+      const res = await apiFetch(`/expense-entries/${id}/approve`, { method: "POST" });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || "Failed to approve expense.");
+        return;
+      }
+      fetchData();
+    } catch (err: any) {
+      alert("Failed to approve: " + (err?.message || "Unknown error"));
+    } finally {
+      setApprovingId(null);
+    }
+  };
 
   const stats = useMemo(() => {
     let total = 0, cash = 0, bank = 0, personal = 0;
@@ -195,6 +223,14 @@ const ExpenseList: React.FC = () => {
                       {fmtDate(e.expense_date)} · {e.category_label} · Paid to {e.paid_to}
                     </div>
                   </div>
+                  {e.status === "pending" && (
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+                      background: "#fef3c7", color: "#b45309", whiteSpace: "nowrap",
+                    }}>
+                      PENDING
+                    </span>
+                  )}
                   <span style={{
                     fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
                     background: modeStyle.bg, color: modeStyle.fg, whiteSpace: "nowrap",
@@ -209,6 +245,30 @@ const ExpenseList: React.FC = () => {
 
                 {isOpen && (
                   <div style={{ background: "#f8fafc", borderTop: "1px solid #f1f5f9", padding: "18px 18px 20px 68px" }}>
+                    {e.status === "pending" && (
+                      <div style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                        background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 16,
+                      }}>
+                        <div style={{ fontSize: 12.5, color: "#92400e", fontWeight: 600 }}>
+                          Awaiting approval — not yet posted to the {e.payment_mode.toUpperCase()} ledger.
+                        </div>
+                        {canApprove && (
+                          <button
+                            type="button"
+                            disabled={approvingId === e.id}
+                            onClick={(ev) => { ev.stopPropagation(); handleApprove(e.id); }}
+                            style={{
+                              padding: "6px 14px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff",
+                              fontSize: 12, fontWeight: 700, cursor: approvingId === e.id ? "not-allowed" : "pointer",
+                              opacity: approvingId === e.id ? 0.6 : 1, whiteSpace: "nowrap",
+                            }}
+                          >
+                            {approvingId === e.id ? "Approving…" : "✓ Approve"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px 20px", marginBottom: 14 }}>
                       <DetailRow label="Reference">{e.reference_number}</DetailRow>
                       {e.contact_phone && <DetailRow label="Contact">{e.contact_phone}</DetailRow>}
@@ -216,11 +276,18 @@ const ExpenseList: React.FC = () => {
                       <DetailRow label="Recorded By">{e.recorded_by_name || "Unknown"} · {fmtDateTime(e.created_at)}</DetailRow>
                       {e.branch_name && <DetailRow label="Branch">{e.branch_name}</DetailRow>}
                       <DetailRow label="Status">
-                        <span style={{ color: "#16a34a", fontWeight: 700 }}>{e.status?.toUpperCase()}</span>
+                        <span style={{ color: e.status === "pending" ? "#b45309" : "#16a34a", fontWeight: 700 }}>{e.status?.toUpperCase()}</span>
+                      </DetailRow>
+                      <DetailRow label="Approved By">
+                        {e.approved_by_name
+                          ? <>{e.approved_by_name}{e.approved_at ? ` · ${fmtDateTime(e.approved_at)}` : ""}</>
+                          : <span style={{ color: "#94a3b8" }}>Not yet approved</span>}
                       </DetailRow>
                       <DetailRow label="Ledger Posted">
                         <span style={{ color: e.ledger_posted ? "#16a34a" : "#94a3b8", fontWeight: 700 }}>
-                          {e.ledger_posted ? `Yes — ${e.payment_mode.toUpperCase()} ledger` : "No — personal expense"}
+                          {e.ledger_posted
+                            ? `Yes — ${e.payment_mode.toUpperCase()} ledger`
+                            : e.payment_mode === "personal" ? "No — personal expense" : "No — pending approval"}
                         </span>
                       </DetailRow>
                     </div>

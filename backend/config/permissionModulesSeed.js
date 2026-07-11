@@ -27,6 +27,7 @@ export const PERMISSION_MODULES = [
     { module_key: 'chits',                module_name: 'Chits',                  category: 'Finance',    display_order: 21 },
     { module_key: 'proprietor_account',   module_name: 'Proprietor Account',     category: 'Finance',    display_order: 22 },
     { module_key: 'transactions',         module_name: 'Transactions',           category: 'Finance',    display_order: 23 },
+    { module_key: 'approve_expenses',     module_name: 'Approve Expenses',       category: 'Finance',    display_order: 24 },
     { module_key: 'employees',            module_name: 'Employees',              category: 'HR',         display_order: 24 },
     { module_key: 'attendance',           module_name: 'Attendance',             category: 'HR',         display_order: 25 },
     { module_key: 'salary',               module_name: 'Salary / Payroll',       category: 'HR',         display_order: 26 },

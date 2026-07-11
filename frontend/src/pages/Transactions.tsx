@@ -197,7 +197,10 @@ const Transactions: React.FC = () => {
       setShowNewTxModal(false);
       setExpenseTouched({});
       fetchData();
-      alert(`Expense recorded — ${json.data.reference_number}`);
+      const msg = json.data.status === 'pending'
+        ? `Expense submitted for approval — ${json.data.reference_number}. It will not affect the ledger until approved.`
+        : `Expense recorded — ${json.data.reference_number}`;
+      alert(msg);
     } catch (err: any) {
       alert("Failed to record expense: " + (err?.message || "Unknown error"));
     }
