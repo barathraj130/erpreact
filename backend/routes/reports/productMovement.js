@@ -248,33 +248,41 @@ router.get('/', authMiddleware, async (req, res) => {
         }
 
         const productMap = mergeMovements(allMovements);
-        const productSummary = Object.values(productMap).map((p) => ({
-            product_name: p.product_name,
-            total_sold_qty: p.total_sold_qty,
-            total_purchased_qty: p.total_purchased_qty,
-            total_returned_qty: p.total_returned_qty,
-            total_converted_qty: p.total_converted_qty,
-            net_movement: p.total_purchased_qty + p.total_converted_qty - p.total_sold_qty + p.total_returned_qty,
-            total_sale_amount: p.total_sale_amount,
-            total_purchase_amount: p.total_purchase_amount,
-            total_return_amount: p.total_return_amount,
-            gross_profit: p.total_sale_amount - p.total_purchase_amount,
-            fresh_sold: p.fresh_sold,
-            mistake_sold: p.mistake_sold,
-            fresh_purchased: p.fresh_purchased,
-            mistake_purchased: p.mistake_purchased,
-            sale_count: p.sale_count,
-            purchase_count: p.purchase_count,
-            return_count: p.return_count,
-            branches: Array.from(p.branches),
-            invoice_types: Array.from(p.invoice_types),
-            suppliers: Array.from(p.suppliers),
-            lot_numbers: Array.from(p.lot_numbers),
-            first_movement: p.first_movement,
-            last_movement: p.last_movement,
-            avg_selling_rate: p.total_sold_qty > 0 ? p.total_sale_amount / p.total_sold_qty : 0,
-            avg_purchase_rate: p.total_purchased_qty > 0 ? p.total_purchase_amount / p.total_purchased_qty : 0,
-        })).sort((a, b) => b.total_sold_qty - a.total_sold_qty);
+        const productSummary = Object.values(productMap).map((p) => {
+            // Net of returns: a returned piece was never really "sold" from the
+            // business's point of view, so both qty and revenue exclude it here.
+            const netSoldQty = p.total_sold_qty - p.total_returned_qty;
+            const netSaleAmount = p.total_sale_amount - p.total_return_amount;
+            return {
+                product_name: p.product_name,
+                total_sold_qty: netSoldQty,
+                gross_sold_qty: p.total_sold_qty,
+                total_purchased_qty: p.total_purchased_qty,
+                total_returned_qty: p.total_returned_qty,
+                total_converted_qty: p.total_converted_qty,
+                net_movement: p.total_purchased_qty + p.total_converted_qty - netSoldQty,
+                total_sale_amount: netSaleAmount,
+                gross_sale_amount: p.total_sale_amount,
+                total_purchase_amount: p.total_purchase_amount,
+                total_return_amount: p.total_return_amount,
+                gross_profit: netSaleAmount - p.total_purchase_amount,
+                fresh_sold: p.fresh_sold,
+                mistake_sold: p.mistake_sold,
+                fresh_purchased: p.fresh_purchased,
+                mistake_purchased: p.mistake_purchased,
+                sale_count: p.sale_count,
+                purchase_count: p.purchase_count,
+                return_count: p.return_count,
+                branches: Array.from(p.branches),
+                invoice_types: Array.from(p.invoice_types),
+                suppliers: Array.from(p.suppliers),
+                lot_numbers: Array.from(p.lot_numbers),
+                first_movement: p.first_movement,
+                last_movement: p.last_movement,
+                avg_selling_rate: netSoldQty > 0 ? netSaleAmount / netSoldQty : 0,
+                avg_purchase_rate: p.total_purchased_qty > 0 ? p.total_purchase_amount / p.total_purchased_qty : 0,
+            };
+        }).sort((a, b) => b.total_sold_qty - a.total_sold_qty);
 
         const totalSoldQty = productSummary.reduce((s, p) => s + p.total_sold_qty, 0);
         const totalPurchasedQty = productSummary.reduce((s, p) => s + p.total_purchased_qty, 0);

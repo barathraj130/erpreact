@@ -157,7 +157,7 @@ export default function ProductMovement() {
 
   const exportCsv = () => {
     const rows = [
-      ["Product Name", "Sold Qty", "Purchased Qty", "Returned Qty", "Sale Amount", "Purchase Amount", "Profit", "Avg Sell Rate", "Avg Buy Rate", "Branches"],
+      ["Product Name", "Net Sold Qty", "Purchased Qty", "Returned Qty", "Net Sale Amount", "Purchase Amount", "Profit", "Avg Sell Rate", "Avg Buy Rate", "Branches"],
       ...(data?.products || []).map((p) => [
         p.product_name, p.total_sold_qty, p.total_purchased_qty, p.total_returned_qty,
         p.total_sale_amount, p.total_purchase_amount, p.gross_profit,
@@ -237,9 +237,9 @@ export default function ProductMovement() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 24 }}>
         {[
           { label: "TOTAL PRODUCTS", value: fmtQty(kpi?.total_products), icon: "📦", bg: "#eff6ff", color: "#4f46e5" },
-          { label: "TOTAL SOLD", value: `${fmtQty(kpi?.total_sold_qty)} pcs`, icon: "📤", bg: "#f0fdf4", color: "#16a34a" },
+          { label: "NET SOLD (after returns)", value: `${fmtQty(kpi?.total_sold_qty)} pcs`, icon: "📤", bg: "#f0fdf4", color: "#16a34a" },
           { label: "TOTAL PURCHASED", value: `${fmtQty(kpi?.total_purchased_qty)} pcs`, icon: "📥", bg: "#fef2f2", color: "#dc2626" },
-          { label: "SALE REVENUE", value: `₹${fmt(kpi?.total_sale_amount)}`, icon: "💰", bg: "#fffbeb", color: "#d97706" },
+          { label: "NET SALE REVENUE", value: `₹${fmt(kpi?.total_sale_amount)}`, icon: "💰", bg: "#fffbeb", color: "#d97706" },
           { label: "TYPED PRODUCTS", value: fmtQty(kpi?.typed_only_products), icon: "⌨️", bg: "#f5f3ff", color: "#7c3aed" },
         ].map((card, i) => (
           <div key={i} style={{ background: card.bg, borderRadius: 12, padding: 16, border: `1px solid ${card.color}22` }}>
@@ -302,7 +302,7 @@ export default function ProductMovement() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["#", "Product Name", "Sold Qty", "Purchased Qty", "Returned", "Sale Revenue", "Purchase Cost", "Gross Profit", "Avg Sell ₹", "Avg Buy ₹", "Branches", "Action"].map((h, i) => (
+                {["#", "Product Name", "Net Sold Qty", "Purchased Qty", "Returned", "Net Sale Revenue", "Purchase Cost", "Gross Profit", "Avg Sell ₹", "Avg Buy ₹", "Branches", "Action"].map((h, i) => (
                   <th key={i} style={{ padding: "11px 12px", textAlign: i <= 1 ? "left" : "right", fontSize: 10, fontWeight: 700, color: "#64748b", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
                     {h}
                   </th>

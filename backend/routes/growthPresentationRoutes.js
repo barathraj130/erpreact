@@ -14,6 +14,10 @@ function buildPrompt(metrics, period) {
 
 Here is the already-calculated business data for this ${periodTitle.toLowerCase()} study. Use ONLY the numbers provided below. Do not invent, estimate, or restate any figures yourself — when you need to reference a metric, refer to it BY NAME (e.g. "Total Revenue", "Revenue Growth"), never print a number. Your job is narrative insight — what the trend means and why it matters for this business — not calculation.
 
+This is a long, detailed deck (~30 slides) with one chart slide, one detail slide, and one deep-dive slide per topic below. The "insight_narrative" you give appears on BOTH the chart slide and the deep-dive slide, so make it substantive (3-5 sentences covering trend, likely cause, and business implication). "takeaways" are 3-4 short, standalone bullet points (each a complete thought, not a fragment) that appear only on the deep-dive slide — they should add NEW angles beyond the narrative, not repeat it.
+
+The "operations" section is about spend and cost structure only (where the money went) — a separate slide already covers risk/health indicators, so do not use risk framing or the word "risk" in that section's titles or headline. The "receivables" section is about what customers owe the business vs what the business owes suppliers — do not restate numbers, describe the collection/payment situation qualitatively.
+
 DATA:
 ${JSON.stringify({
     period_range: metrics.series.revenue.length
@@ -21,6 +25,7 @@ ${JSON.stringify({
         : 'N/A',
     summary_kpis: metrics.summary_kpis,
     revenue_trend: metrics.series.revenue.map(p => ({ period: p.period_label, value: p.value })),
+    purchases_trend: metrics.series.purchases.map(p => ({ period: p.period_label, value: p.value })),
     gross_profit_trend: metrics.series.gross_profit.map(p => ({ period: p.period_label, value: p.value })),
     new_customers_trend: metrics.series.new_customers.map(p => ({ period: p.period_label, value: p.value })),
     expense_breakdown: metrics.expense_breakdown,
@@ -33,10 +38,12 @@ Respond ONLY in this exact JSON format with no extra text, no markdown fences:
   "cover_subtitle": "string — one-line positioning subtitle",
   "executive_summary": "2-3 sentences summarizing the whole period, no numbers restated",
   "sections": [
-    { "section_key": "revenue", "divider_title": "string", "chart_ref": "revenue", "insight_headline": "string, punchy one-liner", "insight_narrative": "2-4 sentences: what the trend means, why it's happening, business implication", "kpi_callouts": ["Total Revenue", "Revenue Growth"] },
-    { "section_key": "profitability", "divider_title": "string", "chart_ref": "gross_profit", "insight_headline": "string", "insight_narrative": "2-4 sentences", "kpi_callouts": ["Gross Profit"] },
-    { "section_key": "customers", "divider_title": "string", "chart_ref": "new_customers", "insight_headline": "string", "insight_narrative": "2-4 sentences", "kpi_callouts": ["Total Customers", "New Customers"] },
-    { "section_key": "operations_risk", "divider_title": "string", "chart_ref": "expense_breakdown", "insight_headline": "string", "insight_narrative": "2-4 sentences", "kpi_callouts": ["Receivables", "Payables"] }
+    { "section_key": "revenue", "divider_title": "string", "chart_ref": "revenue", "insight_headline": "string, punchy one-liner", "insight_narrative": "3-5 sentences", "kpi_callouts": ["Total Revenue", "Revenue Growth"], "takeaways": ["string", "string", "string"] },
+    { "section_key": "profitability", "divider_title": "string", "chart_ref": "gross_profit", "insight_headline": "string", "insight_narrative": "3-5 sentences", "kpi_callouts": ["Gross Profit"], "takeaways": ["string", "string", "string"] },
+    { "section_key": "customers", "divider_title": "string", "chart_ref": "new_customers", "insight_headline": "string", "insight_narrative": "3-5 sentences", "kpi_callouts": ["Total Customers", "New Customers"], "takeaways": ["string", "string", "string"] },
+    { "section_key": "operations", "divider_title": "string, about spend/cost — not risk", "chart_ref": "expense_breakdown", "insight_headline": "string", "insight_narrative": "3-5 sentences", "kpi_callouts": ["Total Purchases", "Gross Profit"], "takeaways": ["string", "string", "string"] },
+    { "section_key": "purchases", "divider_title": "string", "chart_ref": "purchases", "insight_headline": "string", "insight_narrative": "3-5 sentences", "kpi_callouts": ["Total Purchases"], "takeaways": ["string", "string", "string"] },
+    { "section_key": "receivables", "divider_title": "string", "chart_ref": "receivables_payables", "insight_headline": "string", "insight_narrative": "3-5 sentences", "kpi_callouts": ["Receivables", "Payables"], "takeaways": ["string", "string", "string"] }
   ],
   "closing": {
     "overall_verdict": "1-2 sentence health verdict",
@@ -45,7 +52,7 @@ Respond ONLY in this exact JSON format with no extra text, no markdown fences:
     ]
   }
 }
-Return exactly these 4 section_key values, in this order: revenue, profitability, customers, operations_risk. Return 3-5 recommendations, each with priority High, Medium, or Low.`;
+Return exactly these 6 section_key values, in this order: revenue, profitability, customers, operations, purchases, receivables. Return 4-6 recommendations, each with priority High, Medium, or Low.`;
 }
 
 async function callClaudeForOutline(metrics, period) {
@@ -63,7 +70,7 @@ async function callClaudeForOutline(metrics, period) {
         },
         body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 4096,
+            max_tokens: 8192,
             messages: [{ role: 'user', content: buildPrompt(metrics, period) }],
         }),
     });
