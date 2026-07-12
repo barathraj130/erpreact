@@ -6,6 +6,7 @@ import { yAxisFormatter, tooltipFormatter } from '../../utils/reportHelpers';
 import ReportShell from '../../components/reports/ReportShell';
 import KPICard from '../../components/reports/KPICard';
 import ChartCard from '../../components/reports/ChartCard';
+import GrowthPresentation from './GrowthPresentation';
 
 const ALERT_STYLES = {
   alert: { bg: '#fef2f2', border: '#fecaca', icon: '🔴', color: '#dc2626' },
@@ -22,6 +23,7 @@ const ExecutiveDashboard = () => {
   const [forecast, setForecast] = useState([]);
   const [risks, setRisks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pageTab, setPageTab] = useState('dashboard');
 
   useEffect(() => {
     const now = new Date();
@@ -60,7 +62,31 @@ const ExecutiveDashboard = () => {
       subtitle="Real-time business intelligence and key performance indicators"
       breadcrumb={[{ label: 'Home', path: '/dashboard' }, { label: 'Reports', path: '/reports' }, { label: 'Executive' }]}
     >
-      {loading ? (
+      {/* Page-level tab toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 24, background: '#f1f5f9', borderRadius: 12, padding: 4, width: 'fit-content' }}>
+        {[
+          { key: 'dashboard', label: '📊 Executive Dashboard' },
+          { key: 'growth-deck', label: '✨ Growth Study Deck' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setPageTab(t.key)}
+            style={{
+              padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 700,
+              background: pageTab === t.key ? '#4f46e5' : 'transparent',
+              color: pageTab === t.key ? '#fff' : '#64748b',
+              transition: 'all 0.15s',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {pageTab === 'growth-deck' && <GrowthPresentation />}
+
+      {pageTab === 'dashboard' && (loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#6b7280' }}>Loading executive data...</div>
       ) : (
         <>
@@ -168,7 +194,7 @@ const ExecutiveDashboard = () => {
             </div>
           </div>
         </>
-      )}
+      ))}
     </ReportShell>
   );
 };

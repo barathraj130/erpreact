@@ -59,6 +59,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
       subItems: [
         { name: "All Reports", path: "/reports" },
         { name: "Executive Dashboard", path: "/reports/executive" },
+        { name: "Product Movement", path: "/reports/product-movement" },
         { name: "Sales Reports", path: "/reports/sales" },
         { name: "Purchase Reports", path: "/reports/purchase" },
         { name: "Inventory Reports", path: "/reports/inventory" },

@@ -87,6 +87,8 @@ import financeRoutes from "./routes/financeRoutes.js";
 import expenseEntryRoutes from "./routes/expenseEntryRoutes.js";
 import roundoffRoutes from "./routes/roundoffRoutes.js";
 import ledgerCorrectionRoutes from "./routes/ledgerCorrectionRoutes.js";
+import growthPresentationRoutes from "./routes/growthPresentationRoutes.js";
+import productMovementRoutes from "./routes/reports/productMovement.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -196,6 +198,8 @@ app.use("/api/reports/hr", hrReportRoutes);
 app.use("/api/reports/expense", expenseReportRoutes);
 app.use("/api/reports/proprietor", proprietorReportRoutes);
 app.use("/api/reports/executive", executiveReportRoutes);
+app.use("/api/reports/growth", growthPresentationRoutes);
+app.use("/api/reports/product-movement", productMovementRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/inventory", inventoryRoutes);
