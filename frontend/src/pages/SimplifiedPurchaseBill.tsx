@@ -87,6 +87,13 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [isSurplus, setIsSurplus] = useState(false);
   const [surplusLotNumber, setSurplusLotNumber] = useState("");
   const [surplusTransportCost, setSurplusTransportCost] = useState<number>(0);
+  // Entry-mode toggle: quantities typed into the Fresh/Mstk Qty columns are
+  // either already pieces, or bundles that get converted to pieces (qty x
+  // pieces-per-bundle) everywhere an amount or pcs total is derived — the
+  // rate is always per piece, so only qty needs converting.
+  const [surplusUnitType, setSurplusUnitType] = useState<"PCS" | "BUNDLE">("PCS");
+  const [surplusPiecesPerBundle, setSurplusPiecesPerBundle] = useState<number>(1);
+  const surplusBundleFactor = surplusUnitType === "BUNDLE" ? (surplusPiecesPerBundle || 1) : 1;
   interface SurplusLine { description: string; fresh_qty: string; fresh_rate: string; mistake_qty: string; mistake_rate: string; fresh_amount: number; mistake_amount: number; total_amount: number; }
   const [surplusLines, setSurplusLines] = useState<SurplusLine[]>([
     { description: "", fresh_qty: "", fresh_rate: "", mistake_qty: "", mistake_rate: "", fresh_amount: 0, mistake_amount: 0, total_amount: 0 }
@@ -98,8 +105,8 @@ const SimplifiedPurchaseBill: React.FC = () => {
     setSurplusLines(prev => prev.map((line, i) => {
       if (i !== index) return line;
       const updated: any = { ...line, [field]: value };
-      const freshAmt   = parseFloat(updated.fresh_qty  || "0") * parseFloat(updated.fresh_rate  || "0");
-      const mistakeAmt = parseFloat(updated.mistake_qty || "0") * parseFloat(updated.mistake_rate || "0");
+      const freshAmt   = parseFloat(updated.fresh_qty  || "0") * surplusBundleFactor * parseFloat(updated.fresh_rate  || "0");
+      const mistakeAmt = parseFloat(updated.mistake_qty || "0") * surplusBundleFactor * parseFloat(updated.mistake_rate || "0");
       updated.fresh_amount   = freshAmt;
       updated.mistake_amount = mistakeAmt;
       updated.total_amount   = freshAmt + mistakeAmt;
@@ -108,10 +115,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
   };
 
   const surplusTotals = {
-    fresh_qty:      surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0"), 0),
-    mistake_qty:    surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0"), 0),
-    fresh_amount:   surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0") * parseFloat(l.fresh_rate  || "0"), 0),
-    mistake_amount: surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0") * parseFloat(l.mistake_rate || "0"), 0),
+    fresh_qty:      surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0") * surplusBundleFactor, 0),
+    mistake_qty:    surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0") * surplusBundleFactor, 0),
+    fresh_amount:   surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0") * surplusBundleFactor * parseFloat(l.fresh_rate  || "0"), 0),
+    mistake_amount: surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0") * surplusBundleFactor * parseFloat(l.mistake_rate || "0"), 0),
     get subtotal()    { return this.fresh_amount + this.mistake_amount; },
     get grand_total() { return this.subtotal + (surplusTransportCost || 0); },
   };
@@ -329,17 +336,24 @@ const SimplifiedPurchaseBill: React.FC = () => {
         payload.is_surplus     = true;
         payload.lot_number     = surplusLotNumber;
         payload.transport_cost = surplusTransportCost || 0;
-        payload.surplus_lines  = surplusLines.filter(l => l.description.trim()).map(l => ({
-          description:    l.description.trim(),
-          fresh_qty:      parseFloat(l.fresh_qty   || "0"),
-          fresh_rate:     parseFloat(l.fresh_rate  || "0"),
-          mistake_qty:    parseFloat(l.mistake_qty || "0"),
-          mistake_rate:   parseFloat(l.mistake_rate || "0"),
-          fresh_amount:   parseFloat(l.fresh_qty   || "0") * parseFloat(l.fresh_rate  || "0"),
-          mistake_amount: parseFloat(l.mistake_qty || "0") * parseFloat(l.mistake_rate || "0"),
-          total_amount:   parseFloat(l.fresh_qty   || "0") * parseFloat(l.fresh_rate  || "0") +
-                          parseFloat(l.mistake_qty || "0") * parseFloat(l.mistake_rate || "0"),
-        }));
+        // Fresh/mistake qty are converted to pieces here (qty x pieces-per-bundle
+        // when entered as bundles) — the backend always stores/accounts stock in pieces.
+        payload.surplus_lines  = surplusLines.filter(l => l.description.trim()).map(l => {
+          const freshQtyPcs   = parseFloat(l.fresh_qty   || "0") * surplusBundleFactor;
+          const mistakeQtyPcs = parseFloat(l.mistake_qty || "0") * surplusBundleFactor;
+          const freshRate     = parseFloat(l.fresh_rate  || "0");
+          const mistakeRate   = parseFloat(l.mistake_rate || "0");
+          return {
+            description:    l.description.trim(),
+            fresh_qty:      freshQtyPcs,
+            fresh_rate:     freshRate,
+            mistake_qty:    mistakeQtyPcs,
+            mistake_rate:   mistakeRate,
+            fresh_amount:   freshQtyPcs * freshRate,
+            mistake_amount: mistakeQtyPcs * mistakeRate,
+            total_amount:   freshQtyPcs * freshRate + mistakeQtyPcs * mistakeRate,
+          };
+        });
       }
 
       formData.append("data", JSON.stringify(payload));
@@ -519,6 +533,28 @@ const SimplifiedPurchaseBill: React.FC = () => {
                           placeholder="0"
                           style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "0.5px solid #e2e8f0", boxSizing: "border-box" }} />
                       </div>
+                      <div style={{ width: "220px" }}>
+                        <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Entering Qty As</label>
+                        <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "8px", padding: "4px" }}>
+                          <button type="button" onClick={() => setSurplusUnitType("PCS")}
+                            style={{ flex: 1, border: "none", background: surplusUnitType === "PCS" ? "#fff" : "transparent", padding: "7px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, color: surplusUnitType === "PCS" ? "#4f46e5" : "#64748b", boxShadow: surplusUnitType === "PCS" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}>
+                            Pcs
+                          </button>
+                          <button type="button" onClick={() => setSurplusUnitType("BUNDLE")}
+                            style={{ flex: 1, border: "none", background: surplusUnitType === "BUNDLE" ? "#fff" : "transparent", padding: "7px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, color: surplusUnitType === "BUNDLE" ? "#4f46e5" : "#64748b", boxShadow: surplusUnitType === "BUNDLE" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}>
+                            Bundle
+                          </button>
+                        </div>
+                      </div>
+                      {surplusUnitType === "BUNDLE" && (
+                        <div style={{ width: "150px" }}>
+                          <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Pieces / Bundle</label>
+                          <input type="number" min="1" value={surplusPiecesPerBundle || ""}
+                            onChange={e => setSurplusPiecesPerBundle(Number(e.target.value) || 1)}
+                            placeholder="12"
+                            style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "0.5px solid #e2e8f0", boxSizing: "border-box" }} />
+                        </div>
+                      )}
                     </div>
 
                     {/* Unified surplus table */}
@@ -539,9 +575,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
                           <thead>
                             <tr>
                               <th style={{ padding: "9px 12px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#475569", borderBottom: "0.5px solid #e2e8f0", background: "#f8fafc", letterSpacing: "0.04em" }}>DESCRIPTION</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f0fdf4", letterSpacing: "0.04em" }}>FRESH QTY</th>
+                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f0fdf4", letterSpacing: "0.04em" }}>FRESH QTY{surplusUnitType === "BUNDLE" ? " (BNDL)" : ""}</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f0fdf4", letterSpacing: "0.04em" }}>FRESH RATE</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#fffbeb", letterSpacing: "0.04em" }}>MSTK QTY</th>
+                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#fffbeb", letterSpacing: "0.04em" }}>MSTK QTY{surplusUnitType === "BUNDLE" ? " (BNDL)" : ""}</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#fffbeb", letterSpacing: "0.04em" }}>MSTK RATE</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f8fafc", letterSpacing: "0.04em" }}>FRESH AMT</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#f8fafc", letterSpacing: "0.04em" }}>MSTK AMT</th>
@@ -585,9 +621,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                   {line.fresh_amount > 0 ? `₹${line.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
                                 </td>
                                 <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 600, color: "#f59e0b", whiteSpace: "nowrap" }}>
-                                  {(parseFloat(line.mistake_qty || "0") * parseFloat(line.mistake_rate || "0")) > 0
-                                    ? `₹${(parseFloat(line.mistake_qty || "0") * parseFloat(line.mistake_rate || "0")).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
-                                    : <span style={{ color: "#cbd5e1" }}>—</span>}
+                                  {line.mistake_amount > 0 ? `₹${line.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
                                 </td>
                                 <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>
                                   ₹{line.total_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}

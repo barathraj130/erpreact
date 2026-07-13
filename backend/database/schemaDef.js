@@ -432,6 +432,8 @@ export const schemaDefinition = {
         hsn_code: "TEXT",
         unit: "TEXT",
         unit_id: "INTEGER",
+        unit_type: "VARCHAR(20) DEFAULT 'PCS'",
+        pieces_per_bundle: "NUMERIC(10,2) DEFAULT 1",
         cost_price: "NUMERIC(12,2) DEFAULT 0",
         selling_price: "NUMERIC(12,2) NOT NULL DEFAULT 0",
         current_stock: "NUMERIC(12,2) DEFAULT 0",

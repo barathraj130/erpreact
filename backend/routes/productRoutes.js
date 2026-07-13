@@ -37,7 +37,8 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
     const {
         name, selling_price, sku, brand, description, hsn_code, unit,
         cost_price, opening_stock, barcode, min_stock, max_stock_level,
-        gst_percent, supplier_name, category, location
+        gst_percent, supplier_name, category, location,
+        unit_type, pieces_per_bundle
     } = req.body;
 
     if (!name) {
@@ -57,9 +58,10 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
             INSERT INTO products (
                 company_id, branch_id, name, selling_price, sku, brand, description, hsn_code, unit,
                 cost_price, opening_stock, current_stock, barcode, min_stock, max_stock_level,
-                gst_percent, supplier_name, category, location, image_url, is_active, is_deleted
+                gst_percent, supplier_name, category, location, image_url, is_active, is_deleted,
+                unit_type, pieces_per_bundle
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, 1, false)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, 1, false, $21, $22)
             RETURNING *;
         `;
         const product = (await client.query(productSql, [
@@ -67,7 +69,8 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
             hsn_code || null, unit || "pcs", cost_price || 0,
             opening_stock || 0, opening_stock || 0, barcode || null,
             min_stock || 0, max_stock_level || 0, gst_percent || 0, supplier_name || null,
-            category || "Other", location || null, imageUrl
+            category || "Other", location || null, imageUrl,
+            unit_type === "BUNDLE" ? "BUNDLE" : "PCS", parseFloat(pieces_per_bundle) || 1
         ])).rows[0];
 
         // 2. Inventory Table (auto-created simultaneously)
