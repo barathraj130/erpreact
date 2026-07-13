@@ -215,7 +215,20 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    // Open the window synchronously (before any await) so popup blockers still
+    // treat this as a direct result of the click.
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) return;
+
+    let letterhead = { business_name: "", address: "", gstin: "", phone: "", email: "" };
+    try {
+      const res = await apiFetch("/billing-config/format");
+      if (res.ok) letterhead = await res.json();
+    } catch {
+      // fall back to blank letterhead rather than blocking the print
+    }
+
     const summary = customerSummary;
     const rows = entityType === "customer" ? customerRows : supplierTransactions;
     const ob = entityType === "customer"
@@ -236,8 +249,6 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
       </tr>
     `).join("");
 
-    const printWindow = window.open("", "_blank", "width=900,height=700");
-    if (!printWindow) return;
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -247,9 +258,14 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #1e293b; padding: 32px; }
+          .letterhead { text-align: center; border-bottom: 3px double #0f172a; padding-bottom: 14px; margin-bottom: 16px; }
+          .lh-company { font-size: 26px; font-weight: 800; color: #0f172a; letter-spacing: 0.5px; }
+          .lh-address { font-size: 11.5px; color: #475569; margin-top: 4px; }
+          .lh-contact { font-size: 11px; color: #64748b; margin-top: 2px; }
+          .lh-gstin { font-size: 11.5px; font-weight: 700; color: #0f172a; margin-top: 4px; }
           .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #0f172a; }
-          .company { font-size: 22px; font-weight: 800; color: #0f172a; }
-          .doc-title { font-size: 14px; font-weight: 600; color: #64748b; margin-top: 4px; }
+          .doc-title { font-size: 15px; font-weight: 700; color: #0f172a; letter-spacing: 0.06em; text-transform: uppercase; }
+          .doc-subtitle { font-size: 12px; font-weight: 600; color: #64748b; margin-top: 2px; }
           .customer-block { text-align: right; }
           .customer-name { font-size: 16px; font-weight: 700; }
           .print-date { font-size: 11px; color: #64748b; margin-top: 4px; }
@@ -267,10 +283,17 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
         </style>
       </head>
       <body>
+        <div class="letterhead">
+          <div class="lh-company">${letterhead.business_name || "Fluxora ERP"}</div>
+          ${letterhead.address ? `<div class="lh-address">${letterhead.address}</div>` : ""}
+          ${(letterhead.phone || letterhead.email) ? `<div class="lh-contact">${[letterhead.phone ? `Ph: ${letterhead.phone}` : "", letterhead.email || ""].filter(Boolean).join(" &nbsp;|&nbsp; ")}</div>` : ""}
+          ${letterhead.gstin ? `<div class="lh-gstin">GSTIN: ${letterhead.gstin}</div>` : ""}
+        </div>
+
         <div class="header">
           <div>
-            <div class="company">Account Statement</div>
-            <div class="doc-title">Customer Ledger</div>
+            <div class="doc-title">Account Statement</div>
+            <div class="doc-subtitle">Customer Ledger</div>
           </div>
           <div class="customer-block">
             <div class="customer-name">${entityName}</div>
