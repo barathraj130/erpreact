@@ -284,7 +284,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
       </head>
       <body>
         <div class="letterhead">
-          <div class="lh-company">${letterhead.business_name || "Fluxora ERP"}</div>
+          <div class="lh-company">${letterhead.business_name || "JBS KNIT WEAR"}</div>
           ${letterhead.address ? `<div class="lh-address">${letterhead.address}</div>` : ""}
           ${(letterhead.phone || letterhead.email) ? `<div class="lh-contact">${[letterhead.phone ? `Ph: ${letterhead.phone}` : "", letterhead.email || ""].filter(Boolean).join(" &nbsp;|&nbsp; ")}</div>` : ""}
           ${letterhead.gstin ? `<div class="lh-gstin">GSTIN: ${letterhead.gstin}</div>` : ""}
