@@ -15,6 +15,7 @@ import {
   FaSearch,
   FaTag,
   FaTimes,
+  FaTrash,
   FaUpload,
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
@@ -281,12 +282,29 @@ const AddProductModal: React.FC<Props> = ({
     unit: "pcs",
     category: "Other",
     location: "",
-    bundles: 1,
-    pieces_per_bundle: 0,
   });
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // Opening stock — one or more Bundles x Pcs/Bundle lines summing to a
+  // total piece count (matches CreateDeliveryOrder.tsx's bundle-line UX).
+  // Extra lines are entirely optional — the default single line, left at
+  // Bundles=1, behaves like a plain piece count.
+  interface BundleLine { bundles: number; pieces_per_bundle: number; total: number; }
+  const emptyBundleLine = (): BundleLine => ({ bundles: 1, pieces_per_bundle: 0, total: 0 });
+  const [bundleLines, setBundleLines] = useState<BundleLine[]>([emptyBundleLine()]);
+  const totalPieces = (lines: BundleLine[]) => lines.reduce((s, l) => s + (l.total || 0), 0);
+  const addBundleLine = () => setBundleLines(prev => [...prev, emptyBundleLine()]);
+  const removeBundleLine = (idx: number) => setBundleLines(prev => prev.filter((_, i) => i !== idx));
+  const updateBundleLine = (idx: number, key: keyof BundleLine, val: number) => {
+    setBundleLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const updated = { ...l, [key]: val };
+      updated.total = (updated.bundles || 0) * (updated.pieces_per_bundle || 0);
+      return updated;
+    }));
+  };
 
   useEffect(() => {
     if (productToEdit) {
@@ -307,8 +325,6 @@ const AddProductModal: React.FC<Props> = ({
         unit: productToEdit.unit || "pcs",
         category: productToEdit.category || "Other",
         location: productToEdit.location || "",
-        bundles: 1,
-        pieces_per_bundle: productToEdit.pieces_per_bundle || 0,
       });
       if (productToEdit.image_url) {
         setImagePreview(productToEdit.image_url.startsWith('http') ? productToEdit.image_url : `http://${window.location.hostname}:3000${productToEdit.image_url}`);
@@ -333,12 +349,8 @@ const AddProductModal: React.FC<Props> = ({
     setLoading(true);
     try {
       if (productToEdit) {
-        // "bundles" is a local-only helper field, not a real products column —
-        // the PUT route applies every body key directly to the SQL UPDATE, so
-        // it must never be sent.
-        const { bundles: _bundles, ...editable } = formData;
         const fd = new FormData();
-        Object.entries(editable).forEach(([key, value]) => {
+        Object.entries(formData).forEach(([key, value]) => {
           fd.append(key, String(value));
         });
         if (imageFile) fd.append("image", imageFile);
@@ -349,13 +361,14 @@ const AddProductModal: React.FC<Props> = ({
         }, false);
         if (!res.ok) throw new Error("Update failed");
       } else {
-        // Opening stock is always stored server-side as pieces — Bundles x
-        // Pcs/Bundle is a pure UX convenience (defaults to 1 bundle, so typing
-        // straight into Pcs/Bundle behaves like plain pcs entry).
+        // Opening stock is always stored server-side as pieces — the Bundles x
+        // Pcs/Bundle lines are a pure UX convenience (a default single line,
+        // left at Bundles=1, behaves like plain pcs entry).
         const submission = {
           ...formData,
-          opening_stock: (formData.bundles || 1) * (formData.pieces_per_bundle || 0),
-          unit_type: formData.bundles > 1 ? "BUNDLE" : "PCS",
+          opening_stock: totalPieces(bundleLines),
+          unit_type: bundleLines.some(l => l.bundles > 1) ? "BUNDLE" : "PCS",
+          pieces_per_bundle: bundleLines[0]?.pieces_per_bundle || 1,
         };
         const fd = new FormData();
         Object.entries(submission).forEach(([key, value]) => {
@@ -553,34 +566,57 @@ const AddProductModal: React.FC<Props> = ({
             {!productToEdit && (
               <div style={{ marginBottom: 20 }}>
                 <label style={styles.label}>Opening Stock</label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 5 }}>Bundles</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 32px", gap: 8, marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8" }}>Bundles</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8" }}>Pcs / Bundle</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8" }}>Total Pcs</div>
+                  <div />
+                </div>
+                {bundleLines.map((line, idx) => (
+                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 32px", gap: 8, marginBottom: 6 }}>
                     <input
                       type="number" min={1} placeholder="1"
-                      value={formData.bundles || ""}
-                      onChange={(e: any) => setFormData({ ...formData, bundles: parseInt(e.target.value) || 1 })}
+                      value={line.bundles || ""}
+                      onChange={e => updateBundleLine(idx, "bundles", parseInt(e.target.value) || 1)}
                       style={{ ...styles.input, position: "static", padding: "10px 12px" }}
                     />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 5 }}>Pcs / Bundle</div>
                     <input
                       type="number" min={0} placeholder="0"
-                      value={formData.pieces_per_bundle || ""}
-                      onChange={(e: any) => setFormData({ ...formData, pieces_per_bundle: parseFloat(e.target.value) || 0 })}
+                      value={line.pieces_per_bundle || ""}
+                      onChange={e => updateBundleLine(idx, "pieces_per_bundle", parseFloat(e.target.value) || 0)}
                       style={{ ...styles.input, position: "static", padding: "10px 12px" }}
                     />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 5 }}>Total Pcs</div>
                     <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", color: "#166534", fontSize: 14, fontWeight: 700 }}>
-                      {(formData.bundles || 1) * (formData.pieces_per_bundle || 0)} pcs
+                      {line.total || 0} pcs
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => removeBundleLine(idx)}
+                      disabled={bundleLines.length === 1}
+                      style={{
+                        border: "none", borderRadius: 7, cursor: bundleLines.length === 1 ? "default" : "pointer",
+                        background: bundleLines.length === 1 ? "transparent" : "#fee2e2",
+                        color: bundleLines.length === 1 ? "#d1d5db" : "#dc2626",
+                      }}
+                    >
+                      <FaTrash size={12} />
+                    </button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={addBundleLine}
+                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1px dashed #cbd5e1", background: "transparent", color: "#64748b", fontSize: 12, cursor: "pointer" }}
+                  >
+                    <FaPlus size={9} /> Add Line
+                  </button>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    Total: <span style={{ color: "#166534" }}>{totalPieces(bundleLines)} pcs</span>
                   </div>
                 </div>
                 <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>
-                  Leave Bundles at 1 to enter a plain piece count.
+                  Leave Bundles at 1 to enter a plain piece count. Add a line only if you need to combine different bundle sizes.
                 </div>
               </div>
             )}
