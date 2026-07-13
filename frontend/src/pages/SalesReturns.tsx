@@ -7,6 +7,7 @@ import {
   FaExternalLinkAlt, FaCheckCircle, FaEye, FaEdit, FaPrint,
 } from "react-icons/fa";
 import "./PageShared.css";
+import ReturnInspectionModal from "./ReturnInspectionModal";
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -276,6 +277,9 @@ const SalesReturns: React.FC = () => {
 
   // ── View bill ──
   const [viewReturn, setViewReturn] = useState<SalesReturn | null>(null);
+
+  // ── Inspect / grade return items (Good / Mistake / Rejected) ──
+  const [inspectReturn, setInspectReturn] = useState<SalesReturn | null>(null);
 
   // ── Delete confirm ──
   const [deleteConfirm, setDeleteConfirm] = useState<SalesReturn | null>(null);
@@ -681,6 +685,13 @@ const SalesReturns: React.FC = () => {
                       <FaEye size={11} /> View
                     </button>
                     <button
+                      onClick={() => setInspectReturn(r)}
+                      title="Grade returned items (Good / Mistake / Rejected)"
+                      style={{ background: "#fefce8", border: "1px solid #fde68a", color: "#a16207", borderRadius: 6, padding: "5px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600 }}
+                    >
+                      <FaCheckCircle size={11} /> Inspect
+                    </button>
+                    <button
                       onClick={() => openEdit(r)}
                       title="Edit Return"
                       style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", borderRadius: 6, padding: "5px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600 }}
@@ -706,6 +717,13 @@ const SalesReturns: React.FC = () => {
       <AnimatePresence>
         {viewReturn && (
           <ReturnBillView ret={viewReturn} company={companyProfile} onClose={() => setViewReturn(null)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Inspect / Grade Return Modal ── */}
+      <AnimatePresence>
+        {inspectReturn && (
+          <ReturnInspectionModal ret={inspectReturn} onClose={() => setInspectReturn(null)} />
         )}
       </AnimatePresence>
 

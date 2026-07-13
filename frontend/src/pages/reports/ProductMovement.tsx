@@ -18,6 +18,8 @@ interface ProductSummary {
   mistake_sold: number;
   fresh_purchased: number;
   mistake_purchased: number;
+  good_returned: number;
+  mistake_returned: number;
   sale_count: number;
   purchase_count: number;
   return_count: number;
@@ -78,6 +80,9 @@ interface DetailReturn {
   rate: number;
   amount: number;
   customer_name: string;
+  good_qty: number;
+  mistake_qty: number;
+  inspection_status: "ungraded" | "partial" | "graded";
 }
 interface ProductDetail {
   product_name: string;
@@ -324,7 +329,15 @@ export default function ProductMovement() {
                   </td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#16a34a" }}>{fmtQty(p.total_sold_qty)} pcs</td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, color: "#64748b" }}>{fmtQty(p.total_purchased_qty)} pcs</td>
-                  <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, color: p.total_returned_qty > 0 ? "#dc2626" : "#94a3b8" }}>{fmtQty(p.total_returned_qty)} pcs</td>
+                  <td style={{ padding: "11px 12px", textAlign: "right" }}>
+                    <div style={{ fontSize: 13, color: p.total_returned_qty > 0 ? "#dc2626" : "#94a3b8" }}>{fmtQty(p.total_returned_qty)} pcs</div>
+                    {(p.good_returned > 0 || p.mistake_returned > 0) && (
+                      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4, flexWrap: "wrap" }}>
+                        {p.good_returned > 0 && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 20, background: "#dcfce7", color: "#166534", fontWeight: 600 }}>Good: {fmtQty(p.good_returned)}</span>}
+                        {p.mistake_returned > 0 && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 20, background: "#fef9c3", color: "#854d0e", fontWeight: 600 }}>Mstk: {fmtQty(p.mistake_returned)}</span>}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>₹{fmt(p.total_sale_amount)}</td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, color: "#dc2626" }}>₹{fmt(p.total_purchase_amount)}</td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, fontWeight: 800, color: p.gross_profit >= 0 ? "#16a34a" : "#dc2626" }}>
@@ -474,8 +487,8 @@ export default function ProductMovement() {
                   <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
                     <thead>
                       <tr style={{ background: "#f8fafc" }}>
-                        {["Return No", "Date", "Customer", "Qty", "Rate", "Amount"].map((h, i) => (
-                          <th key={i} style={{ padding: "9px 12px", textAlign: i >= 3 ? "right" : "left", fontSize: 10, fontWeight: 700, color: "#64748b" }}>{h}</th>
+                        {["Return No", "Date", "Customer", "Qty", "Rate", "Amount", "Grade"].map((h, i) => (
+                          <th key={i} style={{ padding: "9px 12px", textAlign: i >= 3 && i < 6 ? "right" : "left", fontSize: 10, fontWeight: 700, color: "#64748b" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -488,6 +501,17 @@ export default function ProductMovement() {
                           <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#f59e0b" }}>{fmtQty(r.quantity)} pcs</td>
                           <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 12 }}>₹{parseFloat(String(r.rate || 0)).toFixed(0)}</td>
                           <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, fontWeight: 700 }}>₹{fmt(r.amount)}</td>
+                          <td style={{ padding: "9px 12px", textAlign: "left" }}>
+                            {r.inspection_status === "ungraded" ? (
+                              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#fef9c3", color: "#854d0e", fontWeight: 600 }}>Ungraded</span>
+                            ) : (
+                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                {r.good_qty > 0 && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 20, background: "#dcfce7", color: "#166534", fontWeight: 600 }}>Good: {fmtQty(r.good_qty)}</span>}
+                                {r.mistake_qty > 0 && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 20, background: "#fef9c3", color: "#854d0e", fontWeight: 600 }}>Mstk: {fmtQty(r.mistake_qty)}</span>}
+                                {r.inspection_status === "partial" && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 20, background: "#f1f5f9", color: "#64748b", fontWeight: 600 }}>Partial</span>}
+                              </div>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

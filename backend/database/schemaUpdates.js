@@ -197,7 +197,7 @@ export const runSchemaUpdates = async () => {
                 id SERIAL PRIMARY KEY,
                 company_id INTEGER NOT NULL,
                 branch_id INTEGER,
-                product_id INTEGER UNIQUE NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
                 product_name TEXT,
                 sku TEXT,
                 unit TEXT,
@@ -944,6 +944,31 @@ export const runSchemaUpdates = async () => {
             )
         `).catch(() => {});
 
+        // Sales-return inspection: a follow-up grading step (separate from return
+        // creation) that splits a returned line's quantity into Good (resalable as
+        // fresh) vs Mistake (defective, resold cheap) vs Rejected (unsellable write-off).
+        // Keyed by (return_id, product_id) rather than an array index into
+        // sales_returns.items, since that JSONB array can be edited after the fact.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS sales_return_inspections (
+                id                  SERIAL PRIMARY KEY,
+                return_id           INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
+                product_id          INTEGER REFERENCES products(id),
+                company_id          INTEGER NOT NULL,
+                inspection_date     DATE DEFAULT CURRENT_DATE,
+                inspector_name      VARCHAR(100),
+                total_qty_inspected NUMERIC(12,2) DEFAULT 0,
+                good_qty            NUMERIC(12,2) DEFAULT 0,
+                mistake_qty         NUMERIC(12,2) DEFAULT 0,
+                rejected_qty        NUMERIC(12,2) DEFAULT 0,
+                notes               TEXT,
+                created_by          INTEGER,
+                created_at          TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS sales_return_inspections_return_idx ON sales_return_inspections(return_id)`).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS sales_return_inspections_product_idx ON sales_return_inspections(product_id)`).catch(() => {});
+
         await db.query(`
             CREATE TABLE IF NOT EXISTS stock_conversions (
                 id                   SERIAL PRIMARY KEY,
@@ -1027,6 +1052,19 @@ export const runSchemaUpdates = async () => {
         await db.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS inventory_unique_idx
             ON inventory (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+        `).catch(() => {});
+        // The drop above named the wrong constraint — the actual blocker is the ORIGINAL
+        // inline UNIQUE(product_id) from this table's very first CREATE TABLE, auto-named
+        // inventory_product_id_key by Postgres. It prevents any product from having more
+        // than one inventory row at all, which breaks the fresh/mistake split the composite
+        // index above is meant to allow (e.g. sales-return inspection booking a second row
+        // for a product that already has one).
+        await db.query(`
+            DO $$ BEGIN
+              IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'inventory_product_id_key') THEN
+                ALTER TABLE inventory DROP CONSTRAINT inventory_product_id_key;
+              END IF;
+            END $$
         `).catch(() => {});
 
         // ── Transaction Categories ─────────────────────────────────────────────

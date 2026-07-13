@@ -32,6 +32,7 @@ function newProductBucket(name) {
         total_sold_qty: 0, total_purchased_qty: 0, total_returned_qty: 0, total_converted_qty: 0,
         total_sale_amount: 0, total_purchase_amount: 0, total_return_amount: 0,
         fresh_sold: 0, mistake_sold: 0, fresh_purchased: 0, mistake_purchased: 0,
+        good_returned: 0, mistake_returned: 0,
         sale_count: 0, purchase_count: 0, return_count: 0,
         branches: new Set(), invoice_types: new Set(), suppliers: new Set(), lot_numbers: new Set(),
         first_movement: null, last_movement: null,
@@ -65,6 +66,8 @@ function mergeMovements(allMovements) {
             p.total_returned_qty += parseFloat(m.total_qty || 0);
             p.total_return_amount += parseFloat(m.total_amount || 0);
             p.return_count += parseInt(m.transaction_count || 0);
+            p.good_returned += parseFloat(m.good_qty || 0);
+            p.mistake_returned += parseFloat(m.mistake_qty || 0);
         } else if (m.movement_type === 'CONVERSION') {
             p.total_converted_qty += parseFloat(m.total_qty || 0);
             if (m.lot_number) m.lot_number.split(', ').forEach((l) => p.lot_numbers.add(l));
@@ -192,7 +195,9 @@ router.get('/', authMiddleware, async (req, res) => {
                 ORDER BY total_qty DESC
             `, [companyId, fromDate, toDate, namePattern]).catch(() => []),
 
-            // Sales returns: line items live in a JSONB array, not a child table
+            // Sales returns: line items live in a JSONB array, not a child table.
+            // Good/mistake split comes from a separate follow-up inspection step
+            // (sales_return_inspections) — a return's qty is "ungraded" until then.
             db.pgAll(`
                 SELECT
                     TRIM(item->>'description') AS product_name,
@@ -203,9 +208,16 @@ router.get('/', authMiddleware, async (req, res) => {
                     COALESCE(SUM((item->>'line_total')::numeric), 0) AS total_amount,
                     COUNT(DISTINCT sr.id) AS transaction_count,
                     MIN(sr.return_date) AS first_date,
-                    MAX(sr.return_date) AS last_date
+                    MAX(sr.return_date) AS last_date,
+                    COALESCE(SUM(insp.good_qty), 0) AS good_qty,
+                    COALESCE(SUM(insp.mistake_qty), 0) AS mistake_qty
                 FROM sales_returns sr
                 CROSS JOIN LATERAL jsonb_array_elements(sr.items) AS item
+                LEFT JOIN (
+                    SELECT return_id, product_id, SUM(good_qty) AS good_qty, SUM(mistake_qty) AS mistake_qty
+                    FROM sales_return_inspections
+                    GROUP BY return_id, product_id
+                ) insp ON insp.return_id = sr.id AND insp.product_id = (item->>'product_id')::int
                 WHERE sr.company_id = $1
                   AND sr.return_date BETWEEN $2 AND $3
                   AND item->>'description' IS NOT NULL AND TRIM(item->>'description') != ''
@@ -270,6 +282,8 @@ router.get('/', authMiddleware, async (req, res) => {
                 mistake_sold: p.mistake_sold,
                 fresh_purchased: p.fresh_purchased,
                 mistake_purchased: p.mistake_purchased,
+                good_returned: p.good_returned,
+                mistake_returned: p.mistake_returned,
                 sale_count: p.sale_count,
                 purchase_count: p.purchase_count,
                 return_count: p.return_count,
@@ -395,10 +409,21 @@ router.get('/detail/:productName', authMiddleware, async (req, res) => {
                     (item->>'qty')::numeric AS quantity,
                     (item->>'rate')::numeric AS rate,
                     (item->>'line_total')::numeric AS amount,
-                    COALESCE(u.nickname, u.username, sr.customer_name, 'Walk-in') AS customer_name
+                    COALESCE(u.nickname, u.username, sr.customer_name, 'Walk-in') AS customer_name,
+                    COALESCE(insp.good_qty, 0) AS good_qty,
+                    COALESCE(insp.mistake_qty, 0) AS mistake_qty,
+                    CASE
+                        WHEN insp.total_inspected IS NULL THEN 'ungraded'
+                        WHEN insp.total_inspected >= (item->>'qty')::numeric THEN 'graded'
+                        ELSE 'partial'
+                    END AS inspection_status
                 FROM sales_returns sr
                 CROSS JOIN LATERAL jsonb_array_elements(sr.items) AS item
                 LEFT JOIN users u ON u.id = sr.customer_id
+                LEFT JOIN (
+                    SELECT return_id, product_id, SUM(good_qty) good_qty, SUM(mistake_qty) mistake_qty, SUM(total_qty_inspected) total_inspected
+                    FROM sales_return_inspections GROUP BY return_id, product_id
+                ) insp ON insp.return_id = sr.id AND insp.product_id = (item->>'product_id')::int
                 WHERE sr.company_id = $1
                   AND LOWER(item->>'description') LIKE LOWER($2)
                   AND sr.return_date BETWEEN $3 AND $4
