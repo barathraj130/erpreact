@@ -281,8 +281,8 @@ const AddProductModal: React.FC<Props> = ({
     unit: "pcs",
     category: "Other",
     location: "",
-    unit_type: "PCS" as "PCS" | "BUNDLE",
-    pieces_per_bundle: 1,
+    bundles: 1,
+    pieces_per_bundle: 0,
   });
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -307,8 +307,8 @@ const AddProductModal: React.FC<Props> = ({
         unit: productToEdit.unit || "pcs",
         category: productToEdit.category || "Other",
         location: productToEdit.location || "",
-        unit_type: productToEdit.unit_type === "BUNDLE" ? "BUNDLE" : "PCS",
-        pieces_per_bundle: productToEdit.pieces_per_bundle || 1,
+        bundles: 1,
+        pieces_per_bundle: productToEdit.pieces_per_bundle || 0,
       });
       if (productToEdit.image_url) {
         setImagePreview(productToEdit.image_url.startsWith('http') ? productToEdit.image_url : `http://${window.location.hostname}:3000${productToEdit.image_url}`);
@@ -333,8 +333,12 @@ const AddProductModal: React.FC<Props> = ({
     setLoading(true);
     try {
       if (productToEdit) {
+        // "bundles" is a local-only helper field, not a real products column —
+        // the PUT route applies every body key directly to the SQL UPDATE, so
+        // it must never be sent.
+        const { bundles: _bundles, ...editable } = formData;
         const fd = new FormData();
-        Object.entries(formData).forEach(([key, value]) => {
+        Object.entries(editable).forEach(([key, value]) => {
           fd.append(key, String(value));
         });
         if (imageFile) fd.append("image", imageFile);
@@ -345,14 +349,13 @@ const AddProductModal: React.FC<Props> = ({
         }, false);
         if (!res.ok) throw new Error("Update failed");
       } else {
-        // Opening stock is always stored server-side as pieces — convert here
-        // if the user entered it in bundles, so the toggle stays a pure UX
-        // convenience with no backend/schema change required.
+        // Opening stock is always stored server-side as pieces — Bundles x
+        // Pcs/Bundle is a pure UX convenience (defaults to 1 bundle, so typing
+        // straight into Pcs/Bundle behaves like plain pcs entry).
         const submission = {
           ...formData,
-          opening_stock: formData.unit_type === "BUNDLE"
-            ? formData.opening_stock * (formData.pieces_per_bundle || 1)
-            : formData.opening_stock,
+          opening_stock: (formData.bundles || 1) * (formData.pieces_per_bundle || 0),
+          unit_type: formData.bundles > 1 ? "BUNDLE" : "PCS",
         };
         const fd = new FormData();
         Object.entries(submission).forEach(([key, value]) => {
@@ -548,52 +551,51 @@ const AddProductModal: React.FC<Props> = ({
             </div>
 
             {!productToEdit && (
-              <div style={styles.row(isMobile)}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Entering Stock As</label>
-                  <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "10px", padding: "4px" }}>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, unit_type: "PCS" })}
-                      style={{ flex: 1, border: "none", background: formData.unit_type === "PCS" ? "#fff" : "transparent", padding: "8px", borderRadius: "8px", fontSize: "0.85rem", fontWeight: 600, color: formData.unit_type === "PCS" ? "#4f46e5" : "#64748b", boxShadow: formData.unit_type === "PCS" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}
-                    >
-                      Pcs
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, unit_type: "BUNDLE" })}
-                      style={{ flex: 1, border: "none", background: formData.unit_type === "BUNDLE" ? "#fff" : "transparent", padding: "8px", borderRadius: "8px", fontSize: "0.85rem", fontWeight: 600, color: formData.unit_type === "BUNDLE" ? "#4f46e5" : "#64748b", boxShadow: formData.unit_type === "BUNDLE" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}
-                    >
-                      Bundle
-                    </button>
+              <div style={{ marginBottom: 20 }}>
+                <label style={styles.label}>Opening Stock</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 5 }}>Bundles</div>
+                    <input
+                      type="number" min={1} placeholder="1"
+                      value={formData.bundles || ""}
+                      onChange={(e: any) => setFormData({ ...formData, bundles: parseInt(e.target.value) || 1 })}
+                      style={{ ...styles.input, position: "static", padding: "10px 12px" }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 5 }}>Pcs / Bundle</div>
+                    <input
+                      type="number" min={0} placeholder="0"
+                      value={formData.pieces_per_bundle || ""}
+                      onChange={(e: any) => setFormData({ ...formData, pieces_per_bundle: parseFloat(e.target.value) || 0 })}
+                      style={{ ...styles.input, position: "static", padding: "10px 12px" }}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 5 }}>Total Pcs</div>
+                    <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", color: "#166534", fontSize: 14, fontWeight: 700 }}>
+                      {(formData.bundles || 1) * (formData.pieces_per_bundle || 0)} pcs
+                    </div>
                   </div>
                 </div>
-                {formData.unit_type === "BUNDLE" && (
-                  <InputField
-                    label="Pieces per Bundle"
-                    icon={FaBox}
-                    type="number"
-                    placeholder="12"
-                    value={formData.pieces_per_bundle}
-                    onChange={(e: any) => setFormData({ ...formData, pieces_per_bundle: parseFloat(e.target.value) || 1 })}
-                  />
-                )}
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>
+                  Leave Bundles at 1 to enter a plain piece count.
+                </div>
               </div>
             )}
 
             <div style={styles.row(isMobile)}>
-              <InputField
-                label={formData.unit_type === "BUNDLE" ? "Opening Stock (bundles)" : "Opening Stock"}
-                icon={FaCheck}
-                type="number"
-                placeholder="0"
-                value={formData.opening_stock}
-                onChange={(e: any) => setFormData({ ...formData, opening_stock: parseFloat(e.target.value) || 0 })}
-                disabled={!!productToEdit}
-                hint={formData.unit_type === "BUNDLE" && formData.opening_stock > 0
-                  ? `= ${(formData.opening_stock * (formData.pieces_per_bundle || 1)).toLocaleString("en-IN")} pcs total`
-                  : undefined}
-              />
+              {productToEdit && (
+                <InputField
+                  label="Opening Stock"
+                  icon={FaCheck}
+                  type="number"
+                  value={formData.opening_stock}
+                  onChange={() => {}}
+                  disabled
+                />
+              )}
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Unit</label>
                 <div style={styles.inputWrapper}>

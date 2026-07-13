@@ -32,16 +32,19 @@ export default function StockLotDetail() {
   const [tab, setTab] = useState<Tab>("inventory");
   const [loading, setLoading] = useState(true);
 
-  // Purchase form
+  // Purchase form — Fresh/Mistake qty are entered as Bundles x Pcs/Bundle
+  // (defaults to 1 bundle, so typing straight into Pcs/Bundle behaves like
+  // plain pcs entry); converted to pieces only when submitting.
   const [showPurchase, setShowPurchase] = useState(false);
-  const [pForm, setPForm] = useState({ fresh_qty: "", mistake_qty: "", fresh_rate: "", mistake_rate: "", transport_cost: "", payment_mode: "cash", paid_amount: "", bill_number: "" });
+  const [pForm, setPForm] = useState({
+    fresh_bundles: "1", fresh_pcs_per_bundle: "", fresh_rate: "",
+    mistake_bundles: "1", mistake_pcs_per_bundle: "", mistake_rate: "",
+    transport_cost: "", payment_mode: "cash", paid_amount: "", bill_number: "",
+  });
   const [pSaving, setPSaving] = useState(false);
   const [pErr, setPErr] = useState("");
-  // Qty entry mode — Fresh/Mistake Qty are typed as pieces or bundles;
-  // converted to pieces (the canonical stock unit) only when submitting.
-  const [pUnitType, setPUnitType] = useState<"PCS" | "BUNDLE">("PCS");
-  const [pPiecesPerBundle, setPPiecesPerBundle] = useState<number>(1);
-  const pBundleFactor = pUnitType === "BUNDLE" ? (pPiecesPerBundle || 1) : 1;
+  const pFreshQty = (parseFloat(pForm.fresh_bundles || "1") || 1) * parseFloat(pForm.fresh_pcs_per_bundle || "0");
+  const pMistakeQty = (parseFloat(pForm.mistake_bundles || "1") || 1) * parseFloat(pForm.mistake_pcs_per_bundle || "0");
 
   // Inspection form
   const [showInspect, setShowInspect] = useState(false);
@@ -82,12 +85,21 @@ export default function StockLotDetail() {
     setPSaving(true); setPErr("");
     try {
       const submission = {
-        ...pForm,
-        fresh_qty: String(Number(pForm.fresh_qty || 0) * pBundleFactor),
-        mistake_qty: String(Number(pForm.mistake_qty || 0) * pBundleFactor),
+        fresh_qty: String(pFreshQty),
+        mistake_qty: String(pMistakeQty),
+        fresh_rate: pForm.fresh_rate,
+        mistake_rate: pForm.mistake_rate,
+        transport_cost: pForm.transport_cost,
+        payment_mode: pForm.payment_mode,
+        paid_amount: pForm.paid_amount,
+        bill_number: pForm.bill_number,
       };
       const res = await apiFetch(`/stock-lots/${id}/purchase`, { method: "POST", body: JSON.stringify(submission) });
-      if (res.success) { setShowPurchase(false); setPForm({ fresh_qty: "", mistake_qty: "", fresh_rate: "", mistake_rate: "", transport_cost: "", payment_mode: "cash", paid_amount: "", bill_number: "" }); setPUnitType("PCS"); setPPiecesPerBundle(1); loadAll(); }
+      if (res.success) {
+        setShowPurchase(false);
+        setPForm({ fresh_bundles: "1", fresh_pcs_per_bundle: "", fresh_rate: "", mistake_bundles: "1", mistake_pcs_per_bundle: "", mistake_rate: "", transport_cost: "", payment_mode: "cash", paid_amount: "", bill_number: "" });
+        loadAll();
+      }
       else setPErr(res.error || "Failed");
     } catch (e: any) { setPErr(e.message); }
     finally { setPSaving(false); }
@@ -461,36 +473,36 @@ export default function StockLotDetail() {
               <div style={{ padding: 24 }}>
                 {pErr && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", color: "#dc2626", fontSize: 13, marginBottom: 16 }}>{pErr}</div>}
 
-                <div style={{ marginBottom: 14 }}>
-                  <label style={labelStyle}>Entering Qty As</label>
-                  <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 8, padding: 4, width: 220 }}>
-                    <button type="button" onClick={() => setPUnitType("PCS")}
-                      style={{ flex: 1, border: "none", background: pUnitType === "PCS" ? "#fff" : "transparent", padding: 7, borderRadius: 6, fontSize: 13, fontWeight: 600, color: pUnitType === "PCS" ? "#4f46e5" : "#64748b", boxShadow: pUnitType === "PCS" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}>
-                      Pcs
-                    </button>
-                    <button type="button" onClick={() => setPUnitType("BUNDLE")}
-                      style={{ flex: 1, border: "none", background: pUnitType === "BUNDLE" ? "#fff" : "transparent", padding: 7, borderRadius: 6, fontSize: 13, fontWeight: 600, color: pUnitType === "BUNDLE" ? "#4f46e5" : "#64748b", boxShadow: pUnitType === "BUNDLE" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}>
-                      Bundle
-                    </button>
-                  </div>
-                  {pUnitType === "BUNDLE" && (
-                    <div style={{ marginTop: 10 }}>
-                      <label style={labelStyle}>Pieces per Bundle</label>
-                      <input type="number" min="1" value={pPiecesPerBundle || ""} onChange={e => setPPiecesPerBundle(Number(e.target.value) || 1)} style={{ ...inputStyle, width: 220 }} />
+                {([
+                  { label: "Fresh", color: "#166534", bg: "#f0fdf4", border: "#bbf7d0", bundlesKey: "fresh_bundles", pcsKey: "fresh_pcs_per_bundle", qty: pFreshQty },
+                  { label: "Mistake", color: "#92400e", bg: "#fffbeb", border: "#fde68a", bundlesKey: "mistake_bundles", pcsKey: "mistake_pcs_per_bundle", qty: pMistakeQty },
+                ] as const).map(g => (
+                  <div key={g.label} style={{ marginBottom: 14 }}>
+                    <label style={labelStyle}>{g.label} Qty — Bundles x Pcs/Bundle</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                      <input type="number" min={1} placeholder="1" value={(pForm as any)[g.bundlesKey]}
+                        onChange={e => setPForm(p => ({ ...p, [g.bundlesKey]: e.target.value }))}
+                        style={{ ...inputStyle, background: g.bg, border: `1px solid ${g.border}` }} />
+                      <input type="number" min={0} placeholder="0" value={(pForm as any)[g.pcsKey]}
+                        onChange={e => setPForm(p => ({ ...p, [g.pcsKey]: e.target.value }))}
+                        style={{ ...inputStyle, background: g.bg, border: `1px solid ${g.border}` }} />
+                      <div style={{ padding: "10px 12px", borderRadius: 8, background: g.bg, color: g.color, fontSize: 14, fontWeight: 700 }}>
+                        {g.qty.toLocaleString("en-IN")} pcs
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                ))}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                   {[
-                    { label: pUnitType === "BUNDLE" ? "Fresh Qty (bundles)" : "Fresh Qty", key: "fresh_qty" }, { label: "Fresh Rate (₹/pc)", key: "fresh_rate" },
-                    { label: pUnitType === "BUNDLE" ? "Mistake Qty (bundles)" : "Mistake Qty", key: "mistake_qty" }, { label: "Mistake Rate (₹/pc)", key: "mistake_rate" },
+                    { label: "Fresh Rate (₹/pc)", key: "fresh_rate" },
+                    { label: "Mistake Rate (₹/pc)", key: "mistake_rate" },
                     { label: "Transport Cost (₹)", key: "transport_cost" }, { label: "Bill Number", key: "bill_number" },
                     { label: "Amount Paid (₹)", key: "paid_amount" },
                   ].map(f => (
                     <div key={f.key}>
                       <label style={labelStyle}>{f.label}</label>
-                      <input type={f.key.includes("qty") || f.key.includes("cost") || f.key.includes("rate") || f.key.includes("paid") ? "number" : "text"}
+                      <input type={f.key.includes("cost") || f.key.includes("rate") || f.key.includes("paid") ? "number" : "text"}
                         value={(pForm as any)[f.key]} onChange={e => setPForm(p => ({ ...p, [f.key]: e.target.value }))} style={inputStyle} />
                     </div>
                   ))}
@@ -504,17 +516,12 @@ export default function StockLotDetail() {
                   </div>
                 </div>
                 {/* Preview */}
-                {(pForm.fresh_qty || pForm.mistake_qty) && (
+                {(pFreshQty > 0 || pMistakeQty > 0) && (
                   <div style={{ marginTop: 16, padding: "12px 16px", background: "#f8fafc", borderRadius: 10 }}>
-                    {pUnitType === "BUNDLE" && (
-                      <div style={{ fontSize: 12, color: "#4f46e5", fontWeight: 600, marginBottom: 6 }}>
-                        = {(Number(pForm.fresh_qty || 0) * pBundleFactor).toLocaleString("en-IN")} fresh pcs, {(Number(pForm.mistake_qty || 0) * pBundleFactor).toLocaleString("en-IN")} mistake pcs
-                      </div>
-                    )}
                     <div style={{ fontSize: 12, color: "#64748b" }}>
-                      Fresh Cost: {fmt(Number(pForm.fresh_qty || 0) * pBundleFactor * Number(pForm.fresh_rate || 0))} &nbsp;|&nbsp;
-                      Mistake Cost: {fmt(Number(pForm.mistake_qty || 0) * pBundleFactor * Number(pForm.mistake_rate || 0))} &nbsp;|&nbsp;
-                      Total: <strong>{fmt(Number(pForm.fresh_qty || 0) * pBundleFactor * Number(pForm.fresh_rate || 0) + Number(pForm.mistake_qty || 0) * pBundleFactor * Number(pForm.mistake_rate || 0) + Number(pForm.transport_cost || 0))}</strong>
+                      Fresh Cost: {fmt(pFreshQty * Number(pForm.fresh_rate || 0))} &nbsp;|&nbsp;
+                      Mistake Cost: {fmt(pMistakeQty * Number(pForm.mistake_rate || 0))} &nbsp;|&nbsp;
+                      Total: <strong>{fmt(pFreshQty * Number(pForm.fresh_rate || 0) + pMistakeQty * Number(pForm.mistake_rate || 0) + Number(pForm.transport_cost || 0))}</strong>
                     </div>
                   </div>
                 )}

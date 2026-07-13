@@ -87,26 +87,33 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [isSurplus, setIsSurplus] = useState(false);
   const [surplusLotNumber, setSurplusLotNumber] = useState("");
   const [surplusTransportCost, setSurplusTransportCost] = useState<number>(0);
-  // Entry-mode toggle: quantities typed into the Fresh/Mstk Qty columns are
-  // either already pieces, or bundles that get converted to pieces (qty x
-  // pieces-per-bundle) everywhere an amount or pcs total is derived — the
-  // rate is always per piece, so only qty needs converting.
-  const [surplusUnitType, setSurplusUnitType] = useState<"PCS" | "BUNDLE">("PCS");
-  const [surplusPiecesPerBundle, setSurplusPiecesPerBundle] = useState<number>(1);
-  const surplusBundleFactor = surplusUnitType === "BUNDLE" ? (surplusPiecesPerBundle || 1) : 1;
-  interface SurplusLine { description: string; fresh_qty: string; fresh_rate: string; mistake_qty: string; mistake_rate: string; fresh_amount: number; mistake_amount: number; total_amount: number; }
-  const [surplusLines, setSurplusLines] = useState<SurplusLine[]>([
-    { description: "", fresh_qty: "", fresh_rate: "", mistake_qty: "", mistake_rate: "", fresh_amount: 0, mistake_amount: 0, total_amount: 0 }
-  ]);
+  // Fresh/Mstk qty are entered as Bundles x Pcs/Bundle (defaults to 1 bundle,
+  // so typing straight into Pcs/Bundle behaves like plain pcs entry) — the
+  // rate is always per piece, so the bundle math only ever affects qty.
+  interface SurplusLine {
+    description: string;
+    fresh_bundles: string; fresh_pcs_per_bundle: string; fresh_rate: string;
+    mistake_bundles: string; mistake_pcs_per_bundle: string; mistake_rate: string;
+    fresh_amount: number; mistake_amount: number; total_amount: number;
+  }
+  const emptySurplusLine = (): SurplusLine => ({
+    description: "", fresh_bundles: "1", fresh_pcs_per_bundle: "", fresh_rate: "",
+    mistake_bundles: "1", mistake_pcs_per_bundle: "", mistake_rate: "",
+    fresh_amount: 0, mistake_amount: 0, total_amount: 0,
+  });
+  const [surplusLines, setSurplusLines] = useState<SurplusLine[]>([emptySurplusLine()]);
 
-  const addSurplusLine = () => setSurplusLines(prev => [...prev, { description: "", fresh_qty: "", fresh_rate: "", mistake_qty: "", mistake_rate: "", fresh_amount: 0, mistake_amount: 0, total_amount: 0 }]);
+  const freshQtyOf   = (l: SurplusLine) => (parseFloat(l.fresh_bundles   || "1") || 1) * parseFloat(l.fresh_pcs_per_bundle   || "0");
+  const mistakeQtyOf = (l: SurplusLine) => (parseFloat(l.mistake_bundles || "1") || 1) * parseFloat(l.mistake_pcs_per_bundle || "0");
+
+  const addSurplusLine = () => setSurplusLines(prev => [...prev, emptySurplusLine()]);
   const removeSurplusLine = (index: number) => setSurplusLines(prev => prev.filter((_, i) => i !== index));
   const updateSurplusLine = (index: number, field: string, value: string) => {
     setSurplusLines(prev => prev.map((line, i) => {
       if (i !== index) return line;
       const updated: any = { ...line, [field]: value };
-      const freshAmt   = parseFloat(updated.fresh_qty  || "0") * surplusBundleFactor * parseFloat(updated.fresh_rate  || "0");
-      const mistakeAmt = parseFloat(updated.mistake_qty || "0") * surplusBundleFactor * parseFloat(updated.mistake_rate || "0");
+      const freshAmt   = freshQtyOf(updated)   * parseFloat(updated.fresh_rate  || "0");
+      const mistakeAmt = mistakeQtyOf(updated) * parseFloat(updated.mistake_rate || "0");
       updated.fresh_amount   = freshAmt;
       updated.mistake_amount = mistakeAmt;
       updated.total_amount   = freshAmt + mistakeAmt;
@@ -115,10 +122,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
   };
 
   const surplusTotals = {
-    fresh_qty:      surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0") * surplusBundleFactor, 0),
-    mistake_qty:    surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0") * surplusBundleFactor, 0),
-    fresh_amount:   surplusLines.reduce((s, l) => s + parseFloat(l.fresh_qty   || "0") * surplusBundleFactor * parseFloat(l.fresh_rate  || "0"), 0),
-    mistake_amount: surplusLines.reduce((s, l) => s + parseFloat(l.mistake_qty || "0") * surplusBundleFactor * parseFloat(l.mistake_rate || "0"), 0),
+    fresh_qty:      surplusLines.reduce((s, l) => s + freshQtyOf(l), 0),
+    mistake_qty:    surplusLines.reduce((s, l) => s + mistakeQtyOf(l), 0),
+    fresh_amount:   surplusLines.reduce((s, l) => s + freshQtyOf(l)   * parseFloat(l.fresh_rate   || "0"), 0),
+    mistake_amount: surplusLines.reduce((s, l) => s + mistakeQtyOf(l) * parseFloat(l.mistake_rate || "0"), 0),
     get subtotal()    { return this.fresh_amount + this.mistake_amount; },
     get grand_total() { return this.subtotal + (surplusTransportCost || 0); },
   };
@@ -327,8 +334,8 @@ const SimplifiedPurchaseBill: React.FC = () => {
         for (let i = 0; i < surplusLines.length; i++) {
           const line = surplusLines[i];
           if (!line.description.trim()) { setLoading(false); return alert(`Enter description for row ${i + 1}.`); }
-          const hasFresh   = parseFloat(line.fresh_qty   || "0") > 0;
-          const hasMistake = parseFloat(line.mistake_qty || "0") > 0;
+          const hasFresh   = freshQtyOf(line) > 0;
+          const hasMistake = mistakeQtyOf(line) > 0;
           if (!hasFresh && !hasMistake)                           { setLoading(false); return alert(`Enter fresh qty or mistake qty for row ${i + 1}.`); }
           if (hasFresh   && !parseFloat(line.fresh_rate  || "0")) { setLoading(false); return alert(`Enter fresh rate for row ${i + 1}.`); }
           if (hasMistake && !parseFloat(line.mistake_rate || "0")) { setLoading(false); return alert(`Enter mistake rate for row ${i + 1}.`); }
@@ -336,11 +343,11 @@ const SimplifiedPurchaseBill: React.FC = () => {
         payload.is_surplus     = true;
         payload.lot_number     = surplusLotNumber;
         payload.transport_cost = surplusTransportCost || 0;
-        // Fresh/mistake qty are converted to pieces here (qty x pieces-per-bundle
-        // when entered as bundles) — the backend always stores/accounts stock in pieces.
+        // Fresh/mistake qty are Bundles x Pcs/Bundle, converted to pieces here —
+        // the backend always stores/accounts stock in pieces.
         payload.surplus_lines  = surplusLines.filter(l => l.description.trim()).map(l => {
-          const freshQtyPcs   = parseFloat(l.fresh_qty   || "0") * surplusBundleFactor;
-          const mistakeQtyPcs = parseFloat(l.mistake_qty || "0") * surplusBundleFactor;
+          const freshQtyPcs   = freshQtyOf(l);
+          const mistakeQtyPcs = mistakeQtyOf(l);
           const freshRate     = parseFloat(l.fresh_rate  || "0");
           const mistakeRate   = parseFloat(l.mistake_rate || "0");
           return {
@@ -533,28 +540,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
                           placeholder="0"
                           style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "0.5px solid #e2e8f0", boxSizing: "border-box" }} />
                       </div>
-                      <div style={{ width: "220px" }}>
-                        <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Entering Qty As</label>
-                        <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "8px", padding: "4px" }}>
-                          <button type="button" onClick={() => setSurplusUnitType("PCS")}
-                            style={{ flex: 1, border: "none", background: surplusUnitType === "PCS" ? "#fff" : "transparent", padding: "7px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, color: surplusUnitType === "PCS" ? "#4f46e5" : "#64748b", boxShadow: surplusUnitType === "PCS" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}>
-                            Pcs
-                          </button>
-                          <button type="button" onClick={() => setSurplusUnitType("BUNDLE")}
-                            style={{ flex: 1, border: "none", background: surplusUnitType === "BUNDLE" ? "#fff" : "transparent", padding: "7px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, color: surplusUnitType === "BUNDLE" ? "#4f46e5" : "#64748b", boxShadow: surplusUnitType === "BUNDLE" ? "0 2px 4px rgba(0,0,0,0.05)" : "none", cursor: "pointer" }}>
-                            Bundle
-                          </button>
-                        </div>
-                      </div>
-                      {surplusUnitType === "BUNDLE" && (
-                        <div style={{ width: "150px" }}>
-                          <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Pieces / Bundle</label>
-                          <input type="number" min="1" value={surplusPiecesPerBundle || ""}
-                            onChange={e => setSurplusPiecesPerBundle(Number(e.target.value) || 1)}
-                            placeholder="12"
-                            style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "0.5px solid #e2e8f0", boxSizing: "border-box" }} />
-                        </div>
-                      )}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "12px" }}>
+                      Fresh/Mstk qty below are entered as Bundles x Pcs/Bundle — leave Bundles at 1 to type a plain piece count.
                     </div>
 
                     {/* Unified surplus table */}
@@ -575,9 +563,9 @@ const SimplifiedPurchaseBill: React.FC = () => {
                           <thead>
                             <tr>
                               <th style={{ padding: "9px 12px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#475569", borderBottom: "0.5px solid #e2e8f0", background: "#f8fafc", letterSpacing: "0.04em" }}>DESCRIPTION</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f0fdf4", letterSpacing: "0.04em" }}>FRESH QTY{surplusUnitType === "BUNDLE" ? " (BNDL)" : ""}</th>
+                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f0fdf4", letterSpacing: "0.04em" }}>FRESH BNDL x PCS</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f0fdf4", letterSpacing: "0.04em" }}>FRESH RATE</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#fffbeb", letterSpacing: "0.04em" }}>MSTK QTY{surplusUnitType === "BUNDLE" ? " (BNDL)" : ""}</th>
+                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#fffbeb", letterSpacing: "0.04em" }}>MSTK BNDL x PCS</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#fffbeb", letterSpacing: "0.04em" }}>MSTK RATE</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#10b981", borderBottom: "0.5px solid #e2e8f0", background: "#f8fafc", letterSpacing: "0.04em" }}>FRESH AMT</th>
                               <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#f59e0b", borderBottom: "0.5px solid #e2e8f0", background: "#f8fafc", letterSpacing: "0.04em" }}>MSTK AMT</th>
@@ -594,9 +582,15 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                     style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: !line.description.trim() ? "1.5px solid #ef4444" : "0.5px solid #e2e8f0", fontSize: 12, boxSizing: "border-box" }} />
                                 </td>
                                 <td style={{ padding: "7px 5px" }}>
-                                  <input type="number" placeholder="0" value={line.fresh_qty}
-                                    onChange={e => updateSurplusLine(index, "fresh_qty", e.target.value)}
-                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                    <input type="number" min={1} placeholder="Bndl" title="Bundles" value={line.fresh_bundles}
+                                      onChange={e => updateSurplusLine(index, "fresh_bundles", e.target.value)}
+                                      style={{ width: "100%", padding: "4px 6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 11, textAlign: "right", boxSizing: "border-box" }} />
+                                    <input type="number" min={0} placeholder="Pcs/Bndl" title="Pieces per bundle" value={line.fresh_pcs_per_bundle}
+                                      onChange={e => updateSurplusLine(index, "fresh_pcs_per_bundle", e.target.value)}
+                                      style={{ width: "100%", padding: "4px 6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 11, textAlign: "right", boxSizing: "border-box" }} />
+                                    {freshQtyOf(line) > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#166534", textAlign: "right" }}>{freshQtyOf(line)} pcs</div>}
+                                  </div>
                                 </td>
                                 <td style={{ padding: "7px 5px" }}>
                                   <input type="number" placeholder="0" value={line.fresh_rate}
@@ -604,11 +598,17 @@ const SimplifiedPurchaseBill: React.FC = () => {
                                     style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
                                 </td>
                                 <td style={{ padding: "7px 5px" }}>
-                                  <input type="number" placeholder="0"
-                                    value={line.mistake_qty === "" ? "" : line.mistake_qty}
-                                    onChange={e => updateSurplusLine(index, "mistake_qty", e.target.value)}
-                                    onFocus={e => e.target.select()}
-                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 12, textAlign: "right", boxSizing: "border-box", color: "#92400e", fontWeight: 500, cursor: "text" }} />
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                    <input type="number" min={1} placeholder="Bndl" title="Bundles" value={line.mistake_bundles}
+                                      onChange={e => updateSurplusLine(index, "mistake_bundles", e.target.value)}
+                                      onFocus={e => e.target.select()}
+                                      style={{ width: "100%", padding: "4px 6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 11, textAlign: "right", boxSizing: "border-box", color: "#92400e", cursor: "text" }} />
+                                    <input type="number" min={0} placeholder="Pcs/Bndl" title="Pieces per bundle" value={line.mistake_pcs_per_bundle}
+                                      onChange={e => updateSurplusLine(index, "mistake_pcs_per_bundle", e.target.value)}
+                                      onFocus={e => e.target.select()}
+                                      style={{ width: "100%", padding: "4px 6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 11, textAlign: "right", boxSizing: "border-box", color: "#92400e", cursor: "text" }} />
+                                    {mistakeQtyOf(line) > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textAlign: "right" }}>{mistakeQtyOf(line)} pcs</div>}
+                                  </div>
                                 </td>
                                 <td style={{ padding: "7px 5px" }}>
                                   <input type="number" placeholder="0"
