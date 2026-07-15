@@ -93,6 +93,7 @@ import productMovementRoutes from "./routes/reports/productMovement.js";
 import searchRoutes from "./routes/search.js";
 import newNotificationsRoutes from "./routes/notifications.js";
 import auditLogViewerRoutes from "./routes/auditlog.js";
+import customerLedgerExportRoutes from "./routes/customerLedgerExport.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -208,6 +209,7 @@ app.use("/api/reports/product-movement", productMovementRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/notifications", newNotificationsRoutes);
 app.use("/api/audit-log", auditLogViewerRoutes);
+app.use("/api/customer-ledgers", customerLedgerExportRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/inventory", inventoryRoutes);

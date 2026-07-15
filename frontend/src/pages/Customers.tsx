@@ -17,6 +17,7 @@ import {
   FaWallet,
   FaWhatsapp,
   FaFileInvoice,
+  FaFilePdf,
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
 import { deleteCustomer } from "../api/userApi";
@@ -45,6 +46,8 @@ const Customers: React.FC = () => {
   const [reminderList, setReminderList] = useState<any[]>([]);
   const [sentIds, setSentIds] = useState<Set<number>>(new Set());
   const [menuAnchor, setMenuAnchor] = useState<{ id: number; top: number; left: number } | null>(null);
+  const [exportingPDF, setExportingPDF] = useState(false);
+  const [downloadingLedgerId, setDownloadingLedgerId] = useState<number | null>(null);
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -144,6 +147,44 @@ const Customers: React.FC = () => {
     link.download = `Customer_Outstanding_${today.replace(/\//g, "-")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadPdfBlob = async (response: Response, filename: string) => {
+    if (!response.ok) throw new Error("Export failed");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportAllLedgers = async () => {
+    setExportingPDF(true);
+    try {
+      const response = await apiFetch("/customer-ledgers/export-all-pdf");
+      await downloadPdfBlob(response, `all-customer-ledgers-${new Date().toISOString().split("T")[0]}.pdf`);
+    } catch (e: any) {
+      alert("Export failed: " + e.message);
+    } finally {
+      setExportingPDF(false);
+    }
+  };
+
+  const handleDownloadCustomerLedgerPdf = async (customer: any) => {
+    setDownloadingLedgerId(customer.id);
+    try {
+      const response = await apiFetch(`/customer-ledgers/${customer.id}/pdf`);
+      const name = (customer.nickname || customer.username || "customer").replace(/\s+/g, "-");
+      await downloadPdfBlob(response, `${name}-ledger.pdf`);
+    } catch (e: any) {
+      alert("Export failed: " + e.message);
+    } finally {
+      setDownloadingLedgerId(null);
+    }
   };
 
   const handleEdit = (customer: any) => {
@@ -300,6 +341,19 @@ const Customers: React.FC = () => {
             }}
           >
             📊 Export Excel
+          </button>
+          <button
+            onClick={handleExportAllLedgers}
+            disabled={exportingPDF}
+            title="Generate a combined PDF with every customer's individual ledger"
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 14px", borderRadius: "50px",
+              background: exportingPDF ? "#94a3b8" : "#dc2626", color: "#fff", border: "none",
+              fontWeight: 600, fontSize: "13px", cursor: exportingPDF ? "not-allowed" : "pointer"
+            }}
+          >
+            {exportingPDF ? <>⏳ Generating PDF...</> : <>📄 Export All Ledgers PDF</>}
           </button>
           <button
             onClick={openReminderModal}
@@ -510,6 +564,15 @@ const Customers: React.FC = () => {
                   >
                     <FaFileInvoice size={11} /> Ledger
                   </Link>
+                  <button
+                    className="page-btn-round"
+                    style={{ flex: 1 }}
+                    disabled={downloadingLedgerId === user.id}
+                    onClick={() => handleDownloadCustomerLedgerPdf(user)}
+                    title="Download Ledger PDF"
+                  >
+                    {downloadingLedgerId === user.id ? "⏳" : <><FaFilePdf size={11} /> PDF</>}
+                  </button>
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => handleEdit(user)}>
                     <FaEdit size={11} /> Edit
                   </button>
@@ -663,6 +726,14 @@ const Customers: React.FC = () => {
                         >
                           <FaFileInvoice size={12} />
                         </Link>
+                        <button
+                          className="page-btn-round-sm"
+                          onClick={(e) => { e.stopPropagation(); handleDownloadCustomerLedgerPdf(user); }}
+                          disabled={downloadingLedgerId === user.id}
+                          title="Download Ledger PDF"
+                        >
+                          {downloadingLedgerId === user.id ? "⏳" : <FaFilePdf size={12} />}
+                        </button>
                         <button
                           className="page-btn-round-sm"
                           onClick={() => handleEdit(user)}
