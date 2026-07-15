@@ -150,7 +150,16 @@ const Customers: React.FC = () => {
   };
 
   const downloadPdfBlob = async (response: Response, filename: string) => {
-    if (!response.ok) throw new Error("Export failed");
+    if (!response.ok) {
+      let message = `Export failed (HTTP ${response.status})`;
+      try {
+        const data = await response.json();
+        message = data.details || data.error || message;
+      } catch {
+        // response body wasn't JSON — keep the generic HTTP-status message
+      }
+      throw new Error(message);
+    }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

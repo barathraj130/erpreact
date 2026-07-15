@@ -182,10 +182,21 @@ function renderDocumentHTML(co, sections, { showCover, generatedDate, customerCo
 }
 
 async function renderPdf(html) {
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    // --disable-dev-shm-usage matters here specifically: this endpoint can render a much
+    // larger document (many customers, many transaction rows) than the existing single-invoice
+    // PDF route, and Docker's default /dev/shm (~64MB) is too small for Chrome to use its normal
+    // shared-memory path at that size — it needs to fall back to disk instead, or it crashes.
+    const browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    });
     try {
         const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: "networkidle0" });
+        // "load" (not "networkidle0") — this HTML is fully self-contained (inline CSS, no
+        // images/fonts/external requests), and networkidle0 can hang indefinitely on
+        // page.setContent() for larger documents when there's no real network activity
+        // to go idle from.
+        await page.setContent(html, { waitUntil: "load", timeout: 60000 });
         return await page.pdf({ format: "A4", printBackground: true, margin: { top: "10mm", right: "10mm", bottom: "10mm", left: "10mm" } });
     } finally {
         await browser.close();
