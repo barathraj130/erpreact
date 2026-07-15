@@ -494,11 +494,13 @@ router.post('/', authMiddleware, async (req, res) => {
         return res.status(403).json({ error: "Unauthorized. Superadmin only." });
     }
 
-    const { 
+    const {
         company_name, company_code, admin_email, admin_password,
-        plan_name, max_branches, max_users, enabled_modules, expiry_date 
+        plan_name, max_branches, max_users, enabled_modules, expiry_date,
+        monthly_price, quarterly_price, yearly_price, billing_cycle,
+        max_invoices_per_month, trial_days
     } = req.body;
-    
+
     if (!company_name || !company_code || !admin_email || !admin_password) {
         return res.status(400).json({ error: "Missing required identity fields." });
     }
@@ -509,10 +511,22 @@ router.post('/', authMiddleware, async (req, res) => {
         await client.query('BEGIN');
 
         // 1. Create Subscription
+        const trialDaysNum = parseInt(trial_days) || 0;
+        const trialEndsAt = trialDaysNum > 0 ? new Date(Date.now() + trialDaysNum * 86400000) : null;
+        const subStatus = trialDaysNum > 0 ? 'TRIAL' : 'ACTIVE';
+
         const subRes = await client.query(
-            `INSERT INTO subscriptions (plan_name, max_branches, max_users, enabled_modules, expiry_date, status) 
-             VALUES ($1, $2, $3, $4, $5, 'ACTIVE') RETURNING id`,
-            [plan_name || 'Standard', max_branches || 1, max_users || 5, enabled_modules || 'sales,finance', expiry_date || null]
+            `INSERT INTO subscriptions (
+                plan_name, max_branches, max_users, enabled_modules, expiry_date, status,
+                monthly_price, quarterly_price, yearly_price, billing_cycle,
+                max_invoices_per_month, trial_ends_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+            [
+                plan_name || 'Standard', max_branches || 1, max_users || 5, enabled_modules || 'sales,finance', expiry_date || null, subStatus,
+                monthly_price || 0, quarterly_price || 0, yearly_price || 0, billing_cycle || 'monthly',
+                max_invoices_per_month || 500, trialEndsAt
+            ]
         );
         const subscriptionId = subRes.rows[0].id;
 

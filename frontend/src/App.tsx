@@ -9,6 +9,8 @@ import {
 } from "react-router-dom";
 import Sidebar from "./components/Layout/Sidebar";
 import Topbar from "./components/Layout/Topbar";
+import KeyboardShortcuts from "./components/KeyboardShortcuts";
+import AuditLog from "./pages/admin/AuditLog";
 import "./components/Layout/Layout.css";
 import { TenantProvider, useTenant } from "./context/TenantContext";
 import { PermissionsProvider } from "./context/PermissionsContext";
@@ -219,6 +221,7 @@ const EnterpriseLayout: React.FC<{
         />
       )}
 
+      <KeyboardShortcuts />
     </div>
   );
 };
@@ -292,6 +295,10 @@ const App: React.FC = () => {
               path="/platform-admin/config"
               element={<PlatformAdmin tab="config" />}
             />
+            <Route
+              path="/superadmin"
+              element={<PlatformAdmin tab="hub" />}
+            />
           </Route>
 
           <Route element={<AdminRoute />}>
@@ -309,6 +316,7 @@ const App: React.FC = () => {
             <Route path="/admin/employees" element={<Employees />} />
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/branches/:id" element={<BranchDetail />} />
+            <Route path="/admin/audit-log" element={<AuditLog />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>

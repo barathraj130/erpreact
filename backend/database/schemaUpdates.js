@@ -1247,6 +1247,14 @@ export const runSchemaUpdates = async () => {
             )
         `).catch(() => {});
 
+        // ── Tenant pricing & trial support ──────────────────────────────────
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS quarterly_price NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS yearly_price NUMERIC(10,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'monthly'`).catch(() => {});
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS max_invoices_per_month INTEGER DEFAULT 500`).catch(() => {});
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at DATE`).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

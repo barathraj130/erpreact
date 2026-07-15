@@ -24,8 +24,8 @@ export const checkModule = (moduleName) => {
                 return res.status(403).json({ error: "No active subscription found for this company." });
             }
 
-            // Check status and expiry
-            if (subscription.status !== 'ACTIVE') {
+            // Check status and expiry — trial tenants get full access until trial_ends_at/expiry_date lapses
+            if (!['ACTIVE', 'TRIAL'].includes(subscription.status)) {
                 return res.status(403).json({ error: `Subscription is ${subscription.status}. Please contact support.` });
             }
 

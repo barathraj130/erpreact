@@ -413,4 +413,71 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 768px) {
   .settings-container { flex-direction: column; padding: 16px; }
   .settings-sidebar { width: 100%; }
+
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Dark theme override — additive block, appended for the new
+   theme toggle feature. Every page already inherits the --bg /
+   --surface / --text-* / --border variables above, so redefining
+   them here (scoped to [data-theme="dark"]) is sufficient to
+   theme the whole app without touching any existing rule.
+   ───────────────────────────────────────────────────────────── */
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-2: #16213a;
+  --border: #334155;
+  --border-soft: #263449;
+
+  --text-1: #f1f5f9;
+  --text-2: #94a3b8;
+  --text-3: #64748b;
+
+  --accent: #3b82f6;
+  --accent-bg: rgba(59, 130, 246, 0.15);
+
+  --green: #22c55e;
+  --green-bg: rgba(34, 197, 94, 0.12);
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.12);
+  --amber: #fbbf24;
+  --amber-bg: rgba(251, 191, 36, 0.12);
+
+  /* Legacy aliases — kept in sync so older pages also pick up dark mode */
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-glow: rgba(59, 130, 246, 0.2);
+  --primary-surface: rgba(59, 130, 246, 0.1);
+  --success: #22c55e;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --bg-body: #0f172a;
+  --bg-canvas: #0f172a;
+  --bg-sidebar: #1e293b;
+  --bg-card: #1e293b;
+  --bg-topbar: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #334155;
+  --border-subtle: #263449;
+  --border-standard: #334155;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Mobile-responsive utility classes — additive, opt-in.
+   New pages/components may use these; nothing existing depends
+   on them, so nothing existing is affected.
+   ───────────────────────────────────────────────────────────── */
+.hide-mobile { }
+.table-scroll { overflow-x: auto; }
+
+@media (max-width: 768px) {
+  .hide-mobile { display: none !important; }
+  .kpi-grid-responsive { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 480px) {
+  .kpi-grid-responsive { grid-template-columns: 1fr !important; }
 }

@@ -352,3 +352,81 @@
     gap: 12px;
     margin-top: 24px;
 }
+
+/* ── Feature Checklist ── */
+.pa-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  border: 1px solid var(--pa-border);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--pa-bg);
+}
+
+.pa-feature-category-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pa-text-muted);
+  margin-bottom: 8px;
+}
+
+.pa-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.pa-feature-item input { cursor: pointer; }
+
+/* ── Segmented Control ── */
+.pa-segmented {
+  display: flex;
+  border: 1px solid var(--pa-border);
+  border-radius: 8px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.pa-segmented-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: var(--pa-surface);
+  color: var(--pa-text-secondary);
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+  border-right: 1px solid var(--pa-border);
+}
+
+.pa-segmented-btn:last-child { border-right: none; }
+.pa-segmented-btn.active { background: var(--pa-text-primary); color: #fff; }
+
+/* ── Detail Panel Tabs ── */
+.pa-tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--pa-border);
+  margin-bottom: 20px;
+}
+
+.pa-tab-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--pa-text-muted);
+  cursor: pointer;
+  font-family: 'Satoshi', sans-serif;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.pa-tab-btn.active { color: var(--pa-text-primary); border-bottom-color: var(--pa-accent); font-weight: 600; }
