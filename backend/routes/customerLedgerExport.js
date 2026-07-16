@@ -21,16 +21,19 @@ async function resolveCompanyBranding(companyId) {
          FROM companies WHERE id = $1`,
         [companyId]
     );
+    // bill_format_settings / bank_details are optional overrides on top of the
+    // companies row — some deployments may not have these tables migrated yet,
+    // so fall back to company defaults rather than failing the whole export.
     const fmt = await db.pgGet(
         `SELECT * FROM bill_format_settings WHERE company_id = $1`,
         [companyId]
-    );
+    ).catch(() => undefined);
     const defaultBank = await db.pgGet(
         `SELECT bank_name, account_number, ifsc_code
          FROM bank_details WHERE company_id = $1
          ORDER BY is_default DESC, id ASC LIMIT 1`,
         [companyId]
-    );
+    ).catch(() => undefined);
 
     return {
         name: fmt?.business_name || company?.company_name || "",
