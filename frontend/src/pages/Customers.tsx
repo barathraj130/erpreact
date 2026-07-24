@@ -19,7 +19,7 @@ import {
   FaFileInvoice,
   FaFilePdf,
 } from "react-icons/fa";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { deleteCustomer } from "../api/userApi";
 import { apiFetch } from "../utils/api";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
@@ -28,6 +28,7 @@ import AddCustomerModal from "./AddCustomerModal";
 import "./PageShared.css";
 
 const Customers: React.FC = () => {
+  const navigate = useNavigate();
   const [scopeFilter, setScopeFilter] = useState<"active" | "all">("active");
   const { customers = [], loading, error: fetchError, refresh } = useUsers(scopeFilter === "all" ? "all" : undefined);
 
@@ -582,6 +583,9 @@ const Customers: React.FC = () => {
                   >
                     {downloadingLedgerId === user.id ? "⏳" : <><FaFilePdf size={11} /> PDF</>}
                   </button>
+                  <button className="page-btn-round" style={{ flex: 1 }} onClick={() => navigate(`/settlements/new?customer_id=${user.id}`)}>
+                    🤝 Settle
+                  </button>
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => handleEdit(user)}>
                     <FaEdit size={11} /> Edit
                   </button>
@@ -742,6 +746,13 @@ const Customers: React.FC = () => {
                           title="Download Ledger PDF"
                         >
                           {downloadingLedgerId === user.id ? "⏳" : <FaFilePdf size={12} />}
+                        </button>
+                        <button
+                          className="page-btn-round-sm"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/settlements/new?customer_id=${user.id}`); }}
+                          title="Debt Settlement"
+                        >
+                          🤝
                         </button>
                         <button
                           className="page-btn-round-sm"

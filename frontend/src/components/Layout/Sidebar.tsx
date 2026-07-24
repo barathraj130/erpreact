@@ -84,6 +84,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
               { name: "Sales Returns", path: "/sales/returns" },
               { name: "🛍️ Retail Revenue", path: "/sales/retail" },
               { name: "Customers", path: "/customers" },
+              { name: "🤝 Debt Settlements", path: "/settlements" },
               { name: "Portal Alerts", path: "/sales/customer-notifications" }
           ]
       });

@@ -11,6 +11,9 @@ import Sidebar from "./components/Layout/Sidebar";
 import Topbar from "./components/Layout/Topbar";
 import KeyboardShortcuts from "./components/KeyboardShortcuts";
 import AuditLog from "./pages/admin/AuditLog";
+import Settlements from "./pages/settlements/Settlements";
+import NewSettlement from "./pages/settlements/NewSettlement";
+import SettlementDetail from "./pages/settlements/SettlementDetail";
 import "./components/Layout/Layout.css";
 import { TenantProvider, useTenant } from "./context/TenantContext";
 import { PermissionsProvider } from "./context/PermissionsContext";
@@ -317,6 +320,9 @@ const App: React.FC = () => {
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/branches/:id" element={<BranchDetail />} />
             <Route path="/admin/audit-log" element={<AuditLog />} />
+            <Route path="/settlements" element={<Settlements />} />
+            <Route path="/settlements/new" element={<NewSettlement />} />
+            <Route path="/settlements/:id" element={<SettlementDetail />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>

@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
-import { FaUserAlt, FaLock, FaEnvelope } from "react-icons/fa";
+import { FaUserAlt, FaLock, FaEnvelope, FaBuilding } from "react-icons/fa";
 
 const CustomerLogin: React.FC = () => {
     const navigate = useNavigate();
+    const [companyCode, setCompanyCode] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
@@ -15,16 +16,20 @@ const CustomerLogin: React.FC = () => {
         try {
             const res = await apiFetch("/auth/login", {
                 method: "POST",
-                body: JSON.stringify({ email, password, company_code: "1" }), // Assuming default company code
+                body: JSON.stringify({ email, password, company_code: companyCode.trim() }),
                 headers: { "Content-Type": "application/json" }
             }, false);
 
             if (res.ok) {
                 const data = await res.json();
-                localStorage.setItem("token", data.accessToken);
-                localStorage.setItem("refreshToken", data.refreshToken);
+                // Must use the same localStorage keys apiFetch reads everywhere else in the
+                // app ("erp-token" / "erp-refresh-token") — otherwise every subsequent
+                // authenticated portal request (orders, ledger, products) silently fails to
+                // attach the token and gets rejected with 401.
+                localStorage.setItem("erp-token", data.accessToken);
+                localStorage.setItem("erp-refresh-token", data.refreshToken);
                 localStorage.setItem("user", JSON.stringify(data.user));
-                
+
                 await apiFetch("/portal/activity", {
                     method: "POST",
                     body: JSON.stringify({ activity: "logged into portal" }),
@@ -32,7 +37,8 @@ const CustomerLogin: React.FC = () => {
 
                 navigate("/portal/home");
             } else {
-                alert("Invalid Credentials");
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || "Invalid Credentials");
             }
         } catch (err) {
             console.error(err);
@@ -55,6 +61,20 @@ const CustomerLogin: React.FC = () => {
                     </div>
 
                     <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                        <div>
+                            <label style={{ display: "block", marginBottom: "8px", fontSize: "0.85rem", fontWeight: 700, color: "#475569" }}>Company Code</label>
+                            <div style={{ position: "relative" }}>
+                                <FaBuilding style={{ position: "absolute", left: "14px", top: "14px", color: "#94a3b8" }} />
+                                <input
+                                    type="text"
+                                    required
+                                    value={companyCode}
+                                    onChange={e => setCompanyCode(e.target.value)}
+                                    style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }}
+                                    placeholder="e.g. TITAN-X"
+                                />
+                            </div>
+                        </div>
                         <div>
                             <label style={{ display: "block", marginBottom: "8px", fontSize: "0.85rem", fontWeight: 700, color: "#475569" }}>Email Address</label>
                             <div style={{ position: "relative" }}>

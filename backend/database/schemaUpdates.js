@@ -1255,6 +1255,127 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS max_invoices_per_month INTEGER DEFAULT 500`).catch(() => {});
         await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at DATE`).catch(() => {});
 
+        // ── Customer Debt Settlement module ──────────────────────────────────
+        // Note: customer_id references users(id) — this schema has no separate
+        // customers table; customers are users rows with role IN ('user','customer').
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS debt_settlements (
+                id                  SERIAL PRIMARY KEY,
+                company_id          INTEGER NOT NULL REFERENCES companies(id),
+                branch_id           INTEGER REFERENCES branches(id),
+                settlement_number   VARCHAR(30) UNIQUE NOT NULL,
+                customer_id         INTEGER REFERENCES users(id),
+                settlement_date     DATE NOT NULL DEFAULT CURRENT_DATE,
+                settlement_type     VARCHAR(20) NOT NULL
+                                    CHECK (settlement_type IN ('goods','asset','cheque','mixed','cash_partial')),
+                total_value         NUMERIC(12,2) NOT NULL DEFAULT 0,
+                outstanding_before  NUMERIC(12,2) DEFAULT 0,
+                outstanding_after   NUMERIC(12,2) DEFAULT 0,
+                cash_amount         NUMERIC(12,2) DEFAULT 0,
+                goods_amount        NUMERIC(12,2) DEFAULT 0,
+                asset_amount        NUMERIC(12,2) DEFAULT 0,
+                cheque_amount       NUMERIC(12,2) DEFAULT 0,
+                status              VARCHAR(20) DEFAULT 'pending'
+                                    CHECK (status IN ('pending','approved','rejected','voided')),
+                is_conditional      BOOLEAN DEFAULT false,
+                legal_transfer_done BOOLEAN DEFAULT false,
+                notes               TEXT,
+                rejection_reason    TEXT,
+                recorded_by         INTEGER REFERENCES users(id),
+                approved_by         INTEGER REFERENCES users(id),
+                approved_at         TIMESTAMP,
+                created_at          TIMESTAMP DEFAULT NOW(),
+                updated_at          TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_company ON debt_settlements(company_id, status)`).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_customer ON debt_settlements(customer_id)`).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS settlement_invoice_links (
+                id               SERIAL PRIMARY KEY,
+                settlement_id    INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+                invoice_id       INTEGER REFERENCES invoices(id),
+                invoice_number   VARCHAR(50),
+                amount_allocated NUMERIC(12,2) NOT NULL,
+                created_at       TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS settlement_goods_items (
+                id             SERIAL PRIMARY KEY,
+                settlement_id  INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+                description    VARCHAR(200) NOT NULL,
+                quantity       INTEGER DEFAULT 1,
+                unit           VARCHAR(20) DEFAULT 'pcs',
+                condition      VARCHAR(20) DEFAULT 'good'
+                               CHECK (condition IN ('new','good','fair','poor')),
+                rate           NUMERIC(10,2) DEFAULT 0,
+                total_value    NUMERIC(12,2) DEFAULT 0,
+                stock_type     VARCHAR(20) DEFAULT 'fresh'
+                               CHECK (stock_type IN ('fresh','mistake')),
+                added_to_stock BOOLEAN DEFAULT false,
+                notes          TEXT,
+                created_at     TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS settlement_assets_items (
+                id                     SERIAL PRIMARY KEY,
+                settlement_id          INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+                asset_name             VARCHAR(200) NOT NULL,
+                asset_type             VARCHAR(50) NOT NULL,
+                condition              VARCHAR(20) DEFAULT 'good',
+                weight_grams           NUMERIC(10,3),
+                purity_percent         NUMERIC(5,2),
+                rate_per_gram          NUMERIC(10,2),
+                customer_claimed_value NUMERIC(12,2),
+                agreed_value           NUMERIC(12,2) NOT NULL,
+                serial_number          VARCHAR(100),
+                document_number        VARCHAR(100),
+                needs_legal_transfer   BOOLEAN DEFAULT false,
+                transfer_done          BOOLEAN DEFAULT false,
+                transfer_done_date     DATE,
+                disposal_status        VARCHAR(20) DEFAULT 'held'
+                                       CHECK (disposal_status IN ('held','sold','returned','written_off')),
+                disposal_value         NUMERIC(12,2),
+                notes                  TEXT,
+                created_at             TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS settlement_cheque_items (
+                id             SERIAL PRIMARY KEY,
+                settlement_id  INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+                bank_name      VARCHAR(100) NOT NULL,
+                account_holder VARCHAR(200),
+                cheque_number  VARCHAR(50) NOT NULL,
+                cheque_date    DATE NOT NULL,
+                amount         NUMERIC(12,2) NOT NULL,
+                status         VARCHAR(20) DEFAULT 'pending'
+                               CHECK (status IN ('pending','cleared','bounced','cancelled')),
+                cleared_date   DATE,
+                bounce_reason  TEXT,
+                bank_charges   NUMERIC(10,2) DEFAULT 0,
+                created_at     TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS settlement_history (
+                id            SERIAL PRIMARY KEY,
+                settlement_id INTEGER REFERENCES debt_settlements(id),
+                action        VARCHAR(50) NOT NULL,
+                done_by       INTEGER REFERENCES users(id),
+                done_by_name  VARCHAR(200),
+                notes         TEXT,
+                created_at    TIMESTAMP DEFAULT NOW()
+            )
+        `).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
