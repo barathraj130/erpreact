@@ -14,6 +14,8 @@ interface OutstandingInvoice {
   status: string;
 }
 
+const isSettleable = (inv: OutstandingInvoice) => Number(inv.balance_amount) > 0 && inv.status !== "PAID";
+
 interface GoodsItem { description: string; quantity: number; unit: string; condition: string; rate: number; total_value: number; stock_type: string; notes: string; }
 interface AssetItem { asset_name: string; asset_type: string; condition: string; weight_grams: string; purity_percent: string; rate_per_gram: string; customer_claimed_value: string; agreed_value: string; serial_number: string; document_number: string; needs_legal_transfer: boolean; notes: string; }
 interface ChequeItem { bank_name: string; account_holder: string; cheque_number: string; cheque_date: string; amount: string; }
@@ -212,9 +214,9 @@ export default function NewSettlement() {
 
             {customerId && (
               <>
-                <h3 style={{ margin: "20px 0 10px", fontSize: 14 }}>Outstanding Invoices</h3>
+                <h3 style={{ margin: "20px 0 10px", fontSize: 14 }}>All Invoices</h3>
                 {invoices.length === 0 ? (
-                  <div className="page-empty">No outstanding invoices for this customer.</div>
+                  <div className="page-empty">No invoices for this customer.</div>
                 ) : (
                   <div className="page-table-wrapper">
                     <table className="page-table">
@@ -222,36 +224,43 @@ export default function NewSettlement() {
                         <tr><th></th><th>Invoice #</th><th>Date</th><th className="text-right">Balance</th><th className="text-right">Allocate</th></tr>
                       </thead>
                       <tbody>
-                        {invoices.map((inv) => (
-                          <tr key={inv.id}>
-                            <td>
-                              <input
-                                type="checkbox"
-                                checked={allocations[inv.id] !== undefined}
-                                onChange={(e) => {
-                                  setAllocations((prev) => {
-                                    const next = { ...prev };
-                                    if (e.target.checked) next[inv.id] = String(inv.balance_amount);
-                                    else delete next[inv.id];
-                                    return next;
-                                  });
-                                }}
-                              />
-                            </td>
-                            <td className="font-mono">{inv.invoice_number}</td>
-                            <td>{new Date(inv.invoice_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
-                            <td className="text-right">{fmt(Number(inv.balance_amount))}</td>
-                            <td className="text-right" style={{ width: 130 }}>
-                              <input
-                                type="number"
-                                disabled={allocations[inv.id] === undefined}
-                                value={allocations[inv.id] ?? ""}
-                                onChange={(e) => setAllocations((prev) => ({ ...prev, [inv.id]: e.target.value }))}
-                                style={{ ...input, textAlign: "right", padding: "5px 8px" }}
-                              />
-                            </td>
-                          </tr>
-                        ))}
+                        {invoices.map((inv) => {
+                          const settleable = isSettleable(inv);
+                          return (
+                            <tr key={inv.id} style={settleable ? undefined : { opacity: 0.55 }}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  disabled={!settleable}
+                                  checked={allocations[inv.id] !== undefined}
+                                  onChange={(e) => {
+                                    setAllocations((prev) => {
+                                      const next = { ...prev };
+                                      if (e.target.checked) next[inv.id] = String(inv.balance_amount);
+                                      else delete next[inv.id];
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </td>
+                              <td className="font-mono">
+                                {inv.invoice_number}
+                                {!settleable && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase" }}>{inv.status === "PAID" ? "Paid" : "No balance"}</span>}
+                              </td>
+                              <td>{new Date(inv.invoice_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
+                              <td className="text-right">{fmt(Number(inv.balance_amount))}</td>
+                              <td className="text-right" style={{ width: 130 }}>
+                                <input
+                                  type="number"
+                                  disabled={allocations[inv.id] === undefined}
+                                  value={allocations[inv.id] ?? ""}
+                                  onChange={(e) => setAllocations((prev) => ({ ...prev, [inv.id]: e.target.value }))}
+                                  style={{ ...input, textAlign: "right", padding: "5px 8px" }}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

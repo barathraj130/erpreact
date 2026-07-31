@@ -104,18 +104,18 @@ router.get("/", authMiddleware, async (req, res) => {
     }
 });
 
-// GET /api/settlements/customers/:id/outstanding — invoices eligible for settlement
+// GET /api/settlements/customers/:id/outstanding — all of the customer's invoices,
+// for the settlement invoice picker. Returns every invoice (not just unpaid ones) so
+// the admin has full visibility; balance_amount tells the frontend which are settleable.
 router.get("/customers/:id/outstanding", authMiddleware, async (req, res) => {
     try {
         const companyId = req.user.active_company_id;
         const rows = await db.pgAll(
             `SELECT id, invoice_number, invoice_type, invoice_date, total_amount, paid_amount,
-                    (total_amount - COALESCE(paid_amount, 0)) AS balance_amount, status
+                    GREATEST(0, total_amount - COALESCE(paid_amount, 0)) AS balance_amount, status
              FROM invoices
              WHERE customer_id = $1 AND company_id = $2
                AND COALESCE(is_deleted, false) = false AND COALESCE(is_nominal, false) = false
-               AND (total_amount - COALESCE(paid_amount, 0)) > 0
-               AND status <> 'PAID'
              ORDER BY invoice_date ASC`,
             [req.params.id, companyId]
         );
