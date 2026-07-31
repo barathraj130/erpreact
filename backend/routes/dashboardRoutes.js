@@ -99,7 +99,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
                 - COALESCE((
                     SELECT SUM(t.amount) FROM transactions t
                     WHERE t.reference_id = u.id AND t.company_id = $1
-                      AND t.type = 'CUSTOMER_PAYMENT'
+                      AND t.type IN ('CUSTOMER_PAYMENT', 'PAYMENT_TO_CUSTOMER')
                 ), 0)
                 - COALESCE((
                     SELECT SUM(t.amount) FROM transactions t
@@ -152,7 +152,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
                     - COALESCE((
                         SELECT SUM(t.amount) FROM transactions t
                         WHERE t.reference_id = u.id AND t.company_id = $1
-                          AND t.type = 'CUSTOMER_PAYMENT'
+                          AND t.type IN ('CUSTOMER_PAYMENT', 'PAYMENT_TO_CUSTOMER')
                     ), 0)
                     - COALESCE((
                         SELECT SUM(t.amount) FROM transactions t
@@ -353,7 +353,7 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
                         - COALESCE((
                             SELECT SUM(t.amount) FROM transactions t
                             WHERE t.reference_id = u.id AND t.company_id = $1
-                              AND t.type = 'CUSTOMER_PAYMENT'
+                              AND t.type IN ('CUSTOMER_PAYMENT', 'PAYMENT_TO_CUSTOMER')
                         ), 0)
                         - COALESCE((
                             SELECT SUM(t.amount) FROM transactions t

@@ -150,7 +150,8 @@ const Transactions: React.FC = () => {
       data.append(key, formData[key]);
     });
     let refType = "general";
-    if (formData.type.includes("CUSTOMER")) refType = "CUSTOMER_PAYMENT";
+    if (formData.type === "PAYMENT_TO_CUSTOMER") refType = "PAYMENT_TO_CUSTOMER";
+    else if (formData.type.includes("CUSTOMER")) refType = "CUSTOMER_PAYMENT";
     if (formData.type.includes("SUPPLIER")) refType = "SUPPLIER_PAYMENT";
     if (formData.type.includes("SALARY") || formData.type.includes("ADVANCE")) refType = "employee";
     data.set("reference_type", refType);
@@ -637,6 +638,7 @@ const Transactions: React.FC = () => {
                       <option value="GIFT_CONTRIBUTION">Gift Contribution (Credit)</option>
                       <option value="RECEIPT">General Receipt (Credit)</option>
                       <option disabled>──────────</option>
+                      <option value="PAYMENT_TO_CUSTOMER">Payment to Customer (Debit)</option>
                       <option value="SUPPLIER_PAYMENT">Supplier Payment (Debit)</option>
                       <option value="EXPENSE_PAYMENT">Expense Payment (Debit)</option>
                       <option value="SALARY_PAYMENT">Staff Salary (Debit)</option>
@@ -649,13 +651,18 @@ const Transactions: React.FC = () => {
                     </select>
                   </div>
 
-                  {formData.type === 'CUSTOMER_PAYMENT' && (
+                  {(formData.type === 'CUSTOMER_PAYMENT' || formData.type === 'PAYMENT_TO_CUSTOMER') && (
                     <div className="form-group form-item-full">
                       <label>Select Customer</label>
                       <select className="form-input" style={{ borderRadius: "10px" }} value={formData.reference_id} onChange={e => setFormData({...formData, reference_id: e.target.value})} required>
                         <option value="">-- Select Customer --</option>
                         {customers.map(c => <option key={c.id} value={c.id}>{c.username}{c.nickname ? ` (${c.nickname})` : ''}{c.phone ? ` — ${c.phone}` : ''}</option>)}
                       </select>
+                      {formData.type === 'PAYMENT_TO_CUSTOMER' && (
+                        <div style={{ fontSize: 11, color: "var(--erp-text-secondary)", marginTop: 4 }}>
+                          Credited to this customer's ledger — reduces what they owe (or puts them in credit).
+                        </div>
+                      )}
                     </div>
                   )}
 

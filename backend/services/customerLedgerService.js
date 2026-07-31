@@ -154,6 +154,12 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   if (filters.start_date) txConditions.push(`t.transaction_date >= $3`);
   if (filters.end_date)   txConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
 
+  // Payments made TO the customer, recorded via Transactions page (general purpose —
+  // refunds, advances, goodwill payments — not tied to a settlement)
+  const p2cConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'PAYMENT_TO_CUSTOMER'"];
+  if (filters.start_date) p2cConditions.push(`t.transaction_date >= $3`);
+  if (filters.end_date)   p2cConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
+
   // Round-off / discount adjustments (stored as type='ROUND_OFF' with user_id = customerId)
   const roConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'ROUND_OFF'"];
   if (filters.start_date) roConditions.push(`COALESCE(t.transaction_date, t.date) >= $3`);
@@ -236,6 +242,25 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          t.created_at AS sort_created_at
        FROM transactions t
        WHERE ${txConditions.join(" AND ")}
+
+       UNION ALL
+
+       SELECT
+         7000000000 + t.id AS id,
+         COALESCE(t.transaction_date, t.date) AS date,
+         'PAYMENT_TO_CUSTOMER' AS type,
+         'PAYMENT_TO_CUSTOMER' AS category,
+         t.amount AS amount,
+         COALESCE(t.description, 'Payment to Customer') AS description,
+         NULL::INTEGER AS related_invoice_id,
+         NULL::TEXT AS invoice_number,
+         NULL::TEXT AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         t.created_at AS sort_created_at
+       FROM transactions t
+       WHERE ${p2cConditions.join(" AND ")}
 
        UNION ALL
 
@@ -354,6 +379,15 @@ async function getCustomerTotals(companyId, customerId) {
     [companyId, customerId],
   );
 
+  // Payments made TO the customer via the Transactions page (refunds, advances,
+  // goodwill payments — not tied to a settlement). Reduces outstanding, same as a payment received.
+  const paymentToCustomerTotals = await db.pgGet(
+    `SELECT COALESCE(SUM(amount), 0) AS total_p2c
+     FROM transactions
+     WHERE company_id = $1 AND reference_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'`,
+    [companyId, customerId],
+  );
+
   // Also sum from sales_returns table
   let srReturnsTotal = 0;
   try {
@@ -393,7 +427,7 @@ async function getCustomerTotals(companyId, customerId) {
     total_billed: toNumber(invoiceTotals?.total_billed),
     total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
     // Discount/waiver reduces what the customer owes — treated as a credit alongside payments
-    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal,
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal + toNumber(paymentToCustomerTotals?.total_p2c),
   };
 }
 
@@ -473,8 +507,21 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     guidelineTransfer = toNumber(gtTotals.rows[0]?.total_guideline);
   } catch (e) { /* none yet */ }
 
+  // Direct customer payments recorded via the Transactions page (both directions —
+  // money received from the customer, and money paid out to them, e.g. refunds/advances).
+  let directTx = 0;
+  try {
+    const directTotals = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_direct
+       FROM transactions
+       WHERE company_id = $1 AND reference_id = $2 AND type IN ('CUSTOMER_PAYMENT', 'PAYMENT_TO_CUSTOMER')`,
+      [companyId, customerId],
+    );
+    directTx = toNumber(directTotals.rows[0]?.total_direct);
+  } catch (e) { /* none yet */ }
+
   // Discount/waiver from invoices.discount_amount reduces outstanding balance
-  const outstanding = openingBalance + billed - paid - returned - roundOff - discount - guidelineTransfer;
+  const outstanding = openingBalance + billed - paid - returned - roundOff - discount - guidelineTransfer - directTx;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);
 
