@@ -159,6 +159,11 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   if (filters.start_date) roConditions.push(`COALESCE(t.transaction_date, t.date) >= $3`);
   if (filters.end_date)   roConditions.push(`COALESCE(t.transaction_date, t.date) <= $${filters.start_date ? 4 : 3}`);
 
+  // Payments made TO the customer (e.g. land-settlement guideline value transfers)
+  const gtConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'GUIDELINE_TRANSFER'"];
+  if (filters.start_date) gtConditions.push(`COALESCE(t.transaction_date, t.date) >= $3`);
+  if (filters.end_date)   gtConditions.push(`COALESCE(t.transaction_date, t.date) <= $${filters.start_date ? 4 : 3}`);
+
   const rows = await db.pgAll(
     `SELECT * FROM (
        SELECT
@@ -250,6 +255,25 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          t.created_at AS sort_created_at
        FROM transactions t
        WHERE ${roConditions.join(" AND ")}
+
+       UNION ALL
+
+       SELECT
+         6000000000 + t.id AS id,
+         COALESCE(t.transaction_date::date, t.date::date, CURRENT_DATE) AS date,
+         'GUIDELINE_TRANSFER' AS type,
+         'PAYMENT_TO_CUSTOMER' AS category,
+         t.amount AS amount,
+         COALESCE(t.description, 'Guideline Value Transfer') AS description,
+         NULL::INTEGER AS related_invoice_id,
+         NULL::TEXT AS invoice_number,
+         NULL::TEXT AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         t.created_at AS sort_created_at
+       FROM transactions t
+       WHERE ${gtConditions.join(" AND ")}
 
        UNION ALL
 
@@ -352,11 +376,24 @@ async function getCustomerTotals(companyId, customerId) {
     roundOffTotal = toNumber(roTotals?.total_round_off);
   } catch (e) { /* ignore */ }
 
+  // Payments made TO the customer (e.g. land-settlement guideline value transfers) —
+  // these reduce what the customer owes, same direction as a payment received.
+  let guidelineTransferTotal = 0;
+  try {
+    const gtTotals = await db.pgGet(
+      `SELECT COALESCE(SUM(amount), 0) AS total_guideline
+       FROM transactions
+       WHERE company_id = $1 AND user_id = $2 AND type = 'GUIDELINE_TRANSFER'`,
+      [companyId, customerId],
+    );
+    guidelineTransferTotal = toNumber(gtTotals?.total_guideline);
+  } catch (e) { /* ignore */ }
+
   return {
     total_billed: toNumber(invoiceTotals?.total_billed),
     total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
     // Discount/waiver reduces what the customer owes — treated as a credit alongside payments
-    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount),
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal,
   };
 }
 
@@ -423,8 +460,21 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     roundOff = toNumber(roTotals.rows[0]?.total_round_off);
   } catch (e) { /* no round-offs yet */ }
 
+  // Payments made TO the customer (e.g. land-settlement guideline value transfers) —
+  // reduce outstanding the same way a payment received does.
+  let guidelineTransfer = 0;
+  try {
+    const gtTotals = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_guideline
+       FROM transactions
+       WHERE company_id = $1 AND user_id = $2 AND type = 'GUIDELINE_TRANSFER'`,
+      [companyId, customerId],
+    );
+    guidelineTransfer = toNumber(gtTotals.rows[0]?.total_guideline);
+  } catch (e) { /* none yet */ }
+
   // Discount/waiver from invoices.discount_amount reduces outstanding balance
-  const outstanding = openingBalance + billed - paid - returned - roundOff - discount;
+  const outstanding = openingBalance + billed - paid - returned - roundOff - discount - guidelineTransfer;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);
 

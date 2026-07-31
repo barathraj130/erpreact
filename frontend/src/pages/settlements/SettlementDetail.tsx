@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   FaHandshake, FaCheckCircle, FaTimesCircle, FaHourglassHalf, FaFileContract,
-  FaBoxOpen, FaGem, FaMoneyCheckAlt, FaHistory, FaExclamationTriangle,
+  FaBoxOpen, FaGem, FaMoneyCheckAlt, FaHistory, FaExclamationTriangle, FaHandHoldingUsd,
 } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
@@ -10,6 +10,10 @@ import "../PageShared.css";
 
 const fmt = (n: any) => "₹" + (Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 const fmtDate = (d: string) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtDay = (d: string) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+const label: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-2)", textTransform: "uppercase", marginBottom: 5, letterSpacing: 0.3 };
+const input: React.CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-soft)", fontSize: 13, boxSizing: "border-box", background: "var(--surface)", color: "var(--text-1)" };
 
 const STATUS_STYLES: Record<string, { bg: string; fg: string }> = {
   pending: { bg: "#fffbeb", fg: "#b45309" },
@@ -23,6 +27,7 @@ const HISTORY_ICONS: Record<string, React.ReactNode> = {
   approved: <FaCheckCircle color="#16a34a" />,
   rejected: <FaTimesCircle color="#dc2626" />,
   legal_transfer_confirmed: <FaFileContract color="#16a34a" />,
+  guideline_transfer_recorded: <FaHandHoldingUsd color="#dc2626" />,
 };
 
 export default function SettlementDetail() {
@@ -36,6 +41,14 @@ export default function SettlementDetail() {
   const [busy, setBusy] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [showReject, setShowReject] = useState(false);
+
+  const [showGtForm, setShowGtForm] = useState(false);
+  const [gtAmount, setGtAmount] = useState("");
+  const [gtMode, setGtMode] = useState("bank");
+  const [gtDate, setGtDate] = useState(new Date().toISOString().split("T")[0]);
+  const [gtReference, setGtReference] = useState("");
+  const [gtPaidTo, setGtPaidTo] = useState("");
+  const [savingGt, setSavingGt] = useState(false);
 
   useEffect(() => {
     load();
@@ -69,6 +82,27 @@ export default function SettlementDetail() {
     }
   };
 
+  const handleGuidelineTransfer = async () => {
+    if (!gtAmount || parseFloat(gtAmount) <= 0) { alert("Enter a valid amount"); return; }
+    if (!gtDate) { alert("Enter transfer date"); return; }
+    setSavingGt(true);
+    try {
+      const res = await apiFetch(`/settlements/${id}/record-guideline-transfer`, {
+        method: "POST",
+        body: { amount: gtAmount, payment_mode: gtMode, payment_date: gtDate, reference_number: gtReference, paid_to: gtPaidTo },
+      });
+      const result = await res.json();
+      if (!result.success) { alert(result.error || "Failed to record transfer"); return; }
+      setShowGtForm(false);
+      setGtAmount(""); setGtReference(""); setGtPaidTo("");
+      await load();
+    } catch (e: any) {
+      alert(e.message || "Failed to record transfer");
+    } finally {
+      setSavingGt(false);
+    }
+  };
+
   if (loading) return <div className="page-empty" style={{ margin: 40 }}>Loading…</div>;
   if (!data || data.error || !data.settlement) return <div className="page-empty" style={{ margin: 40 }}>Settlement not found.</div>;
 
@@ -88,16 +122,93 @@ export default function SettlementDetail() {
         </span>
       </div>
 
-      {awaitingTransfer && (
-        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <span style={{ color: "#92400e", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-            <FaHourglassHalf /> Awaiting Legal Transfer
-          </span>
+      {awaitingTransfer && !s.guideline_transfer_recorded && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "14px 18px", marginBottom: 20 }}>
+          <div style={{ color: "#dc2626", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <FaHandHoldingUsd /> Guideline Value Transfer Not Recorded
+          </div>
+          <div style={{ color: "#b91c1c", fontSize: 12.5, marginBottom: 12 }}>
+            If this land settlement involves paying {s.customer_name} the government guideline value before the land legally transfers, record that payment first — it will appear in {s.customer_name}'s ledger as a credit received, ahead of the settlement's own outstanding-reduction entry.
+          </div>
           {isAdmin && (
-            <button className="page-btn-round page-btn-round-primary" disabled={busy} onClick={() => runAction(`/settlements/${id}/confirm-transfer`, undefined, "Confirm legal transfer is done? This will reduce the customer's outstanding balance.")}>
-              Confirm Transfer Done
-            </button>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="page-btn-round-danger" disabled={busy} onClick={() => { setGtPaidTo(s.customer_name); setShowGtForm(true); }}>
+                Record Guideline Transfer
+              </button>
+              <button
+                className="page-btn-round"
+                disabled={busy}
+                onClick={() => runAction(`/settlements/${id}/confirm-transfer`, undefined, "No guideline transfer needed for this settlement? This will confirm the legal transfer and reduce the customer's outstanding balance directly.")}
+              >
+                No Transfer Needed — Confirm Transfer Done
+              </button>
+            </div>
           )}
+        </div>
+      )}
+
+      {awaitingTransfer && s.guideline_transfer_recorded && (
+        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "14px 18px", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#15803d", display: "flex", alignItems: "center", gap: 8 }}>
+                <FaCheckCircle /> Guideline Transfer Done
+              </div>
+              <div style={{ fontSize: 12, color: "#15803d", marginTop: 2 }}>
+                {fmt(s.guideline_transfer_amount)} transferred to {s.customer_name} on {fmtDay(s.guideline_transfer_date)} via {String(s.guideline_transfer_mode || "").toUpperCase()}
+                {s.guideline_transfer_reference ? ` — Ref: ${s.guideline_transfer_reference}` : ""}. Reflected in customer ledger.
+              </div>
+            </div>
+            {isAdmin && (
+              <button className="page-btn-round page-btn-round-primary" disabled={busy} onClick={() => runAction(`/settlements/${id}/confirm-transfer`, undefined, "Confirm legal transfer is done? This will reduce the customer's outstanding balance.")}>
+                Confirm Transfer Done
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showGtForm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, padding: "26px 28px", width: 460, maxWidth: "90vw", border: "1px solid var(--border-soft)" }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Record Guideline Value Transfer</h3>
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 18 }}>
+              This amount is credited to {s.customer_name}'s ledger immediately, and the {gtMode} ledger will show it going out from JBS.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={label}>Amount (₹) *</label>
+                <input type="number" value={gtAmount} onChange={(e) => setGtAmount(e.target.value)} style={{ ...input, fontSize: 16, fontWeight: 700 }} />
+              </div>
+              <div>
+                <label style={label}>Payment Mode *</label>
+                <select value={gtMode} onChange={(e) => setGtMode(e.target.value)} style={input}>
+                  <option value="bank">Bank Transfer</option>
+                  <option value="upi">UPI</option>
+                  <option value="cash">Cash</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
+              <div>
+                <label style={label}>Transfer Date *</label>
+                <input type="date" value={gtDate} onChange={(e) => setGtDate(e.target.value)} style={input} />
+              </div>
+              <div>
+                <label style={label}>UTR / Reference No</label>
+                <input type="text" value={gtReference} onChange={(e) => setGtReference(e.target.value)} placeholder="UTR or cheque number" style={input} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={label}>Paid To</label>
+              <input type="text" value={gtPaidTo} onChange={(e) => setGtPaidTo(e.target.value)} placeholder={s.customer_name} style={input} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <button className="page-btn-round" onClick={() => setShowGtForm(false)}>Cancel</button>
+              <button className="page-btn-round page-btn-round-primary" disabled={savingGt} onClick={handleGuidelineTransfer}>
+                {savingGt ? "Recording…" : `Transfer ${fmt(gtAmount || 0)} →`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

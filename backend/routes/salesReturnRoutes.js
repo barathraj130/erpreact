@@ -31,7 +31,55 @@ const ensureTable = async () => {
     await db.pgRun(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS return_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
     // Track how much of a credit note has been applied to new invoices
     await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS applied_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    // GST breakdown on the return — total_amount already includes this when the
+    // original invoice was a TAX invoice (see isGSTInvoice below); items stay JSONB,
+    // there is no separate sales_return_items table in this schema.
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS total_taxable_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS total_cgst NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS total_sgst NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS total_igst NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS total_gst_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS is_gst_return BOOLEAN DEFAULT false`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS original_invoice_type VARCHAR(30)`).catch(() => {});
+    await db.pgRun(`ALTER TABLE sales_returns ADD COLUMN IF NOT EXISTS customer_state_code VARCHAR(5)`).catch(() => {});
 };
+
+// Invoice types that do NOT carry GST — matches the exclusion list already used
+// by customerLedgerService.js for the same distinction elsewhere in this app.
+const NON_GST_INVOICE_TYPES = ['NON_TAX_INVOICE', 'RETAIL_SALE', 'GIFTED_ITEM', 'NSB_INVOICE'];
+const isGSTInvoiceType = (invoiceType) => !NON_GST_INVOICE_TYPES.includes(String(invoiceType || '').toUpperCase());
+
+/**
+ * Computes taxable/CGST/SGST/IGST/total for one return line item, given the
+ * original invoice's GST-applicability and the buyer/seller state comparison —
+ * same split logic as invoicePdfRoutes.js uses when the invoice was created.
+ */
+function computeItemTax(item, { isGSTInvoice, isSameState }) {
+    const qty = Number(item.qty) || 0;
+    const rate = Number(item.rate) || 0;
+    const taxable = qty * rate;
+    const gstRate = isGSTInvoice ? (Number(item.gst_rate) || 0) : 0;
+    const gstAmount = taxable * gstRate / 100;
+
+    let cgst = 0, sgst = 0, igst = 0;
+    if (gstAmount > 0) {
+        if (isSameState) { cgst = gstAmount / 2; sgst = gstAmount / 2; }
+        else { igst = gstAmount; }
+    }
+
+    return {
+        product_id: item.product_id || null,
+        description: item.description || 'Returned item',
+        qty, rate,
+        taxable_amount: taxable,
+        gst_rate: gstRate,
+        cgst_amount: cgst,
+        sgst_amount: sgst,
+        igst_amount: igst,
+        total_gst_amount: gstAmount,
+        line_total: taxable + gstAmount,
+    };
+}
 
 // ── helper: generate return number ────────────────────────────────────────────
 async function generateReturnNumber(companyId) {
@@ -72,9 +120,11 @@ router.get('/invoices-for-return', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const { customer_id } = req.query;
     try {
-        let sql = `SELECT i.id, i.invoice_number, i.invoice_date,
+        let sql = `SELECT i.id, i.invoice_number, i.invoice_date, i.invoice_type,
                           i.total_amount, i.paid_amount, i.status,
                           u.username AS customer_name, u.id AS customer_id,
+                          u.state_code AS customer_state_code,
+                          c2.state_code AS company_state_code,
                           COALESCE(
                               (SELECT json_agg(json_build_object(
                                   'id', li.id, 'description', li.description,
@@ -86,6 +136,7 @@ router.get('/invoices-for-return', authMiddleware, async (req, res) => {
                           ), '[]') AS line_items
                    FROM invoices i
                    LEFT JOIN users u ON u.id = i.customer_id
+                   LEFT JOIN companies c2 ON c2.id = i.company_id
                    WHERE i.company_id = $1
                      AND COALESCE(i.is_deleted, false) = false
                      AND i.invoice_type NOT IN ('CREDIT_NOTE')`;
@@ -116,17 +167,6 @@ router.post('/', authMiddleware, async (req, res) => {
         return res.status(400).json({ error: 'At least one return item is required' });
     }
 
-    const processedItems = items.map(i => ({
-        product_id:   i.product_id || null,
-        description:  i.description || 'Returned item',
-        qty:          Number(i.qty) || 0,
-        rate:         Number(i.rate) || 0,
-        line_total:   (Number(i.qty) || 0) * (Number(i.rate) || 0),
-    }));
-
-    const totalAmt = processedItems.reduce((s, i) => s + i.line_total, 0);
-    if (totalAmt <= 0) return res.status(400).json({ error: 'Return amount must be > 0' });
-
     const rDate      = return_date || new Date().toISOString().split('T')[0];
     const rType      = refund_type || 'CREDIT_NOTE';
 
@@ -136,19 +176,45 @@ router.post('/', authMiddleware, async (req, res) => {
         client = await db.getClient();
         await client.query('BEGIN');
 
-        // Fetch original invoice number if id provided
+        // Fetch original invoice + GST context (type, buyer/seller state) if id provided.
+        // GST applicability and the CGST+SGST vs IGST split are both determined server-side
+        // from the real invoice — never trusted from the client — matching how invoicePdfRoutes.js
+        // computes the same split when the invoice was originally created.
         let origInvNumber = null;
         let origCustomerId = customer_id || null;
+        let isGSTInvoice = false;
+        let isSameState = true;
+        let originalInvoiceType = null;
+        let customerStateCode = null;
         if (original_invoice_id) {
             const inv = await client.query(
-                `SELECT invoice_number, customer_id FROM invoices WHERE id = $1 AND company_id = $2`,
+                `SELECT i.invoice_number, i.customer_id, i.invoice_type,
+                        u.state_code AS customer_state_code, c2.state_code AS company_state_code
+                 FROM invoices i
+                 LEFT JOIN users u ON u.id = i.customer_id
+                 LEFT JOIN companies c2 ON c2.id = i.company_id
+                 WHERE i.id = $1 AND i.company_id = $2`,
                 [original_invoice_id, companyId]
             );
             if (inv.rows[0]) {
                 origInvNumber = inv.rows[0].invoice_number;
                 origCustomerId = origCustomerId || inv.rows[0].customer_id;
+                originalInvoiceType = inv.rows[0].invoice_type;
+                customerStateCode = inv.rows[0].customer_state_code || null;
+                isGSTInvoice = isGSTInvoiceType(originalInvoiceType);
+                isSameState = (inv.rows[0].company_state_code || '33') === (customerStateCode || '33');
             }
         }
+
+        const processedItems = items.map((i) => computeItemTax(i, { isGSTInvoice, isSameState }));
+
+        const totalTaxable = processedItems.reduce((s, i) => s + i.taxable_amount, 0);
+        const totalCGST = processedItems.reduce((s, i) => s + i.cgst_amount, 0);
+        const totalSGST = processedItems.reduce((s, i) => s + i.sgst_amount, 0);
+        const totalIGST = processedItems.reduce((s, i) => s + i.igst_amount, 0);
+        const totalGST = processedItems.reduce((s, i) => s + i.total_gst_amount, 0);
+        const totalAmt = processedItems.reduce((s, i) => s + i.line_total, 0);
+        if (totalAmt <= 0) throw new Error('Return amount must be > 0');
 
         const retNumber = await generateReturnNumber(companyId);
 
@@ -156,11 +222,15 @@ router.post('/', authMiddleware, async (req, res) => {
         const retRow = await client.query(
             `INSERT INTO sales_returns
                 (company_id, branch_id, return_number, original_invoice_id, original_invoice_number,
-                 customer_id, customer_name, return_date, items, total_amount, notes, refund_type, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+                 customer_id, customer_name, return_date, items, total_amount, notes, refund_type, created_by,
+                 total_taxable_amount, total_cgst, total_sgst, total_igst, total_gst_amount,
+                 is_gst_return, original_invoice_type, customer_state_code)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
             [companyId, branchId, retNumber, original_invoice_id || null, origInvNumber,
              origCustomerId, customer_name || null, rDate,
-             JSON.stringify(processedItems), totalAmt, notes || null, rType, req.user.id]
+             JSON.stringify(processedItems), totalAmt, notes || null, rType, req.user.id,
+             totalTaxable, totalCGST, totalSGST, totalIGST, totalGST,
+             isGSTInvoice, originalInvoiceType, customerStateCode]
         );
         const record = retRow.rows[0];
 
@@ -352,16 +422,6 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (!items || !Array.isArray(items) || items.length === 0)
         return res.status(400).json({ error: 'At least one item required' });
 
-    const processedItems = items.map(i => ({
-        product_id: i.product_id || null,
-        description: i.description || 'Returned item',
-        qty:  Number(i.qty)  || 0,
-        rate: Number(i.rate) || 0,
-        line_total: (Number(i.qty) || 0) * (Number(i.rate) || 0),
-    }));
-    const newTotal = processedItems.reduce((s, i) => s + i.line_total, 0);
-    if (newTotal <= 0) return res.status(400).json({ error: 'Return amount must be > 0' });
-
     let client;
     try {
         await ensureTable();
@@ -382,6 +442,24 @@ router.put('/:id', authMiddleware, async (req, res) => {
         const oldType  = old.refund_type;
         const newType  = refund_type || oldType;
         const rDate    = return_date || old.return_date;
+
+        // Re-derive the same GST context stored at creation time (invoice type + buyer
+        // state), so editing a return recomputes GST exactly the same way POST / does.
+        const isGSTInvoice = isGSTInvoiceType(old.original_invoice_type);
+        let isSameState = true;
+        if (isGSTInvoice) {
+            const companyRow = await client.query(`SELECT state_code FROM companies WHERE id = $1`, [companyId]);
+            isSameState = (companyRow.rows[0]?.state_code || '33') === (old.customer_state_code || '33');
+        }
+
+        const processedItems = items.map((i) => computeItemTax(i, { isGSTInvoice, isSameState }));
+        const totalTaxable = processedItems.reduce((s, i) => s + i.taxable_amount, 0);
+        const totalCGST = processedItems.reduce((s, i) => s + i.cgst_amount, 0);
+        const totalSGST = processedItems.reduce((s, i) => s + i.sgst_amount, 0);
+        const totalIGST = processedItems.reduce((s, i) => s + i.igst_amount, 0);
+        const totalGST = processedItems.reduce((s, i) => s + i.total_gst_amount, 0);
+        const newTotal = processedItems.reduce((s, i) => s + i.line_total, 0);
+        if (newTotal <= 0) throw new Error('Return amount must be > 0');
 
         // ── Reverse old inventory, apply new ─────────────────────────────────
         for (const item of oldItems) {
@@ -452,9 +530,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
         // ── Update return record ──────────────────────────────────────────────
         const updated = await client.query(
             `UPDATE sales_returns
-             SET return_date=$1, items=$2, total_amount=$3, notes=$4, refund_type=$5, updated_at=NOW()
-             WHERE id=$6 AND company_id=$7 RETURNING *`,
-            [rDate, JSON.stringify(processedItems), newTotal, notes || null, newType, returnId, companyId]
+             SET return_date=$1, items=$2, total_amount=$3, notes=$4, refund_type=$5, updated_at=NOW(),
+                 total_taxable_amount=$6, total_cgst=$7, total_sgst=$8, total_igst=$9, total_gst_amount=$10
+             WHERE id=$11 AND company_id=$12 RETURNING *`,
+            [rDate, JSON.stringify(processedItems), newTotal, notes || null, newType,
+             totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, returnId, companyId]
         );
 
         await client.query('COMMIT');

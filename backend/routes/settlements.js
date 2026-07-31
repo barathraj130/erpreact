@@ -5,12 +5,26 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
-import { recomputeCustomerBalance } from "../services/customerLedgerService.js";
+import { recomputeCustomerBalance, createCustomerLedgerEvent } from "../services/customerLedgerService.js";
 import { sendWhatsApp } from "../utils/whatsapp.js";
 
 const router = express.Router();
 
 const isAdmin = (req) => ["admin", "superadmin"].includes(String(req.user?.role || "").toLowerCase());
+
+/**
+ * Adds guideline-value-transfer tracking columns to debt_settlements. Idempotent —
+ * safe to call on every request that touches these fields, matching the pattern
+ * used elsewhere in this codebase (e.g. salesReturnRoutes.js's ensureTable()).
+ */
+const ensureGuidelineTransferColumns = async () => {
+    await db.pgRun(`ALTER TABLE debt_settlements ADD COLUMN IF NOT EXISTS guideline_transfer_recorded BOOLEAN DEFAULT false`).catch(() => {});
+    await db.pgRun(`ALTER TABLE debt_settlements ADD COLUMN IF NOT EXISTS guideline_transfer_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+    await db.pgRun(`ALTER TABLE debt_settlements ADD COLUMN IF NOT EXISTS guideline_transfer_date DATE`).catch(() => {});
+    await db.pgRun(`ALTER TABLE debt_settlements ADD COLUMN IF NOT EXISTS guideline_transfer_mode VARCHAR(20)`).catch(() => {});
+    await db.pgRun(`ALTER TABLE debt_settlements ADD COLUMN IF NOT EXISTS guideline_transfer_reference VARCHAR(100)`).catch(() => {});
+    await db.pgRun(`ALTER TABLE debt_settlements ADD COLUMN IF NOT EXISTS guideline_transfer_transaction_id INTEGER`).catch(() => {});
+};
 
 async function getUserName(queryable, userId) {
     if (!userId) return null;
@@ -150,6 +164,7 @@ router.get("/summary", authMiddleware, async (req, res) => {
 // GET /api/settlements/:id — detail
 router.get("/:id", authMiddleware, async (req, res) => {
     try {
+        await ensureGuidelineTransferColumns();
         const companyId = req.user.active_company_id;
         const settlement = await db.pgGet(
             `SELECT ds.*,
@@ -438,11 +453,120 @@ router.post("/:id/reject", authMiddleware, async (req, res) => {
     }
 });
 
+// POST /api/settlements/:id/record-guideline-transfer
+// Records a payment made TO the customer (e.g. govt guideline value on a land settlement)
+// BEFORE the land settlement's legal transfer is confirmed. Must happen first so the
+// customer's ledger shows this credit ahead of the land-outstanding-reduction entry.
+router.post("/:id/record-guideline-transfer", authMiddleware, async (req, res) => {
+    let client;
+    try {
+        if (!isAdmin(req)) return res.status(403).json({ success: false, error: "Admin only" });
+        await ensureGuidelineTransferColumns();
+        const companyId = req.user.active_company_id;
+        const { amount, payment_mode, payment_date, reference_number, paid_to, notes } = req.body;
+
+        const parsedAmount = parseFloat(amount || 0);
+        if (parsedAmount <= 0) return res.status(400).json({ success: false, error: "Transfer amount must be greater than zero" });
+        if (!["cash", "bank", "upi", "cheque"].includes(String(payment_mode || "").toLowerCase())) {
+            return res.status(400).json({ success: false, error: "Valid payment mode required (cash/bank/upi/cheque)" });
+        }
+        if (!payment_date) return res.status(400).json({ success: false, error: "Payment date required" });
+
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        const sRes = await client.query(
+            `SELECT ds.*, COALESCE(c.nickname, c.username) AS customer_name, c.phone AS customer_phone
+             FROM debt_settlements ds
+             LEFT JOIN users c ON c.id = ds.customer_id
+             WHERE ds.id = $1 AND ds.company_id = $2`,
+            [req.params.id, companyId]
+        );
+        const settlement = sRes.rows[0];
+        if (!settlement) throw new Error("Settlement not found");
+        if (settlement.guideline_transfer_recorded) {
+            throw new Error(`Guideline transfer already recorded on ${settlement.guideline_transfer_date}`);
+        }
+
+        const mode = String(payment_mode).toLowerCase();
+
+        await createCustomerLedgerEvent(client, {
+            companyId,
+            branchId: settlement.branch_id,
+            customerId: settlement.customer_id,
+            type: "GUIDELINE_TRANSFER",
+            category: "PAYMENT_TO_CUSTOMER",
+            amount: parsedAmount,
+            date: payment_date,
+            description: `Guideline value transfer for land settlement ${settlement.settlement_number}${reference_number ? ` — Ref: ${reference_number}` : ""}`,
+            referenceType: "SETTLEMENT",
+            referenceId: settlement.id,
+            createdBy: req.user.id,
+            meta: { payment_mode: mode, reference_number: reference_number || null, paid_to: paid_to || settlement.customer_name },
+        });
+
+        await recomputeCustomerBalance(client, settlement.customer_id, companyId);
+
+        await client.query(
+            `UPDATE debt_settlements SET
+                guideline_transfer_recorded = true, guideline_transfer_amount = $1,
+                guideline_transfer_date = $2, guideline_transfer_mode = $3,
+                guideline_transfer_reference = $4, updated_at = NOW()
+             WHERE id = $5`,
+            [parsedAmount, payment_date, mode, reference_number || null, settlement.id]
+        );
+
+        const description = `Guideline transfer of ₹${parsedAmount.toLocaleString("en-IN")} paid to ${settlement.customer_name} via ${mode.toUpperCase()}`;
+        if (mode === "cash") {
+            await client.query(
+                `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes, reference_id, created_at)
+                 VALUES ($1,$2,'LAND_GUIDELINE_TRANSFER',$3,'out',$4,$5,$6,NOW())`,
+                [companyId, settlement.branch_id, parsedAmount, payment_date, description, settlement.id]
+            );
+        } else {
+            await client.query(
+                `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, date, transaction_id, reference_id, created_at)
+                 VALUES ($1,$2,'LAND_GUIDELINE_TRANSFER',$3,'out',$4,$5,$6,NOW())`,
+                [companyId, settlement.branch_id, parsedAmount, payment_date, reference_number || null, settlement.id]
+            );
+        }
+
+        const doneByName = await getUserName(client, req.user.id);
+        await client.query(
+            `INSERT INTO settlement_history (settlement_id, action, done_by, done_by_name, notes)
+             VALUES ($1,'guideline_transfer_recorded',$2,$3,$4)`,
+            [settlement.id, req.user.id, doneByName, `₹${parsedAmount.toLocaleString("en-IN")} transferred to ${settlement.customer_name} via ${mode.toUpperCase()}`]
+        );
+
+        await client.query("COMMIT");
+
+        if (settlement.customer_phone) {
+            sendWhatsApp(
+                settlement.customer_phone,
+                `Dear ${settlement.customer_name},\n\n₹${parsedAmount.toLocaleString("en-IN")} has been transferred to you as guideline value payment for settlement ${settlement.settlement_number}.\n\nDate: ${payment_date}\nMode: ${mode.toUpperCase()}${reference_number ? `\nRef: ${reference_number}` : ""}\n\nThis is reflected in your account statement.\n\nJBS Knit Wear, Tiruppur`
+            ).catch(() => {});
+        }
+
+        res.json({
+            success: true,
+            amount_transferred: parsedAmount,
+            message: `₹${parsedAmount.toLocaleString("en-IN")} guideline transfer recorded in ${settlement.customer_name}'s ledger and ${mode} ledger updated`,
+        });
+    } catch (e) {
+        if (client) await client.query("ROLLBACK");
+        console.error("Record guideline transfer error:", e.message);
+        res.status(500).json({ success: false, error: e.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // POST /api/settlements/:id/confirm-transfer — for conditional (land/property) settlements
 router.post("/:id/confirm-transfer", authMiddleware, async (req, res) => {
     let client;
     try {
         if (!isAdmin(req)) return res.status(403).json({ success: false, error: "Admin only" });
+        await ensureGuidelineTransferColumns();
         const companyId = req.user.active_company_id;
 
         client = await db.getClient();

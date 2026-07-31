@@ -106,6 +106,11 @@ router.get('/summary', authMiddleware, async (req, res) => {
                     WHERE t.user_id = u.id AND t.company_id = $1
                       AND t.type = 'ROUND_OFF'
                 ), 0)
+                - COALESCE((
+                    SELECT SUM(t.amount) FROM transactions t
+                    WHERE t.user_id = u.id AND t.company_id = $1
+                      AND t.type = 'GUIDELINE_TRANSFER'
+                ), 0)
             )), 0) as outstanding
             FROM users u
             WHERE u.role IN ('user','customer') AND u.company_id = $1
@@ -153,6 +158,11 @@ router.get('/summary', authMiddleware, async (req, res) => {
                         SELECT SUM(t.amount) FROM transactions t
                         WHERE t.user_id = u.id AND t.company_id = $1
                           AND t.type = 'ROUND_OFF'
+                    ), 0)
+                    - COALESCE((
+                        SELECT SUM(t.amount) FROM transactions t
+                        WHERE t.user_id = u.id AND t.company_id = $1
+                          AND t.type = 'GUIDELINE_TRANSFER'
                     ), 0)
                 ) AS bal
                 FROM users u
@@ -349,6 +359,11 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
                             SELECT SUM(t.amount) FROM transactions t
                             WHERE t.user_id = u.id AND t.company_id = $1
                               AND t.type = 'ROUND_OFF'
+                        ), 0)
+                        - COALESCE((
+                            SELECT SUM(t.amount) FROM transactions t
+                            WHERE t.user_id = u.id AND t.company_id = $1
+                              AND t.type = 'GUIDELINE_TRANSFER'
                         ), 0)
                     ) as amount
                 FROM users u

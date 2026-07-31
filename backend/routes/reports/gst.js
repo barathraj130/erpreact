@@ -72,7 +72,7 @@ router.get('/tax-liability', authMiddleware, async (req, res) => {
   const { from, to } = req.query;
   const { from: startDate, to: endDate } = getDateRange(from, to);
   try {
-    const [outputGst, inputGst] = await Promise.all([
+    const [outputGst, inputGst, returnedGst] = await Promise.all([
       db.pgGet(`
         SELECT
           COALESCE(SUM(cgst_total), 0) AS output_cgst,
@@ -94,10 +94,22 @@ router.get('/tax-liability', authMiddleware, async (req, res) => {
           AND COALESCE(is_deleted, false) = false
           AND bill_date BETWEEN $2::date AND $3::date
       `, [companyId, startDate, endDate]).catch(() => ({ input_cgst: 0, input_sgst: 0, input_igst: 0 })),
+      // GST on goods returned against a TAX invoice reverses the output GST liability —
+      // without this, the report keeps counting GST on sales that no longer stand.
+      db.pgGet(`
+        SELECT
+          COALESCE(SUM(total_cgst), 0) AS returned_cgst,
+          COALESCE(SUM(total_sgst), 0) AS returned_sgst,
+          COALESCE(SUM(total_igst), 0) AS returned_igst
+        FROM sales_returns
+        WHERE company_id = $1
+          AND is_gst_return = true
+          AND return_date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ returned_cgst: 0, returned_sgst: 0, returned_igst: 0 })),
     ]);
-    const outCgst = parseFloat(outputGst?.output_cgst || 0);
-    const outSgst = parseFloat(outputGst?.output_sgst || 0);
-    const outIgst = parseFloat(outputGst?.output_igst || 0);
+    const outCgst = parseFloat(outputGst?.output_cgst || 0) - parseFloat(returnedGst?.returned_cgst || 0);
+    const outSgst = parseFloat(outputGst?.output_sgst || 0) - parseFloat(returnedGst?.returned_sgst || 0);
+    const outIgst = parseFloat(outputGst?.output_igst || 0) - parseFloat(returnedGst?.returned_igst || 0);
     const inCgst = parseFloat(inputGst?.input_cgst || 0);
     const inSgst = parseFloat(inputGst?.input_sgst || 0);
     const inIgst = parseFloat(inputGst?.input_igst || 0);

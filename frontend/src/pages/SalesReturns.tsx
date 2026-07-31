@@ -20,6 +20,11 @@ const REFUND_TYPES = [
   { value: "BANK_REFUND",  label: "🏦 Bank Refund (bank out)" },
 ];
 
+// Invoice types that carry no GST — matches the exclusion list the backend uses
+// (customerLedgerService.js / salesReturnRoutes.js) for the same distinction.
+const NON_GST_INVOICE_TYPES = ["NON_TAX_INVOICE", "RETAIL_SALE", "GIFTED_ITEM", "NSB_INVOICE"];
+const isGSTInvoiceType = (invoiceType?: string) => !NON_GST_INVOICE_TYPES.includes(String(invoiceType || "").toUpperCase());
+
 interface ReturnItem {
   product_id: number | null;
   description: string;
@@ -27,6 +32,12 @@ interface ReturnItem {
   rate: number;
   max_qty?: number;
   line_total?: number;
+  gst_rate?: number;
+  taxable_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  total_gst_amount?: number;
 }
 
 interface InvoiceLineItem {
@@ -44,9 +55,12 @@ interface Invoice {
   id: number;
   invoice_number: string;
   invoice_date: string;
+  invoice_type?: string;
   total_amount: number;
   customer_name: string;
   customer_id: number;
+  customer_state_code?: string;
+  company_state_code?: string;
   line_items: InvoiceLineItem[];
 }
 
@@ -58,7 +72,14 @@ interface SalesReturn {
   customer_display: string;
   original_invoice_id: number | null;
   original_invoice_number: string;
+  original_invoice_type?: string;
   total_amount: number;
+  total_taxable_amount?: number;
+  total_cgst?: number;
+  total_sgst?: number;
+  total_igst?: number;
+  total_gst_amount?: number;
+  is_gst_return?: boolean;
   refund_type: string;
   notes: string;
   items: ReturnItem[];
@@ -78,7 +99,7 @@ interface ClearDialog {
 
 interface CompanyProfile {
   company_name: string; gstin: string; address_line1: string;
-  city_pincode: string; state: string; phone: string; email: string;
+  city_pincode: string; state: string; state_code?: string; phone: string; email: string;
 }
 
 const EMPTY_ITEM: ReturnItem = { product_id: null, description: "", qty: 1, rate: 0 };
@@ -148,6 +169,11 @@ const ReturnBillView: React.FC<{
                 Credit Note
               </div>
               <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>Sales Return</div>
+              {ret.is_gst_return && (
+                <div style={{ fontSize: 11, color: "#dc2626", fontWeight: 600, marginTop: 4 }}>
+                  GST Credit Note under Section 34 of CGST Act
+                </div>
+              )}
             </div>
           </div>
 
@@ -210,6 +236,32 @@ const ReturnBillView: React.FC<{
               ))}
             </tbody>
             <tfoot>
+              {ret.is_gst_return && (
+                <>
+                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>Taxable Amount</td>
+                    <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_taxable_amount || 0)}</td>
+                  </tr>
+                  {Number(ret.total_cgst || 0) > 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>CGST</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_cgst || 0)}</td>
+                    </tr>
+                  )}
+                  {Number(ret.total_sgst || 0) > 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>SGST</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_sgst || 0)}</td>
+                    </tr>
+                  )}
+                  {Number(ret.total_igst || 0) > 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>IGST</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_igst || 0)}</td>
+                    </tr>
+                  )}
+                </>
+              )}
               <tr style={{ background: "#fef2f2", borderTop: "2px solid #ef4444" }}>
                 <td colSpan={4} style={{ padding: "11px 12px", textAlign: "right", fontWeight: 700, fontSize: 14 }}>Total Return Amount</td>
                 <td style={{ padding: "11px 12px", textAlign: "right", fontWeight: 900, fontSize: 16, color: "#ef4444" }}>
@@ -333,6 +385,7 @@ const SalesReturns: React.FC = () => {
       setItems(inv.line_items.map(li => ({
         product_id: li.product_id, description: li.description || "Item",
         qty: 0, rate: Number(li.unit_price) || 0, max_qty: Number(li.quantity) || 0,
+        gst_rate: Number(li.gst_rate) || 0,
       })));
     } else {
       setItems([{ ...EMPTY_ITEM }]);
@@ -340,7 +393,28 @@ const SalesReturns: React.FC = () => {
     if (inv.customer_id) fetchCustomerHistory(inv.customer_id);
   };
 
-  const totalReturn = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0);
+  // GST applies only when the selected invoice was a TAX invoice — this mirrors
+  // the same server-side check in salesReturnRoutes.js, purely for a live preview;
+  // the backend always recomputes authoritatively on submit.
+  const isGSTReturn = !!selectedInvoice && isGSTInvoiceType(selectedInvoice.invoice_type);
+  const isSameStateReturn = !selectedInvoice || (selectedInvoice.company_state_code || "33") === (selectedInvoice.customer_state_code || "33");
+
+  const computeTotals = (rowItems: ReturnItem[], gstApplies: boolean, sameState: boolean) => {
+    let totalTaxable = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
+    for (const i of rowItems) {
+      const taxable = (Number(i.qty) || 0) * (Number(i.rate) || 0);
+      const gstRate = gstApplies ? (Number(i.gst_rate) || 0) : 0;
+      const gstAmt = taxable * gstRate / 100;
+      totalTaxable += taxable;
+      if (sameState) { totalCGST += gstAmt / 2; totalSGST += gstAmt / 2; }
+      else { totalIGST += gstAmt; }
+    }
+    const totalGST = totalCGST + totalSGST + totalIGST;
+    return { totalTaxable, totalCGST, totalSGST, totalIGST, totalGST, totalReturn: totalTaxable + totalGST };
+  };
+
+  const returnTotals = computeTotals(items, isGSTReturn, isSameStateReturn);
+  const totalReturn = returnTotals.totalReturn;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -384,7 +458,10 @@ const SalesReturns: React.FC = () => {
     setEditItems(storedItems.length ? storedItems : [{ ...EMPTY_ITEM }]);
   };
 
-  const editTotal = editItems.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0);
+  const isGSTEdit = isGSTInvoiceType(editReturn?.original_invoice_type);
+  const isSameStateEdit = (companyProfile?.state_code || "33") === ((editReturn as any)?.customer_state_code || "33");
+  const editTotals = computeTotals(editItems, isGSTEdit, isSameStateEdit);
+  const editTotal = editTotals.totalReturn;
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -441,6 +518,7 @@ const SalesReturns: React.FC = () => {
     onRemove: (idx: number) => void,
     onAdd: () => void,
     rowTotal: number,
+    showGst: boolean = false,
   ) => (
     <>
       <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", marginBottom: 12 }}>
@@ -450,6 +528,7 @@ const SalesReturns: React.FC = () => {
               <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 700 }}>Description</th>
               <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, width: 70 }}>Qty</th>
               <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, width: 100 }}>Rate (₹)</th>
+              {showGst && <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, width: 70 }}>GST %</th>}
               <th style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, width: 100 }}>Total</th>
               <th style={{ width: 36 }}></th>
             </tr>
@@ -497,8 +576,17 @@ const SalesReturns: React.FC = () => {
                     style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px", textAlign: "right" }}
                   />
                 </td>
+                {showGst && (
+                  <td style={{ padding: "6px 10px" }}>
+                    <input
+                      type="number" min="0" step="0.01" value={item.gst_rate ?? 0}
+                      onChange={e => onUpdate(idx, "gst_rate", Number(e.target.value))}
+                      style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 8px", textAlign: "right" }}
+                    />
+                  </td>
+                )}
                 <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 600 }}>
-                  {fmt(item.qty * item.rate)}
+                  {fmt(item.qty * item.rate * (showGst ? 1 + (Number(item.gst_rate) || 0) / 100 : 1))}
                 </td>
                 <td style={{ padding: "6px 4px" }}>
                   {rowItems.length > 1 && (
@@ -513,7 +601,7 @@ const SalesReturns: React.FC = () => {
           </tbody>
           <tfoot>
             <tr style={{ borderTop: "2px solid #e2e8f0", background: "#f8fafc" }}>
-              <td colSpan={3} style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>Total Return Amount</td>
+              <td colSpan={showGst ? 4 : 3} style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>Total Return Amount{showGst ? " (incl. GST)" : ""}</td>
               <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, color: "#ef4444", fontSize: 15 }}>{fmt(rowTotal)}</td>
               <td></td>
             </tr>
@@ -525,6 +613,43 @@ const SalesReturns: React.FC = () => {
         + Add Item
       </button>
     </>
+  );
+
+  /* ── GST reversal summary (shown only when returning against a TAX invoice) ── */
+  const renderGstSummary = (
+    totals: { totalTaxable: number; totalCGST: number; totalSGST: number; totalIGST: number; totalGST: number; totalReturn: number },
+    sameState: boolean,
+  ) => (
+    <div style={{ background: "#eff6ff", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#1e40af", marginBottom: 8 }}>
+        GST REVERSAL (TAX Invoice Return)
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+        <span style={{ fontSize: 12, color: "#1e40af" }}>Taxable</span>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>{fmt(totals.totalTaxable)}</span>
+      </div>
+      {sameState ? (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 12, color: "#1e40af" }}>CGST</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{fmt(totals.totalCGST)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 12, color: "#1e40af" }}>SGST</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{fmt(totals.totalSGST)}</span>
+          </div>
+        </>
+      ) : (
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <span style={{ fontSize: 12, color: "#1e40af" }}>IGST</span>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>{fmt(totals.totalIGST)}</span>
+        </div>
+      )}
+      <div style={{ borderTop: "1px solid #bfdbfe", paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>Total with GST</span>
+        <span style={{ fontSize: 14, fontWeight: 800, color: "#dc2626" }}>{fmt(totals.totalReturn)}</span>
+      </div>
+    </div>
   );
 
   /* ── Customer history panel ── */
@@ -796,7 +921,9 @@ const SalesReturns: React.FC = () => {
                   (idx) => setItems(prev => prev.filter((_, i) => i !== idx)),
                   () => setItems(prev => [...prev, { ...EMPTY_ITEM }]),
                   totalReturn,
+                  isGSTReturn,
                 )}
+                {isGSTReturn && renderGstSummary(returnTotals, isSameStateReturn)}
                 <label>Notes (optional)</label>
                 <input value={notes} placeholder="Reason for return…" onChange={e => setNotes(e.target.value)} />
                 {refundType === "CASH_REFUND" && (
@@ -870,7 +997,9 @@ const SalesReturns: React.FC = () => {
                   (idx) => setEditItems(prev => prev.filter((_, i) => i !== idx)),
                   () => setEditItems(prev => [...prev, { ...EMPTY_ITEM }]),
                   editTotal,
+                  isGSTEdit,
                 )}
+                {isGSTEdit && renderGstSummary(editTotals, isSameStateEdit)}
                 <label>Notes (optional)</label>
                 <input value={editNotes} placeholder="Reason for return…" onChange={e => setEditNotes(e.target.value)} />
                 {editRefundType === "CASH_REFUND" && (
