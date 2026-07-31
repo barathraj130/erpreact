@@ -138,6 +138,26 @@ router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), as
                     FROM transactions
                     WHERE reference_id = $1 AND company_id = $2 AND type = 'CUSTOMER_PAYMENT'
                 ), 0)
+                + COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE reference_id = $1 AND company_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE user_id = $1 AND company_id = $2 AND type = 'GUIDELINE_TRANSFER'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(total_amount)
+                    FROM sales_returns
+                    WHERE customer_id = $1 AND company_id = $2
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE user_id = $1 AND company_id = $2 AND type = 'ROUND_OFF'
+                ), 0)
                 - COALESCE((
                     SELECT SUM(COALESCE(discount_amount, 0))
                     FROM invoices
@@ -302,6 +322,16 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                     SELECT SUM(amount)
                     FROM transactions
                     WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+                ), 0)
+                + COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE reference_id = u.id AND company_id = $1 AND type = 'PAYMENT_TO_CUSTOMER'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount)
+                    FROM transactions
+                    WHERE user_id = u.id AND company_id = $1 AND type = 'GUIDELINE_TRANSFER'
                 ), 0)
                 - COALESCE((
                     SELECT SUM(total_amount)
@@ -766,9 +796,21 @@ router.post("/send-reminders", authMiddleware, async (req, res) => {
                     SELECT SUM(amount) FROM transactions
                     WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'
                 ), 0)
+                + COALESCE((
+                    SELECT SUM(amount) FROM transactions
+                    WHERE reference_id = u.id AND company_id = $1 AND type = 'PAYMENT_TO_CUSTOMER'
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount) FROM transactions
+                    WHERE user_id = u.id AND company_id = $1 AND type = 'GUIDELINE_TRANSFER'
+                ), 0)
                 - COALESCE((
                     SELECT SUM(total_amount) FROM sales_returns
                     WHERE customer_id = u.id AND company_id = $1
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount) FROM transactions
+                    WHERE user_id = u.id AND company_id = $1 AND type = 'ROUND_OFF'
                 ), 0) as outstanding
             FROM users u
             WHERE u.role IN ('user','customer') AND u.company_id = $1
