@@ -660,7 +660,7 @@ const Transactions: React.FC = () => {
                       </select>
                       {formData.type === 'PAYMENT_TO_CUSTOMER' && (
                         <div style={{ fontSize: 11, color: "var(--erp-text-secondary)", marginTop: 4 }}>
-                          Credited to this customer's ledger — reduces what they owe (or puts them in credit).
+                          Recorded as a receivable — increases what this customer owes, same as a bill (e.g. an advance you're extending them).
                         </div>
                       )}
                     </div>

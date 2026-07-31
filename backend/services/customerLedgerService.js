@@ -424,10 +424,12 @@ async function getCustomerTotals(companyId, customerId) {
   } catch (e) { /* ignore */ }
 
   return {
-    total_billed: toNumber(invoiceTotals?.total_billed),
+    // Payment to Customer is money advanced to them — it's an amount they now owe
+    // back, same direction as a bill, so it adds to total_billed (not a credit).
+    total_billed: toNumber(invoiceTotals?.total_billed) + toNumber(paymentToCustomerTotals?.total_p2c),
     total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
     // Discount/waiver reduces what the customer owes — treated as a credit alongside payments
-    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal + toNumber(paymentToCustomerTotals?.total_p2c),
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal,
   };
 }
 
@@ -507,21 +509,35 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     guidelineTransfer = toNumber(gtTotals.rows[0]?.total_guideline);
   } catch (e) { /* none yet */ }
 
-  // Direct customer payments recorded via the Transactions page (both directions —
-  // money received from the customer, and money paid out to them, e.g. refunds/advances).
-  let directTx = 0;
+  // Direct customer payments recorded via the Transactions page — money received
+  // FROM the customer reduces outstanding, same as an invoice payment.
+  let directPaid = 0;
   try {
     const directTotals = await client.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_direct
        FROM transactions
-       WHERE company_id = $1 AND reference_id = $2 AND type IN ('CUSTOMER_PAYMENT', 'PAYMENT_TO_CUSTOMER')`,
+       WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
       [companyId, customerId],
     );
-    directTx = toNumber(directTotals.rows[0]?.total_direct);
+    directPaid = toNumber(directTotals.rows[0]?.total_direct);
+  } catch (e) { /* none yet */ }
+
+  // Payments made TO the customer via the Transactions page (refunds, advances,
+  // goodwill payments) — money advanced to them, so it INCREASES what they owe,
+  // same direction as a bill.
+  let paidToCustomer = 0;
+  try {
+    const p2cTotals = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_p2c
+       FROM transactions
+       WHERE company_id = $1 AND reference_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'`,
+      [companyId, customerId],
+    );
+    paidToCustomer = toNumber(p2cTotals.rows[0]?.total_p2c);
   } catch (e) { /* none yet */ }
 
   // Discount/waiver from invoices.discount_amount reduces outstanding balance
-  const outstanding = openingBalance + billed - paid - returned - roundOff - discount - guidelineTransfer - directTx;
+  const outstanding = openingBalance + billed + paidToCustomer - paid - returned - roundOff - discount - guidelineTransfer - directPaid;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);
 
@@ -645,11 +661,12 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
   const statement = rows.map((row) => {
     const amount = toNumber(row.amount);
     const returnEntry = row.type === "RETURN";
-    const invoiceEntry = row.type === "INVOICE";
-    // INVOICE = debit (increases what customer owes)
-    // RECEIPT, ROUND_OFF, DISCOUNT = credit (reduces what customer owes)
-    const debit = invoiceEntry ? amount : 0;
-    const credit = invoiceEntry ? 0 : amount;
+    // INVOICE and PAYMENT_TO_CUSTOMER = debit (increases what customer owes — money
+    // paid to them is money they now owe back, same direction as a bill)
+    // RECEIPT, ROUND_OFF, DISCOUNT, GUIDELINE_TRANSFER = credit (reduces what customer owes)
+    const debitEntry = row.type === "INVOICE" || row.type === "PAYMENT_TO_CUSTOMER";
+    const debit = debitEntry ? amount : 0;
+    const credit = debitEntry ? 0 : amount;
 
     runningBalance += debit;
     runningBalance -= credit;
