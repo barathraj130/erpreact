@@ -16,7 +16,9 @@ import {
   FaCommentDots,
   FaTimes,
   FaEdit,
-  FaLock
+  FaLock,
+  FaTrash,
+  FaExclamationTriangle
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import "./Dashboard.css";
@@ -56,6 +58,57 @@ const Branches: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewBranch, setViewBranch] = useState<Branch | null>(null);
+
+  // ── Delete branch flow ──
+  const [deleteBranch, setDeleteBranch] = useState<Branch | null>(null);
+  const [deleteDeps, setDeleteDeps] = useState<{ linked: { table: string; count: number }[]; total: number } | null>(null);
+  const [checkingDeps, setCheckingDeps] = useState(false);
+  const [reassignTo, setReassignTo] = useState<string>("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+
+  const openDeleteModal = async (branch: Branch) => {
+    setDeleteBranch(branch);
+    setDeleteDeps(null);
+    setReassignTo("");
+    setDeleteErr(null);
+    setCheckingDeps(true);
+    try {
+      const res = await apiFetch(`/branches/${branch.id}/dependencies`);
+      const data = await res.json();
+      setDeleteDeps(data);
+    } catch {
+      setDeleteErr("Failed to check what's linked to this branch.");
+    } finally {
+      setCheckingDeps(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteBranch) return;
+    if (deleteDeps && deleteDeps.total > 0 && !reassignTo) {
+      setDeleteErr("Pick a branch to reassign the linked data to first.");
+      return;
+    }
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      const suffix = reassignTo ? `?reassign_to=${reassignTo}` : "";
+      const res = await apiFetch(`/branches/${deleteBranch.id}${suffix}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteErr(data.error || "Failed to delete branch.");
+        if (data.linked) setDeleteDeps({ linked: data.linked, total: data.linked.reduce((s: number, r: any) => s + r.count, 0) });
+        return;
+      }
+      setDeleteBranch(null);
+      fetchBranches();
+    } catch {
+      setDeleteErr("Network error while deleting.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleBranchAction = (branch: Branch, path: string) => {
     // Set this branch as active so the target page shows its data
@@ -262,6 +315,91 @@ const Branches: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* ── Delete Branch Modal ── */}
+      <AnimatePresence>
+        {deleteBranch && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} style={{ background: "white", width: "100%", maxWidth: "460px", borderRadius: "18px", overflow: "hidden", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+              <div style={{ padding: "22px 24px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+                  <div style={{ width: "42px", height: "42px", borderRadius: "12px", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626" }}>
+                    <FaTrash />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b" }}>Delete {deleteBranch.branch_name}</div>
+                    <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{deleteBranch.branch_code}</div>
+                  </div>
+                </div>
+
+                {checkingDeps ? (
+                  <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: "0.9rem" }}>Checking what's linked to this branch…</div>
+                ) : deleteDeps && deleteDeps.total > 0 ? (
+                  <>
+                    <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "12px 14px", marginBottom: "16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#92400e", fontWeight: 700, fontSize: "0.85rem", marginBottom: "8px" }}>
+                        <FaExclamationTriangle /> This branch has linked data
+                      </div>
+                      <div style={{ fontSize: "0.8rem", color: "#92400e" }}>
+                        {deleteDeps.linked.map((l) => (
+                          <div key={l.table} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                            <span style={{ textTransform: "capitalize" }}>{l.table.replace(/_/g, " ")}</span>
+                            <span style={{ fontWeight: 700 }}>{l.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: "16px" }}>
+                      <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: "6px" }}>
+                        Move all of it to which branch?
+                      </label>
+                      <select
+                        value={reassignTo}
+                        onChange={(e) => setReassignTo(e.target.value)}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "0.9rem", boxSizing: "border-box" }}
+                      >
+                        <option value="">-- Select target branch --</option>
+                        {branches.filter((b) => b.id !== deleteBranch.id).map((b) => (
+                          <option key={b.id} value={b.id}>{b.branch_code} — {b.branch_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <p style={{ fontSize: "0.9rem", color: "#374151", marginBottom: "16px" }}>
+                    No customers, invoices, staff, or inventory are linked to this branch. This cannot be undone.
+                  </p>
+                )}
+
+                {deleteErr && (
+                  <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", marginBottom: "16px" }}>
+                    {deleteErr}
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: "14px 24px", borderTop: "1px solid #f1f5f9", background: "#fafafa", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  onClick={() => setDeleteBranch(null)}
+                  style={{ padding: "9px 18px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={checkingDeps || deleting}
+                  style={{
+                    padding: "9px 18px", borderRadius: "8px", border: "none",
+                    background: checkingDeps || deleting ? "#94a3b8" : "#dc2626", color: "#fff",
+                    fontWeight: 700, fontSize: "0.85rem", cursor: checkingDeps || deleting ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {deleting ? "Deleting…" : deleteDeps && deleteDeps.total > 0 ? "Reassign & Delete" : "Delete Branch"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── Page Body ── */}
       <div className="db-content">
         {/* Global Network KPIs */}
@@ -350,12 +488,21 @@ const Branches: React.FC = () => {
                                 </span>
                             </td>
                             <td style={{ padding: "15px 20px", textAlign: "right" }}>
-                                <button 
-                                    onClick={() => setViewBranch(branch)}
-                                    style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 16px", borderRadius: "8px", color: "#475569", fontWeight: 700, cursor: "pointer" }}
-                                >
-                                    View
-                                </button>
+                                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                                    <button
+                                        onClick={() => setViewBranch(branch)}
+                                        style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 16px", borderRadius: "8px", color: "#475569", fontWeight: 700, cursor: "pointer" }}
+                                    >
+                                        View
+                                    </button>
+                                    <button
+                                        onClick={() => openDeleteModal(branch)}
+                                        title="Delete branch"
+                                        style={{ background: "#fef2f2", border: "1px solid #fecaca", padding: "8px 12px", borderRadius: "8px", color: "#dc2626", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center" }}
+                                    >
+                                        <FaTrash size={12} />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}

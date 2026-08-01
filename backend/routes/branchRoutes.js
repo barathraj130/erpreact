@@ -208,6 +208,122 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// Discovers every table with a branch_id column (and whether it also has
+// company_id, for correct scoping) so branch deletion can check/reassign
+// dependencies without hand-maintaining a table list. Cached after first lookup.
+let branchLinkedTablesCache = null;
+async function getBranchLinkedTables() {
+    if (branchLinkedTablesCache) return branchLinkedTablesCache;
+    const rows = await db.pgAll(`
+        SELECT c.table_name,
+               EXISTS (
+                   SELECT 1 FROM information_schema.columns c2
+                   WHERE c2.table_schema = 'public' AND c2.table_name = c.table_name AND c2.column_name = 'company_id'
+               ) AS has_company_id
+        FROM information_schema.columns c
+        WHERE c.table_schema = 'public' AND c.column_name = 'branch_id' AND c.table_name != 'branches'
+        ORDER BY c.table_name
+    `);
+    branchLinkedTablesCache = rows;
+    return rows;
+}
+
+// GET /api/branches/:id/dependencies — what's linked to this branch, for the
+// delete-confirmation UI to show before the admin commits to reassigning.
+router.get('/:id/dependencies', authMiddleware, async (req, res) => {
+    try {
+        const companyId = req.user?.company_id || req.user?.active_company_id;
+        const branchId = req.params.id;
+        const tables = await getBranchLinkedTables();
+        const linked = [];
+        for (const t of tables) {
+            const sql = t.has_company_id
+                ? `SELECT COUNT(*) AS cnt FROM ${t.table_name} WHERE branch_id = $1 AND company_id = $2`
+                : `SELECT COUNT(*) AS cnt FROM ${t.table_name} WHERE branch_id = $1`;
+            const params = t.has_company_id ? [branchId, companyId] : [branchId];
+            const row = await db.pgGet(sql, params).catch(() => ({ cnt: 0 }));
+            const count = parseInt(row?.cnt || 0);
+            if (count > 0) linked.push({ table: t.table_name, count });
+        }
+        res.json({ linked, total: linked.reduce((s, r) => s + r.count, 0) });
+    } catch (err) {
+        console.error('Branch dependencies error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/branches/:id — optionally pass ?reassign_to=<branchId> to move
+// every linked record (customers, staff, invoices, inventory, etc.) to another
+// branch first. Without it, the delete is blocked if anything is still linked.
+router.delete('/:id', authMiddleware, async (req, res) => {
+    const role = String(req.user?.role || '').toLowerCase();
+    if (!['admin', 'superadmin'].includes(role)) {
+        return res.status(403).json({ error: 'Admin only' });
+    }
+
+    const companyId = req.user?.company_id || req.user?.active_company_id;
+    const branchId = req.params.id;
+    const reassignTo = req.query.reassign_to ? parseInt(req.query.reassign_to) : null;
+
+    let client;
+    try {
+        const branch = await db.pgGet(`SELECT id FROM branches WHERE id = $1 AND company_id = $2`, [branchId, companyId]);
+        if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+        if (reassignTo) {
+            if (reassignTo === Number(branchId)) {
+                return res.status(400).json({ error: 'Cannot reassign a branch to itself' });
+            }
+            const target = await db.pgGet(`SELECT id FROM branches WHERE id = $1 AND company_id = $2`, [reassignTo, companyId]);
+            if (!target) return res.status(400).json({ error: 'Target branch for reassignment not found' });
+        }
+
+        const tables = await getBranchLinkedTables();
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        const blocking = [];
+        for (const t of tables) {
+            const countSql = t.has_company_id
+                ? `SELECT COUNT(*) AS cnt FROM ${t.table_name} WHERE branch_id = $1 AND company_id = $2`
+                : `SELECT COUNT(*) AS cnt FROM ${t.table_name} WHERE branch_id = $1`;
+            const countParams = t.has_company_id ? [branchId, companyId] : [branchId];
+            const countRes = await client.query(countSql, countParams).catch(() => ({ rows: [{ cnt: 0 }] }));
+            const count = parseInt(countRes.rows[0]?.cnt || 0);
+            if (count === 0) continue;
+
+            if (!reassignTo) {
+                blocking.push({ table: t.table_name, count });
+                continue;
+            }
+
+            const updateSql = t.has_company_id
+                ? `UPDATE ${t.table_name} SET branch_id = $1 WHERE branch_id = $2 AND company_id = $3`
+                : `UPDATE ${t.table_name} SET branch_id = $1 WHERE branch_id = $2`;
+            const updateParams = t.has_company_id ? [reassignTo, branchId, companyId] : [reassignTo, branchId];
+            await client.query(updateSql, updateParams);
+        }
+
+        if (blocking.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                error: 'This branch still has linked data. Reassign it to another branch before deleting.',
+                linked: blocking,
+            });
+        }
+
+        await client.query(`DELETE FROM branches WHERE id = $1 AND company_id = $2`, [branchId, companyId]);
+        await client.query('COMMIT');
+        res.json({ success: true, reassigned: !!reassignTo });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK');
+        console.error('Delete branch error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // POST /api/branches/reset-password
 router.post('/reset-password', authMiddleware, async (req, res) => {
     const { email, new_password } = req.body;
