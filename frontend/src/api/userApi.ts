@@ -15,6 +15,7 @@ export interface Customer {
   remaining_balance: number; // Calculated field from backend SQL
   branch_id?: number | null;
   branch_name?: string | null;
+  customer_type?: "company" | "retail";
   address_line1?: string;
   address_line2?: string;
   city_pincode?: string;
@@ -76,11 +77,12 @@ export interface CustomerLedgerResponse {
  * branches, or `{ branchId }` to view a specific branch's customers.
  */
 export const fetchCustomers = async (
-  opts?: { scope?: "all"; branchId?: number },
+  opts?: { scope?: "all"; branchId?: number; customerType?: "company" | "retail" },
 ): Promise<Customer[]> => {
   const params = new URLSearchParams();
   if (opts?.scope) params.set("scope", opts.scope);
   if (opts?.branchId != null) params.set("branch_id", String(opts.branchId));
+  if (opts?.customerType) params.set("customer_type", opts.customerType);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const res = await apiFetch(`/users${suffix}`);
   if (!res.ok) {

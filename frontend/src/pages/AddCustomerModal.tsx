@@ -228,6 +228,7 @@ const AddCustomerModal: React.FC<Props> = ({
     bank_ifsc_code: "",
     opening_balance: 0,
     password: "",
+    customer_type: "company" as "company" | "retail",
   });
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -251,6 +252,7 @@ const AddCustomerModal: React.FC<Props> = ({
         bank_ifsc_code: customerToEdit.bank_ifsc_code || "",
         opening_balance: Math.abs(bal),
         password: "",
+        customer_type: customerToEdit.customer_type === "retail" ? "retail" : "company",
       });
     }
   }, [customerToEdit]);
@@ -334,6 +336,38 @@ const AddCustomerModal: React.FC<Props> = ({
               placeholder="e.g. Acme Corp Pvt Ltd"
               required
             />
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Customer Type</label>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, customer_type: "company" })}
+                  style={{
+                    flex: 1, padding: "10px 14px", borderRadius: "10px", cursor: "pointer",
+                    border: formData.customer_type === "company" ? "2px solid #2563eb" : "1.5px solid #cbd5e1",
+                    background: formData.customer_type === "company" ? "#eff6ff" : "#fff",
+                    color: formData.customer_type === "company" ? "#1d4ed8" : "#64748b",
+                    fontWeight: 700, fontSize: "13px",
+                  }}
+                >
+                  🏢 Company
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, customer_type: "retail" })}
+                  style={{
+                    flex: 1, padding: "10px 14px", borderRadius: "10px", cursor: "pointer",
+                    border: formData.customer_type === "retail" ? "2px solid #16a34a" : "1.5px solid #cbd5e1",
+                    background: formData.customer_type === "retail" ? "#f0fdf4" : "#fff",
+                    color: formData.customer_type === "retail" ? "#15803d" : "#64748b",
+                    fontWeight: 700, fontSize: "13px",
+                  }}
+                >
+                  🛍️ Retail
+                </button>
+              </div>
+            </div>
 
             {/* 2. PORTAL LOGIN (✅ NEW GREEN BOX) */}
             <div

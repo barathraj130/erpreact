@@ -29,8 +29,10 @@ import "./PageShared.css";
 
 const Customers: React.FC = () => {
   const navigate = useNavigate();
-  const [scopeFilter, setScopeFilter] = useState<"active" | "all">("active");
-  const { customers = [], loading, error: fetchError, refresh } = useUsers(scopeFilter === "all" ? "all" : undefined);
+  const [customerTab, setCustomerTab] = useState<"company" | "branch" | "retail" | "all">("company");
+  // Always fetch the full set — tab segmentation happens client-side below,
+  // so switching tabs doesn't need a new round trip.
+  const { customers = [], loading, error: fetchError, refresh } = useUsers("all");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -98,10 +100,17 @@ const Customers: React.FC = () => {
           gstin.toLowerCase().includes(searchLower) ||
           nickname.toLowerCase().includes(searchLower);
 
-        return isNotAdmin && matchesSearch;
+        const isRetail = user.customer_type === "retail";
+        const matchesTab =
+          customerTab === "all" ? true :
+          customerTab === "retail" ? isRetail :
+          customerTab === "branch" ? (!isRetail && !!user.branch_id) :
+          (!isRetail && !user.branch_id); // "company"
+
+        return isNotAdmin && matchesSearch && matchesTab;
       })
       .sort((a, b) => (a.nickname || a.username || "").localeCompare(b.nickname || b.username || ""));
-  }, [customers, searchTerm]);
+  }, [customers, searchTerm, customerTab]);
 
   // Stats calculation — positive = outstanding (customer owes), negative = advance (we owe customer)
   const totalOutstanding = displayedCustomers.reduce((acc, curr) => {
@@ -427,20 +436,23 @@ const Customers: React.FC = () => {
         </div>
       </div>
 
-      {/* Scope tabs — Company (wholesale/B2B) vs All (company + every branch's walk-in customers) */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      {/* Segment tabs — Company (HQ-level, no branch, not retail), Branch (assigned to a
+          branch), Retail (walk-in / POS customers), or everything at once */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {[
-          { key: "active" as const, label: "🏢 Company Customers" },
+          { key: "company" as const, label: "🏢 Company Customers" },
+          { key: "branch" as const, label: "🏬 Branch Customers" },
+          { key: "retail" as const, label: "🛍️ Retail Customers" },
           { key: "all" as const, label: "👥 All Customers" },
         ].map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setScopeFilter(tab.key)}
+            onClick={() => setCustomerTab(tab.key)}
             style={{
               padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-              border: `1.5px solid ${scopeFilter === tab.key ? "#4f46e5" : "var(--border-soft)"}`,
-              background: scopeFilter === tab.key ? "#4f46e5" : "transparent",
-              color: scopeFilter === tab.key ? "#fff" : "var(--text-2)",
+              border: `1.5px solid ${customerTab === tab.key ? "#4f46e5" : "var(--border-soft)"}`,
+              background: customerTab === tab.key ? "#4f46e5" : "transparent",
+              color: customerTab === tab.key ? "#fff" : "var(--text-2)",
               cursor: "pointer",
             }}
           >
@@ -506,7 +518,11 @@ const Customers: React.FC = () => {
                     <div className="tx-desc" style={{ fontSize: "14.5px" }}>{user.nickname || user.username}</div>
                     {user.gstin && <div className="tx-poster">GSTIN: {user.gstin}</div>}
                   </div>
-                  {user.branch_id ? (
+                  {user.customer_type === "retail" ? (
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f0fdf4", color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                      Retail
+                    </span>
+                  ) : user.branch_id ? (
                     <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#eff6ff", color: "#2563eb", fontWeight: 600, whiteSpace: "nowrap" }}>
                       {user.branch_name || `Branch #${user.branch_id}`}
                     </span>
@@ -653,7 +669,11 @@ const Customers: React.FC = () => {
                       )}
                     </td>
                     <td>
-                      {user.branch_id ? (
+                      {user.customer_type === "retail" ? (
+                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f0fdf4", color: "#16a34a", fontWeight: 600 }}>
+                          Retail
+                        </span>
+                      ) : user.branch_id ? (
                         <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#eff6ff", color: "#2563eb", fontWeight: 600 }}>
                           {user.branch_name || `Branch #${user.branch_id}`}
                         </span>

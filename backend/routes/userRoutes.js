@@ -12,6 +12,15 @@ import {
 
 const router = express.Router();
 
+// Idempotent — adds the customer_type column ('company' | 'retail') the first
+// time it's needed. Safe to call on every request that touches it.
+let customerTypeColumnEnsured = false;
+const ensureCustomerTypeColumn = async () => {
+    if (customerTypeColumnEnsured) return;
+    await db.pgRun(`ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type VARCHAR(20) DEFAULT 'company'`).catch(() => {});
+    customerTypeColumnEnsured = true;
+};
+
 /* ============================================================
    STAFF MANAGEMENT (Settings > Users)
    - Only Admins or those with 'access_settings' can manage staff
@@ -116,10 +125,12 @@ router.post("/staff/:id/reset-password", authMiddleware, checkPermission("Settin
 // GET SINGLE CUSTOMER
 router.get("/:id", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     try {
+        await ensureCustomerTypeColumn();
         const user = await db.pgGet(`
             SELECT
                 id, username, nickname, email, phone, role, gstin,
                 address_line1, city_pincode, state, state_code,
+                COALESCE(customer_type, 'company') AS customer_type, branch_id,
                 initial_balance, bank_name, bank_account_no, bank_ifsc_code, created_at,
                 COALESCE((meta->>'customer_opening_balance')::NUMERIC, COALESCE(initial_balance, 0))
                 + COALESCE((
@@ -274,12 +285,14 @@ router.post("/create-customer", authMiddleware, async (req, res) => {
 // Scope rules (matches /search and /create-customer branch isolation):
 //   ?scope=all        -> every customer, company + all branches (admin/reporting use)
 //   ?branch_id=X       -> only that branch's customers (used by Branch detail page)
+//   ?customer_type=X   -> only customers of that type ('company' | 'retail')
 //   (no params)         -> customers for the requester's active branch, or
 //                          company-wide (branch_id IS NULL) if no branch is active
 router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async (req, res) => {
     const companyId = req.user.active_company_id || req.user.company_id;
-    const { scope, branch_id: branchFilterRaw } = req.query;
+    const { scope, branch_id: branchFilterRaw, customer_type: customerTypeFilter } = req.query;
     try {
+        await ensureCustomerTypeColumn();
         const params = [companyId];
         let branchClause = '';
         if (scope === 'all') {
@@ -294,11 +307,17 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
             branchClause = ` AND u.branch_id IS NULL`;
         }
 
+        let customerTypeClause = '';
+        if (customerTypeFilter === 'retail' || customerTypeFilter === 'company') {
+            params.push(customerTypeFilter);
+            customerTypeClause = ` AND COALESCE(u.customer_type, 'company') = $${params.length}`;
+        }
+
         const users = await db.pgAll(`
             SELECT
                 u.id, u.username, u.nickname, u.email, u.phone, u.role, u.gstin,
                 u.address_line1, u.city_pincode, u.state, u.state_code,
-                u.branch_id, b.branch_name,
+                u.branch_id, b.branch_name, COALESCE(u.customer_type, 'company') AS customer_type,
                 -- Use the effective opening balance (meta takes priority over raw column).
                 -- This ensures the Edit Customer form shows the same value used in outstanding calculations.
                 COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0)) AS initial_balance,
@@ -352,7 +371,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 ), 0) as remaining_balance
             FROM users u
             LEFT JOIN branches b ON b.id = u.branch_id
-            WHERE u.role IN ('user', 'customer') AND u.company_id = $1${branchClause}
+            WHERE u.role IN ('user', 'customer') AND u.company_id = $1${branchClause}${customerTypeClause}
             ORDER BY u.id ASC
         `, params);
         res.json(users);
@@ -364,20 +383,24 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
 
 // CREATE CUSTOMER (With Optional Login)
 router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), async (req, res) => {
-    const { 
-        username, nickname, email, phone, gstin, 
-        address_line1, city_pincode, state, state_code, 
+    const {
+        username, nickname, email, phone, gstin,
+        address_line1, city_pincode, state, state_code,
         bank_name, bank_account_no, bank_ifsc_code,
         opening_balance,
-        password // ✅ New Field
+        password, // ✅ New Field
+        customer_type
     } = req.body;
 
     if (!username) {
         return res.status(400).json({ error: "Customer username/name is required." });
     }
 
+    const custType = customer_type === "retail" ? "retail" : "company";
+
     let client;
     try {
+        await ensureCustomerTypeColumn();
         client = await db.getClient();
         await client.query("BEGIN");
 
@@ -404,9 +427,9 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
                         company_id, username, nickname, email, phone, gstin,
                         address_line1, city_pincode, state, state_code,
                         bank_name, bank_account_no, bank_ifsc_code,
-                        initial_balance, role, active_company_id, password_hash, branch_id
+                        initial_balance, role, active_company_id, password_hash, branch_id, customer_type
                     )
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customer',$15,$16,$17)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customer',$15,$16,$17,$18)
                      RETURNING id`,
                     [
                         companyId,
@@ -420,7 +443,8 @@ router.post("/", authMiddleware, checkPermission("Sales", "create_invoices"), as
                         opening_balance || 0,
                         companyId,
                         password_hash,
-                        branchId
+                        branchId,
+                        custType
                     ]
                 );
                 await client.query(`RELEASE SAVEPOINT sp_username`);
@@ -476,11 +500,13 @@ router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), as
         address_line1, city_pincode, state, state_code,
         bank_name, bank_account_no, bank_ifsc_code,
         opening_balance, // ✅ Editable opening balance
-        password // ✅ Optional Password Reset
+        password, // ✅ Optional Password Reset
+        customer_type
     } = req.body;
 
     let client;
     try {
+        await ensureCustomerTypeColumn();
         client = await db.getClient();
         await client.query("BEGIN");
 
@@ -495,6 +521,11 @@ router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), as
             address_line1 || null, city_pincode || null, state || null, state_code || null,
             bank_name || null, bank_account_no || null, bank_ifsc_code || null
         ];
+
+        if (customer_type === "retail" || customer_type === "company") {
+            sql += `, customer_type=$${params.length + 1}`;
+            params.push(customer_type);
+        }
 
         // If password is provided, update it too
         if (password && password.trim() !== "") {
