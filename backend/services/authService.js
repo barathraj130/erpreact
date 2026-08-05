@@ -103,10 +103,15 @@ export const authenticateUser = async (company_code, email, password) => {
     }
 
     // 3. Find User
+    // ORDER BY id ASC makes this deterministic — if a company ever ends up with
+    // two active users sharing the same email/username (e.g. a duplicate branch
+    // setup), login always resolves to the same (oldest/original) account
+    // instead of a random one depending on query plan.
     const user = await db.pgGet(
-        `SELECT * FROM users 
-         WHERE (LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1)) 
-         AND company_id = $2 AND is_active = TRUE`,
+        `SELECT * FROM users
+         WHERE (LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1))
+         AND company_id = $2 AND is_active = TRUE
+         ORDER BY id ASC LIMIT 1`,
         [email, company.id]
     );
 
