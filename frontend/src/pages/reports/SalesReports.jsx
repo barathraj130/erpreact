@@ -42,7 +42,7 @@ const SalesReports = () => {
         3: `/reports/sales/monthly-growth?year=${new Date().getFullYear()}`,
         4: `/reports/sales/product-performance?${qs}`,
         5: `/reports/sales/collections?${qs}`,
-        6: `/invoices/retail-summary?${qs}`,
+        6: `/invoice/retail-summary?${qs}`,
       };
       const res = await apiFetch(endpoints[tab]);
       if (res.ok) {

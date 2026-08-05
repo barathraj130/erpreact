@@ -55,9 +55,9 @@ export default function RetailRevenue() {
     setLoading(true);
     setError(null);
     try {
-      let url = `/invoices/retail-summary?period=${period}`;
+      let url = `/invoice/retail-summary?period=${period}`;
       if (period === "custom" && fromDate && toDate) {
-        url = `/invoices/retail-summary?from=${fromDate}&to=${toDate}`;
+        url = `/invoice/retail-summary?from=${fromDate}&to=${toDate}`;
       }
       const res  = await apiFetch(url);
       if (!res.ok) throw new Error(`Failed to load retail data (${res.status})`);
