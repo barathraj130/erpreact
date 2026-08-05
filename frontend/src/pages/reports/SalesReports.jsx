@@ -20,7 +20,7 @@ const nowMonth = () => {
   return { from: `${now.getFullYear()}-${m}-01`, to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0] };
 };
 
-const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', 'Collections', '🛍️ Retail'];
+const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', 'Collections', 'Retail Collections', '🛍️ Retail'];
 const RETAIL_TAB = TABS.length - 1;
 
 const SalesReports = () => {
@@ -42,12 +42,24 @@ const SalesReports = () => {
         3: `/reports/sales/monthly-growth?year=${new Date().getFullYear()}`,
         4: `/reports/sales/product-performance?${qs}`,
         5: `/reports/sales/collections?${qs}`,
+        6: `/invoices/retail-summary?${qs}`,
       };
       const res = await apiFetch(endpoints[tab]);
       if (res.ok) {
         const json = await res.json();
-        setData(prev => ({ ...prev, [tab]: json.data || [] }));
-        setSummary(prev => ({ ...prev, [tab]: json.summary || {} }));
+        if (tab === 6) {
+          // Retail Collections reuses the existing retail-summary endpoint —
+          // its daily_trend rows (date, bills, revenue, collected) become the table/chart data.
+          setData(prev => ({ ...prev, [tab]: json.daily_trend || [] }));
+          setSummary(prev => ({ ...prev, [tab]: {
+            total_bills: json.summary?.total_bills || 0,
+            total_collected: json.summary?.total_collected || 0,
+            total_pending: json.summary?.total_pending || 0,
+          } }));
+        } else {
+          setData(prev => ({ ...prev, [tab]: json.data || [] }));
+          setSummary(prev => ({ ...prev, [tab]: json.summary || {} }));
+        }
       }
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -84,6 +96,13 @@ const SalesReports = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
         <KPICard label="Customers Who Paid" value={String(tabSummary.total_customers || 0)} color="#6366f1" isAmount={false} />
         <KPICard label="Total Received" value={tabSummary.total_received || 0} color="#10b981" isAmount={true} />
+      </div>
+    );
+    if (activeTab === 6) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+        <KPICard label="Retail Bills" value={String(tabSummary.total_bills || 0)} color="#6366f1" isAmount={false} />
+        <KPICard label="Cash Collected" value={tabSummary.total_collected || 0} color="#10b981" isAmount={true} />
+        <KPICard label="Pending Amount" value={tabSummary.total_pending || 0} color="#ef4444" isAmount={true} />
       </div>
     );
     return null;
@@ -186,6 +205,20 @@ const SalesReports = () => {
       </ChartCard>
     );
 
+    if (activeTab === 6) return (
+      <ChartCard title="Daily Retail Collections" height={300}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={tabData} margin={{ left: 20, right: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => formatDate(v)} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} labelFormatter={v => formatDate(v)} />
+            <Bar dataKey="collected" fill="#10b981" radius={[4,4,0,0]} name="Collected" />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+    );
+
     return null;
   };
 
@@ -240,7 +273,14 @@ const SalesReports = () => {
     { key: 'last_payment_date', label: 'Last Payment', align: 'center', render: v => formatDate(v) },
   ];
 
-  const COLUMNS = [topCustomerCols, trendCols, agingCols, monthlyGrowthCols, productCols, collectionsCols];
+  const retailCollectionsCols = [
+    { key: 'date', label: 'Date', render: v => formatDate(v) },
+    { key: 'bills', label: 'Bills', align: 'right' },
+    { key: 'revenue', label: 'Revenue', type: 'amount', align: 'right', render: v => formatINR(v) },
+    { key: 'collected', label: 'Collected', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: () => '#065f46' },
+  ];
+
+  const COLUMNS = [topCustomerCols, trendCols, agingCols, monthlyGrowthCols, productCols, collectionsCols, retailCollectionsCols];
 
   return (
     <ReportShell
@@ -267,7 +307,7 @@ const SalesReports = () => {
       ) : (
         <>
           {/* Filters (for tabs that support date range) */}
-          {[0, 1, 4, 5].includes(activeTab) && (
+          {[0, 1, 4, 5, 6].includes(activeTab) && (
             <FilterBar
               filters={[
                 { key: 'from', label: 'From', type: 'date' },

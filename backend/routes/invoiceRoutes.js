@@ -1447,15 +1447,18 @@ router.get('/retail-summary', authMiddleware, async (req, res) => {
             toDate   = now.toISOString().split('T')[0];
         }
 
+        // Qualified with the "i" alias — recentBills below joins users (which also has
+        // is_deleted/company_id columns), so unqualified names here are ambiguous and
+        // fail the whole Promise.all, silently returning zeroed-out data.
         const retailFilter = `
-            COALESCE(is_deleted, false) = false
-            AND COALESCE(is_nominal, false) = false
-            AND company_id = $1
+            COALESCE(i.is_deleted, false) = false
+            AND COALESCE(i.is_nominal, false) = false
+            AND i.company_id = $1
             AND (
-                UPPER(COALESCE(invoice_type, '')) = 'RETAIL_SALE'
-                OR invoice_number ILIKE 'RET/%'
+                UPPER(COALESCE(i.invoice_type, '')) = 'RETAIL_SALE'
+                OR i.invoice_number ILIKE 'RET/%'
             )
-            AND invoice_date BETWEEN $2 AND $3
+            AND i.invoice_date BETWEEN $2 AND $3
         `;
 
         const [summary, daily, topProducts, recentBills, wholesaleRow, totalRow] = await Promise.all([
@@ -1472,19 +1475,19 @@ router.get('/retail-summary', authMiddleware, async (req, res) => {
                     COUNT(CASE WHEN LOWER(COALESCE(status,'')) IN ('pending','unpaid','') OR status IS NULL THEN 1 END) AS pending_count,
                     COALESCE(SUM(CASE WHEN LOWER(COALESCE(status,'')) = 'paid' THEN total_amount ELSE 0 END), 0) AS paid_revenue,
                     COUNT(DISTINCT customer_id) AS unique_customers
-                FROM invoices
+                FROM invoices i
                 WHERE ${retailFilter}
             `, [companyId, fromDate, toDate]),
 
             db.pgAll(`
                 SELECT
-                    DATE(invoice_date) AS date,
+                    DATE(i.invoice_date) AS date,
                     COUNT(*) AS bills,
                     COALESCE(SUM(total_amount), 0) AS revenue,
                     COALESCE(SUM(paid_amount), 0) AS collected
-                FROM invoices
+                FROM invoices i
                 WHERE ${retailFilter}
-                GROUP BY DATE(invoice_date)
+                GROUP BY DATE(i.invoice_date)
                 ORDER BY date ASC
             `, [companyId, fromDate, toDate]),
 
@@ -1528,7 +1531,7 @@ router.get('/retail-summary', authMiddleware, async (req, res) => {
                 FROM invoices i
                 LEFT JOIN users u ON u.id = i.customer_id
                 LEFT JOIN invoice_line_items li ON li.invoice_id = i.id AND COALESCE(li.is_return, false) = false
-                WHERE ${retailFilter.replace(/\$2/g, '$2').replace(/\$3/g, '$3')}
+                WHERE ${retailFilter}
                 GROUP BY i.id, i.invoice_number, i.invoice_date, i.total_amount,
                          i.paid_amount, i.status, i.walk_in_name, u.nickname, u.username
                 ORDER BY i.invoice_date DESC, i.id DESC
