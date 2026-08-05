@@ -49,25 +49,38 @@ export default function RetailRevenue() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate]     = useState("");
   const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       let url = `/invoices/retail-summary?period=${period}`;
       if (period === "custom" && fromDate && toDate) {
         url = `/invoices/retail-summary?from=${fromDate}&to=${toDate}`;
       }
       const res  = await apiFetch(url);
+      if (!res.ok) throw new Error(`Failed to load retail data (${res.status})`);
       const json = await res.json();
       setData(json);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Retail summary error", e);
+      setError(e?.message || "Failed to load retail data.");
+      setData(null);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [period]);
+  useEffect(() => {
+    // "Custom" needs a from/to picked first — fetching immediately on switching
+    // to it would silently use this-month defaults (fromDate/toDate are still
+    // blank at that point) instead of what the user is about to pick. Wait for
+    // them to hit Apply instead.
+    if (period === "custom") return;
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
   const s = data?.summary;
 
@@ -130,7 +143,25 @@ export default function RetailRevenue() {
         </div>
       )}
 
-      {!loading && s && (
+      {!loading && error && (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "#dc2626", fontSize: 14 }}>
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && period === "custom" && !data && (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--color-text-secondary)", fontSize: 14 }}>
+          Pick a date range and click Apply.
+        </div>
+      )}
+
+      {!loading && !error && s && s.total_bills === 0 && (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--color-text-secondary)", fontSize: 14 }}>
+          No retail sales in this period.
+        </div>
+      )}
+
+      {!loading && s && s.total_bills > 0 && (
         <>
           {/* KPI Row 1 */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 14 }}>
