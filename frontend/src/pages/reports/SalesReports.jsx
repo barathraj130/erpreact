@@ -20,7 +20,8 @@ const nowMonth = () => {
   return { from: `${now.getFullYear()}-${m}-01`, to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0] };
 };
 
-const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', '🛍️ Retail'];
+const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', 'Collections', '🛍️ Retail'];
+const RETAIL_TAB = TABS.length - 1;
 
 const SalesReports = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -40,6 +41,7 @@ const SalesReports = () => {
         2: `/reports/sales/aging-receivables`,
         3: `/reports/sales/monthly-growth?year=${new Date().getFullYear()}`,
         4: `/reports/sales/product-performance?${qs}`,
+        5: `/reports/sales/collections?${qs}`,
       };
       const res = await apiFetch(endpoints[tab]);
       if (res.ok) {
@@ -58,8 +60,8 @@ const SalesReports = () => {
   const tabData = data[activeTab] || [];
   const tabSummary = summary[activeTab] || {};
 
-  // Pre-process data to add rank for top customers and product performance
-  const rankedData = (activeTab === 0 || activeTab === 4)
+  // Pre-process data to add rank for top customers, product performance and collections
+  const rankedData = [0, 4, 5].includes(activeTab)
     ? tabData.map((r, i) => ({ ...r, rank: i + 1 }))
     : tabData;
 
@@ -76,6 +78,12 @@ const SalesReports = () => {
         <KPICard label="0-30 days" value={tabSummary.days_0_30 || 0} color="#10b981" isAmount={true} />
         <KPICard label="31-60 days" value={tabSummary.days_31_60 || 0} color="#f59e0b" isAmount={true} />
         <KPICard label="90+ days" value={tabSummary.days_90_plus || 0} color="#ef4444" isAmount={true} />
+      </div>
+    );
+    if (activeTab === 5) return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+        <KPICard label="Customers Who Paid" value={String(tabSummary.total_customers || 0)} color="#6366f1" isAmount={false} />
+        <KPICard label="Total Received" value={tabSummary.total_received || 0} color="#10b981" isAmount={true} />
       </div>
     );
     return null;
@@ -164,6 +172,20 @@ const SalesReports = () => {
       </ChartCard>
     );
 
+    if (activeTab === 5) return (
+      <ChartCard title="Top 10 Customers by Amount Received" height={300}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={tabData.slice(0, 10)} margin={{ left: 20, right: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="customer_name" tick={{ fontSize: 11 }} />
+            <YAxis tickFormatter={yAxisFormatter} />
+            <Tooltip formatter={tooltipFormatter} />
+            <Bar dataKey="amount_received" fill="#10b981" radius={[4,4,0,0]} name="Amount Received" />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+    );
+
     return null;
   };
 
@@ -210,7 +232,15 @@ const SalesReports = () => {
     { key: 'margin_pct', label: 'Margin %', align: 'right', render: v => parseFloat(v || 0).toFixed(1) + '%' },
   ];
 
-  const COLUMNS = [topCustomerCols, trendCols, agingCols, monthlyGrowthCols, productCols];
+  const collectionsCols = [
+    { key: 'rank', label: 'Rank', width: '6%', align: 'center' },
+    { key: 'customer_name', label: 'Customer', wrap: true },
+    { key: 'payment_count', label: 'Payments', align: 'right' },
+    { key: 'amount_received', label: 'Amount Received', type: 'amount', align: 'right', bold: true, render: v => formatINR(v), colorFn: () => '#065f46' },
+    { key: 'last_payment_date', label: 'Last Payment', align: 'center', render: v => formatDate(v) },
+  ];
+
+  const COLUMNS = [topCustomerCols, trendCols, agingCols, monthlyGrowthCols, productCols, collectionsCols];
 
   return (
     <ReportShell
@@ -232,12 +262,12 @@ const SalesReports = () => {
       </div>
 
       {/* Retail tab — full inline component */}
-      {activeTab === 5 ? (
+      {activeTab === RETAIL_TAB ? (
         <RetailRevenue />
       ) : (
         <>
           {/* Filters (for tabs that support date range) */}
-          {[0, 1, 4].includes(activeTab) && (
+          {[0, 1, 4, 5].includes(activeTab) && (
             <FilterBar
               filters={[
                 { key: 'from', label: 'From', type: 'date' },

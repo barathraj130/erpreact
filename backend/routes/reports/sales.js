@@ -374,4 +374,59 @@ router.get('/product-performance', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/reports/sales/collections
+ * Total amount actually RECEIVED from customers within a date range — filtered
+ * by payment date, not invoice date. Distinct from "Top Customers" total_paid,
+ * which is all-time paid against invoices billed in the period.
+ */
+router.get('/collections', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  const { from, to } = req.query;
+  const { from: startDate, to: endDate } = getDateRange(from, to);
+  try {
+    const sql = `
+      SELECT
+        u.id AS customer_id,
+        COALESCE(u.nickname, u.username) AS customer_name,
+        COALESCE(ip_sum.amount, 0) + COALESCE(tx_sum.amount, 0) AS amount_received,
+        COALESCE(ip_sum.cnt, 0) AS payment_count,
+        GREATEST(COALESCE(ip_sum.last_date, '1970-01-01'), COALESCE(tx_sum.last_date, '1970-01-01')) AS last_payment_date
+      FROM users u
+      LEFT JOIN (
+        SELECT i.customer_id, SUM(ip.amount) AS amount, COUNT(*) AS cnt, MAX(ip.payment_date) AS last_date
+        FROM invoice_payments ip
+        JOIN invoices i ON i.id = ip.invoice_id
+        WHERE i.company_id = $1 AND COALESCE(i.is_deleted, false) = false
+          AND ip.payment_date BETWEEN $2::date AND $3::date
+        GROUP BY i.customer_id
+      ) ip_sum ON ip_sum.customer_id = u.id
+      LEFT JOIN (
+        SELECT reference_id AS customer_id, SUM(amount) AS amount, MAX(COALESCE(transaction_date, date)) AS last_date
+        FROM transactions
+        WHERE company_id = $1 AND type = 'CUSTOMER_PAYMENT'
+          AND COALESCE(transaction_date, date) BETWEEN $2::date AND $3::date
+        GROUP BY reference_id
+      ) tx_sum ON tx_sum.customer_id = u.id
+      WHERE u.company_id = $1 AND u.role = 'customer'
+        AND (COALESCE(ip_sum.amount, 0) + COALESCE(tx_sum.amount, 0)) > 0
+      ORDER BY amount_received DESC
+    `;
+    const rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
+    const data = rawData.map(r => ({
+      ...r,
+      amount_received: parseFloat(r.amount_received || 0),
+      payment_count: parseFloat(r.payment_count || 0),
+    }));
+    const summary = {
+      total_customers: data.length,
+      total_received: data.reduce((a, b) => a + (b.amount_received || 0), 0),
+    };
+    res.json({ data: data || [], summary });
+  } catch (err) {
+    console.error('collections error:', err.message);
+    res.json({ data: [], summary: {} });
+  }
+});
+
 export default router;
