@@ -88,6 +88,10 @@ import StorefrontSettings from "./pages/admin/StorefrontSettings";
 import FluxoraLanding from "./pages/public/FluxoraLanding";
 import StorePage from "./pages/public/StorePage";
 
+// Fluxora Master Control Panel — standalone, separate credential system
+import MasterLogin from "./pages/master/MasterLogin";
+import MasterPanel from "./pages/master/MasterPanel";
+
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
 import CashReceipts from "./pages/finance/CashReceipts";
@@ -202,6 +206,18 @@ const EnterpriseLayout: React.FC<{
           </button>
         )}
 
+        {user?.is_impersonated && (
+          <div style={{ background: "#dc2626", color: "#fff", padding: "8px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontWeight: 600 }}>
+            <span>⚠️ Master Session: You are viewing this ERP as {user.impersonated_by} (Master Admin)</span>
+            <button
+              onClick={() => { localStorage.removeItem("erp-token"); window.close(); }}
+              style={{ padding: "4px 12px", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 6, background: "transparent", color: "#fff", cursor: "pointer", fontSize: 12 }}
+            >
+              End Session
+            </button>
+          </div>
+        )}
+
         {!hideSidebar && <Topbar mode={mode} />}
 
         <main style={{ flex: 1 }}>
@@ -298,6 +314,11 @@ const App: React.FC = () => {
           <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
           <Route path="/mark-attendance" element={<MobileAttendance />} />
           <Route path="/store/:slug" element={<StorePage />} />
+
+          {/* Fluxora Master — completely standalone, its own master_token auth,
+              never nested under HostRoute/AdminRoute/WorkspaceRoute */}
+          <Route path="/fluxora-master" element={<MasterLogin />} />
+          <Route path="/master" element={<MasterPanel />} />
 
           <Route element={<HostRoute />}>
             <Route
