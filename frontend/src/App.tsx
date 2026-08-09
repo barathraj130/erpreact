@@ -82,6 +82,11 @@ import UserManagement from "./pages/admin/UserManagement";
 import BranchDetail from "./pages/admin/BranchDetail";
 import UserPermissionsEditor from "./pages/admin/UserPermissionsEditor";
 import RoundOffRequests from "./pages/admin/RoundOffRequests";
+import StorefrontSettings from "./pages/admin/StorefrontSettings";
+
+// Public Module
+import FluxoraLanding from "./pages/public/FluxoraLanding";
+import StorePage from "./pages/public/StorePage";
 
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
@@ -270,6 +275,14 @@ const CustomerRoute = () => {
   );
 };
 
+// "/" shows the public Fluxora marketing site for logged-out visitors, and
+// sends already-logged-in users straight to their dashboard.
+const Home = () => {
+  const { user, loading } = useAuthUser();
+  if (loading) return <div className="full-screen-loader">Loading...</div>;
+  return user ? <Navigate to="/dashboard" replace /> : <FluxoraLanding />;
+};
+
 const App: React.FC = () => {
   // App initializing
   return (
@@ -284,6 +297,7 @@ const App: React.FC = () => {
           <Route path="/host-login" element={<HostLogin />} />
           <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
           <Route path="/mark-attendance" element={<MobileAttendance />} />
+          <Route path="/store/:slug" element={<StorePage />} />
 
           <Route element={<HostRoute />}>
             <Route
@@ -320,6 +334,7 @@ const App: React.FC = () => {
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/branches/:id" element={<BranchDetail />} />
             <Route path="/admin/audit-log" element={<AuditLog />} />
+            <Route path="/admin/storefront" element={<StorefrontSettings />} />
             <Route path="/settlements" element={<Settlements />} />
             <Route path="/settlements/new" element={<NewSettlement />} />
             <Route path="/settlements/:id" element={<SettlementDetail />} />
@@ -423,7 +438,7 @@ const App: React.FC = () => {
           {/* Clean Simple Dashboard */}
           <Route path="/simple" element={<SimpleDashboard />} />
 
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Home />} />
           <Route path="*" element={<Navigate to="/company-login" replace />} />
         </Routes>
       </Router>

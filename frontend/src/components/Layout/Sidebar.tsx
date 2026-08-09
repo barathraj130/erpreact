@@ -195,6 +195,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
             { name: "Bill Format", path: "/admin/bill-format" },
             { name: "Payment Methods", path: "/admin/payment-methods" },
             { name: "Branches", path: "/admin/branches" },
+            { name: "🛍️ My Storefront", path: "/admin/storefront" },
             { name: "User Management", path: "/admin/users" },
             { name: roundoffPendingCount > 0 ? `Round Off Requests (${roundoffPendingCount})` : "Round Off Requests", path: "/admin/roundoff-requests" },
             { name: "Subscriptions", path: "/admin/subscriptions" },
