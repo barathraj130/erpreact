@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { masterFetch } from "./masterApi";
+import "../../styles/aurora.css";
 
 interface DashboardData {
   company_stats: Record<string, number>;
@@ -124,13 +125,16 @@ const MasterPanel: React.FC = () => {
   const rs = dashData?.revenue_stats || { mrr: 0, arr: 0 };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#030712", fontFamily: "system-ui, -apple-system, sans-serif", color: "#f1f5f9" }}>
+    <div style={{ minHeight: "100vh", background: "#070B16", fontFamily: "'Inter', system-ui, -apple-system, sans-serif", color: "#f1f5f9", position: "relative" }}>
+      {/* AURORA AMBIENT — top of page */}
+      <div style={{ position: "fixed", top: 62, left: 0, right: 0, height: "45vh", pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse at 30% 0%, rgba(91,75,255,0.07) 0%, transparent 55%)" }} />
+
       {/* TOP BAR */}
-      <div style={{ background: "#0f172a", borderBottom: "1px solid #1e293b", padding: "0 24px", height: 60, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100, flexWrap: "wrap" }}>
+      <div style={{ background: "rgba(13,20,38,0.95)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "0.5px solid rgba(255,255,255,0.07)", padding: "0 24px", height: 62, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg,#4f46e5,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900 }}>F</div>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg,#5B4BFF,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 900, boxShadow: "0 4px 14px rgba(91,75,255,0.45)" }}>F</div>
           <span style={{ fontSize: 16, fontWeight: 800 }}>Fluxora</span>
-          <span style={{ fontSize: 11, background: "#1e293b", color: "#7c3aed", padding: "2px 8px", borderRadius: 20, fontWeight: 700 }}>MASTER</span>
+          <span style={{ fontSize: 10, background: "rgba(91,75,255,0.18)", color: "#7C6CFF", padding: "2px 10px", borderRadius: 20, fontWeight: 800, letterSpacing: "0.09em" }}>MASTER</span>
         </div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {[
@@ -141,18 +145,18 @@ const MasterPanel: React.FC = () => {
             { id: "health" as const, label: "💚 Health" },
             { id: "audit" as const, label: "📋 Audit Log" },
           ].map((s) => (
-            <button key={s.id} onClick={() => setActiveSection(s.id)} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", background: activeSection === s.id ? "#4f46e5" : "transparent", color: activeSection === s.id ? "#fff" : "#94a3b8" }}>
+            <button key={s.id} onClick={() => setActiveSection(s.id)} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", background: activeSection === s.id ? "linear-gradient(135deg,#5B4BFF,#7C6CFF)" : "transparent", color: activeSection === s.id ? "#fff" : "#94a3b8", boxShadow: activeSection === s.id ? "0 4px 14px rgba(91,75,255,0.35)" : "none", transition: "all 150ms" }}>
               {s.label}
             </button>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 13, color: "#64748b" }}>{user.name} — Master</span>
-          <button onClick={logout} style={{ padding: "6px 14px", border: "1px solid #334155", borderRadius: 8, background: "transparent", color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>Logout</button>
+          <button onClick={logout} style={{ padding: "6px 14px", border: "0.5px solid rgba(255,255,255,0.10)", borderRadius: 8, background: "transparent", color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>Logout</button>
         </div>
       </div>
 
-      <div style={{ padding: 24 }}>
+      <div style={{ padding: 24, position: "relative", zIndex: 1 }}>
         {loading && <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>Loading platform data…</div>}
 
         {!loading && activeSection === "dashboard" && dashData && (
@@ -160,13 +164,22 @@ const MasterPanel: React.FC = () => {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10, marginBottom: 20 }}>
               {[
                 { label: "MRR", value: `₹${fmt(rs.mrr)}`, color: "#10b981", icon: "💰" },
-                { label: "ARR", value: `₹${fmt(rs.arr)}`, color: "#4f46e5", icon: "📈" },
+                { label: "ARR", value: `₹${fmt(rs.arr)}`, color: "#5B4BFF", icon: "📈" },
                 { label: "Active", value: cs.active_companies || 0, color: "#10b981", icon: "✅" },
                 { label: "Trial", value: cs.trial_companies || 0, color: "#f59e0b", icon: "⏳" },
                 { label: "Trials Expiring", value: cs.trials_expiring_7d || 0, color: "#ef4444", icon: "⚠️" },
                 { label: "Suspended", value: cs.suspended_companies || 0, color: "#dc2626", icon: "🚫" },
               ].map((card, i) => (
-                <div key={i} style={{ background: "#0f172a", borderRadius: 12, padding: 16, border: `1px solid ${card.color}25` }}>
+                <div key={i} style={{
+                  background: "#0D1426", borderRadius: 14, padding: "18px 18px 16px", position: "relative", overflow: "hidden",
+                  border: `0.5px solid ${card.color}25`,
+                  boxShadow: "6px 6px 16px rgba(0,0,0,0.40), -4px -4px 12px rgba(255,255,255,0.02), 0 0 0 0.5px rgba(255,255,255,0.04) inset",
+                  transition: "all 200ms ease", cursor: "default",
+                }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `6px 6px 20px rgba(0,0,0,0.45), -4px -4px 12px rgba(255,255,255,0.02), 0 0 24px ${card.color}18`; e.currentTarget.style.borderColor = `${card.color}40`; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "6px 6px 16px rgba(0,0,0,0.40), -4px -4px 12px rgba(255,255,255,0.02), 0 0 0 0.5px rgba(255,255,255,0.04) inset"; e.currentTarget.style.borderColor = `${card.color}25`; }}
+                >
+                  <div style={{ position: "absolute", top: -20, right: -20, width: 70, height: 70, borderRadius: "50%", background: `radial-gradient(circle, ${card.color}18 0%, transparent 70%)`, pointerEvents: "none" }} />
                   <div style={{ fontSize: 18, marginBottom: 6 }}>{card.icon}</div>
                   <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4, fontWeight: 600, letterSpacing: "0.06em" }}>{card.label.toUpperCase()}</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: card.color }}>{card.value}</div>
@@ -175,46 +188,49 @@ const MasterPanel: React.FC = () => {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
-              <div style={{ background: "#0f172a", borderRadius: 14, border: "1px solid #1e293b", overflow: "hidden" }}>
-                <div style={{ padding: "16px 20px", borderBottom: "1px solid #1e293b", fontSize: 14, fontWeight: 700 }}>Recent Companies</div>
+              <div style={{ background: "#0D1426", borderRadius: 16, border: "0.5px solid rgba(255,255,255,0.07)", overflow: "hidden", boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
+                <div style={{ padding: "16px 20px", borderBottom: "0.5px solid rgba(255,255,255,0.06)", fontSize: 14, fontWeight: 700 }}>Recent Companies</div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                    <tr style={{ background: "rgba(0,0,0,0.20)" }}>
                       {["Company", "Plan", "Status", "MRR", "Joined"].map((h, i) => (
-                        <th key={i} style={{ padding: "8px 16px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#475569" }}>{h}</th>
+                        <th key={i} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: "0.06em" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {(dashData.recent_companies || []).map((t, i) => (
-                      <tr key={i} style={{ borderTop: "1px solid #0f172a" }}>
-                        <td style={{ padding: "10px 16px", fontSize: 13, fontWeight: 600 }}>{t.company_name}</td>
-                        <td style={{ padding: "10px 16px" }}>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#1e293b", color: "#94a3b8", fontWeight: 700 }}>{(t.plan_name || "—").toUpperCase()}</span>
+                      <tr key={i} style={{ borderTop: "0.5px solid rgba(255,255,255,0.04)", transition: "background 150ms" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(91,75,255,0.05)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 600 }}>{t.company_name}</td>
+                        <td style={{ padding: "12px 16px" }}>
+                          <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "rgba(91,75,255,0.14)", color: "#7C6CFF", fontWeight: 700, letterSpacing: "0.04em" }}>{(t.plan_name || "—").toUpperCase()}</span>
                         </td>
-                        <td style={{ padding: "10px 16px" }}>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, fontWeight: 700, background: `${STATUS_COLOR[t.subscription_status] || "#64748b"}20`, color: STATUS_COLOR[t.subscription_status] || "#94a3b8" }}>
+                        <td style={{ padding: "12px 16px" }}>
+                          <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, fontWeight: 700, background: `${STATUS_COLOR[t.subscription_status] || "#64748b"}20`, color: STATUS_COLOR[t.subscription_status] || "#94a3b8" }}>
                             {(t.subscription_status || "—").toUpperCase()}
                           </span>
                         </td>
-                        <td style={{ padding: "10px 16px", fontSize: 13, color: "#10b981", fontWeight: 700 }}>₹{fmt(t.monthly_price)}</td>
-                        <td style={{ padding: "10px 16px", fontSize: 11, color: "#475569" }}>{new Date(t.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</td>
+                        <td style={{ padding: "12px 16px", fontSize: 13, color: "#10b981", fontWeight: 700 }}>₹{fmt(t.monthly_price)}</td>
+                        <td style={{ padding: "12px 16px", fontSize: 11, color: "#475569" }}>{new Date(t.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              <div style={{ background: "#0f172a", borderRadius: 14, border: "1px solid #1e293b", padding: 20 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Plan Distribution</div>
+              <div style={{ background: "#0D1426", borderRadius: 16, border: "0.5px solid rgba(255,255,255,0.07)", padding: "20px 24px", boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 20 }}>Plan Distribution</div>
                 {(dashData.plan_distribution || []).map((plan, i) => (
-                  <div key={i} style={{ marginBottom: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>{plan.plan_name}</span>
-                      <span style={{ fontSize: 12, color: "#f1f5f9", fontWeight: 700 }}>{plan.count} — ₹{fmt(plan.plan_revenue)}/mo</span>
+                  <div key={i} style={{ marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.06em" }}>{plan.plan_name}</span>
+                      <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>{plan.count} — ₹{fmt(plan.plan_revenue)}/mo</span>
                     </div>
-                    <div style={{ height: 6, background: "#1e293b", borderRadius: 3 }}>
-                      <div style={{ height: "100%", borderRadius: 3, width: `${Math.min(100, Number(plan.count) * 20)}%`, background: "#4f46e5" }} />
+                    <div style={{ height: 6, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ height: "100%", borderRadius: 3, width: `${Math.min(100, Number(plan.count) * 20)}%`, background: "linear-gradient(90deg, #5B4BFF, #7C6CFF)", transition: "width 600ms ease" }} />
                     </div>
                   </div>
                 ))}
@@ -227,27 +243,30 @@ const MasterPanel: React.FC = () => {
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div style={{ fontSize: 18, fontWeight: 700 }}>All Companies ({tenants.length})</div>
-              <button onClick={() => setActiveSection("create")} style={{ padding: "8px 18px", background: "#4f46e5", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ New Tenant</button>
+              <button onClick={() => setActiveSection("create")} style={{ padding: "8px 18px", background: "#5B4BFF", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ New Tenant</button>
             </div>
-            <div style={{ background: "#0f172a", borderRadius: 14, border: "1px solid #1e293b", overflow: "auto" }}>
+            <div style={{ background: "#0D1426", borderRadius: 16, border: "0.5px solid rgba(255,255,255,0.07)", overflow: "auto", boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                  <tr style={{ background: "rgba(0,0,0,0.20)" }}>
                     {["Company", "Plan", "Status", "Users", "MRR", "Days Left", "Actions"].map((h, i) => (
-                      <th key={i} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#475569", letterSpacing: "0.04em" }}>{h}</th>
+                      <th key={i} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: "0.06em" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {tenants.map((t) => (
-                    <tr key={t.id} style={{ borderTop: "1px solid #0f172a" }}>
+                    <tr key={t.id} style={{ borderTop: "0.5px solid rgba(255,255,255,0.04)", transition: "background 150ms" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(91,75,255,0.04)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
                       <td style={{ padding: "12px 16px" }}>
                         <div style={{ fontSize: 14, fontWeight: 700 }}>{t.company_name}</div>
                         <div style={{ fontSize: 11, color: "#475569" }}>{t.email}</div>
                         <div style={{ fontSize: 10, color: "#334155", fontFamily: "monospace" }}>{t.company_code}</div>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
-                        <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 700, background: "#1e293b", color: "#7c3aed" }}>{(t.plan_name || "—").toUpperCase()}</span>
+                        <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, fontWeight: 700, background: "rgba(91,75,255,0.14)", color: "#7C6CFF", letterSpacing: "0.04em" }}>{(t.plan_name || "—").toUpperCase()}</span>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 700, background: `${STATUS_COLOR[t.subscription_status || ""] || "#64748b"}20`, color: STATUS_COLOR[t.subscription_status || ""] || "#94a3b8" }}>
@@ -263,10 +282,10 @@ const MasterPanel: React.FC = () => {
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => impersonateTenant(t.id, t.company_name)} disabled={impersonating === t.id} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #4f46e5", background: "transparent", color: "#4f46e5", cursor: "pointer", fontWeight: 600 }}>
+                          <button onClick={() => impersonateTenant(t.id, t.company_name)} disabled={impersonating === t.id} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #5B4BFF", background: "transparent", color: "#5B4BFF", cursor: "pointer", fontWeight: 600 }}>
                             {impersonating === t.id ? "..." : "👁 View"}
                           </button>
-                          <button onClick={() => setPlanEditor({ id: t.id, name: t.company_name })} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #7c3aed", background: "transparent", color: "#a78bfa", cursor: "pointer", fontWeight: 600 }}>
+                          <button onClick={() => setPlanEditor({ id: t.id, name: t.company_name })} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #8B5CF6", background: "transparent", color: "#a78bfa", cursor: "pointer", fontWeight: 600 }}>
                             ⚙ Plan
                           </button>
                           {t.subscription_status !== "SUSPENDED" ? (
@@ -304,7 +323,7 @@ const MasterPanel: React.FC = () => {
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>System Health</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
               {(health.checks || []).map((check: any, i: number) => (
-                <div key={i} style={{ background: "#0f172a", borderRadius: 12, padding: 20, border: `1px solid ${check.status === "healthy" ? "#064e3b" : check.status === "slow" ? "#451a03" : "#1e293b"}` }}>
+                <div key={i} style={{ background: "#0D1426", borderRadius: 14, padding: 20, border: `0.5px solid ${check.status === "healthy" ? "rgba(16,185,129,0.30)" : check.status === "slow" ? "rgba(245,158,11,0.30)" : "rgba(255,255,255,0.07)"}`, boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{check.name}</div>
                   {check.response_ms !== undefined ? (
                     <>
@@ -312,7 +331,7 @@ const MasterPanel: React.FC = () => {
                       <div style={{ fontSize: 11, color: check.status === "healthy" ? "#10b981" : "#f59e0b", marginTop: 4, fontWeight: 600 }}>{check.status.toUpperCase()}</div>
                     </>
                   ) : (
-                    <div style={{ fontSize: 28, fontWeight: 800, color: "#4f46e5" }}>{check.value}</div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: "#5B4BFF" }}>{check.value}</div>
                   )}
                 </div>
               ))}
@@ -327,18 +346,21 @@ const MasterPanel: React.FC = () => {
         {!loading && activeSection === "audit" && (
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Audit Log</div>
-            <div style={{ background: "#0f172a", borderRadius: 14, border: "1px solid #1e293b", overflow: "hidden" }}>
+            <div style={{ background: "#0D1426", borderRadius: 16, border: "0.5px solid rgba(255,255,255,0.07)", overflow: "hidden", boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                  <tr style={{ background: "rgba(0,0,0,0.20)" }}>
                     {["Action", "Target", "By", "When"].map((h, i) => (
-                      <th key={i} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#475569" }}>{h}</th>
+                      <th key={i} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: "0.06em" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {auditLog.map((a, i) => (
-                    <tr key={i} style={{ borderTop: "1px solid #0f172a" }}>
+                    <tr key={i} style={{ borderTop: "0.5px solid rgba(255,255,255,0.04)", transition: "background 150ms" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(91,75,255,0.04)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
                       <td style={{ padding: "10px 16px", fontSize: 12, fontWeight: 700 }}>{a.action.replace(/_/g, " ")}</td>
                       <td style={{ padding: "10px 16px", fontSize: 12, color: "#94a3b8" }}>{a.target_name || "—"}</td>
                       <td style={{ padding: "10px 16px", fontSize: 12, color: "#64748b" }}>{a.master_user_name}</td>
@@ -358,8 +380,8 @@ const MasterPanel: React.FC = () => {
   );
 };
 
-const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #1e293b", background: "#020617", color: "#f1f5f9", fontSize: 13, boxSizing: "border-box" };
-const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6, letterSpacing: "0.04em" };
+const inputStyle: React.CSSProperties = { width: "100%", padding: "11px 14px", borderRadius: 10, border: "0.5px solid rgba(255,255,255,0.10)", background: "#070B16", color: "#f1f5f9", fontSize: 13, boxSizing: "border-box", boxShadow: "inset 3px 3px 8px rgba(0,0,0,0.35), inset -2px -2px 6px rgba(255,255,255,0.02)", outline: "none" };
+const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#64748b", display: "block", marginBottom: 6, letterSpacing: "0.06em" };
 
 const CreateTenantForm: React.FC<{ onCreated: () => void }> = ({ onCreated }) => {
   const [form, setForm] = useState({
@@ -397,7 +419,7 @@ const CreateTenantForm: React.FC<{ onCreated: () => void }> = ({ onCreated }) =>
     <div style={{ maxWidth: 640 }}>
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Create New Tenant</div>
       {err && <div style={{ background: "#450a0a", border: "1px solid #dc2626", borderRadius: 8, padding: "10px 14px", color: "#fca5a5", fontSize: 13, marginBottom: 16 }}>{err}</div>}
-      <div style={{ background: "#0f172a", borderRadius: 14, border: "1px solid #1e293b", padding: 24 }}>
+      <div style={{ background: "#0D1426", borderRadius: 16, border: "0.5px solid rgba(255,255,255,0.07)", padding: 24, boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 12, textTransform: "uppercase" }}>Company</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
           <div style={{ gridColumn: "1 / -1" }}><label style={labelStyle}>Company Name *</label><input style={inputStyle} value={form.company_name} onChange={(e) => setForm((p) => ({ ...p, company_name: e.target.value }))} /></div>
@@ -428,7 +450,7 @@ const CreateTenantForm: React.FC<{ onCreated: () => void }> = ({ onCreated }) =>
           <div><label style={labelStyle}>Password</label><input type="text" style={inputStyle} value={form.admin_password} onChange={(e) => setForm((p) => ({ ...p, admin_password: e.target.value }))} /></div>
         </div>
 
-        <button onClick={submit} disabled={saving} style={{ padding: "12px 28px", background: saving ? "#334155" : "#4f46e5", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+        <button onClick={submit} disabled={saving} style={{ padding: "12px 28px", background: saving ? "#334155" : "#5B4BFF", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
           {saving ? "Creating…" : "Create Tenant"}
         </button>
       </div>
@@ -457,8 +479,8 @@ const AnnouncementsTab: React.FC = () => {
   return (
     <div style={{ maxWidth: 560 }}>
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Platform Announcement</div>
-      {msg && <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{msg}</div>}
-      <div style={{ background: "#0f172a", borderRadius: 14, border: "1px solid #1e293b", padding: 24 }}>
+      {msg && <div style={{ background: "#0D1426", border: "0.5px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>{msg}</div>}
+      <div style={{ background: "#0D1426", borderRadius: 16, border: "0.5px solid rgba(255,255,255,0.07)", padding: 24, boxShadow: "6px 6px 16px rgba(0,0,0,0.35), -4px -4px 12px rgba(255,255,255,0.02)" }}>
         <div style={{ marginBottom: 12 }}><label style={labelStyle}>Title</label><input style={inputStyle} value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} /></div>
         <div style={{ marginBottom: 12 }}>
           <label style={labelStyle}>Type</label>
@@ -474,7 +496,7 @@ const AnnouncementsTab: React.FC = () => {
           <label style={labelStyle}>Message</label>
           <textarea rows={4} style={{ ...inputStyle, resize: "none" }} value={form.message} onChange={(e) => setForm((p) => ({ ...p, message: e.target.value }))} />
         </div>
-        <button onClick={submit} disabled={saving} style={{ padding: "12px 28px", background: saving ? "#334155" : "#4f46e5", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+        <button onClick={submit} disabled={saving} style={{ padding: "12px 28px", background: saving ? "#334155" : "#5B4BFF", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
           {saving ? "Publishing…" : "Publish to All Tenants"}
         </button>
       </div>
@@ -562,8 +584,8 @@ const PlanEditorModal: React.FC<{ tenantId: number; tenantName: string; onClose:
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "88vh", overflowY: "auto", padding: 28 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(7,11,22,0.75)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: "#0D1426", border: "0.5px solid rgba(255,255,255,0.09)", borderRadius: 20, width: "100%", maxWidth: 640, maxHeight: "88vh", overflowY: "auto", padding: 28, boxShadow: "10px 10px 30px rgba(0,0,0,0.45), -6px -6px 18px rgba(255,255,255,0.02), 0 0 60px rgba(91,75,255,0.06)" }}>
         <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Manage Plan — {tenantName}</div>
         <div style={{ fontSize: 12, color: "#64748b", marginBottom: 20 }}>Set pricing, limits, and which modules this tenant can access.</div>
 
@@ -608,7 +630,7 @@ const PlanEditorModal: React.FC<{ tenantId: number; tenantName: string; onClose:
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {Object.entries(byCategory).map(([category, mods]) => (
-                  <div key={category} style={{ background: "#020617", border: "1px solid #1e293b", borderRadius: 10, padding: 12 }}>
+                  <div key={category} style={{ background: "#070B16", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>{category}</div>
                     {mods.map((m) => (
                       <label key={m.module_key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "3px 0", cursor: "pointer" }}>
@@ -622,7 +644,7 @@ const PlanEditorModal: React.FC<{ tenantId: number; tenantName: string; onClose:
             )}
 
             <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
-              <button onClick={submit} disabled={saving} style={{ flex: 1, padding: 12, background: saving ? "#334155" : "#4f46e5", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+              <button onClick={submit} disabled={saving} style={{ flex: 1, padding: 12, background: saving ? "#334155" : "#5B4BFF", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
                 {saving ? "Saving…" : "Save Plan"}
               </button>
               <button onClick={onClose} style={{ padding: "12px 20px", background: "transparent", border: "1px solid #334155", color: "#94a3b8", borderRadius: 10, fontSize: 14, cursor: "pointer" }}>Cancel</button>

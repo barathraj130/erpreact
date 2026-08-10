@@ -3,8 +3,14 @@ import React, { useEffect, useState } from "react";
 import { Eye, EyeOff, ShieldCheck, Mail, Building2, ChevronRight, Zap } from "lucide-react";
 import { login } from "../api/authApi";
 import { apiFetch } from "../utils/api";
-import loginImg from "../assets/login-image.png";
 import "./Login.css";
+
+const BANNER_FEATURES = [
+  { icon: "🧾", text: "Smart GST Invoicing" },
+  { icon: "📦", text: "Fresh & Mistake Inventory" },
+  { icon: "🏬", text: "Multi-Branch POS Billing" },
+  { icon: "💬", text: "WhatsApp Automation" },
+];
 
 export default function Login() {
   const [companyCode, setCompanyCode] = useState("");
@@ -163,16 +169,29 @@ export default function Login() {
         <div className="login-box">
           {/* LEFT: INFORMATION PANEL */}
           <div className="login-banner">
-            <div className="banner-visual">
-               <img src={loginImg} alt="Platform Branding" className="illustration-img" />
-            </div>
-            <div className="banner-overlay"></div>
+            <div className="banner-visual"></div>
             <div className="banner-content">
+              <div className="banner-logo-row">
+                <div className="banner-logo-mark">F</div>
+                <span className="banner-logo-text">Fluxora</span>
+                <span className="banner-logo-pill">ERP</span>
+              </div>
               <div className="brand-badge">ENTERPRISE OS</div>
               <h1 className="banner-heading">ERP</h1>
               <p className="banner-description">
-                Unified operations. Intelligent insights. Secure infrastructure for the modern workforce.
+                Unified operations. Intelligent insights. Built for garment and textile MSMEs across India.
               </p>
+              <div className="banner-features">
+                {BANNER_FEATURES.map((f, i) => (
+                  <div key={i} className="banner-feature-pill">
+                    <span className="fp-icon">{f.icon}</span>
+                    {f.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="banner-footnote">
+              Trusted by garment businesses in Tiruppur, Chennai, and beyond
             </div>
           </div>
 
@@ -287,31 +306,31 @@ export default function Login() {
                 </div>
 
                 {/* DEMO LOGIN */}
-                <div style={{ position: "relative", margin: "16px 0 0", textAlign: "center" }}>
-                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(148,163,184,0.25)", transform: "translateY(-50%)" }} />
-                  <span style={{ position: "relative", background: "white", padding: "0 12px", fontSize: 12, color: "#94a3b8", fontWeight: 500 }}>or</span>
+                <div style={{ position: "relative", margin: "20px 0 0", textAlign: "center" }}>
+                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(255,255,255,0.08)", transform: "translateY(-50%)" }} />
+                  <span style={{ position: "relative", background: "#070B16", padding: "0 12px", fontSize: 12, color: "#334155", fontWeight: 500 }}>or</span>
                 </div>
-                <div className="interactive-wrapper-fix login-button-wrapper" style={{ marginTop: 12 }}>
+                <div className="interactive-wrapper-fix login-button-wrapper" style={{ marginTop: 16 }}>
                   <button
                     type="button"
                     onClick={handleDemoLogin}
                     disabled={isDemoLoading}
                     style={{
-                      width: "100%", padding: "12px 20px", borderRadius: 10,
-                      border: "1.5px solid #e2e8f0", background: "#f8fafc",
-                      color: "#334155", fontSize: 14, fontWeight: 600,
+                      width: "100%", padding: "13px 20px", borderRadius: 12,
+                      border: "0.5px solid rgba(91,75,255,0.25)", background: "rgba(91,75,255,0.08)",
+                      color: "#7C6CFF", fontSize: 14, fontWeight: 600,
                       cursor: isDemoLoading ? "not-allowed" : "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       transition: "all 0.2s"
                     }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f1f5f9"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#6366f1"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f8fafc"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#e2e8f0"; }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(91,75,255,0.14)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(91,75,255,0.08)"; }}
                   >
                     {isDemoLoading ? (
-                      <span className="action-spinner" style={{ borderColor: "#6366f1", borderTopColor: "transparent" }}></span>
+                      <span className="action-spinner" style={{ borderColor: "#7C6CFF", borderTopColor: "transparent" }}></span>
                     ) : (
                       <>
-                        <Zap size={16} style={{ color: "#6366f1" }} />
+                        <Zap size={16} style={{ color: "#7C6CFF" }} />
                         Try Demo — No Login Required
                       </>
                     )}

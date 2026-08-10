@@ -1,0 +1,19 @@
+/* ─────────────────────────────────────────────────────────────
+   aurora.css — shared keyframes for the Fluxora premium redesign
+   (Landing page, Company Login, Master Login, Master Dashboard).
+   Keyframes are inert unless referenced by name, so importing this
+   file has zero effect on any other page in the app.
+   ───────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@keyframes aurora-slow {
+  0% { transform: translate(0, 0) scale(1); opacity: 0.8; }
+  50% { transform: translate(30px, 20px) scale(1.06); opacity: 1; }
+  100% { transform: translate(-15px, 35px) scale(0.96); opacity: 0.75; }
+}
+
+@keyframes aurora-slow-reverse {
+  0% { transform: translate(0, 0) scale(1.02); opacity: 0.7; }
+  50% { transform: translate(-25px, -15px) scale(0.95); opacity: 0.9; }
+  100% { transform: translate(20px, 25px) scale(1.04); opacity: 0.75; }
+}
