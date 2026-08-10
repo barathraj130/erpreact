@@ -4,14 +4,14 @@
   --erp-primary: #5B4BFF;
   --erp-primary-light: #7C6CFF;
   --erp-accent: #8B5CF6;
-  --erp-bg-canvas: #070B16;
-  --erp-surface: #0D1426;
-  --erp-card-bg: #0D1426;
-  --erp-input-bg: #070B16;
-  --erp-text-main: #F1F5F9;
+  --erp-bg-canvas: #F4F7FB;
+  --erp-surface: #FFFFFF;
+  --erp-card-bg: #FFFFFF;
+  --erp-input-bg: #F8FAFC;
+  --erp-text-main: #111827;
   --erp-text-muted: #64748B;
-  --erp-text-faint: #475569;
-  --erp-border: rgba(255,255,255,0.10);
+  --erp-text-faint: #64748B;
+  --erp-border: rgba(15,23,42,0.10);
   --erp-error: #EF4444;
 }
 
@@ -38,7 +38,7 @@ body, html {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #070B16;
+  background: #F4F7FB;
   position: relative;
   overflow: hidden;
   width: 100vw;
@@ -48,7 +48,7 @@ body, html {
 .background-mesh {
   position: absolute;
   inset: 0;
-  opacity: 0.15;
+  opacity: 0.06;
   background-image: radial-gradient(var(--erp-primary) 0.5px, transparent 0.5px);
   background-size: 30px 30px;
   z-index: 0;
@@ -66,11 +66,11 @@ body, html {
   background: var(--erp-card-bg);
   border-radius: 28px;
   overflow: hidden;
-  border: 0.5px solid rgba(255,255,255,0.08);
+  border: 0.5px solid rgba(15,23,42,0.08);
   box-shadow:
-    10px 10px 30px rgba(0,0,0,0.45),
-    -6px -6px 18px rgba(255,255,255,0.02),
-    0 0 70px rgba(91,75,255,0.10);
+    10px 10px 30px rgba(148,163,184,0.22),
+    -6px -6px 18px rgba(255,255,255,0.8),
+    0 0 70px rgba(91,75,255,0.08);
   min-height: 700px;
   box-sizing: border-box;
 }
@@ -83,8 +83,8 @@ body, html {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  background: linear-gradient(160deg, #0D1426 0%, #0a0f1e 100%);
-  border-right: 0.5px solid rgba(255,255,255,0.06);
+  background: linear-gradient(160deg, #EEF2FF 0%, #F8FAFF 100%);
+  border-right: 0.5px solid rgba(91,75,255,0.10);
   padding: 40px;
   box-sizing: border-box;
 }
@@ -104,7 +104,7 @@ body, html {
   width: 80%;
   height: 80%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(91,75,255,0.18) 0%, transparent 65%);
+  background: radial-gradient(circle, rgba(91,75,255,0.14) 0%, transparent 65%);
   filter: blur(80px);
   animation: login-aurora-slow 24s ease-in-out infinite alternate;
 }
@@ -117,7 +117,7 @@ body, html {
   width: 60%;
   height: 60%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(139,92,246,0.14) 0%, transparent 60%);
+  background: radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 60%);
   filter: blur(70px);
   animation: login-aurora-slow-reverse 30s ease-in-out infinite alternate;
 }
@@ -133,7 +133,7 @@ body, html {
 .banner-content {
   position: relative;
   z-index: 3;
-  color: white;
+  color: #111827;
 }
 
 .banner-logo-row {
@@ -154,20 +154,20 @@ body, html {
   font-size: 20px;
   font-weight: 900;
   color: #fff;
-  box-shadow: 0 6px 20px rgba(91,75,255,0.45);
+  box-shadow: 0 6px 20px rgba(91,75,255,0.35);
   flex-shrink: 0;
 }
 
 .banner-logo-text {
   font-size: 20px;
   font-weight: 800;
-  color: #F1F5F9;
+  color: #111827;
 }
 
 .banner-logo-pill {
   font-size: 10px;
-  background: rgba(91,75,255,0.20);
-  color: #7C6CFF;
+  background: rgba(91,75,255,0.12);
+  color: #5B4BFF;
   padding: 2px 10px;
   border-radius: 20px;
   font-weight: 700;
@@ -177,8 +177,8 @@ body, html {
 .brand-badge {
   display: inline-block;
   padding: 4px 12px;
-  background: rgba(91,75,255,0.15);
-  color: #7C6CFF;
+  background: rgba(91,75,255,0.10);
+  color: #5B4BFF;
   border-radius: 99px;
   font-size: 10px;
   font-weight: 800;
@@ -192,7 +192,7 @@ body, html {
   letter-spacing: -0.03em;
   line-height: 0.95;
   margin: 0 0 20px 0;
-  color: #F1F5F9;
+  color: #111827;
 }
 
 .banner-description {
@@ -215,10 +215,10 @@ body, html {
   gap: 12px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.04);
-  border: 0.5px solid rgba(255,255,255,0.07);
+  background: rgba(91,75,255,0.06);
+  border: 0.5px solid rgba(91,75,255,0.12);
   font-size: 13px;
-  color: #94A3B8;
+  color: #475569;
 }
 
 .banner-feature-pill .fp-icon {
@@ -229,14 +229,14 @@ body, html {
   position: relative;
   z-index: 3;
   font-size: 12px;
-  color: #334155;
+  color: #94A3B8;
   font-weight: 500;
 }
 
 /* RIGHT SIDE: AUTH FORM */
 .login-form-side {
   width: 55%;
-  background: #070B16;
+  background: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -253,7 +253,7 @@ body, html {
   width: 50%;
   height: 50%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(91,75,255,0.07) 0%, transparent 60%);
+  background: radial-gradient(circle, rgba(91,75,255,0.05) 0%, transparent 60%);
   filter: blur(60px);
   pointer-events: none;
 }
@@ -284,13 +284,13 @@ body, html {
 
 .auth-error-block {
   padding: 12px 16px;
-  background: rgba(239,68,68,0.10);
-  color: #FCA5A5;
+  background: #FEF2F2;
+  color: #DC2626;
   border-radius: 12px;
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 24px;
-  border: 0.5px solid rgba(239,68,68,0.30);
+  border: 0.5px solid rgba(220,38,38,0.25);
 }
 
 /* --- FORM CONTROLS --- */
@@ -318,12 +318,12 @@ body, html {
   border-radius: 12px;
   height: 52px;
   padding: 0 16px;
-  box-shadow: inset 4px 4px 10px rgba(0,0,0,0.40), inset -3px -3px 8px rgba(255,255,255,0.02);
+  box-shadow: inset 2px 2px 5px rgba(148,163,184,0.15), inset -2px -2px 5px rgba(255,255,255,0.7);
   transition: all 0.2s ease;
 }
 
 .field-icon {
-  color: #475569;
+  color: #94A3B8;
   margin-right: 12px;
   flex-shrink: 0;
 }
@@ -341,7 +341,7 @@ body, html {
 }
 
 .field-native-input::placeholder {
-  color: #334155;
+  color: #94A3B8;
   font-weight: 500;
 }
 
@@ -351,14 +351,15 @@ body, html {
 
 .field-input-container:focus-within {
   border-color: rgba(91,75,255,0.5);
-  box-shadow: inset 4px 4px 10px rgba(0,0,0,0.40), inset -3px -3px 8px rgba(255,255,255,0.02), 0 0 0 2px rgba(91,75,255,0.15);
+  background: #FFFFFF;
+  box-shadow: inset 2px 2px 5px rgba(148,163,184,0.15), inset -2px -2px 5px rgba(255,255,255,0.7), 0 0 0 2px rgba(91,75,255,0.15);
 }
 
 .field-native-input:-webkit-autofill,
 .field-native-input:-webkit-autofill:hover,
 .field-native-input:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--erp-text-main);
-  -webkit-box-shadow: 0 0 0px 1000px #070B16 inset !important;
+  -webkit-box-shadow: 0 0 0px 1000px #F8FAFC inset !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -389,7 +390,7 @@ body, html {
 .password-toggle-btn {
   background: transparent;
   border: none;
-  color: #475569;
+  color: #94A3B8;
   cursor: pointer;
   padding: 10px;
   display: flex;
@@ -415,14 +416,14 @@ body, html {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 24px rgba(91,75,255,0.40);
+  box-shadow: 0 6px 24px rgba(91,75,255,0.35);
   transition: box-shadow 0.2s ease, transform 0.2s ease, filter 0.2s ease;
   transform: none !important;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 .primary-action-btn:hover:not(:disabled) {
-  box-shadow: 0 8px 32px rgba(91,75,255,0.55);
+  box-shadow: 0 8px 32px rgba(91,75,255,0.45);
   filter: brightness(1.05);
 }
 
@@ -459,7 +460,7 @@ body, html {
 .styled-checkbox-frame {
   width: 18px;
   height: 18px;
-  background: #0D1426;
+  background: #F1F5F9;
   border: 0.5px solid var(--erp-border);
   border-radius: 6px;
   position: relative;

@@ -307,8 +307,8 @@ export default function Login() {
 
                 {/* DEMO LOGIN */}
                 <div style={{ position: "relative", margin: "20px 0 0", textAlign: "center" }}>
-                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(255,255,255,0.08)", transform: "translateY(-50%)" }} />
-                  <span style={{ position: "relative", background: "#070B16", padding: "0 12px", fontSize: 12, color: "#334155", fontWeight: 500 }}>or</span>
+                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(15,23,42,0.08)", transform: "translateY(-50%)" }} />
+                  <span style={{ position: "relative", background: "#FFFFFF", padding: "0 12px", fontSize: 12, color: "#94A3B8", fontWeight: 500 }}>or</span>
                 </div>
                 <div className="interactive-wrapper-fix login-button-wrapper" style={{ marginTop: 16 }}>
                   <button
