@@ -49,6 +49,7 @@ const MasterPanel: React.FC = () => {
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [impersonating, setImpersonating] = useState<number | null>(null);
+  const [planEditor, setPlanEditor] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     if (!localStorage.getItem("master_token")) { window.location.href = "/fluxora-master"; return; }
@@ -265,6 +266,9 @@ const MasterPanel: React.FC = () => {
                           <button onClick={() => impersonateTenant(t.id, t.company_name)} disabled={impersonating === t.id} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #4f46e5", background: "transparent", color: "#4f46e5", cursor: "pointer", fontWeight: 600 }}>
                             {impersonating === t.id ? "..." : "👁 View"}
                           </button>
+                          <button onClick={() => setPlanEditor({ id: t.id, name: t.company_name })} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #7c3aed", background: "transparent", color: "#a78bfa", cursor: "pointer", fontWeight: 600 }}>
+                            ⚙ Plan
+                          </button>
                           {t.subscription_status !== "SUSPENDED" ? (
                             <button onClick={() => suspendTenant(t.id)} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid #ef4444", background: "transparent", color: "#ef4444", cursor: "pointer" }}>Suspend</button>
                           ) : (
@@ -282,6 +286,15 @@ const MasterPanel: React.FC = () => {
 
         {!loading && activeSection === "create" && (
           <CreateTenantForm onCreated={() => { setActiveSection("tenants"); fetchAll(); }} />
+        )}
+
+        {planEditor && (
+          <PlanEditorModal
+            tenantId={planEditor.id}
+            tenantName={planEditor.name}
+            onClose={() => setPlanEditor(null)}
+            onSaved={() => { setPlanEditor(null); fetchAll(); }}
+          />
         )}
 
         {!loading && activeSection === "announcements" && <AnnouncementsTab />}
@@ -464,6 +477,158 @@ const AnnouncementsTab: React.FC = () => {
         <button onClick={submit} disabled={saving} style={{ padding: "12px 28px", background: saving ? "#334155" : "#4f46e5", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
           {saving ? "Publishing…" : "Publish to All Tenants"}
         </button>
+      </div>
+    </div>
+  );
+};
+
+const PlanEditorModal: React.FC<{ tenantId: number; tenantName: string; onClose: () => void; onSaved: () => void }> = ({ tenantId, tenantName, onClose, onSaved }) => {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [modules, setModules] = useState<{ module_key: string; module_name: string; category: string }[]>([]);
+  const [form, setForm] = useState<any>({
+    plan_name: "", status: "ACTIVE", monthly_price: 0, quarterly_price: 0, yearly_price: 0, billing_cycle: "monthly",
+    max_users: "", max_branches: "", max_invoices_per_month: "", expiry_date: "", trial_ends_at: "", enabled_modules: "",
+  });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [detailRes, modulesRes] = await Promise.all([
+          masterFetch(`/master/tenants/${tenantId}`).then((r) => r.json()),
+          masterFetch("/master/modules").then((r) => r.json()),
+        ]);
+        setModules(Array.isArray(modulesRes) ? modulesRes : []);
+        const c = detailRes?.company || {};
+        setForm({
+          plan_name: c.plan_name || "",
+          status: c.subscription_status || "ACTIVE",
+          monthly_price: c.monthly_price || 0,
+          quarterly_price: c.quarterly_price || 0,
+          yearly_price: c.yearly_price || 0,
+          billing_cycle: c.billing_cycle || "monthly",
+          max_users: c.max_users ?? "",
+          max_branches: c.max_branches ?? "",
+          max_invoices_per_month: c.max_invoices_per_month ?? "",
+          expiry_date: c.expiry_date ? String(c.expiry_date).slice(0, 10) : "",
+          trial_ends_at: c.trial_ends_at ? String(c.trial_ends_at).slice(0, 10) : "",
+          enabled_modules: c.enabled_modules || "",
+        });
+      } catch {
+        setErr("Failed to load plan details");
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  const selectedModules = new Set<string>(String(form.enabled_modules || "").split(",").map((s: string) => s.trim()).filter(Boolean));
+  const toggleModule = (key: string) => {
+    const next = new Set(selectedModules);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setForm((p: any) => ({ ...p, enabled_modules: Array.from(next).join(",") }));
+  };
+
+  const byCategory: Record<string, typeof modules> = {};
+  for (const m of modules) (byCategory[m.category || "Other"] = byCategory[m.category || "Other"] || []).push(m);
+
+  const submit = async () => {
+    setSaving(true);
+    setErr("");
+    try {
+      const res = await masterFetch(`/master/tenants/${tenantId}/plan`, {
+        method: "PUT",
+        body: {
+          ...form,
+          monthly_price: parseFloat(form.monthly_price) || 0,
+          quarterly_price: parseFloat(form.quarterly_price) || 0,
+          yearly_price: parseFloat(form.yearly_price) || 0,
+          max_users: form.max_users === "" ? null : parseInt(form.max_users),
+          max_branches: form.max_branches === "" ? null : parseInt(form.max_branches),
+          max_invoices_per_month: form.max_invoices_per_month === "" ? null : parseInt(form.max_invoices_per_month),
+          expiry_date: form.expiry_date || null,
+          trial_ends_at: form.trial_ends_at || null,
+        },
+      });
+      const data = await res.json();
+      if (data.success) onSaved(); else setErr(data.error || "Failed to save");
+    } catch {
+      setErr("Network error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "88vh", overflowY: "auto", padding: 28 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Manage Plan — {tenantName}</div>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 20 }}>Set pricing, limits, and which modules this tenant can access.</div>
+
+        {loading ? (
+          <div style={{ color: "#64748b", fontSize: 13 }}>Loading…</div>
+        ) : (
+          <>
+            {err && <div style={{ background: "#450a0a", border: "1px solid #dc2626", borderRadius: 8, padding: "10px 14px", color: "#fca5a5", fontSize: 13, marginBottom: 16 }}>{err}</div>}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div><label style={labelStyle}>Plan Name</label><input style={inputStyle} value={form.plan_name} onChange={(e) => setForm((p: any) => ({ ...p, plan_name: e.target.value }))} placeholder="starter / professional / enterprise" /></div>
+              <div>
+                <label style={labelStyle}>Status</label>
+                <select style={inputStyle} value={form.status} onChange={(e) => setForm((p: any) => ({ ...p, status: e.target.value }))}>
+                  <option value="ACTIVE">Active</option>
+                  <option value="TRIAL">Trial</option>
+                  <option value="SUSPENDED">Suspended</option>
+                  <option value="EXPIRED">Expired</option>
+                </select>
+              </div>
+              <div><label style={labelStyle}>Monthly Price (₹)</label><input type="number" style={inputStyle} value={form.monthly_price} onChange={(e) => setForm((p: any) => ({ ...p, monthly_price: e.target.value }))} /></div>
+              <div><label style={labelStyle}>Yearly Price (₹)</label><input type="number" style={inputStyle} value={form.yearly_price} onChange={(e) => setForm((p: any) => ({ ...p, yearly_price: e.target.value }))} /></div>
+              <div><label style={labelStyle}>Quarterly Price (₹)</label><input type="number" style={inputStyle} value={form.quarterly_price} onChange={(e) => setForm((p: any) => ({ ...p, quarterly_price: e.target.value }))} /></div>
+              <div>
+                <label style={labelStyle}>Billing Cycle</label>
+                <select style={inputStyle} value={form.billing_cycle} onChange={(e) => setForm((p: any) => ({ ...p, billing_cycle: e.target.value }))}>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </div>
+              <div><label style={labelStyle}>Max Users</label><input type="number" style={inputStyle} value={form.max_users} onChange={(e) => setForm((p: any) => ({ ...p, max_users: e.target.value }))} placeholder="blank = unlimited" /></div>
+              <div><label style={labelStyle}>Max Branches</label><input type="number" style={inputStyle} value={form.max_branches} onChange={(e) => setForm((p: any) => ({ ...p, max_branches: e.target.value }))} placeholder="blank = unlimited" /></div>
+              <div><label style={labelStyle}>Max Invoices / Month</label><input type="number" style={inputStyle} value={form.max_invoices_per_month} onChange={(e) => setForm((p: any) => ({ ...p, max_invoices_per_month: e.target.value }))} placeholder="blank = unlimited" /></div>
+              <div><label style={labelStyle}>Expiry Date</label><input type="date" style={inputStyle} value={form.expiry_date} onChange={(e) => setForm((p: any) => ({ ...p, expiry_date: e.target.value }))} /></div>
+              <div><label style={labelStyle}>Trial Ends At</label><input type="date" style={inputStyle} value={form.trial_ends_at} onChange={(e) => setForm((p: any) => ({ ...p, trial_ends_at: e.target.value }))} /></div>
+            </div>
+
+            <div style={{ marginTop: 22, marginBottom: 8, fontSize: 12, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.04em" }}>MODULES THIS TENANT CAN ACCESS</div>
+            {modules.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#475569" }}>No module catalog found.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {Object.entries(byCategory).map(([category, mods]) => (
+                  <div key={category} style={{ background: "#020617", border: "1px solid #1e293b", borderRadius: 10, padding: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 6, textTransform: "uppercase" }}>{category}</div>
+                    {mods.map((m) => (
+                      <label key={m.module_key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "3px 0", cursor: "pointer" }}>
+                        <input type="checkbox" checked={selectedModules.has(m.module_key)} onChange={() => toggleModule(m.module_key)} />
+                        {m.module_name}
+                      </label>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+              <button onClick={submit} disabled={saving} style={{ flex: 1, padding: 12, background: saving ? "#334155" : "#4f46e5", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+                {saving ? "Saving…" : "Save Plan"}
+              </button>
+              <button onClick={onClose} style={{ padding: "12px 20px", background: "transparent", border: "1px solid #334155", color: "#94a3b8", borderRadius: 10, fontSize: 14, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

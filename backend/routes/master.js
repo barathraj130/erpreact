@@ -357,6 +357,83 @@ router.post("/tenants/:id/activate", requireMaster, async (req, res) => {
     }
 });
 
+// ── GET /api/master/modules — module catalog (feature checklist source) ────
+router.get("/modules", requireMaster, async (req, res) => {
+    try {
+        const modules = await db.pgAll(`SELECT * FROM permission_modules ORDER BY category, display_order`);
+        res.json(modules);
+    } catch (e) {
+        res.json([]);
+    }
+});
+
+// ── PUT /api/master/tenants/:id/plan — full plan/limits/modules editor ─────
+// Distinct from suspend/activate (which only flip status). This lets Barath
+// decide exactly what a tenant can opt into: price, user/branch/invoice caps,
+// and which modules (from the real permission_modules catalog) are enabled.
+// Auto-creates a subscriptions row if the company doesn't have one yet
+// (e.g. companies created outside the "New Tenant" flow, like FLUXORA/DEMO).
+router.put("/tenants/:id/plan", requireMaster, async (req, res) => {
+    let client;
+    try {
+        const {
+            plan_name, monthly_price, quarterly_price, yearly_price, billing_cycle,
+            max_users, max_branches, max_invoices_per_month, enabled_modules,
+            expiry_date, trial_ends_at, status,
+        } = req.body;
+
+        const company = await db.pgGet(`SELECT id, company_name, subscription_id FROM companies WHERE id = $1`, [req.params.id]);
+        if (!company) return res.json({ success: false, error: "Company not found" });
+
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        let subscriptionId = company.subscription_id;
+        if (!subscriptionId) {
+            const subRes = await client.query(
+                `INSERT INTO subscriptions (plan_name, status) VALUES ($1, $2) RETURNING id`,
+                [plan_name || "starter", status || "ACTIVE"]
+            );
+            subscriptionId = subRes.rows[0].id;
+            await client.query(`UPDATE companies SET subscription_id = $1 WHERE id = $2`, [subscriptionId, company.id]);
+        }
+
+        await client.query(
+            `UPDATE subscriptions SET
+                plan_name = COALESCE($1, plan_name),
+                monthly_price = COALESCE($2, monthly_price),
+                quarterly_price = COALESCE($3, quarterly_price),
+                yearly_price = COALESCE($4, yearly_price),
+                billing_cycle = COALESCE($5, billing_cycle),
+                max_users = COALESCE($6, max_users),
+                max_branches = COALESCE($7, max_branches),
+                max_invoices_per_month = COALESCE($8, max_invoices_per_month),
+                enabled_modules = COALESCE($9, enabled_modules),
+                expiry_date = COALESCE($10::date, expiry_date),
+                trial_ends_at = COALESCE($11::date, trial_ends_at),
+                status = COALESCE($12, status)
+             WHERE id = $13`,
+            [
+                plan_name || null, monthly_price ?? null, quarterly_price ?? null, yearly_price ?? null, billing_cycle || null,
+                max_users ?? null, max_branches ?? null, max_invoices_per_month ?? null, enabled_modules ?? null,
+                expiry_date || null, trial_ends_at || null, status || null, subscriptionId,
+            ]
+        );
+
+        await client.query("COMMIT");
+
+        await logAction(req.master.id, "tenant_plan_updated", "company", company.id, company.company_name, req.body, req.ip);
+
+        res.json({ success: true, message: "Plan updated" });
+    } catch (e) {
+        if (client) await client.query("ROLLBACK");
+        console.error("Master update plan error:", e.message);
+        res.json({ success: false, error: e.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // ── POST /api/master/tenants — create a brand-new company ──────────────────
 router.post("/tenants", requireMaster, async (req, res) => {
     let client;
