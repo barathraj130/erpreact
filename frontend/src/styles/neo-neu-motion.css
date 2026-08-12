@@ -2,7 +2,7 @@
    NEO-NEU-MOTION — Neobrutalism (structure) + Neumorphism (depth)
    + Motion (feedback) design system.
 
-   Purely additive: every rule below is scoped to a .neo-*/.neu-*
+   Purely additive: every rule below is scoped to a .neo- or .neu-
    class, so importing this file changes zero pixels on any
    existing page until a component's className opts in. No global
    tag-selector resets (*, body) — those live in index.css and are
