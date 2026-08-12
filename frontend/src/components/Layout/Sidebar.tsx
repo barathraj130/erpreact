@@ -222,6 +222,20 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
       });
   }
 
+  // Work Accountability & Strict Audit — visible to all logged-in staff
+  // (not admin-only); each server-side action is permission-gated
+  // regardless of what's shown here.
+  baseItems.push({
+    name: "Work Accountability",
+    icon: <FaHistory />,
+    section: "Operations",
+    subItems: [
+      { name: "Overview", path: "/work" },
+      { name: "Jobs", path: "/work/jobs" },
+      { name: "Audit Timeline", path: "/work/audit" },
+    ],
+  });
+
   return baseItems;
 };
 

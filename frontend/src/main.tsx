@@ -5,6 +5,7 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import "./index.css";
 import "./styles/fluxora-design.css";
+import "./styles/neo-neu-motion.css";
 
 // Register service worker for PWA
 registerSW({ immediate: true });

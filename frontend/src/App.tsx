@@ -102,6 +102,14 @@ import OrgLeaves from "./pages/org/Leaves";
 import OrgFinance from "./pages/org/OrgFinance";
 import PlatformFinance from "./pages/master/PlatformFinance";
 
+// Work Accountability & Strict Audit — new, additive module
+// (see backend/routes/workAccountability.js). Tenant-scoped, reuses the
+// existing users/companies/branches/RBAC — no new auth or tenant concept.
+import WorkDashboard from "./pages/work/WorkDashboard";
+import WorkJobs from "./pages/work/Jobs";
+import WorkJobDetail from "./pages/work/JobDetail";
+import WorkAuditTimeline from "./pages/work/AuditTimeline";
+
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
 import CashReceipts from "./pages/finance/CashReceipts";
@@ -456,6 +464,14 @@ const App: React.FC = () => {
             <Route path="/reports/discounts" element={<DiscountReport />} />
             <Route path="/reports/classic" element={<ReportsDashboard />} />
             <Route path="/reports/:reportId" element={<ReportViewer />} />
+
+            {/* Work Accountability & Strict Audit — accessible to any logged-in
+                staff member; verify/approve actions are permission-gated
+                server-side, not by this route guard. */}
+            <Route path="/work" element={<WorkDashboard />} />
+            <Route path="/work/jobs" element={<WorkJobs />} />
+            <Route path="/work/jobs/:id" element={<WorkJobDetail />} />
+            <Route path="/work/audit" element={<WorkAuditTimeline />} />
           </Route>
 
           {/* Legacy Customer Portal */}
