@@ -204,22 +204,27 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
         ]
       });
 
-      // Fluxora's own internal organization (HR/finance) — separate from any
-      // tenant's data; backend rejects non-Fluxora admins regardless of what
-      // shows here.
-      baseItems.push({
-        name: "Fluxora Organization",
-        icon: <FaBuilding />,
-        section: "Fluxora Internal",
-        subItems: [
-            { name: "Overview", path: "/org/dashboard" },
-            { name: "Employees", path: "/org/employees" },
-            { name: "Attendance", path: "/org/attendance" },
-            { name: "Payroll", path: "/org/payroll" },
-            { name: "Leaves", path: "/org/leaves" },
-            { name: "Finance", path: "/org/finance" },
-        ]
-      });
+      // Fluxora's own internal organization (HR/finance) — only ever shown to
+      // Fluxora Technology's own company (id 3 in production, the FLUXORA
+      // workspace created earlier). Every other tenant admin (e.g. JBS) was
+      // seeing this link and hitting "Fluxora staff only" — the backend was
+      // always correctly rejecting them, this just stops showing a link that
+      // can never work for them.
+      if (user?.company_id === 3) {
+        baseItems.push({
+          name: "Fluxora Organization",
+          icon: <FaBuilding />,
+          section: "Fluxora Internal",
+          subItems: [
+              { name: "Overview", path: "/org/dashboard" },
+              { name: "Employees", path: "/org/employees" },
+              { name: "Attendance", path: "/org/attendance" },
+              { name: "Payroll", path: "/org/payroll" },
+              { name: "Leaves", path: "/org/leaves" },
+              { name: "Finance", path: "/org/finance" },
+          ]
+        });
+      }
   }
 
   // Work Accountability & Strict Audit — visible to all logged-in staff
