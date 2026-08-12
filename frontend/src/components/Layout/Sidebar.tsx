@@ -203,6 +203,23 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
             { name: "🧪 System Test", path: "/admin/system-test" },
         ]
       });
+
+      // Fluxora's own internal organization (HR/finance) — separate from any
+      // tenant's data; backend rejects non-Fluxora admins regardless of what
+      // shows here.
+      baseItems.push({
+        name: "Fluxora Organization",
+        icon: <FaBuilding />,
+        section: "Fluxora Internal",
+        subItems: [
+            { name: "Overview", path: "/org/dashboard" },
+            { name: "Employees", path: "/org/employees" },
+            { name: "Attendance", path: "/org/attendance" },
+            { name: "Payroll", path: "/org/payroll" },
+            { name: "Leaves", path: "/org/leaves" },
+            { name: "Finance", path: "/org/finance" },
+        ]
+      });
   }
 
   return baseItems;

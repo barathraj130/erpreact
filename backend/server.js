@@ -98,6 +98,7 @@ import settlementRoutes from "./routes/settlements.js";
 import storefrontRoutes from "./routes/storefront.js";
 import storefrontManageRoutes from "./routes/storefrontManage.js";
 import masterRoutes from "./routes/master.js";
+import organizationRoutes from "./routes/organization.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -237,6 +238,7 @@ app.use("/api/finance", financeRoutes);
 app.use("/api/expense-entries", expenseEntryRoutes);
 app.use("/api/roundoff", roundoffRoutes);
 app.use("/api/ledger-corrections", ledgerCorrectionRoutes);
+app.use("/api/org", organizationRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");

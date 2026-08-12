@@ -92,6 +92,16 @@ import StorePage from "./pages/public/StorePage";
 import MasterLogin from "./pages/master/MasterLogin";
 import MasterPanel from "./pages/master/MasterPanel";
 
+// Fluxora Organization ERP — Fluxora's own internal staff/HR/finance,
+// separate from any tenant's data (see backend/routes/organization.js)
+import OrgDashboard from "./pages/org/OrgDashboard";
+import OrgEmployees from "./pages/org/Employees";
+import OrgAttendance from "./pages/org/Attendance";
+import OrgPayroll from "./pages/org/Payroll";
+import OrgLeaves from "./pages/org/Leaves";
+import OrgFinance from "./pages/org/OrgFinance";
+import PlatformFinance from "./pages/master/PlatformFinance";
+
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
 import CashReceipts from "./pages/finance/CashReceipts";
@@ -319,6 +329,7 @@ const App: React.FC = () => {
               never nested under HostRoute/AdminRoute/WorkspaceRoute */}
           <Route path="/fluxora-master" element={<MasterLogin />} />
           <Route path="/master" element={<MasterPanel />} />
+          <Route path="/master/platform-finance" element={<PlatformFinance />} />
 
           <Route element={<HostRoute />}>
             <Route
@@ -359,6 +370,15 @@ const App: React.FC = () => {
             <Route path="/settlements" element={<Settlements />} />
             <Route path="/settlements/new" element={<NewSettlement />} />
             <Route path="/settlements/:id" element={<SettlementDetail />} />
+
+            {/* Fluxora Organization ERP — Fluxora's own internal staff only,
+                gated server-side by requireFluxoraStaff (company_code=FLUXORA) */}
+            <Route path="/org/dashboard" element={<OrgDashboard />} />
+            <Route path="/org/employees" element={<OrgEmployees />} />
+            <Route path="/org/attendance" element={<OrgAttendance />} />
+            <Route path="/org/payroll" element={<OrgPayroll />} />
+            <Route path="/org/leaves" element={<OrgLeaves />} />
+            <Route path="/org/finance" element={<OrgFinance />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>
