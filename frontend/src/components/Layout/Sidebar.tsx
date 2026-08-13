@@ -238,6 +238,8 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
       { name: "Overview", path: "/work" },
       { name: "Jobs", path: "/work/jobs" },
       { name: "Audit Timeline", path: "/work/audit" },
+      { name: "Mark Attendance", path: "/work/attendance/mark" },
+      ...(mode === "ADMIN" || user?.role === "admin" ? [{ name: "Attendance Report", path: "/work/attendance" }] : []),
     ],
   });
 

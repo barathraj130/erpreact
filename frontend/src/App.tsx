@@ -109,6 +109,8 @@ import WorkDashboard from "./pages/work/WorkDashboard";
 import WorkJobs from "./pages/work/Jobs";
 import WorkJobDetail from "./pages/work/JobDetail";
 import WorkAuditTimeline from "./pages/work/AuditTimeline";
+import MarkAttendance from "./pages/work/MarkAttendance";
+import AttendanceDashboard from "./pages/work/AttendanceDashboard";
 
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
@@ -387,6 +389,10 @@ const App: React.FC = () => {
             <Route path="/org/payroll" element={<OrgPayroll />} />
             <Route path="/org/leaves" element={<OrgLeaves />} />
             <Route path="/org/finance" element={<OrgFinance />} />
+
+            {/* Group Attendance — admin-only report view; marking itself is
+                open to all staff under WorkspaceRoute below. */}
+            <Route path="/work/attendance" element={<AttendanceDashboard />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>
@@ -472,6 +478,7 @@ const App: React.FC = () => {
             <Route path="/work/jobs" element={<WorkJobs />} />
             <Route path="/work/jobs/:id" element={<WorkJobDetail />} />
             <Route path="/work/audit" element={<WorkAuditTimeline />} />
+            <Route path="/work/attendance/mark" element={<MarkAttendance />} />
           </Route>
 
           {/* Legacy Customer Portal */}
