@@ -47,8 +47,19 @@ const WorkDashboard: React.FC = () => {
           <h1>Work Accountability</h1>
           <p>Jobs, duty tracking, reports, evidence, and approvals.</p>
         </div>
-        <div className="page-header-actions">
-          <Link to="/work/jobs" className="page-btn page-btn-primary">View All Jobs</Link>
+        <div className="page-header-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Link
+            to="/work/jobs"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 18px", borderRadius: 12, fontWeight: 600, fontSize: 13,
+              whiteSpace: "nowrap", border: "1px solid transparent",
+              background: "#6366f1", color: "#fff", textDecoration: "none",
+              cursor: "pointer", transition: "all 150ms",
+            }}
+          >
+            View All Jobs
+          </Link>
         </div>
       </div>
 

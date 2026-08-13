@@ -145,8 +145,19 @@ const Groups: React.FC = () => {
           <h1>Groups</h1>
           <p>Employee groups used for job assignment and group attendance.</p>
         </div>
-        <div className="page-header-actions">
-          <button className="page-btn page-btn-primary" onClick={() => setShowModal(true)}><FaPlus /> New Group</button>
+        <div className="page-header-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => setShowModal(true)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 18px", borderRadius: 12, fontWeight: 600, fontSize: 13,
+              whiteSpace: "nowrap", border: "1px solid transparent",
+              background: "#6366f1", color: "#fff",
+              cursor: "pointer", transition: "all 150ms",
+            }}
+          >
+            <FaPlus /> New Group
+          </button>
         </div>
       </div>
 

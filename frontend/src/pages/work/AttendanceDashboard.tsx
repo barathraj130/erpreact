@@ -106,9 +106,31 @@ const AttendanceDashboard: React.FC = () => {
           <h1>Attendance Report</h1>
           <p>Group attendance for {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
         </div>
-        <div className="page-header-actions" style={{ display: "flex", gap: 8 }}>
-          <button className="page-btn" onClick={fetchToday}>Refresh</button>
-          <button className="page-btn page-btn-primary" onClick={exportCsv}>Export CSV</button>
+        <div className="page-header-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={fetchToday}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 18px", borderRadius: 12, fontWeight: 600, fontSize: 13,
+              whiteSpace: "nowrap", border: "1px solid rgba(15,23,42,0.12)",
+              background: "#fff", color: "#111827",
+              cursor: "pointer", transition: "all 150ms",
+            }}
+          >
+            Refresh
+          </button>
+          <button
+            onClick={exportCsv}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 18px", borderRadius: 12, fontWeight: 600, fontSize: 13,
+              whiteSpace: "nowrap", border: "1px solid transparent",
+              background: "#6366f1", color: "#fff",
+              cursor: "pointer", transition: "all 150ms",
+            }}
+          >
+            Export CSV
+          </button>
         </div>
       </div>
 
