@@ -65,9 +65,26 @@ const Jobs: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20, padding: "4px 0" }}>
         {["", "draft", "assigned", "in_progress", "submitted", "under_review", "verified", "approved", "rejected"].map((s) => (
-          <button key={s} onClick={() => setStatusFilter(s)} className="page-btn" style={{ textTransform: "capitalize", background: statusFilter === s ? "#111827" : "#fff", color: statusFilter === s ? "#fff" : "#111827" }}>
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            style={{
+              padding: "7px 14px",
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              textTransform: "capitalize",
+              border: "1.5px solid rgba(15,23,42,0.10)",
+              borderRadius: 6,
+              background: statusFilter === s ? "rgba(91,75,255,0.18)" : "transparent",
+              color: statusFilter === s ? "#5B4BFF" : "#64748b",
+              cursor: "pointer",
+              transition: "all 150ms",
+              fontFamily: "inherit",
+            }}
+          >
             {s === "" ? "All" : s.replace("_", " ")}
           </button>
         ))}
