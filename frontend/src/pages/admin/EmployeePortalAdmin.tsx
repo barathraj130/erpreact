@@ -145,13 +145,25 @@ const EmployeePortalAdmin: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
         {TABS.map((t) => (
           <button
             key={t}
-            className="page-btn"
             onClick={() => setTab(t)}
-            style={{ background: tab === t ? "#111827" : "#fff", color: tab === t ? "#fff" : "#111827" }}
+            style={{
+              padding: "10px 18px",
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              border: "1px solid rgba(15,23,42,0.12)",
+              borderRadius: 12,
+              background: tab === t ? "#111827" : "#fff",
+              color: tab === t ? "#fff" : "#111827",
+              cursor: "pointer",
+              transition: "all 150ms",
+              fontFamily: "inherit",
+            }}
           >
             {t}
           </button>
