@@ -111,6 +111,7 @@ import WorkJobDetail from "./pages/work/JobDetail";
 import WorkAuditTimeline from "./pages/work/AuditTimeline";
 import MarkAttendance from "./pages/work/MarkAttendance";
 import AttendanceDashboard from "./pages/work/AttendanceDashboard";
+import WorkGroups from "./pages/work/Groups";
 
 // Finance Module
 import BankReconciliation from "./pages/finance/BankReconciliation";
@@ -393,6 +394,7 @@ const App: React.FC = () => {
             {/* Group Attendance — admin-only report view; marking itself is
                 open to all staff under WorkspaceRoute below. */}
             <Route path="/work/attendance" element={<AttendanceDashboard />} />
+            <Route path="/work/groups" element={<WorkGroups />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>

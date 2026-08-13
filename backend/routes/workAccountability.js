@@ -119,6 +119,22 @@ router.post("/groups/:id/members", authMiddleware, requirePermission("job.assign
     } catch (e) { res.json({ success: false, error: e.message }); }
 });
 
+router.get("/groups/:id/members", authMiddleware, async (req, res) => {
+    try {
+        const group = await db.pgGet(`SELECT id FROM employee_groups WHERE id = $1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
+        if (!group) return res.json([]);
+        const rows = await db.pgAll(
+            `SELECT gm.employee_id, u.username, u.email, u.role
+             FROM group_members gm
+             JOIN users u ON u.id = gm.employee_id
+             WHERE gm.group_id = $1 AND gm.is_active = true
+             ORDER BY u.username`,
+            [req.params.id]
+        );
+        res.json(rows);
+    } catch (e) { res.json([]); }
+});
+
 router.delete("/groups/:id/members/:employeeId", authMiddleware, requirePermission("job.assign"), async (req, res) => {
     try {
         await db.pgRun(
