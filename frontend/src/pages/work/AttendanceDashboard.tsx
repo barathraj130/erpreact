@@ -106,7 +106,7 @@ const AttendanceDashboard: React.FC = () => {
           <h1>Attendance Report</h1>
           <p>Group attendance for {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
         </div>
-        <div className="page-header-actions">
+        <div className="page-header-actions" style={{ display: "flex", gap: 8 }}>
           <button className="page-btn" onClick={fetchToday}>Refresh</button>
           <button className="page-btn page-btn-primary" onClick={exportCsv}>Export CSV</button>
         </div>

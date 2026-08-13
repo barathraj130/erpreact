@@ -242,7 +242,6 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
       ...(mode === "ADMIN" || user?.role === "admin" ? [
         { name: "Groups", path: "/work/groups" },
         { name: "Attendance Report", path: "/work/attendance" },
-        { name: "Employee Portal", path: "/admin/employee-portal" },
       ] : []),
     ],
   });
