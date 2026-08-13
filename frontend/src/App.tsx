@@ -66,6 +66,8 @@ import SynthesisDashboard from "./SynthesisDashboard";
 import CustomerNotifications from "./pages/CustomerNotifications";
 import EmployeeLogin from "./pages/employee/EmployeeLogin";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
+import EmployeeMyGroups from "./pages/employee/MyGroups";
+import EmployeePortalAdmin from "./pages/admin/EmployeePortalAdmin";
 import CustomerShop from "./pages/customer/CustomerShop";
 import CustomerLedger from "./pages/customer/CustomerLedger";
 import CustomerLayout from "./components/Layout/CustomerLayout";
@@ -330,6 +332,7 @@ const App: React.FC = () => {
           <Route path="/branch-login" element={<BranchLogin />} />
           <Route path="/employee-login" element={<EmployeeLogin />} />
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+          <Route path="/employee/groups" element={<EmployeeMyGroups />} />
           <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/host-login" element={<HostLogin />} />
           <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
@@ -395,6 +398,7 @@ const App: React.FC = () => {
                 open to all staff under WorkspaceRoute below. */}
             <Route path="/work/attendance" element={<AttendanceDashboard />} />
             <Route path="/work/groups" element={<WorkGroups />} />
+            <Route path="/admin/employee-portal" element={<EmployeePortalAdmin />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>

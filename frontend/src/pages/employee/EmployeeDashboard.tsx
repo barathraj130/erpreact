@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
     FaUserCircle, FaMoneyBillWave, FaHandHoldingUsd, 
-    FaHistory, FaSignOutAlt, FaCalendarAlt, FaShieldAlt
+    FaHistory, FaSignOutAlt, FaCalendarAlt, FaShieldAlt, FaUsers
 } from "react-icons/fa";
 
 const EmployeeDashboard: React.FC = () => {
@@ -63,12 +63,20 @@ const EmployeeDashboard: React.FC = () => {
             <div style={{ background: "#2563eb", color: "white", width: "40px", height: "40px", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>EP</div>
             <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#1e293b" }}>Employee Portal</h2>
         </div>
-        <button 
-            onClick={handleLogout}
-            style={{ display: "flex", alignItems: "center", gap: "8px", border: "1px solid #e2e8f0", background: "white", padding: "8px 16px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, color: "#ef4444" }}
-        >
-            <FaSignOutAlt /> Sign Out
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+                onClick={() => navigate("/employee/groups")}
+                style={{ display: "flex", alignItems: "center", gap: "8px", border: "1px solid #e2e8f0", background: "white", padding: "8px 16px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, color: "#2563eb" }}
+            >
+                <FaUsers /> My Groups & Attendance
+            </button>
+            <button
+                onClick={handleLogout}
+                style={{ display: "flex", alignItems: "center", gap: "8px", border: "1px solid #e2e8f0", background: "white", padding: "8px 16px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, color: "#ef4444" }}
+            >
+                <FaSignOutAlt /> Sign Out
+            </button>
+        </div>
       </nav>
 
       <div style={{ maxWidth: "1000px", margin: "0 auto", padding: "32px 24px" }}>

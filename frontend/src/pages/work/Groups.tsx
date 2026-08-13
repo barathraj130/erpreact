@@ -53,9 +53,21 @@ const Groups: React.FC = () => {
 
   const fetchStaff = async () => {
     try {
-      const res = await apiFetch("/users/staff");
-      const data = await res.json();
-      setStaff(Array.isArray(data) ? data : []);
+      const [staffRes, portalRes] = await Promise.all([
+        apiFetch("/users/staff"),
+        apiFetch("/employee-portal/admin/portal-employees").catch(() => null),
+      ]);
+      const staffData = await staffRes.json();
+      const portalData = portalRes ? await portalRes.json().catch(() => []) : [];
+      const merged: StaffUser[] = Array.isArray(staffData) ? [...staffData] : [];
+      if (Array.isArray(portalData)) {
+        for (const p of portalData) {
+          if (!merged.some((s) => s.id === p.user_id)) {
+            merged.push({ id: p.user_id, username: p.username, role: p.role });
+          }
+        }
+      }
+      setStaff(merged);
     } catch { setStaff([]); }
   };
 
