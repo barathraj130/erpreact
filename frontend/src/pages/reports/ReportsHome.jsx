@@ -97,7 +97,7 @@ const ReportsHome = () => {
       {/* Favorites */}
       {favorites.length > 0 && (
         <div style={{ marginBottom: '32px' }}>
-          <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>Pinned Reports</h2>
+          <h2 style={{ fontFamily: "var(--font-display, inherit)", fontSize: '13px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--neu-text-muted, #374151)', marginBottom: '12px' }}>Pinned Reports</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
             {favorites.map(f => (
               <Link
@@ -105,13 +105,15 @@ const ReportsHome = () => {
                 to={f.report_path}
                 style={{
                   padding: '8px 16px',
-                  background: '#f0f0ff',
-                  border: '1px solid #c7d2fe',
-                  borderRadius: '20px',
-                  color: '#6366f1',
+                  background: 'var(--neu-bg, #f0f0ff)',
+                  border: '1.5px solid var(--neu-border, #c7d2fe)',
+                  borderRadius: '0',
+                  color: 'var(--neo-brand, #6366f1)',
                   textDecoration: 'none',
+                  fontFamily: "var(--font-display, inherit)",
                   fontSize: '13px',
-                  fontWeight: 500,
+                  fontWeight: 700,
+                  boxShadow: 'var(--neu-raised, none)',
                 }}
               >
                 ★ {f.report_name}
@@ -134,41 +136,43 @@ const ReportsHome = () => {
             style={{ textDecoration: 'none' }}
           >
             <div style={{
-              background: 'white',
-              borderRadius: '14px',
-              border: '1px solid #e5e7eb',
+              background: 'var(--neu-surface, white)',
+              borderRadius: '0',
+              border: '2px solid var(--neu-border, #e5e7eb)',
               padding: '20px',
               cursor: 'pointer',
-              transition: 'box-shadow 0.2s, transform 0.2s',
+              transition: 'box-shadow 180ms cubic-bezier(0.4,0,0.2,1), transform 180ms cubic-bezier(0.4,0,0.2,1), border-color 180ms',
               borderLeft: `4px solid ${cat.color}`,
+              boxShadow: 'var(--neu-card, none)',
             }}
-              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.10)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = `4px 4px 0px ${cat.color}`; e.currentTarget.style.transform = 'translate(-2px, -2px)'; e.currentTarget.style.borderColor = cat.color; }}
+              onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--neu-card, none)'; e.currentTarget.style.transform = ''; e.currentTarget.style.borderColor = 'var(--neu-border, #e5e7eb)'; }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                 <span style={{ fontSize: '28px' }}>{cat.icon}</span>
                 <span style={{
                   background: cat.color + '20',
                   color: cat.color,
-                  borderRadius: '20px',
+                  borderRadius: '0',
                   padding: '2px 10px',
-                  fontSize: '12px',
-                  fontWeight: 600,
+                  fontFamily: "var(--font-display, inherit)",
+                  fontSize: '11px',
+                  fontWeight: 700,
                 }}>
                   {cat.count} reports
                 </span>
               </div>
-              <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#111827', margin: '0 0 6px 0' }}>{cat.title}</h3>
-              <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>{cat.description}</p>
+              <h3 style={{ fontFamily: "var(--font-display, inherit)", fontSize: '15px', fontWeight: 700, color: 'var(--neu-text-primary, #111827)', margin: '0 0 6px 0' }}>{cat.title}</h3>
+              <p style={{ fontSize: '13px', color: 'var(--neu-text-secondary, #6b7280)', margin: 0 }}>{cat.description}</p>
             </div>
           </Link>
         ))}
       </div>
 
       {/* Legacy Reports Link */}
-      <div style={{ marginTop: '32px', padding: '16px', background: '#fafafa', border: '1px solid #e5e7eb', borderRadius: '10px', textAlign: 'center' }}>
-        <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#6b7280' }}>Looking for the classic reports?</p>
-        <Link to="/reports/world-class" style={{ color: '#6366f1', fontWeight: 500, textDecoration: 'none', fontSize: '14px' }}>
+      <div style={{ marginTop: '32px', padding: '16px', background: 'var(--neu-bg, #fafafa)', border: '1.5px solid var(--neu-border, #e5e7eb)', borderRadius: '0', textAlign: 'center' }}>
+        <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: 'var(--neu-text-secondary, #6b7280)' }}>Looking for the classic reports?</p>
+        <Link to="/reports/world-class" style={{ color: 'var(--neo-brand, #6366f1)', fontWeight: 700, fontFamily: "var(--font-display, inherit)", textDecoration: 'none', fontSize: '14px' }}>
           Open Advanced Reports →
         </Link>
       </div>

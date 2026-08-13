@@ -15,6 +15,7 @@ import { deleteProduct } from "../api/productApi";
 import { useProducts } from "../hooks/useProducts";
 import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
+import "./finance/Finance.neo.css";
 import CustomSelect from "../components/CustomSelect";
 import { apiFetch } from "../utils/api";
 
@@ -160,7 +161,7 @@ const Inventory: React.FC = () => {
   const fmt = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 
   return (
-    <div className="finance-container">
+    <div className="finance-container neo-page-skin">
       {isModalOpen && (
         <AddProductModal
           onClose={() => setIsModalOpen(false)}

@@ -1,0 +1,196 @@
+/* PageShared.neo.css — neo-neu-motion skin, opt-in only.
+   Every rule is scoped under .page-container.neo-page-skin so it
+   changes zero pixels on any of the other pages that still import
+   plain PageShared.css. Add className="page-container neo-page-skin"
+   to a page's root element to opt in. */
+
+.neo-page-skin {
+  font-family: var(--font-body, 'Inter', sans-serif);
+}
+
+.neo-page-skin .page-header h1 {
+  font-family: var(--font-display, inherit);
+  font-weight: 700;
+  color: var(--neu-text-primary, var(--text-1));
+  letter-spacing: -0.02em;
+}
+.neo-page-skin .page-header p { color: var(--neu-text-secondary, var(--text-3)); }
+
+/* ─── Buttons ─── */
+.neo-page-skin .page-btn,
+.neo-page-skin .page-btn-round,
+.neo-page-skin .page-btn-round-ghost {
+  border-radius: 0;
+  border: 1.5px solid var(--neu-border, var(--border));
+  background: var(--neu-surface, var(--surface));
+  color: var(--neu-text-secondary, var(--text-1));
+  font-family: var(--font-display, 'Inter', sans-serif);
+  font-weight: 700;
+  box-shadow: var(--neu-raised, none);
+  transition: all var(--motion-fast, 0.15s) ease;
+}
+.neo-page-skin .page-btn:hover,
+.neo-page-skin .page-btn-round:hover,
+.neo-page-skin .page-btn-round-ghost:hover {
+  border-color: rgba(91,75,255,0.40);
+  color: var(--neu-text-primary, var(--text-1));
+  background: var(--neu-surface, var(--surface));
+  transform: translateY(-2px);
+  box-shadow: var(--neu-raised, none);
+}
+.neo-page-skin .page-btn:active,
+.neo-page-skin .page-btn-round:active { transform: translateY(1px); box-shadow: var(--neu-pressed, none); }
+.neo-page-skin .page-btn-round::before { display: none; }
+
+.neo-page-skin .page-btn-primary,
+.neo-page-skin .page-btn-round-primary {
+  background: var(--neo-brand, #6366f1);
+  color: #fff;
+  border: 1.5px solid #000;
+  box-shadow: var(--neo-shadow-sm, none);
+}
+.neo-page-skin .page-btn-primary:hover,
+.neo-page-skin .page-btn-round-primary:hover {
+  background: var(--neo-brand-2, #4f46e5);
+  box-shadow: var(--neo-shadow, none);
+  transform: translate(-1px, -1px);
+}
+
+.neo-page-skin .page-btn-round-sm {
+  border-radius: 0;
+  border: 1.5px solid var(--neu-border, var(--border));
+  background: var(--neu-surface, var(--surface));
+  color: var(--neu-text-secondary, var(--text-2));
+  box-shadow: var(--neu-raised, none);
+  transition: all var(--motion-fast, 0.15s) ease;
+}
+.neo-page-skin .page-btn-round-sm:hover {
+  background: rgba(91,75,255,0.08);
+  color: var(--neo-brand, var(--accent));
+  border-color: rgba(91,75,255,0.40);
+  transform: translateY(-2px);
+}
+
+.neo-page-skin .page-btn-round-danger {
+  border-radius: 0;
+  border: 1.5px solid var(--neu-border, var(--border));
+  background: var(--neu-surface, var(--surface));
+  box-shadow: var(--neu-raised, none);
+}
+.neo-page-skin .page-btn-round-danger:hover {
+  background: rgba(255,59,59,0.08);
+  border-color: var(--neo-red, #ef4444);
+}
+
+/* ─── Stats Grid ─── */
+.neo-page-skin .stat-card {
+  border-radius: 0;
+  border: 2px solid var(--neu-border, rgba(0,0,0,0.04));
+  box-shadow: var(--neu-card, 0 2px 8px rgba(0,0,0,0.04));
+  background: var(--neu-surface, #fff) !important;
+  color: var(--neu-text-primary, #1e293b);
+  transition: all var(--motion-base, 0.3s) ease;
+}
+.neo-page-skin .stat-card:hover {
+  box-shadow: var(--neo-shadow, 0 12px 28px rgba(0,0,0,0.08));
+  transform: translate(-2px, -2px);
+  border-color: rgba(91,75,255,0.30);
+}
+.neo-page-skin .stat-card::before { display: none; }
+.neo-page-skin .stat-card::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+}
+.neo-page-skin .stat-card.card-indigo::after { background: var(--neo-brand, #6366f1); }
+.neo-page-skin .stat-card.card-emerald::after { background: var(--neo-green, #10b981); }
+.neo-page-skin .stat-card.card-amber::after { background: var(--neo-orange, #f59e0b); }
+.neo-page-skin .stat-card.card-rose::after { background: var(--neo-red, #f43f5e); }
+.neo-page-skin .stat-card.card-blue::after { background: #3b82f6; }
+.neo-page-skin .stat-card.card-sky::after { background: var(--neo-cyan, #0ea5e9); }
+.neo-page-skin .stat-card.card-peach::after { background: var(--neo-orange, #f97316); }
+.neo-page-skin .stat-card .label {
+  font-family: var(--font-display, inherit);
+  color: var(--neu-text-muted, #475569);
+}
+.neo-page-skin .stat-card .value {
+  font-family: var(--font-display, inherit);
+  color: var(--neu-text-primary, #0f172a);
+}
+.neo-page-skin .stat-card .stat-sub { color: var(--neu-text-secondary, #64748b); }
+
+/* ─── Search Bar ─── */
+.neo-page-skin .page-search-bar {
+  border-radius: 0;
+  border: 1.5px solid var(--neu-border, var(--border));
+  background: var(--neu-bg, var(--surface));
+  box-shadow: var(--neu-pressed, none);
+}
+.neo-page-skin .page-search-bar input { color: var(--neu-text-primary, var(--text-1)); }
+.neo-page-skin .page-search-bar:focus-within { border-color: var(--neo-brand, var(--accent)); box-shadow: var(--neu-pressed, none), 0 0 0 2px rgba(91,75,255,0.15); }
+
+/* ─── Table ─── */
+.neo-page-skin .page-table-wrapper {
+  border-radius: 0;
+  border: 2px solid var(--neu-border, var(--border));
+  background: var(--neu-surface, var(--surface));
+  box-shadow: var(--neu-card, none);
+}
+.neo-page-skin .page-table thead { background: var(--neu-bg, var(--bg)); }
+.neo-page-skin .page-table th {
+  font-family: var(--font-display, inherit);
+  color: var(--neu-text-muted, var(--text-3));
+  border-bottom: 2px solid var(--neu-border, var(--border));
+}
+.neo-page-skin .page-table td { color: var(--neu-text-secondary, var(--text-2)); border-bottom-color: var(--neu-border, var(--border-soft)); }
+.neo-page-skin .page-table tr:hover td { background: rgba(91,75,255,0.05); color: var(--neu-text-primary, var(--text-1)); }
+.neo-page-skin .page-table .font-bold { color: var(--neu-text-primary, var(--text-1)); }
+
+/* ─── Type Badges ─── */
+.neo-page-skin .type-badge { border-radius: 0; font-family: var(--font-display, inherit); font-weight: 700; }
+
+/* ─── Transaction Cards ─── */
+.neo-page-skin .tx-card {
+  border-radius: 0;
+  border: 2px solid var(--neu-border, var(--border));
+  background: var(--neu-surface, #fff);
+  box-shadow: var(--neu-card, 0 1px 3px rgba(0,0,0,0.02));
+}
+.neo-page-skin .tx-card:hover {
+  border-color: rgba(91,75,255,0.35);
+  box-shadow: var(--neo-shadow, 0 15px 35px rgba(0,0,0,0.05));
+  transform: translate(-2px, -2px);
+}
+.neo-page-skin .tx-desc { color: var(--neu-text-primary, var(--text-1)); }
+.neo-page-skin .tx-poster { color: var(--neu-text-muted, var(--text-3)); }
+
+/* ─── Empty State ─── */
+.neo-page-skin .page-empty {
+  border-radius: 0;
+  border: 1.5px dashed var(--neu-border, var(--border));
+  background: var(--neu-bg, var(--bg));
+  color: var(--neu-text-muted, var(--text-3));
+}
+
+/* ─── Skeleton ─── */
+.neo-page-skin .skeleton-row { border-radius: 0; }
+
+/* ─── Modal ─── */
+.neo-page-skin .page-modal {
+  border-radius: 0;
+  border: 2px solid var(--neu-border, var(--border));
+  background: var(--neu-surface, var(--surface));
+  box-shadow: var(--neo-shadow-lg, 0 16px 40px rgba(0,0,0,0.12));
+}
+.neo-page-skin .page-modal h2 { font-family: var(--font-display, inherit); color: var(--neu-text-primary, var(--text-1)); }
+.neo-page-skin .page-modal label { color: var(--neu-text-muted, var(--text-3)); }
+.neo-page-skin .page-modal input,
+.neo-page-skin .page-modal select {
+  border-radius: 0;
+  border: 1.5px solid var(--neu-border, var(--border));
+  background: var(--neu-bg, var(--bg));
+  box-shadow: var(--neu-pressed, none);
+}
+.neo-page-skin .page-modal input:focus,
+.neo-page-skin .page-modal select:focus { border-color: var(--neo-brand, var(--accent)); }
+.neo-page-skin .page-modal-actions button { border-radius: 0; font-family: var(--font-display, inherit); font-weight: 700; }
+.neo-page-skin .page-modal-save { background: var(--neo-brand, var(--text-1)); }
+.neo-page-skin .page-modal-save:hover { background: var(--neo-brand-2, #2a2a28); }

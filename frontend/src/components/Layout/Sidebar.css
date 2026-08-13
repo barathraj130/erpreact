@@ -1,17 +1,18 @@
-/* Sidebar.css — Minimal edition (Linear/Notion style) */
+/* Sidebar.css — neo-neu-motion edition (Neobrutalism + Neumorphism + Motion) */
 .sidebar-container {
   width: var(--sidebar-w);
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background: var(--neu-surface, var(--surface));
+  border-right: 2px solid var(--neu-border, var(--border));
   position: fixed;
   top: 0; left: 0; bottom: 0;
   display: flex; flex-direction: column;
   z-index: 1000;
-  box-shadow: none; /* Remove shadow to ensure flush docking */
+  box-shadow: 4px 0 20px rgba(15,23,42,0.10);
   overflow-y: auto;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  font-family: 'Satoshi', sans-serif;
+  font-family: var(--font-body, 'Inter', sans-serif);
 }
+.sidebar-container::-webkit-scrollbar { width: 0; }
 
 .sidebar-collapsed {
   width: var(--sidebar-w-collapsed);
@@ -32,31 +33,40 @@
   height: var(--header-h);
   display: flex; align-items: center; gap: 12px;
   padding: 0 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--neu-border, var(--border));
   flex-shrink: 0;
 }
 
 .logo-mark-v2 {
-  width: 26px; height: 26px;
-  background: var(--text-1);
-  border-radius: 6px;
+  width: 30px; height: 30px;
+  background: var(--neo-brand, var(--text-1));
+  border: 2px solid #000;
+  box-shadow: var(--neo-shadow-sm, none);
+  border-radius: 0;
   display: grid; place-items: center;
   flex-shrink: 0;
   color: #fff;
+  transition: transform var(--motion-bounce, 0.3s);
 }
+.logo-mark-v2:hover { transform: rotate(-6deg) scale(1.08); }
 
-.logo-name-v2 { font-size: 13.5px; font-weight: 600; letter-spacing: -0.2px; }
+.logo-name-v2 {
+  font-family: var(--font-display, inherit);
+  font-size: 14px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--neu-text-primary, inherit);
+}
 
 /* ── Navigation ── */
 .sidebar-nav-v2 { padding: 12px 10px; flex: 1; }
 
 /* Section labels — purely organizational, not dominant */
 .nav-label-v2 {
-  font-size: 10px; font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--text-3);
+  font-family: var(--font-display, inherit);
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--neu-text-muted, var(--text-3));
   padding: 22px 12px 8px;
-  opacity: 0.65;
+  opacity: 0.85;
   display: block;
 }
 
@@ -64,19 +74,21 @@
 
 .nav-label-v2:not(:first-of-type) {
   margin-top: 6px;
-  border-top: 1px solid var(--border-soft, #f0f0ee);
+  border-top: 1px solid var(--neu-border, var(--border-soft, #f0f0ee));
 }
 
 .nav-item-v2 {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 0;
   cursor: pointer;
-  color: var(--text-2);
-  font-size: 13.5px; font-weight: 500;
-  transition: background 0.15s, color 0.15s;
+  color: var(--neu-text-secondary, var(--text-2));
+  font-family: var(--font-display, inherit);
+  font-size: 13px; font-weight: 500;
+  transition: all var(--motion-fast, 0.15s);
   text-decoration: none;
   position: relative;
+  border: 1.5px solid transparent;
   border-left: 3px solid transparent;
 }
 
@@ -84,30 +96,38 @@
   margin-bottom: 4px;
 }
 
-.nav-item-v2:hover { background: var(--bg); color: var(--text-1); }
-
-/* Active page — solid left border accent + subtle fill, no card/shadow */
-.nav-item-v2.active {
-  background: var(--accent-bg);
-  color: var(--accent);
-  font-weight: 600;
-  border-left-color: var(--accent);
+.nav-item-v2:hover {
+  background: rgba(91,75,255,0.05);
+  color: var(--neu-text-primary, var(--text-1));
+  border-color: var(--neu-border, transparent);
+  transform: translateX(2px);
 }
 
-.nav-item-v2 svg { width: 15px; height: 15px; opacity: .7; flex-shrink: 0; transition: opacity 0.15s, color 0.15s; }
-.nav-item-v2.active svg { opacity: 1; color: var(--accent); }
+/* Active page — brand accent fill + left border, neo-brutalist */
+.nav-item-v2.active {
+  background: rgba(91,75,255,0.12);
+  color: var(--neo-brand, var(--accent));
+  font-weight: 700;
+  border-color: rgba(91,75,255,0.30);
+  border-left-color: var(--neo-brand, var(--accent));
+}
+
+.nav-item-v2 svg { width: 15px; height: 15px; opacity: .75; flex-shrink: 0; transition: opacity 0.15s, color 0.15s; }
+.nav-item-v2.active svg { opacity: 1; color: var(--neo-brand, var(--accent)); }
 
 /* ── Sub Menu — collapsed by default, only the active group expands ── */
 .pa-sub-menu {
   padding-left: 25px;
   display: flex; flex-direction: column;
   gap: 2px; padding-top: 4px; padding-bottom: 6px;
+  animation: slideDown 200ms both;
 }
 
 .pa-sub-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: 6px;
-  font-size: 12.5px; font-weight: 500; color: var(--text-2); cursor: pointer;
+  padding: 7px 10px; border-radius: 0;
+  font-family: var(--font-body, inherit);
+  font-size: 12.5px; font-weight: 500; color: var(--neu-text-secondary, var(--text-2)); cursor: pointer;
   transition: color .15s, background .15s;
   text-decoration: none;
   position: relative;
@@ -115,44 +135,50 @@
 
 .pa-sub-item::before {
   content: ''; width: 4px; height: 4px;
-  border-radius: 50%; background: var(--border);
+  border-radius: 50%; background: var(--neu-text-muted, var(--border));
   flex-shrink: 0;
 }
 
-.pa-sub-item:hover { color: var(--text-1); background: var(--bg); }
-.pa-sub-item.active { color: var(--accent); font-weight: 600; background: transparent; }
-.pa-sub-item.active::before { background: var(--accent); }
+.pa-sub-item:hover { color: var(--neu-text-primary, var(--text-1)); background: rgba(91,75,255,0.05); }
+.pa-sub-item.active { color: var(--neo-brand, var(--accent)); font-weight: 700; background: transparent; }
+.pa-sub-item.active::before { background: var(--neo-brand, var(--accent)); }
 
 /* ── Sidebar User ── */
 .sidebar-footer-v2 {
   padding: 10px;
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--neu-border, var(--border));
   flex-shrink: 0;
 }
 
 .user-chip-v2 {
   display: flex; align-items: center; gap: 9px;
-  padding: 8px 9px; border-radius: var(--radius-sm, 8px);
-  background: var(--bg); cursor: pointer;
-  transition: background 0.15s;
+  padding: 8px 9px; border-radius: 0;
+  background: var(--neu-bg, var(--bg));
+  border: 1.5px solid var(--neu-border, transparent);
+  cursor: pointer;
+  box-shadow: var(--neu-pressed, none);
+  transition: all var(--motion-fast, 0.15s);
 }
 
-.user-chip-v2:hover { background: var(--surface-2); }
+.user-chip-v2:hover { border-color: rgba(91,75,255,0.40); box-shadow: var(--neu-raised, none); }
 
 .admin-avatar-v2 {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: var(--text-1); color: #fff;
+  width: 28px; height: 28px; border-radius: 0;
+  background: var(--neo-brand, var(--text-1)); color: #fff;
+  border: 2px solid #000;
   display: grid; place-items: center;
-  font-size: 12px; font-weight: 600; flex-shrink: 0;
+  font-family: var(--font-display, inherit);
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
 }
 
 .admin-name-v2 {
-  font-size: 12.5px; font-weight: 500;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--neu-text-primary, inherit);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.admin-role-v2 { font-size: 11px; color: var(--text-3); text-transform: capitalize; }
+.admin-role-v2 { font-size: 11px; color: var(--neu-text-muted, var(--text-3)); text-transform: capitalize; }
 
-.logout-icon-v2 { margin-left: auto; color: var(--text-3); flex-shrink: 0; }
+.logout-icon-v2 { margin-left: auto; color: var(--neu-text-muted, var(--text-3)); flex-shrink: 0; }
 
 /* Collapsed Support — icons-only */
 .sidebar-collapsed .logo-name-v2,
@@ -164,5 +190,5 @@
 .sidebar-collapsed .logout-icon-v2 { display: none; }
 
 .sidebar-collapsed .nav-item-v2 { justify-content: center; padding: 10px 0; border-left: none; }
-.sidebar-collapsed .nav-item-v2.active { background: var(--accent-bg); border-radius: 8px; }
+.sidebar-collapsed .nav-item-v2.active { background: rgba(91,75,255,0.12); }
 .sidebar-collapsed .user-chip-v2 { justify-content: center; }

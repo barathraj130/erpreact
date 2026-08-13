@@ -26,6 +26,7 @@ import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import { useUsers } from "../hooks/useUsers";
 import AddCustomerModal from "./AddCustomerModal";
 import "./PageShared.css";
+import "./PageShared.neo.css";
 
 const Customers: React.FC = () => {
   const navigate = useNavigate();
@@ -320,7 +321,7 @@ const Customers: React.FC = () => {
   };
 
   return (
-    <div className="page-container">
+    <div className="page-container neo-page-skin">
       {/* Header */}
       <div className="page-header">
         <div>

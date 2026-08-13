@@ -19,6 +19,7 @@ import { useInvoices } from "../hooks/useInvoices";
 import { apiFetch } from "../utils/api";
 import MarkNSBGSTPaidModal from "./MarkNSBGSTPaidModal";
 import "./PageShared.css";
+import "./PageShared.neo.css";
 
 function getStatusBadgeClass(status: string | undefined): string {
   const s = (status || "").toLowerCase();
@@ -114,7 +115,7 @@ const Invoices: React.FC = () => {
   };
 
   return (
-    <div className="page-container">
+    <div className="page-container neo-page-skin">
       {/* Header */}
       <div className="page-header">
         <div>

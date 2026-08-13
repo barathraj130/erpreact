@@ -1,0 +1,77 @@
+/* Finance.neo.css — neo-neu-motion skin, opt-in only.
+   Scoped under .finance-container.neo-page-skin so it changes zero
+   pixels on any other page still importing plain Finance.css. */
+
+.finance-container.neo-page-skin {
+  background: var(--neu-bg, var(--erp-bg));
+  font-family: var(--font-body, 'Inter', sans-serif);
+}
+
+.neo-page-skin .text-title { font-family: var(--font-display, inherit); color: var(--neu-text-primary, var(--erp-text-main)); letter-spacing: -0.02em; }
+.neo-page-skin .text-muted { color: var(--neu-text-secondary, var(--erp-text-muted)); }
+.neo-page-skin .finance-header .header-info h1 { color: var(--neu-text-primary, var(--erp-text-main)); }
+.neo-page-skin .finance-header .header-info p { color: var(--neu-text-secondary, var(--erp-text-secondary)); }
+
+/* ─── Buttons ─── */
+.neo-page-skin .btn {
+  border-radius: 0;
+  border: 1.5px solid var(--neu-border, var(--erp-border));
+  font-family: var(--font-display, 'Inter', sans-serif);
+  font-weight: 700;
+  box-shadow: var(--neu-raised, none);
+  transition: all var(--motion-fast, 0.15s) ease;
+}
+.neo-page-skin .btn:hover { transform: translateY(-2px); }
+.neo-page-skin .btn:active { transform: translateY(1px); box-shadow: var(--neu-pressed, none); }
+.neo-page-skin .btn-primary {
+  background: var(--neo-brand, var(--erp-primary));
+  border-color: #000;
+  box-shadow: var(--neo-shadow-sm, none);
+}
+.neo-page-skin .btn-primary:hover { background: var(--neo-brand-2, var(--erp-primary-hover)); box-shadow: var(--neo-shadow, none); }
+.neo-page-skin .btn-secondary {
+  background: var(--neu-surface, #fff);
+  color: var(--neu-text-secondary, var(--erp-text-secondary));
+}
+.neo-page-skin .btn-secondary:hover { background: rgba(91,75,255,0.06); border-color: rgba(91,75,255,0.35); color: var(--neu-text-primary, inherit); }
+
+/* ─── Cards ─── */
+.neo-page-skin .card {
+  border-radius: 0;
+  border: 2px solid var(--neu-border, var(--erp-border));
+  box-shadow: var(--neu-card, 0 2px 12px rgba(0,0,0,0.04));
+  background: var(--neu-surface, var(--erp-card-bg));
+  transition: all var(--motion-base, 0.2s) ease;
+}
+.neo-page-skin .card:hover { box-shadow: var(--neo-shadow, 0 6px 20px rgba(0,0,0,0.06)); border-color: rgba(91,75,255,0.30); }
+.neo-page-skin .card-header { color: var(--neu-text-primary, var(--erp-text-main)); font-family: var(--font-display, inherit); }
+
+/* ─── Tables ─── */
+.neo-page-skin .table-container {
+  border-radius: 0;
+  border: 2px solid var(--neu-border, var(--erp-border));
+  background: var(--neu-surface, var(--erp-card-bg));
+}
+.neo-page-skin .erp-table th {
+  font-family: var(--font-display, inherit);
+  color: var(--neu-text-muted, var(--erp-text-secondary));
+  border-bottom: 2px solid var(--neu-border, var(--erp-border));
+  background: var(--neu-bg, #fafbfc);
+}
+.neo-page-skin .erp-table td { color: var(--neu-text-secondary, var(--erp-text-main)); border-bottom-color: var(--neu-border, var(--erp-border)); }
+.neo-page-skin .erp-table tr:hover { background: rgba(91,75,255,0.05); }
+
+/* ─── Search ─── */
+.neo-page-skin .search-input {
+  border-radius: 0 !important;
+  border: 1.5px solid var(--neu-border, var(--erp-border)) !important;
+  background: var(--neu-bg, #fff) !important;
+  box-shadow: var(--neu-pressed, none);
+}
+.neo-page-skin .search-input:focus { border-color: var(--neo-brand, var(--erp-primary)) !important; }
+
+/* ─── Status Badges ─── */
+.neo-page-skin .status-badge { border-radius: 0; font-family: var(--font-display, inherit); }
+
+/* ─── Modals ─── */
+.neo-page-skin .modal-content { border-radius: 0; border: 2px solid var(--neu-border, var(--erp-border)); box-shadow: var(--neo-shadow-lg, var(--erp-shadow-lg)); }
