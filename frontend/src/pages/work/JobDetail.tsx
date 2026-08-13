@@ -22,11 +22,80 @@ const Pill: React.FC<{ status: string }> = ({ status }) => (
 
 const fmt = (n: any) => parseFloat(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
+const emptyLogForm = { group_id: "", log_date: new Date().toISOString().slice(0, 10), check_in_time: "10:00", check_out_time: "18:00", fresh_pcs: "", mistake_pcs: "", notes: "" };
+
 const JobDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "duty" | "reports" | "evidence" | "quantity">("overview");
+  const [tab, setTab] = useState<"overview" | "duty" | "reports" | "evidence" | "quantity" | "site_log">("overview");
+
+  // ── Site log (work-daily-logs) state ──
+  const [jobGroups, setJobGroups] = useState<any[]>([]);
+  const [dailyLogs, setDailyLogs] = useState<any[]>([]);
+  const [jobPoDetails, setJobPoDetails] = useState<any>(null);
+  const [allGroups, setAllGroups] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [assignGroupId, setAssignGroupId] = useState("");
+  const [poForm, setPoForm] = useState({ supplier_id: "", purchase_bill_id: "", notes: "" });
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [logForm, setLogForm] = useState(emptyLogForm);
+  const [logErr, setLogErr] = useState("");
+  const [savingLog, setSavingLog] = useState(false);
+
+  const fetchSiteLog = async () => {
+    const [groupsRes, logsRes, detailsRes] = await Promise.all([
+      apiFetch(`/work-daily-logs/jobs/${id}/groups`),
+      apiFetch(`/work-daily-logs/jobs/${id}/logs`),
+      apiFetch(`/work-daily-logs/jobs/${id}/details`),
+    ]);
+    setJobGroups(await groupsRes.json());
+    setDailyLogs(await logsRes.json());
+    const details = await detailsRes.json();
+    setJobPoDetails(details);
+    if (details) setPoForm({ supplier_id: details.supplier_id || "", purchase_bill_id: details.purchase_bill_id || "", notes: details.notes || "" });
+  };
+
+  useEffect(() => {
+    if (tab !== "site_log") return;
+    fetchSiteLog();
+    if (allGroups.length === 0) apiFetch("/work-accountability/groups").then((r) => r.json()).then(setAllGroups).catch(() => {});
+    if (suppliers.length === 0) apiFetch("/suppliers").then((r) => r.json()).then((d) => setSuppliers(Array.isArray(d) ? d : [])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, id]);
+
+  const savePoDetails = async () => {
+    const res = await apiFetch(`/work-daily-logs/jobs/${id}/details`, {
+      method: "PUT",
+      body: { supplier_id: poForm.supplier_id || undefined, purchase_bill_id: poForm.purchase_bill_id || undefined, notes: poForm.notes || undefined },
+    });
+    const d = await res.json();
+    if (d.success) fetchSiteLog(); else alert(d.error);
+  };
+
+  const assignGroupToJob = async () => {
+    if (!assignGroupId) return;
+    const res = await apiFetch(`/work-daily-logs/jobs/${id}/groups`, { method: "POST", body: { group_id: Number(assignGroupId) } });
+    const d = await res.json();
+    if (d.success) { setAssignGroupId(""); fetchSiteLog(); } else alert(d.error);
+  };
+
+  const submitDailyLog = async () => {
+    if (!logForm.group_id || !logForm.log_date) { setLogErr("Group and date are required"); return; }
+    setSavingLog(true);
+    setLogErr("");
+    try {
+      const res = await apiFetch("/work-daily-logs/logs", { method: "POST", body: { ...logForm, job_id: Number(id) } });
+      const d = await res.json();
+      if (d.success) { setShowLogModal(false); setLogForm(emptyLogForm); fetchSiteLog(); }
+      else setLogErr(d.error || "Failed to save log");
+    } finally {
+      setSavingLog(false);
+    }
+  };
+
+  const selectedSupplierForForm = jobPoDetails?.supplier_id;
+  const mistakeNotAllowed = jobPoDetails && selectedSupplierForForm && !jobPoDetails.mistake_pcs_allowed;
 
   const fetchDetail = async () => {
     setLoading(true);
@@ -154,9 +223,18 @@ const JobDetail: React.FC = () => {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {["overview", "duty", "reports", "evidence", "quantity"].map((t) => (
-          <button key={t} onClick={() => setTab(t as any)} className="page-btn" style={{ textTransform: "capitalize", background: tab === t ? "#111827" : "#fff", color: tab === t ? "#fff" : "#111827" }}>
-            {t}
+        {["overview", "duty", "reports", "evidence", "quantity", "site_log"].map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t as any)}
+            style={{
+              padding: "7px 14px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
+              textTransform: "capitalize", border: "1.5px solid rgba(15,23,42,0.10)", borderRadius: 6,
+              background: tab === t ? "rgba(91,75,255,0.18)" : "transparent",
+              color: tab === t ? "#5B4BFF" : "#64748b", cursor: "pointer", transition: "all 150ms", fontFamily: "inherit",
+            }}
+          >
+            {t === "site_log" ? "Site Log" : t}
           </button>
         ))}
       </div>
@@ -303,6 +381,131 @@ const JobDetail: React.FC = () => {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+      {tab === "site_log" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Supplier / Purchase Bill link */}
+          <div className="page-table-wrapper" style={{ padding: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 12 }}>Supplier / Purchase Order</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Supplier</label>
+                <select value={poForm.supplier_id} onChange={(e) => setPoForm((p) => ({ ...p, supplier_id: e.target.value }))} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", minWidth: 200 }}>
+                  <option value="">Not linked</option>
+                  {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Purchase Bill ID</label>
+                <input type="number" value={poForm.purchase_bill_id} onChange={(e) => setPoForm((p) => ({ ...p, purchase_bill_id: e.target.value }))} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", width: 140 }} />
+              </div>
+              <button className="page-btn page-btn-primary" onClick={savePoDetails}>Save</button>
+              {jobPoDetails?.supplier_id && (
+                <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700, background: jobPoDetails.mistake_pcs_allowed ? "#f0fdf4" : "#fef2f2", color: jobPoDetails.mistake_pcs_allowed ? "#16a34a" : "#dc2626" }}>
+                  {jobPoDetails.mistake_pcs_allowed ? "Mistake pcs allowed" : "Fresh only — mistake pcs not accepted"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Assigned groups */}
+          <div className="page-table-wrapper" style={{ padding: 18 }}>
+            <div style={{ fontWeight: 700, marginBottom: 12 }}>Assigned Groups</div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center" }}>
+              <select value={assignGroupId} onChange={(e) => setAssignGroupId(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", minWidth: 200 }}>
+                <option value="">Select a group to assign…</option>
+                {allGroups.filter((g: any) => !jobGroups.some((jg) => jg.group_id === g.id)).map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <button className="page-btn" disabled={!assignGroupId} onClick={assignGroupToJob}>+ Assign Group</button>
+            </div>
+            {jobGroups.length === 0 ? <div className="page-empty">No groups assigned yet.</div> : (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {jobGroups.map((g: any) => (
+                  <span key={g.assignment_id} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 20, background: "#f1f5f9", fontWeight: 600 }}>
+                    {g.group_name} · {g.member_count} members
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Daily logs */}
+          <div className="page-table-wrapper">
+            <div style={{ padding: "14px 18px", fontWeight: 700, borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Daily Site Log (10:00 AM – 6:00 PM shift)</span>
+              <button className="page-btn page-btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} disabled={jobGroups.length === 0} onClick={() => { setLogForm(emptyLogForm); setLogErr(""); setShowLogModal(true); }}>
+                + Mark Daily Log
+              </button>
+            </div>
+            {dailyLogs.length === 0 ? <div className="page-empty">No daily logs yet.</div> : (
+              <table className="page-table">
+                <thead><tr><th>Date</th><th>Group</th><th>Marked By</th><th>Check-in</th><th>Check-out</th><th className="text-right">Fresh</th><th className="text-right">Mistake</th><th className="text-right">OT Hrs</th><th>Notes</th></tr></thead>
+                <tbody>
+                  {dailyLogs.map((l: any) => (
+                    <tr key={l.id}>
+                      <td className="font-mono">{l.log_date?.slice(0, 10)}</td>
+                      <td className="font-bold">{l.group_name}</td>
+                      <td>{l.marked_by_name}</td>
+                      <td className="font-mono">{l.check_in_time?.slice(0, 5) || "—"}</td>
+                      <td className="font-mono">{l.check_out_time?.slice(0, 5) || "—"}</td>
+                      <td className="text-right">{l.fresh_pcs}</td>
+                      <td className="text-right" style={{ color: Number(l.mistake_pcs) > 0 ? "#dc2626" : "inherit" }}>{l.mistake_pcs}</td>
+                      <td className="text-right">{Number(l.ot_hours) > 0 ? l.ot_hours : "—"}</td>
+                      <td style={{ maxWidth: 180 }}>{l.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showLogModal && (
+        <div className="page-modal-overlay" onClick={() => setShowLogModal(false)}>
+          <div className="page-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Mark Daily Log</h2>
+            {mistakeNotAllowed && (
+              <div style={{ background: "#fef2f2", color: "#dc2626", padding: "8px 12px", borderRadius: 8, fontSize: 12.5, marginBottom: 14, fontWeight: 600 }}>
+                ⚠ This supplier's deal terms are Fresh Only — mistake pcs are not accepted.
+              </div>
+            )}
+            {logErr && <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16 }}>{logErr}</div>}
+            <label>Group *</label>
+            <select value={logForm.group_id} onChange={(e) => setLogForm((p) => ({ ...p, group_id: e.target.value }))} style={{ width: "100%", padding: "11px 14px", borderRadius: 8, border: "1px solid var(--border)", marginBottom: 14, boxSizing: "border-box" }}>
+              <option value="">Select group…</option>
+              {jobGroups.map((g: any) => <option key={g.group_id} value={g.group_id}>{g.group_name}</option>)}
+            </select>
+            <label>Date *</label>
+            <input type="date" value={logForm.log_date} onChange={(e) => setLogForm((p) => ({ ...p, log_date: e.target.value }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label>Check-in</label>
+                <input type="time" value={logForm.check_in_time} onChange={(e) => setLogForm((p) => ({ ...p, check_in_time: e.target.value }))} />
+              </div>
+              <div>
+                <label>Check-out</label>
+                <input type="time" value={logForm.check_out_time} onChange={(e) => setLogForm((p) => ({ ...p, check_out_time: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label>Fresh Pcs</label>
+                <input type="number" value={logForm.fresh_pcs} onChange={(e) => setLogForm((p) => ({ ...p, fresh_pcs: e.target.value }))} />
+              </div>
+              <div>
+                <label>Mistake Pcs</label>
+                <input type="number" value={logForm.mistake_pcs} onChange={(e) => setLogForm((p) => ({ ...p, mistake_pcs: e.target.value }))} />
+              </div>
+            </div>
+            <label>Notes</label>
+            <input value={logForm.notes} onChange={(e) => setLogForm((p) => ({ ...p, notes: e.target.value }))} />
+            <div className="page-modal-actions">
+              <button className="page-modal-cancel" onClick={() => setShowLogModal(false)}>Cancel</button>
+              <button className="page-modal-save" disabled={savingLog} onClick={submitDailyLog}>{savingLog ? "Saving…" : "Save Log"}</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -111,6 +111,7 @@ import WorkDashboard from "./pages/work/WorkDashboard";
 import WorkJobs from "./pages/work/Jobs";
 import WorkJobDetail from "./pages/work/JobDetail";
 import WorkAuditTimeline from "./pages/work/AuditTimeline";
+import WorkSupplierDealTerms from "./pages/work/SupplierDealTerms";
 import MarkAttendance from "./pages/work/MarkAttendance";
 import AttendanceDashboard from "./pages/work/AttendanceDashboard";
 import WorkGroups from "./pages/work/Groups";
@@ -398,6 +399,7 @@ const App: React.FC = () => {
                 open to all staff under WorkspaceRoute below. */}
             <Route path="/work/attendance" element={<AttendanceDashboard />} />
             <Route path="/work/groups" element={<WorkGroups />} />
+            <Route path="/work/supplier-deal-terms" element={<WorkSupplierDealTerms />} />
             <Route path="/admin/employee-portal" element={<EmployeePortalAdmin />} />
           </Route>
 

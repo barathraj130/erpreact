@@ -101,6 +101,7 @@ import masterRoutes from "./routes/master.js";
 import organizationRoutes from "./routes/organization.js";
 import workAccountabilityRoutes from "./routes/workAccountability.js";
 import groupAttendanceRoutes from "./routes/groupAttendance.js";
+import workDailyLogsRoutes from "./routes/workDailyLogs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -243,6 +244,7 @@ app.use("/api/ledger-corrections", ledgerCorrectionRoutes);
 app.use("/api/org", organizationRoutes);
 app.use("/api/work-accountability", workAccountabilityRoutes);
 app.use("/api/work-attendance", groupAttendanceRoutes);
+app.use("/api/work-daily-logs", workDailyLogsRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");
