@@ -404,6 +404,63 @@ router.post("/admin/create-login", authMiddleware, requirePortalAdmin, async (re
     }
 });
 
+// Bulk-create a portal login for every employee who doesn't have one yet.
+// Generates a unique username per employee and a random temporary password
+// — credentials are returned once in the response for the admin to
+// distribute; they are never logged or stored anywhere in plain text.
+const randomTempPassword = () => {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+};
+
+const slugifyUsername = (name, employeeId) => {
+    const base = (name || "employee").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16) || "employee";
+    return `${base}${employeeId}`;
+};
+
+router.post("/admin/create-logins-bulk", authMiddleware, requirePortalAdmin, async (req, res) => {
+    try {
+        const unlinked = await db.pgAll(
+            `SELECT e.* FROM employees e
+             WHERE e.company_id = $1 AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id = e.id)
+             ORDER BY e.name`,
+            [req.user.active_company_id]
+        );
+
+        if (unlinked.length === 0) {
+            return res.json({ success: true, created: [], message: "Every employee already has a login." });
+        }
+
+        const created = [];
+        const failed = [];
+        for (const employee of unlinked) {
+            try {
+                const username = slugifyUsername(employee.name, employee.id);
+                const taken = await db.pgGet(`SELECT id FROM users WHERE username = $1`, [username]);
+                if (taken) { failed.push({ name: employee.name, error: "username collision" }); continue; }
+
+                const password = randomTempPassword();
+                const hash = await bcrypt.hash(password, 10);
+                const result = await db.pgRun(
+                    `INSERT INTO users (company_id, branch_id, active_company_id, username, email, password_hash, role, employee_id, is_active)
+                     VALUES ($1,$2,$1,$3,$4,$5,'field_employee',$6,true) RETURNING id, username`,
+                    [req.user.active_company_id, employee.branch_id || null, username, employee.email || null, hash, employee.id]
+                );
+                created.push({ employee_id: employee.id, employee_name: employee.name, user_id: result.rows[0].id, username: result.rows[0].username, password });
+            } catch (innerErr) {
+                failed.push({ name: employee.name, error: innerErr.message });
+            }
+        }
+
+        res.json({ success: true, created, failed, message: `Created ${created.length} login${created.length === 1 ? "" : "s"}${failed.length ? `, ${failed.length} failed` : ""}.` });
+    } catch (e) {
+        console.error("admin bulk create-login error:", e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
 // Give a salary advance — writes to the existing salary_advances table
 router.post("/admin/advances", authMiddleware, requirePortalAdmin, async (req, res) => {
     try {

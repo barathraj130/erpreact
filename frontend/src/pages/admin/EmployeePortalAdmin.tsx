@@ -54,6 +54,10 @@ const EmployeePortalAdmin: React.FC = () => {
 
   const [repayAmounts, setRepayAmounts] = useState<Record<number, string>>({});
 
+  const [bulkCreating, setBulkCreating] = useState(false);
+  const [bulkResults, setBulkResults] = useState<{ employee_name: string; username: string; password: string }[] | null>(null);
+  const [bulkFailed, setBulkFailed] = useState<{ name: string; error: string }[]>([]);
+
   const fetchAll = async () => {
     setLoading(true);
     try {
@@ -71,6 +75,24 @@ const EmployeePortalAdmin: React.FC = () => {
   };
 
   useEffect(() => { fetchAll(); }, []);
+
+  const bulkCreateLogins = async () => {
+    if (!window.confirm(`Create logins for all ${unlinked.length} employee(s) without one? Temporary passwords will be shown once — save them before closing.`)) return;
+    setBulkCreating(true);
+    try {
+      const res = await apiFetch("/employee-portal/admin/create-logins-bulk", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setBulkResults(data.created || []);
+        setBulkFailed(data.failed || []);
+        fetchAll();
+      } else {
+        alert(data.error || "Bulk creation failed");
+      }
+    } finally {
+      setBulkCreating(false);
+    }
+  };
 
   const createLogin = async () => {
     if (!createForm.employee_id || !createForm.username || !createForm.password) {
@@ -174,7 +196,12 @@ const EmployeePortalAdmin: React.FC = () => {
         <div className="page-empty">Loading…</div>
       ) : tab === "Employees" ? (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            {unlinked.length > 0 && (
+              <button className="page-btn" disabled={bulkCreating} onClick={bulkCreateLogins}>
+                {bulkCreating ? "Creating…" : `Create Logins for All Employees (${unlinked.length})`}
+              </button>
+            )}
             <button className="page-btn page-btn-primary" onClick={() => setShowCreateModal(true)}>+ Create Employee Login</button>
           </div>
           <div className="page-table-wrapper">
@@ -272,6 +299,45 @@ const EmployeePortalAdmin: React.FC = () => {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {bulkResults && (
+        <div className="page-modal-overlay">
+          <div className="page-modal" style={{ maxWidth: 560 }}>
+            <h2>Employee Logins Created</h2>
+            <p style={{ fontSize: 12.5, color: "var(--text-3)", marginTop: -8, marginBottom: 14 }}>
+              These passwords are shown only once. Save or share them with each employee now — they cannot be recovered later, only reset.
+            </p>
+            {bulkResults.length === 0 ? (
+              <div className="page-empty">No logins were created.</div>
+            ) : (
+              <div className="page-table-wrapper" style={{ marginBottom: 14 }}>
+                <table className="page-table">
+                  <thead><tr><th>Employee</th><th>Username</th><th>Temporary Password</th></tr></thead>
+                  <tbody>
+                    {bulkResults.map((r) => (
+                      <tr key={r.username}>
+                        <td className="font-bold">{r.employee_name}</td>
+                        <td className="font-mono">{r.username}</td>
+                        <td className="font-mono">{r.password}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {bulkFailed.length > 0 && (
+              <div style={{ background: "#fef2f2", color: "#dc2626", padding: "10px 14px", borderRadius: 8, fontSize: 12.5, marginBottom: 14 }}>
+                {bulkFailed.length} could not be created: {bulkFailed.map((f) => `${f.name} (${f.error})`).join(", ")}
+              </div>
+            )}
+            <div className="page-modal-actions">
+              <button className="page-modal-save" style={{ width: "100%" }} onClick={() => { setBulkResults(null); setBulkFailed([]); }}>
+                I've saved these — Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
