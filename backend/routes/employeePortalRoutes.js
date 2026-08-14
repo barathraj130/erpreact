@@ -356,6 +356,30 @@ router.get("/admin/portal-employees", authMiddleware, requirePortalAdmin, async 
     }
 });
 
+// Portal-employees who are on duty TODAY, per the existing attendance
+// table (status IN PRESENT/OD/HALF_DAY — the same set Attendance.tsx's
+// own "present" count already uses). Employees with no attendance row
+// marked yet today are excluded (not yet confirmed present), matching
+// what was agreed before this endpoint was written. Read-only; the
+// existing `attendance` table is never written to here.
+router.get("/admin/on-duty-employees", authMiddleware, requirePortalAdmin, async (req, res) => {
+    try {
+        const rows = await db.pgAll(
+            `SELECT u.id, u.username, u.role, a.status AS attendance_status
+             FROM users u
+             JOIN employees e ON e.id = u.employee_id
+             JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+             WHERE e.company_id = $1 AND a.status IN ('PRESENT', 'OD', 'HALF_DAY')
+             ORDER BY u.username`,
+            [req.user.active_company_id]
+        );
+        res.json(rows);
+    } catch (e) {
+        console.error("admin on-duty-employees error:", e.message);
+        res.json([]);
+    }
+});
+
 // Employees who exist in `employees` but don't have a portal login yet
 router.get("/admin/unlinked-employees", authMiddleware, requirePortalAdmin, async (req, res) => {
     try {

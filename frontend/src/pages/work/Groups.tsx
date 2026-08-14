@@ -27,6 +27,7 @@ interface Member {
 const Groups: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [staff, setStaff] = useState<StaffUser[]>([]);
+  const [onDutyStaff, setOnDutyStaff] = useState<StaffUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState("");
@@ -71,7 +72,17 @@ const Groups: React.FC = () => {
     } catch { setStaff([]); }
   };
 
-  useEffect(() => { fetchGroups(); fetchStaff(); }, []);
+  // Separate from `staff` (used by the Leader picker below, which should
+  // still list everyone) — this is only for the "Add Member" dropdown.
+  const fetchOnDutyStaff = async () => {
+    try {
+      const res = await apiFetch("/employee-portal/admin/on-duty-employees");
+      const data = await res.json();
+      setOnDutyStaff(Array.isArray(data) ? data : []);
+    } catch { setOnDutyStaff([]); }
+  };
+
+  useEffect(() => { fetchGroups(); fetchStaff(); fetchOnDutyStaff(); }, []);
 
   const createGroup = async () => {
     if (!name.trim()) { setErr("Group name is required"); return; }
@@ -191,8 +202,8 @@ const Groups: React.FC = () => {
                             onChange={(e) => setAddMemberId(e.target.value)}
                             style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", minWidth: 220 }}
                           >
-                            <option value="">Select staff to add…</option>
-                            {staff
+                            <option value="">Select on-duty staff to add…</option>
+                            {onDutyStaff
                               .filter((s) => !members.some((m) => m.employee_id === s.id))
                               .map((s) => <option key={s.id} value={s.id}>{s.username} ({s.role})</option>)}
                           </select>
