@@ -6,10 +6,12 @@ import {
   FaEnvelope,
   FaFileSignature,
   FaIdBadge,
+  FaLock,
   FaMoneyBillWave,
   FaPhone,
   FaSave,
   FaTimes,
+  FaUser,
   FaUserTie,
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
@@ -43,10 +45,10 @@ const AddEmployeeModal: React.FC<Props> = ({
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
-  // Optional: create an Employee Portal login for this employee at the same
-  // time, instead of doing it separately under Admin → Employee Portal.
-  const [createLoginToo, setCreateLoginToo] = useState(true);
+  // Employee Portal login — created alongside the employee, same pattern
+  // as the "Customer Portal Access" fields on AddCustomerModal.
   const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
 
   useEffect(() => {
     if (employeeToEdit) {
@@ -74,15 +76,9 @@ const AddEmployeeModal: React.FC<Props> = ({
   useEffect(() => {
     if (!employeeToEdit) {
       setLoginUsername(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+      setLoginPassword(name.trim());
     }
   }, [name, employeeToEdit]);
-
-  const randomTempPassword = () => {
-    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    let out = "";
-    for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
-    return out;
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -126,10 +122,10 @@ const AddEmployeeModal: React.FC<Props> = ({
         false,
       );
 
-      if (!employeeToEdit && createLoginToo && loginUsername.trim()) {
+      if (!employeeToEdit && loginUsername.trim()) {
         const saved = await res.json().catch(() => null);
         if (saved?.id) {
-          const password = randomTempPassword();
+          const password = loginPassword.trim() || name.trim();
           const loginRes = await apiFetch("/employee-portal/admin/create-login", {
             method: "POST",
             body: { employee_id: saved.id, username: loginUsername.trim(), password, role: "field_employee" },
@@ -528,37 +524,32 @@ const AddEmployeeModal: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Employee Portal login (new employees only) */}
+            {/* Employee Portal Access — same pattern as Customer Portal Access */}
             {!employeeToEdit && (
               <div
                 style={{
                   background: "#f0fdf4",
                   padding: "15px",
                   borderRadius: "8px",
-                  border: "1px dashed #bbf7d0",
+                  border: "1px solid #bbf7d0",
                   marginBottom: "15px",
                 }}
               >
-                <label
+                <div
                   style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 700,
+                    color: "#166534",
+                    marginBottom: "10px",
                     display: "flex",
                     alignItems: "center",
-                    gap: "8px",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
-                    color: "#166534",
-                    cursor: "pointer",
+                    gap: "6px",
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={createLoginToo}
-                    onChange={(e) => setCreateLoginToo(e.target.checked)}
-                  />
-                  Also create an Employee Portal login
-                </label>
-                {createLoginToo && (
-                  <div style={{ marginTop: "10px" }}>
+                  <FaLock /> Employee Portal Access
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+                  <div>
                     <label
                       style={{
                         display: "block",
@@ -568,19 +559,44 @@ const AddEmployeeModal: React.FC<Props> = ({
                         color: "#475569",
                       }}
                     >
-                      Username
+                      Login Username
                     </label>
-                    <input
-                      value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))}
-                      style={{ ...inputStyle, paddingLeft: "12px" }}
-                      placeholder="e.g. arumugam"
-                    />
-                    <p style={{ margin: "8px 0 0", fontSize: "0.75rem", color: "#166534" }}>
-                      A temporary password will be generated and shown once after saving — write it down to share with them.
-                    </p>
+                    <div style={{ position: "relative" }}>
+                      <FaUser style={iconStyle} />
+                      <input
+                        value={loginUsername}
+                        onChange={(e) => setLoginUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))}
+                        style={inputStyle}
+                        placeholder="Auto-filled from name"
+                      />
+                    </div>
                   </div>
-                )}
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: "5px",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        color: "#475569",
+                      }}
+                    >
+                      Set Password
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <FaLock style={iconStyle} />
+                      <input
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        style={inputStyle}
+                        placeholder="Defaults to employee name"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <p style={{ margin: "8px 0 0", fontSize: "0.75rem", color: "#166534" }}>
+                  Every employee gets a portal login by default, same as customers. Clear the username to skip creating one for this employee.
+                </p>
               </div>
             )}
 
