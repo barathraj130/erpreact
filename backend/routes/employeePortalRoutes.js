@@ -405,20 +405,17 @@ router.post("/admin/create-login", authMiddleware, requirePortalAdmin, async (re
 });
 
 // Bulk-create a portal login for every employee who doesn't have one yet.
-// Generates a unique username per employee and a random temporary password
-// — credentials are returned once in the response for the admin to
+// Username is name+employeeId (guaranteed unique even for duplicate names).
+// Email is {name}@jbs.com and password is the employee's own name, per
+// explicit choice for this tenant's internal daily-wage-staff system —
+// credentials are returned once in the response for the admin to
 // distribute; they are never logged or stored anywhere in plain text.
-const randomTempPassword = () => {
-    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    let out = "";
-    for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
-    return out;
-};
-
 const slugifyUsername = (name, employeeId) => {
     const base = (name || "employee").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16) || "employee";
     return `${base}${employeeId}`;
 };
+
+const slugifyEmailLocalPart = (name) => (name || "employee").toLowerCase().replace(/[^a-z0-9]/g, "") || "employee";
 
 router.post("/admin/create-logins-bulk", authMiddleware, requirePortalAdmin, async (req, res) => {
     try {
@@ -441,14 +438,16 @@ router.post("/admin/create-logins-bulk", authMiddleware, requirePortalAdmin, asy
                 const taken = await db.pgGet(`SELECT id FROM users WHERE username = $1`, [username]);
                 if (taken) { failed.push({ name: employee.name, error: "username collision" }); continue; }
 
-                const password = randomTempPassword();
+                const password = (employee.name || "").trim();
+                if (!password) { failed.push({ name: employee.name, error: "employee has no name to use as password" }); continue; }
+                const email = `${slugifyEmailLocalPart(employee.name)}@jbs.com`;
                 const hash = await bcrypt.hash(password, 10);
                 const result = await db.pgRun(
                     `INSERT INTO users (company_id, branch_id, active_company_id, username, email, password_hash, role, employee_id, is_active)
-                     VALUES ($1,$2,$1,$3,$4,$5,'field_employee',$6,true) RETURNING id, username`,
-                    [req.user.active_company_id, employee.branch_id || null, username, employee.email || null, hash, employee.id]
+                     VALUES ($1,$2,$1,$3,$4,$5,'field_employee',$6,true) RETURNING id, username, email`,
+                    [req.user.active_company_id, employee.branch_id || null, username, email, hash, employee.id]
                 );
-                created.push({ employee_id: employee.id, employee_name: employee.name, user_id: result.rows[0].id, username: result.rows[0].username, password });
+                created.push({ employee_id: employee.id, employee_name: employee.name, user_id: result.rows[0].id, username: result.rows[0].username, email: result.rows[0].email, password });
             } catch (innerErr) {
                 failed.push({ name: employee.name, error: innerErr.message });
             }

@@ -55,7 +55,7 @@ const EmployeePortalAdmin: React.FC = () => {
   const [repayAmounts, setRepayAmounts] = useState<Record<number, string>>({});
 
   const [bulkCreating, setBulkCreating] = useState(false);
-  const [bulkResults, setBulkResults] = useState<{ employee_name: string; username: string; password: string }[] | null>(null);
+  const [bulkResults, setBulkResults] = useState<{ employee_name: string; username: string; email?: string; password: string }[] | null>(null);
   const [bulkFailed, setBulkFailed] = useState<{ name: string; error: string }[]>([]);
 
   const fetchAll = async () => {
@@ -314,12 +314,13 @@ const EmployeePortalAdmin: React.FC = () => {
             ) : (
               <div className="page-table-wrapper" style={{ marginBottom: 14 }}>
                 <table className="page-table">
-                  <thead><tr><th>Employee</th><th>Username</th><th>Temporary Password</th></tr></thead>
+                  <thead><tr><th>Employee</th><th>Username</th><th>Email</th><th>Password</th></tr></thead>
                   <tbody>
                     {bulkResults.map((r) => (
                       <tr key={r.username}>
                         <td className="font-bold">{r.employee_name}</td>
                         <td className="font-mono">{r.username}</td>
+                        <td className="font-mono">{r.email || "—"}</td>
                         <td className="font-mono">{r.password}</td>
                       </tr>
                     ))}

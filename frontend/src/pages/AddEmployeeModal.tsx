@@ -43,6 +43,11 @@ const AddEmployeeModal: React.FC<Props> = ({
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
+  // Optional: create an Employee Portal login for this employee at the same
+  // time, instead of doing it separately under Admin → Employee Portal.
+  const [createLoginToo, setCreateLoginToo] = useState(true);
+  const [loginUsername, setLoginUsername] = useState("");
+
   useEffect(() => {
     if (employeeToEdit) {
       setName(employeeToEdit.name || "");
@@ -65,6 +70,19 @@ const AddEmployeeModal: React.FC<Props> = ({
       }
     }
   }, [employeeToEdit]);
+
+  useEffect(() => {
+    if (!employeeToEdit) {
+      setLoginUsername(name.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    }
+  }, [name, employeeToEdit]);
+
+  const randomTempPassword = () => {
+    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -99,7 +117,7 @@ const AddEmployeeModal: React.FC<Props> = ({
 
       const method = employeeToEdit ? "PUT" : "POST";
 
-      await apiFetch(
+      const res = await apiFetch(
         url,
         {
           method: method,
@@ -107,6 +125,23 @@ const AddEmployeeModal: React.FC<Props> = ({
         },
         false,
       );
+
+      if (!employeeToEdit && createLoginToo && loginUsername.trim()) {
+        const saved = await res.json().catch(() => null);
+        if (saved?.id) {
+          const password = randomTempPassword();
+          const loginRes = await apiFetch("/employee-portal/admin/create-login", {
+            method: "POST",
+            body: { employee_id: saved.id, username: loginUsername.trim(), password, role: "field_employee" },
+          });
+          const loginData = await loginRes.json();
+          if (loginData.success) {
+            alert(`Employee saved and portal login created.\n\nUsername: ${loginUsername.trim()}\nPassword: ${password}\n\nSave this now — the password won't be shown again.`);
+          } else {
+            alert(`Employee saved, but the portal login could not be created: ${loginData.error || "unknown error"}. You can create it later under Admin → Employee Portal.`);
+          }
+        }
+      }
 
       onSuccess();
       onClose();
@@ -492,6 +527,62 @@ const AddEmployeeModal: React.FC<Props> = ({
                 </CustomSelect>
               </div>
             </div>
+
+            {/* Employee Portal login (new employees only) */}
+            {!employeeToEdit && (
+              <div
+                style={{
+                  background: "#f0fdf4",
+                  padding: "15px",
+                  borderRadius: "8px",
+                  border: "1px dashed #bbf7d0",
+                  marginBottom: "15px",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    color: "#166534",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={createLoginToo}
+                    onChange={(e) => setCreateLoginToo(e.target.checked)}
+                  />
+                  Also create an Employee Portal login
+                </label>
+                {createLoginToo && (
+                  <div style={{ marginTop: "10px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: "5px",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        color: "#475569",
+                      }}
+                    >
+                      Username
+                    </label>
+                    <input
+                      value={loginUsername}
+                      onChange={(e) => setLoginUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))}
+                      style={{ ...inputStyle, paddingLeft: "12px" }}
+                      placeholder="e.g. arumugam"
+                    />
+                    <p style={{ margin: "8px 0 0", fontSize: "0.75rem", color: "#166534" }}>
+                      A temporary password will be generated and shown once after saving — write it down to share with them.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Signature Upload */}
             <div
