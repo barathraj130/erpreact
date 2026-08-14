@@ -356,22 +356,28 @@ router.get("/admin/portal-employees", authMiddleware, requirePortalAdmin, async 
     }
 });
 
-// Portal-employees who are on duty TODAY, per the existing attendance
-// table (status IN PRESENT/OD/HALF_DAY — the same set Attendance.tsx's
-// own "present" count already uses). Employees with no attendance row
-// marked yet today are excluded (not yet confirmed present), matching
-// what was agreed before this endpoint was written. Read-only; the
-// existing `attendance` table is never written to here.
+// Portal-employees who are on duty TODAY, per the existing attendance_logs
+// table (status IN PRESENT/OD/HALF_DAY — the same set Attendance.tsx's own
+// "present" count already uses, and the exact table that page actually
+// writes to via /hr/attendance/manual — NOT the separate, unused
+// `attendance` table this query originally and incorrectly joined).
+// Employees with no attendance_logs row marked yet today are excluded
+// (not yet confirmed present). Today's date is computed the same way the
+// frontend computes it (UTC-based toISOString) and passed as a parameter,
+// rather than trusting Postgres's CURRENT_DATE, so the two can never
+// disagree over timezone. Read-only; attendance_logs is never written
+// to here.
 router.get("/admin/on-duty-employees", authMiddleware, requirePortalAdmin, async (req, res) => {
     try {
+        const today = new Date().toISOString().split("T")[0];
         const rows = await db.pgAll(
             `SELECT u.id, u.username, u.role, a.status AS attendance_status
              FROM users u
              JOIN employees e ON e.id = u.employee_id
-             JOIN attendance a ON a.employee_id = e.id AND a.date = CURRENT_DATE
+             JOIN attendance_logs a ON a.employee_id = e.id AND a.date = $2
              WHERE e.company_id = $1 AND a.status IN ('PRESENT', 'OD', 'HALF_DAY')
              ORDER BY u.username`,
-            [req.user.active_company_id]
+            [req.user.active_company_id, today]
         );
         res.json(rows);
     } catch (e) {
