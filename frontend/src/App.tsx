@@ -112,6 +112,9 @@ import WorkJobs from "./pages/work/Jobs";
 import WorkJobDetail from "./pages/work/JobDetail";
 import WorkAuditTimeline from "./pages/work/AuditTimeline";
 import WorkSupplierDealTerms from "./pages/work/SupplierDealTerms";
+import WorkJobWorkLog from "./pages/work/JobWorkLog";
+import WorkMarkDailyLog from "./pages/work/MarkDailyLog";
+import WorkConfirmEODReport from "./pages/work/ConfirmEODReport";
 import MarkAttendance from "./pages/work/MarkAttendance";
 import AttendanceDashboard from "./pages/work/AttendanceDashboard";
 import WorkGroups from "./pages/work/Groups";
@@ -400,6 +403,9 @@ const App: React.FC = () => {
             <Route path="/work/attendance" element={<AttendanceDashboard />} />
             <Route path="/work/groups" element={<WorkGroups />} />
             <Route path="/work/supplier-deal-terms" element={<WorkSupplierDealTerms />} />
+            <Route path="/work/job-detail/:jobId" element={<WorkJobWorkLog />} />
+            <Route path="/work/daily-log/new" element={<WorkMarkDailyLog />} />
+            <Route path="/work/daily-log/:id/confirm" element={<WorkConfirmEODReport />} />
             <Route path="/admin/employee-portal" element={<EmployeePortalAdmin />} />
           </Route>
 
