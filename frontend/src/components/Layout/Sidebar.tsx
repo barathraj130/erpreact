@@ -243,7 +243,6 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
         { name: "Groups", path: "/work/groups" },
         { name: "Attendance Report", path: "/work/attendance" },
         { name: "Supplier Deal Terms", path: "/work/supplier-deal-terms" },
-        { name: "Daily Log", path: "/work/daily-log/new" },
       ] : []),
     ],
   });

@@ -64,9 +64,7 @@ const JobWorkLog: React.FC = () => {
           <Link to="/work/jobs" style={{ fontSize: 12, color: "#5B4BFF", fontWeight: 700 }}>← All Jobs</Link>
           <h1 style={{ marginTop: 6 }}>{job.title}</h1>
           <p>{job.description || "No description"} — Status: {job.status}</p>
-        </div>
-        <div className="page-header-actions">
-          <button className="page-btn page-btn-primary" onClick={() => navigate(`/work/daily-log/new?job_id=${jobId}`)}>+ Mark Daily Log</button>
+          <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4 }}>Daily logs are submitted by employees from their own Employee Portal login — assign groups below, then review submitted reports here.</p>
         </div>
       </div>
 

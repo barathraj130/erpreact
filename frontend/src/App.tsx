@@ -67,6 +67,7 @@ import CustomerNotifications from "./pages/CustomerNotifications";
 import EmployeeLogin from "./pages/employee/EmployeeLogin";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import EmployeeMyGroups from "./pages/employee/MyGroups";
+import EmployeeDailyLogForm from "./pages/employee/DailyLogForm";
 import EmployeePortalAdmin from "./pages/admin/EmployeePortalAdmin";
 import CustomerShop from "./pages/customer/CustomerShop";
 import CustomerLedger from "./pages/customer/CustomerLedger";
@@ -113,7 +114,6 @@ import WorkJobDetail from "./pages/work/JobDetail";
 import WorkAuditTimeline from "./pages/work/AuditTimeline";
 import WorkSupplierDealTerms from "./pages/work/SupplierDealTerms";
 import WorkJobWorkLog from "./pages/work/JobWorkLog";
-import WorkMarkDailyLog from "./pages/work/MarkDailyLog";
 import WorkConfirmEODReport from "./pages/work/ConfirmEODReport";
 import MarkAttendance from "./pages/work/MarkAttendance";
 import AttendanceDashboard from "./pages/work/AttendanceDashboard";
@@ -337,6 +337,7 @@ const App: React.FC = () => {
           <Route path="/employee-login" element={<EmployeeLogin />} />
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
           <Route path="/employee/groups" element={<EmployeeMyGroups />} />
+          <Route path="/employee/daily-log" element={<EmployeeDailyLogForm />} />
           <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/host-login" element={<HostLogin />} />
           <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
@@ -404,7 +405,6 @@ const App: React.FC = () => {
             <Route path="/work/groups" element={<WorkGroups />} />
             <Route path="/work/supplier-deal-terms" element={<WorkSupplierDealTerms />} />
             <Route path="/work/job-detail/:jobId" element={<WorkJobWorkLog />} />
-            <Route path="/work/daily-log/new" element={<WorkMarkDailyLog />} />
             <Route path="/work/daily-log/:id/confirm" element={<WorkConfirmEODReport />} />
             <Route path="/admin/employee-portal" element={<EmployeePortalAdmin />} />
           </Route>

@@ -101,40 +101,14 @@ router.get("/jobs/:jobId/groups", authMiddleware, async (req, res) => {
 });
 
 // ============================================================
-// DAILY LOGS
+// DAILY LOGS — read-only / admin-review here. Creation and item
+// submission are EMPLOYEE actions now (corrected permission model)
+// and live under /api/employee-portal (employeePortalRoutes.js),
+// using employeeAuth/req.employee — a completely different auth
+// token shape than this file's authMiddleware/req.user. See that
+// file's "MY DAILY LOGS" section for POST /my-daily-logs and
+// POST /my-daily-logs/:id/items.
 // ============================================================
-router.post("/daily-logs", authMiddleware, requireManager, async (req, res) => {
-    try {
-        const { job_id, group_id, log_date, reached_status, check_in_time, check_out_time, notes } = req.body;
-        if (!job_id || !group_id || !log_date || !reached_status) {
-            return res.json({ success: false, error: "job_id, group_id, log_date and reached_status are required" });
-        }
-        if (!["yes", "no", "partial"].includes(reached_status)) return res.json({ success: false, error: "reached_status must be yes, no or partial" });
-
-        const assigned = await db.pgGet(`SELECT id FROM work_job_groups WHERE job_id = $1 AND group_id = $2 AND company_id = $3 AND is_active = true`, [job_id, group_id, req.user.active_company_id]);
-        if (!assigned) return res.json({ success: false, error: "This group is not assigned to this job" });
-
-        const members = await db.pgAll(`SELECT employee_id FROM group_members WHERE group_id = $1 AND is_active = true`, [group_id]);
-        const memberSnapshot = members.map((m) => m.employee_id);
-        const otHours = computeOtHours(check_out_time);
-
-        const result = await db.pgRun(
-            `INSERT INTO work_daily_logs
-                (company_id, job_id, group_id, log_date, marked_by_user_id, reached_status,
-                 check_in_time, check_out_time, ot_hours, ot_amount, member_snapshot, notes)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11)
-             RETURNING *`,
-            [req.user.active_company_id, job_id, group_id, log_date, req.user.id, reached_status, check_in_time || null, check_out_time || null, otHours, JSON.stringify(memberSnapshot), notes || null]
-        );
-        await logAudit(req, { entityType: "work_daily_logs", entityId: result.rows[0].id, action: "daily_log_created", newValue: { log_date, reached_status, ot_hours: otHours }, jobId: Number(job_id), groupId: Number(group_id) });
-        res.json({ success: true, log: result.rows[0], member_count: memberSnapshot.length });
-    } catch (e) {
-        if (e.message?.includes("duplicate key")) return res.json({ success: false, error: "A log already exists for this job, group and date." });
-        console.error("daily log create error:", e.message);
-        res.json({ success: false, error: e.message });
-    }
-});
-
 router.get("/jobs/:jobId/daily-logs", authMiddleware, async (req, res) => {
     try {
         const rows = await db.pgAll(
@@ -186,55 +160,6 @@ router.get("/daily-logs/:id", authMiddleware, async (req, res) => {
     } catch (e) {
         console.error("daily log detail error:", e.message);
         res.status(500).json({ error: e.message });
-    }
-});
-
-// Replaces all product line items for a log (upsert pattern: delete then insert)
-router.post("/daily-logs/:id/items", authMiddleware, requireManager, async (req, res) => {
-    const client = await db.getClient();
-    try {
-        await client.query("BEGIN");
-        const { items } = req.body;
-        if (!Array.isArray(items)) throw new Error("items array required");
-
-        const log = await client.query(`SELECT * FROM work_daily_logs WHERE id = $1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
-        if (!log.rows[0]) throw new Error("Log not found");
-        if (log.rows[0].admin_confirmed) throw new Error("This log is already confirmed — items can no longer be edited");
-
-        await client.query(`DELETE FROM work_daily_log_items WHERE daily_log_id = $1`, [req.params.id]);
-
-        let totalFresh = 0, totalMistake = 0;
-        let sortOrder = 0;
-        for (const item of items) {
-            await client.query(
-                `INSERT INTO work_daily_log_items (daily_log_id, product_id, product_name_snapshot, bundle_count, pcs_per_bundle, fresh_pcs, mistake_pcs, mistake_pcs_note, sort_order)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-                [req.params.id, item.product_id || null, item.product_name_snapshot, Number(item.bundle_count) || 0, Number(item.pcs_per_bundle) || 0, Number(item.fresh_pcs) || 0, Number(item.mistake_pcs) || 0, item.mistake_pcs_note || null, sortOrder++]
-            );
-            totalFresh += Number(item.fresh_pcs) || 0;
-            totalMistake += Number(item.mistake_pcs) || 0;
-        }
-
-        await client.query(`UPDATE work_daily_logs SET fresh_pcs = $1, mistake_pcs = $2, updated_at = NOW() WHERE id = $3`, [totalFresh, totalMistake, req.params.id]);
-
-        const jobDetails = await client.query(
-            `SELECT sdt.mistake_pcs_allowed FROM work_job_details wjd
-             LEFT JOIN supplier_deal_terms sdt ON sdt.supplier_id = wjd.supplier_id
-             WHERE wjd.job_id = $1`,
-            [log.rows[0].job_id]
-        );
-        const mistakeAllowed = jobDetails.rows[0]?.mistake_pcs_allowed ?? false;
-        const warning = !mistakeAllowed && totalMistake > 0
-            ? "This supplier's deal terms are Fresh Only — mistake pcs were recorded but won't count toward the converted purchase quantity."
-            : null;
-
-        await client.query("COMMIT");
-        res.json({ success: true, item_count: items.length, total_fresh: totalFresh, total_mistake: totalMistake, warning });
-    } catch (e) {
-        await client.query("ROLLBACK").catch(() => {});
-        res.json({ success: false, error: e.message });
-    } finally {
-        client.release();
     }
 });
 
