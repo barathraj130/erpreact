@@ -197,6 +197,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
             { name: "Branches", path: "/admin/branches" },
             { name: "🛍️ My Storefront", path: "/admin/storefront" },
             { name: "User Management", path: "/admin/users" },
+            { name: "Employee Portal", path: "/admin/employee-portal" },
             { name: roundoffPendingCount > 0 ? `Round Off Requests (${roundoffPendingCount})` : "Round Off Requests", path: "/admin/roundoff-requests" },
             { name: "Subscriptions", path: "/admin/subscriptions" },
             { name: "Audit Log", path: "/admin/audit-log" },
