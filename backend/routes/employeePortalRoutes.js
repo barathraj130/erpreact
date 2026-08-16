@@ -146,12 +146,25 @@ router.get("/dashboard", employeeAuth, async (req, res) => {
             currentMonthSalary = salaries[0] || null;
         }
 
-        // PAYMENTS HISTORY
-        const payments = await db.pgAll(`
-            SELECT * FROM salary_payments 
-            WHERE employee_id = $1 
-            ORDER BY date DESC LIMIT 10
-        `, [employeeId]);
+        // PAYMENTS HISTORY — same table split as the salary summary above:
+        // salary_payments is only ever written by the monthly payroll flow,
+        // so daily/weekly-wage workers need their real records pulled from
+        // daily_salary_payments instead.
+        let payments;
+        if (salaryType === "daily" || salaryType === "weekly") {
+            payments = await db.pgAll(`
+                SELECT id, payment_date AS date, payment_mode AS mode, daily_wage AS amount
+                FROM daily_salary_payments
+                WHERE employee_id = $1 AND company_id = $2
+                ORDER BY payment_date DESC LIMIT 10
+            `, [employeeId, req.employee.companyId]);
+        } else {
+            payments = await db.pgAll(`
+                SELECT * FROM salary_payments
+                WHERE employee_id = $1
+                ORDER BY date DESC LIMIT 10
+            `, [employeeId]);
+        }
 
         // ADVANCE SUMMARY
         // Total Advance Taken
