@@ -64,7 +64,6 @@ import Transactions from "./pages/Transactions";
 import SimpleDashboard from "./SimpleDashboard";
 import SynthesisDashboard from "./SynthesisDashboard";
 import CustomerNotifications from "./pages/CustomerNotifications";
-import EmployeeLogin from "./pages/employee/EmployeeLogin";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import EmployeeMyGroups from "./pages/employee/MyGroups";
 import EmployeeDailyLogForm from "./pages/employee/DailyLogForm";
@@ -334,7 +333,12 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/company-login" element={<Login />} />
           <Route path="/branch-login" element={<BranchLogin />} />
-          <Route path="/employee-login" element={<EmployeeLogin />} />
+          {/* One login page for everyone now — Login.tsx detects
+              role === 'field_employee' after auth and routes them to
+              their own dashboard. EmployeeLogin.tsx's backend endpoint
+              (/api/employee-portal/login) is still used internally by
+              that flow, just no longer has its own separate page. */}
+          <Route path="/employee-login" element={<Navigate to="/company-login" replace />} />
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
           <Route path="/employee/groups" element={<EmployeeMyGroups />} />
           <Route path="/employee/daily-log" element={<EmployeeDailyLogForm />} />

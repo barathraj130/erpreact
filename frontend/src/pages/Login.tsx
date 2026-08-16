@@ -109,6 +109,7 @@ export default function Login() {
           try {
             const payload = JSON.parse(atob(res.token.split(".")[1]));
             const role = payload.user?.role?.toLowerCase() || "user";
+            const username = payload.user?.username;
 
             if (role === "superadmin") {
               window.location.href = "/platform-admin";
@@ -116,6 +117,30 @@ export default function Login() {
               window.location.href = "/shop";
             } else if (role === "branch_manager") {
               window.location.href = "/branch/billing";
+            } else if (role === "field_employee") {
+              // Single login page for everyone: field employees authenticate
+              // through the same form, then we silently obtain their
+              // separate employee-portal token (same password, same users
+              // row — just a differently-shaped token the employee pages
+              // expect) before sending them to their own dashboard.
+              try {
+                const empRes = await apiFetch("/employee-portal/login", {
+                  method: "POST",
+                  body: { username, password },
+                });
+                const empData = await empRes.json();
+                if (empRes.ok && empData.token) {
+                  localStorage.setItem("erp-employee-token", empData.token);
+                  localStorage.setItem("erp-employee-data", JSON.stringify(empData.employee));
+                  window.location.href = "/employee/dashboard";
+                } else {
+                  setLoginError(empData.error || "Could not load your employee portal session.");
+                  setIsAuthenticating(false);
+                }
+              } catch {
+                setLoginError("Could not load your employee portal session.");
+                setIsAuthenticating(false);
+              }
             } else {
               window.location.href = "/dashboard";
             }
