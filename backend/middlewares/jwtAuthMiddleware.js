@@ -62,6 +62,19 @@ export const authMiddleware = (req, res, next) => {
     }
 };
 
+// Blocks portal-only roles (field employees, storefront customers) from
+// internal ERP data routes — authMiddleware alone only checks that a token
+// carries a valid company_id, not that its role is actually staff.
+const PORTAL_ONLY_ROLES = ["field_employee", "customer", "user"];
+
+export const requireInternalStaff = (req, res, next) => {
+    const role = (req.user?.role || "").toLowerCase();
+    if (PORTAL_ONLY_ROLES.includes(role)) {
+        return res.status(403).json({ error: "Not authorized for this resource." });
+    }
+    next();
+};
+
 // Route-level auth checker
 export const checkAuth = (req, res, next) => {
     if (!req.user || !req.user.id) {

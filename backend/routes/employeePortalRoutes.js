@@ -121,18 +121,23 @@ router.get("/dashboard", employeeAuth, async (req, res) => {
         // ADVANCE SUMMARY
         // Total Advance Taken
         const advanceTaken = await db.pgGet(`
-            SELECT SUM(amount) as total FROM salary_advances 
+            SELECT SUM(amount) as total FROM salary_advances
             WHERE employee_id = $1
         `, [employeeId]);
 
-        // Total Advance Deducted (from salary payments)
-        const advanceDeducted = await db.pgGet(`
-            SELECT SUM(advance_deducted) as total FROM salaries 
-            WHERE employee_id = $1
+        // Outstanding balance — same source of truth as the admin ledger
+        // (hrRoutes.js /ledger/:employeeId): salary_advances.current_balance,
+        // kept live by both payroll deductions AND daily-wage deductions
+        // (advance_repayments). Summing salaries.advance_deducted here missed
+        // daily-wage workers entirely, since their repayments never touch
+        // the salaries table.
+        const advanceRemaining = await db.pgGet(`
+            SELECT SUM(COALESCE(current_balance, amount)) as total FROM salary_advances
+            WHERE employee_id = $1 AND COALESCE(status,'ACTIVE') != 'RECOVERED'
         `, [employeeId]);
 
         const totalTaken = Number(advanceTaken?.total || 0);
-        const totalDeducted = Number(advanceDeducted?.total || 0);
+        const remaining = Number(advanceRemaining?.total || 0);
 
         // ATTENDANCE STATS
         const attendanceCount = await db.pgGet(`
@@ -160,7 +165,7 @@ router.get("/dashboard", employeeAuth, async (req, res) => {
             },
             advanceSummary: {
                 totalTaken: totalTaken,
-                remaining: totalTaken - totalDeducted
+                remaining: remaining
             },
             paymentHistory: payments
         });

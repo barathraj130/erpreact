@@ -1,7 +1,7 @@
 // backend/routes/dashboardRoutes.js
 import express from 'express';
 import * as db from '../database/pg.js';
-import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import authMiddleware, { requireInternalStaff } from '../middlewares/jwtAuthMiddleware.js';
 
 const router = express.Router();
 
@@ -31,7 +31,7 @@ const getBranchFilter = (req) => {
     return { filter: '1=1', branchId: 'ALL' };
 };
 
-router.get('/summary', authMiddleware, async (req, res) => {
+router.get('/summary', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     const { filter: branchFilter } = getBranchFilter(req);
@@ -296,7 +296,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
 /**
  * 📈 MONTHLY SALES TREND
  */
-router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
+router.get('/monthly-sales-trend', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     try {
@@ -332,7 +332,7 @@ router.get('/monthly-sales-trend', authMiddleware, async (req, res) => {
 /**
  * 📊 TOP OUTSTANDING CUSTOMERS
  */
-router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
+router.get('/outstanding-by-customer', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     try {
@@ -399,7 +399,7 @@ router.get('/outstanding-by-customer', authMiddleware, async (req, res) => {
 /**
  * 💸 EXPENSE BREAKDOWN
  */
-router.get('/expense-breakdown', authMiddleware, async (req, res) => {
+router.get('/expense-breakdown', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     try {
@@ -461,7 +461,7 @@ router.get('/expense-breakdown', authMiddleware, async (req, res) => {
 /**
  * 📊 DASHBOARD KPIs
  */
-router.get('/kpis', authMiddleware, async (req, res) => {
+router.get('/kpis', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     const { filter: branchFilter } = getBranchFilter(req);
@@ -514,7 +514,7 @@ router.get('/kpis', authMiddleware, async (req, res) => {
 /**
  * 💰 DASHBOARD FINANCE
  */
-router.get('/finance', authMiddleware, async (req, res) => {
+router.get('/finance', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     const { filter: branchFilter } = getBranchFilter(req);
@@ -596,7 +596,7 @@ router.get('/finance', authMiddleware, async (req, res) => {
 /**
  * 🏢 BRANCH OVERVIEW
  */
-router.get('/branch-overview', authMiddleware, async (req, res) => {
+router.get('/branch-overview', authMiddleware, requireInternalStaff, async (req, res) => {
     noCache(res);
     const companyId = req.user.active_company_id;
     try {
