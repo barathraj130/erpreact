@@ -117,7 +117,7 @@ const EmployeeDashboard: React.FC = () => {
             <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                style={{ background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)", padding: "24px", borderRadius: "24px", color: "white" }}
+                style={{ background: "linear-gradient(135deg, #4f46e5 0%, #312e81 100%)", padding: "24px", borderRadius: "24px", color: "white" }}
             >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
                     <div style={{ background: "rgba(255,255,255,0.1)", padding: "12px", borderRadius: "14px", width: "48px", height: "48px", display: "flex", alignItems: "center", justifyContent: "center" }}>
