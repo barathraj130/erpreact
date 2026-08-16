@@ -97,20 +97,55 @@ router.get("/dashboard", employeeAuth, async (req, res) => {
 
     try {
         // PROFILE & CURRENT SALARY
+        // employees.salary only holds a rate for salary_type='monthly' — daily/weekly
+        // workers store their rate in daily_rate/weekly_rate instead (employeeRoutes.js).
         const profile = await db.pgGet(`
-            SELECT name, designation, salary as base_salary 
+            SELECT name, designation, salary_type,
+                CASE LOWER(COALESCE(salary_type,'monthly'))
+                    WHEN 'daily' THEN daily_rate
+                    WHEN 'weekly' THEN weekly_rate
+                    ELSE salary
+                END AS base_salary
             FROM employees WHERE id = $1
         `, [employeeId]);
 
-        // SALARY SUMMARY
-        const salaries = await db.pgAll(`
-            SELECT * FROM salaries 
-            WHERE employee_id = $1 
-            ORDER BY created_at DESC LIMIT 6
-        `, [employeeId]);
+        // SALARY SUMMARY — daily-wage workers are paid via /hr/salary/daily/process,
+        // which writes to daily_salary_payments, never the salaries table (that's
+        // only populated by the monthly payroll run). Same gap class as the advance
+        // balance bug: reading the wrong table returns "no record" for every
+        // daily-wage employee even though they're being paid.
+        const salaryType = (profile?.salary_type || "monthly").toLowerCase();
+        let salaries = [];
+        let currentMonthSalary = null;
 
-        const currentMonthSalary = salaries[0] || null;
-        
+        if (salaryType === "daily" || salaryType === "weekly") {
+            const monthPayments = await db.pgAll(`
+                SELECT payment_date, daily_wage AS net_pay, gross_wage, deduction
+                FROM daily_salary_payments
+                WHERE employee_id = $1 AND company_id = $2
+                  AND to_char(payment_date, 'YYYY-MM') = to_char(CURRENT_DATE, 'YYYY-MM')
+                ORDER BY payment_date DESC
+            `, [employeeId, req.employee.companyId]);
+            if (monthPayments.length > 0) {
+                const monthTotal = monthPayments.reduce((s, p) => s + Number(p.net_pay || 0), 0);
+                const monthDeductions = monthPayments.reduce((s, p) => s + Number(p.deduction || 0), 0);
+                currentMonthSalary = {
+                    final_salary: monthTotal,
+                    bonus: 0,
+                    deductions: monthDeductions,
+                    created_at: monthPayments[0].payment_date,
+                };
+            }
+            salaries = monthPayments;
+        } else {
+            salaries = await db.pgAll(`
+                SELECT * FROM salaries
+                WHERE employee_id = $1
+                ORDER BY created_at DESC LIMIT 6
+            `, [employeeId]);
+            currentMonthSalary = salaries[0] || null;
+        }
+
         // PAYMENTS HISTORY
         const payments = await db.pgAll(`
             SELECT * FROM salary_payments 
