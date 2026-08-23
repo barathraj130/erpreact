@@ -22,6 +22,7 @@ interface DailyRow {
   payment_mode: "cash" | "bank" | "proprietor";
   already_paid?: boolean;
   is_temp?: boolean;
+  has_advance?: boolean;
 }
 
 interface PayItem {
@@ -33,6 +34,7 @@ interface PayItem {
   net_wage: number;
   payment_mode: "cash" | "bank" | "proprietor";
   is_temp?: boolean;
+  has_advance?: boolean;
 }
 
 const fmt = (n: number) =>
@@ -179,6 +181,7 @@ const DailySalary: React.FC = () => {
       net_wage:      r.daily_wage,
       payment_mode:  r.payment_mode,
       is_temp:       r.is_temp,
+      has_advance:   r.has_advance,
     })));
     setOpenFields({});
     setShowPayModal(true);
@@ -522,12 +525,12 @@ const DailySalary: React.FC = () => {
                           />
                         </div>
                       </div>
-                    ) : (
+                    ) : p.has_advance ? (
                       <button onClick={() => openField(p.employee_id, "deduction")}
                         style={{ display: "flex", alignItems: "center", gap: "5px", padding: "9px 14px", borderRadius: "10px", border: "1.5px dashed #cbd5e1", background: "none", color: "#64748b", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
                         <FaCut size={11} /> Deduct
                       </button>
-                    )}
+                    ) : null}
                     {openFields[p.employee_id]?.extra ? (
                       <div style={{ flex: "1 1 120px" }}>
                         <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>

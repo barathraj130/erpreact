@@ -762,7 +762,17 @@ router.get("/salary/daily/summary", authMiddleware, async (req, res) => {
                 -- Already paid for this date?
                 CASE WHEN dsp.id IS NOT NULL THEN true ELSE false END AS already_paid,
                 dsp.daily_wage  AS paid_wage,
-                dsp.payment_mode AS paid_mode
+                dsp.payment_mode AS paid_mode,
+
+                -- Only employees with a real outstanding balance can have their
+                -- advance reduced here — same balance salary/daily/process itself
+                -- already picks a repayment target from (current_balance, amount).
+                EXISTS (
+                    SELECT 1 FROM salary_advances sa
+                    WHERE sa.employee_id = e.id
+                      AND COALESCE(sa.current_balance, sa.amount, 0) > 0
+                      AND COALESCE(sa.status,'ACTIVE') != 'RECOVERED'
+                ) AS has_advance
 
             FROM employees e
             LEFT JOIN daily_attendance da
