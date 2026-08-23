@@ -15,20 +15,28 @@ export async function createNotification(client, { company_id, branch_id, type, 
 /**
  * Atomic Stock Transfer
  *
- * branch_inventory is the SOLE SOURCE OF TRUTH for all stock levels.
- * This function operates purely on branch_inventory — the inventory table
- * is NOT used for stock counts. products.current_stock is a SUM cache and
- * does not change during a transfer (total stock is conserved).
+ * branch_inventory stays the sole source of truth for TOTAL stock per
+ * branch+product (Global Stock, Stock Requests, consolidated views all read
+ * it) and is always kept in sync here exactly as before.
+ *
+ * Additionally, this now moves the same quantity between the branches'
+ * `inventory` rows for the given stock_type ('fresh' or 'mistake') — that
+ * table is what Branch Billing's Inventory tab actually reads, split by
+ * quality. A transfer must move real fresh stock out of fresh (and mistake
+ * out of mistake) at the source, not just decrement an untyped total —
+ * otherwise the destination branch can't correctly bill it as the quality
+ * it actually is.
  *
  * Callers must pass the actual from_branch_id (never null).
  * To transfer from the main hub, look up its branch ID first.
  */
-export async function transferStock(client, { company_id, from_branch_id, to_branch_id, product_id, qty, userId, notes, reference_type, reference_id }) {
+export async function transferStock(client, { company_id, from_branch_id, to_branch_id, product_id, qty, userId, notes, reference_type, reference_id, stock_type }) {
     const amount = parseFloat(qty);
     if (isNaN(amount) || amount <= 0) throw new Error("Transfer quantity must be a positive number");
     if (!from_branch_id) throw new Error("from_branch_id is required. Resolve the main hub branch ID before calling transferStock.");
+    const type = (stock_type || "fresh").toLowerCase() === "mistake" ? "mistake" : "fresh";
 
-    // 1. Deduct from source branch — only if sufficient stock exists
+    // 1. Deduct from source branch's total — only if sufficient stock exists
     const srcResult = await client.query(
         `UPDATE branch_inventory
          SET current_stock = current_stock - $1, last_updated = NOW()
@@ -46,7 +54,31 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
         throw new Error(`Insufficient stock in source branch. Available: ${check.rows[0].current_stock}, Requested: ${amount}`);
     }
 
-    // 2. Add to destination branch
+    // 1b. Deduct the same amount from the source's inventory rows of this
+    // stock_type — FIFO across lots, since a branch+product+type can have
+    // multiple rows (one per purchase lot).
+    let remaining = amount;
+    const sourceLots = await client.query(
+        `SELECT id, current_stock FROM inventory
+         WHERE branch_id = $1 AND product_id = $2 AND stock_type = $3 AND current_stock > 0
+         ORDER BY id ASC FOR UPDATE`,
+        [from_branch_id, product_id, type]
+    );
+    const availableOfType = sourceLots.rows.reduce((s, r) => s + Number(r.current_stock), 0);
+    if (availableOfType < amount) {
+        throw new Error(
+            `Insufficient ${type} stock in source branch. Available: ${availableOfType}, Requested: ${amount}. ` +
+            `(Total stock at this branch may include the other quality — check Fresh vs Mistake.)`
+        );
+    }
+    for (const lot of sourceLots.rows) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, Number(lot.current_stock));
+        await client.query(`UPDATE inventory SET current_stock = current_stock - $1, last_updated = NOW() WHERE id = $2`, [take, lot.id]);
+        remaining -= take;
+    }
+
+    // 2. Add to destination branch's total
     await client.query(
         `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
          VALUES ($1, $2, $3, $4, NOW())
@@ -55,6 +87,23 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
         [company_id, to_branch_id, product_id, amount]
     );
     // Note: products.current_stock (the SUM cache) does not change — stock is conserved.
+
+    // 2b. Add to destination branch's inventory (same stock_type), carrying
+    // over product display fields so Branch Billing can render it without
+    // relying on the products-table fallback.
+    const product = await client.query(
+        `SELECT name, sku, unit, hsn_code, gst_percent, selling_price, cost_price FROM products WHERE id = $1`,
+        [product_id]
+    );
+    const p = product.rows[0] || {};
+    await client.query(
+        `INSERT INTO inventory
+            (company_id, branch_id, product_id, product_name, sku, unit, current_stock,
+             cost_price, selling_price, hsn_code, gst_percent, stock_type, last_updated)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
+        [company_id, to_branch_id, product_id, p.name || null, p.sku || null, p.unit || null,
+         amount, p.cost_price || 0, p.selling_price || 0, p.hsn_code || null, p.gst_percent || 0, type]
+    );
 
     // 3. Log the transfer record
     await client.query(

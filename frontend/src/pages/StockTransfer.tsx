@@ -15,6 +15,8 @@ const StockTransfer: React.FC = () => {
   const [toBranchId, setToBranchId] = useState("");
   const [qty, setQty] = useState("");
   const [notes, setNotes] = useState("");
+  const [stockType, setStockType] = useState<"fresh" | "mistake">("fresh");
+  const [typeBreakdown, setTypeBreakdown] = useState<{ fresh: number; mistake: number } | null>(null);
 
   const [selectedProductData, setSelectedProductData] = useState<any>(null);
 
@@ -34,33 +36,36 @@ const StockTransfer: React.FC = () => {
     if (productId) {
       const p = products.find(prod => String(prod.id) === productId);
       setSelectedProductData(p || null);
+      apiFetch(`/branch-inventory/type-breakdown/${productId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => setTypeBreakdown(d))
+        .catch(() => setTypeBreakdown(null));
     } else {
       setSelectedProductData(null);
+      setTypeBreakdown(null);
     }
   }, [productId, products]);
 
   const handleTransfer = async () => {
     if (!productId || !toBranchId || !qty) return alert("Please fill all required fields.");
     if (parseFloat(qty) <= 0) return alert("Quantity must be greater than zero.");
-    if (selectedProductData && parseFloat(qty) > parseFloat(selectedProductData.current_stock)) {
-      return alert("Transfer quantity exceeds available stock at Main branch.");
+    if (typeBreakdown && parseFloat(qty) > typeBreakdown[stockType]) {
+      return alert(`Transfer quantity exceeds available ${stockType} stock at Main branch (${typeBreakdown[stockType]} available).`);
     }
 
     setLoading(true);
     try {
       const res = await apiFetch("/branch-inventory/requests/manual-transfer", {
-        method: "POST", // I'll need to add this endpoint or reuse the approve one
+        method: "POST",
         body: JSON.stringify({
           product_id: productId,
           to_branch_id: toBranchId,
           qty,
-          notes
+          notes,
+          stock_type: stockType
         })
       });
-      
-      // Since I haven't added the 'manual-transfer' endpoint yet, I'll update the routes in a moment.
-      // For now, I'll assume it exists or I'll add it.
-      
+
       if (res.ok) {
         alert("Stock Transferred Successfully!");
         navigate("/inventory/consolidated");
@@ -115,13 +120,46 @@ const StockTransfer: React.FC = () => {
               <option value="">-- Select Product to Transfer --</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.name} (SKU: {p.sku || 'N/A'})</option>)}
             </select>
-            {selectedProductData && (
-              <div style={{ marginTop: "10px", display: "flex", gap: "15px" }}>
+            {typeBreakdown && (
+              <div style={{ marginTop: "10px", display: "flex", gap: "10px" }}>
                 <span style={{ fontSize: "0.85rem", padding: "5px 12px", background: "#f0fdf4", color: "#16a34a", borderRadius: "8px", fontWeight: 700 }}>
-                  Available in Main: {selectedProductData.current_stock} {selectedProductData.unit}
+                  Fresh in Main: {typeBreakdown.fresh} {selectedProductData?.unit}
+                </span>
+                <span style={{ fontSize: "0.85rem", padding: "5px 12px", background: "#fff7ed", color: "#c2410c", borderRadius: "8px", fontWeight: 700 }}>
+                  Mistake in Main: {typeBreakdown.mistake} {selectedProductData?.unit}
                 </span>
               </div>
             )}
+          </div>
+
+          <div className="form-group" style={{ marginBottom: "25px" }}>
+            <label style={{ display: "block", marginBottom: "10px", fontWeight: 700, color: "#475569" }}>Stock Quality <span style={{ color: "#ef4444" }}>*</span></label>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                type="button"
+                onClick={() => setStockType("fresh")}
+                style={{
+                  flex: 1, padding: "14px", borderRadius: "12px", cursor: "pointer", fontWeight: 700,
+                  border: stockType === "fresh" ? "2px solid #16a34a" : "2px solid #e2e8f0",
+                  background: stockType === "fresh" ? "#f0fdf4" : "#fff",
+                  color: stockType === "fresh" ? "#16a34a" : "#64748b",
+                }}
+              >
+                Fresh
+              </button>
+              <button
+                type="button"
+                onClick={() => setStockType("mistake")}
+                style={{
+                  flex: 1, padding: "14px", borderRadius: "12px", cursor: "pointer", fontWeight: 700,
+                  border: stockType === "mistake" ? "2px solid #c2410c" : "2px solid #e2e8f0",
+                  background: stockType === "mistake" ? "#fff7ed" : "#fff",
+                  color: stockType === "mistake" ? "#c2410c" : "#64748b",
+                }}
+              >
+                Mistake
+              </button>
+            </div>
           </div>
 
           <div className="form-group" style={{ marginBottom: "25px" }}>

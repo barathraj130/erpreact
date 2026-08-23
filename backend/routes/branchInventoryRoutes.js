@@ -97,7 +97,7 @@ router.post("/requests/:id/approve", authMiddleware, async (req, res) => {
  * Manual Stock Transfer (Main to Branch)
  */
 router.post("/requests/manual-transfer", authMiddleware, async (req, res) => {
-    const { product_id, to_branch_id, from_branch_id, qty, notes } = req.body;
+    const { product_id, to_branch_id, from_branch_id, qty, notes, stock_type } = req.body;
     const companyId = req.user.active_company_id;
     const client = await db.getClient();
     try {
@@ -123,7 +123,8 @@ router.post("/requests/manual-transfer", authMiddleware, async (req, res) => {
             qty,
             userId: req.user.id,
             notes,
-            reference_type: 'manual_transfer'
+            reference_type: 'manual_transfer',
+            stock_type
         });
 
         await client.query("COMMIT");
@@ -245,6 +246,41 @@ router.get("/consolidated", authMiddleware, async (req, res) => {
             [companyId]
         );
         res.json(products);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * Get Fresh vs Mistake stock for one product at one branch — used by the
+ * manual Stock Transfer form so the admin can see what's actually available
+ * of each quality before choosing which to send.
+ */
+router.get("/type-breakdown/:productId", authMiddleware, async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const companyId = req.user.active_company_id;
+        let branchId = req.query.branch_id ? parseInt(req.query.branch_id) : null;
+        if (!branchId) {
+            const mb = await db.pgGet(
+                `SELECT id FROM branches WHERE company_id = $1
+                 ORDER BY (LOWER(COALESCE(branch_type,'')) LIKE '%main%') DESC, id ASC LIMIT 1`,
+                [companyId]
+            );
+            branchId = mb?.id;
+        }
+        const rows = await db.pgAll(
+            `SELECT stock_type, COALESCE(SUM(current_stock), 0) AS total
+             FROM inventory WHERE branch_id = $1 AND product_id = $2
+             GROUP BY stock_type`,
+            [branchId, productId]
+        );
+        const result = { fresh: 0, mistake: 0 };
+        for (const r of rows) {
+            if (r.stock_type === "mistake") result.mistake = Number(r.total);
+            else result.fresh += Number(r.total);
+        }
+        res.json(result);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
