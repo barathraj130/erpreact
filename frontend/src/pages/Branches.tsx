@@ -60,6 +60,53 @@ const Branches: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewBranch, setViewBranch] = useState<Branch | null>(null);
 
+  // ── Fund a branch's cash/bank from Head Office ──
+  const [fundBranch, setFundBranch] = useState<Branch | null>(null);
+  const [fundAmount, setFundAmount] = useState("");
+  const [fundMode, setFundMode] = useState<"CASH" | "BANK">("CASH");
+  const [fundNotes, setFundNotes] = useState("");
+  const [fundSubmitting, setFundSubmitting] = useState(false);
+  const [fundError, setFundError] = useState<string | null>(null);
+
+  const mainBranch = branches.find(b => (b.branch_type || "").toLowerCase().includes("main")) || branches[0];
+
+  const submitFundBranch = async () => {
+    if (!fundBranch) return;
+    const amt = parseFloat(fundAmount);
+    if (!amt || amt <= 0) { setFundError("Enter a valid amount."); return; }
+    if (!mainBranch) { setFundError("No Head Office / Main branch found to fund from."); return; }
+    if (mainBranch.id === fundBranch.id) { setFundError("This is already the Head Office branch."); return; }
+
+    setFundSubmitting(true);
+    setFundError(null);
+    try {
+      const res = await apiFetch("/cash-transfers", {
+        method: "POST",
+        body: {
+          from_branch_id: mainBranch.id,
+          to_branch_id: fundBranch.id,
+          transfer_type: "MAIN_TO_BRANCH",
+          amount: amt,
+          payment_mode: fundMode,
+          notes: fundNotes || `Head Office funding to ${fundBranch.branch_name}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFundError(data.error || "Transfer failed.");
+      } else {
+        setFundBranch(null);
+        setFundAmount("");
+        setFundNotes("");
+        alert(`₹${amt.toLocaleString("en-IN")} sent to ${fundBranch.branch_name}.`);
+      }
+    } catch {
+      setFundError("Failed to send funds.");
+    } finally {
+      setFundSubmitting(false);
+    }
+  };
+
   // ── Delete branch flow ──
   const [deleteBranch, setDeleteBranch] = useState<Branch | null>(null);
   const [deleteDeps, setDeleteDeps] = useState<{ linked: { table: string; count: number }[]; total: number } | null>(null);
@@ -424,6 +471,85 @@ const Branches: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* ── Fund Branch Modal ── */}
+      <AnimatePresence>
+        {fundBranch && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} style={{ background: "white", width: "100%", maxWidth: "440px", borderRadius: "18px", overflow: "hidden", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
+              <div style={{ padding: "22px 24px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
+                  <div style={{ width: "42px", height: "42px", borderRadius: "12px", background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a" }}>
+                    <FaMoneyBillWave />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b" }}>Fund {fundBranch.branch_name}</div>
+                    <div style={{ fontSize: "0.8rem", color: "#64748b" }}>From {mainBranch?.branch_name || "Head Office"}</div>
+                  </div>
+                </div>
+
+                {fundError && (
+                  <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: "10px", padding: "10px 14px", fontSize: "0.85rem", marginBottom: "16px" }}>
+                    {fundError}
+                  </div>
+                )}
+
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: "6px" }}>Amount</label>
+                  <input
+                    type="number" min={0} autoFocus
+                    value={fundAmount}
+                    onChange={e => setFundAmount(e.target.value)}
+                    placeholder="0.00"
+                    style={{ width: "100%", padding: "12px 14px", borderRadius: "10px", border: "1.5px solid #e2e8f0", fontSize: "1rem", fontWeight: 700, outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: "6px" }}>Mode</label>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button type="button" onClick={() => setFundMode("CASH")}
+                      style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: fundMode === "CASH" ? "2px solid #16a34a" : "1.5px solid #e2e8f0", background: fundMode === "CASH" ? "#f0fdf4" : "#fff", color: fundMode === "CASH" ? "#16a34a" : "#64748b" }}>
+                      Cash
+                    </button>
+                    <button type="button" onClick={() => setFundMode("BANK")}
+                      style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: fundMode === "BANK" ? "2px solid #2563eb" : "1.5px solid #e2e8f0", background: fundMode === "BANK" ? "#eff6ff" : "#fff", color: fundMode === "BANK" ? "#2563eb" : "#64748b" }}>
+                      Bank
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: "20px" }}>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: "6px" }}>Notes (optional)</label>
+                  <input
+                    type="text"
+                    value={fundNotes}
+                    onChange={e => setFundNotes(e.target.value)}
+                    placeholder="Reason for transfer"
+                    style={{ width: "100%", padding: "12px 14px", borderRadius: "10px", border: "1.5px solid #e2e8f0", fontSize: "0.9rem", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => setFundBranch(null)}
+                    style={{ flex: 1, padding: "12px", borderRadius: "10px", border: "1.5px solid #e2e8f0", background: "white", color: "#475569", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitFundBranch}
+                    disabled={fundSubmitting}
+                    style={{ flex: 1, padding: "12px", borderRadius: "10px", border: "none", background: "#16a34a", color: "white", fontWeight: 700, cursor: fundSubmitting ? "not-allowed" : "pointer" }}
+                  >
+                    {fundSubmitting ? "Sending…" : "Send Funds"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── Page Body ── */}
       <div className="db-content">
         {/* Global Network KPIs */}
@@ -513,6 +639,15 @@ const Branches: React.FC = () => {
                             </td>
                             <td style={{ padding: "15px 20px", textAlign: "right" }}>
                                 <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                                    {mainBranch && mainBranch.id !== branch.id && (
+                                        <button
+                                            onClick={() => { setFundBranch(branch); setFundError(null); setFundAmount(""); setFundMode("CASH"); }}
+                                            title="Send cash or bank funds from Head Office to this branch"
+                                            style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "8px 16px", borderRadius: "8px", color: "#16a34a", fontWeight: 700, cursor: "pointer" }}
+                                        >
+                                            Fund Branch
+                                        </button>
+                                    )}
                                     {branch.manager_user_id && (
                                         <button
                                             onClick={() => openBranchBilling(branch)}

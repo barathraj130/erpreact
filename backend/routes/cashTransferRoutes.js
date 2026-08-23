@@ -175,6 +175,26 @@ router.post('/', authMiddleware, async (req, res) => {
             return res.status(201).json({ success: true, type: 'CASH_TO_BANK', amount: amt });
         }
 
+        // Branch-scoped balance check — the two conversion types above check
+        // the company-wide balance (fine, since they don't move money between
+        // branches), but a branch-to-branch transfer must check the SOURCE
+        // branch's own balance specifically. Skipping this let a branch be
+        // "funded" past what the source branch actually had, just moving the
+        // deficit from one branch's ledger to another's instead of fixing it.
+        const ledgerTable = pMode === 'CASH' ? 'cash_ledger' : 'bank_ledger';
+        const balRow = await client.query(
+            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS balance
+             FROM ${ledgerTable} WHERE company_id = $1 AND (branch_id = $2 OR branch_id IS NULL)`,
+            [companyId, fromBrId]
+        );
+        const sourceBalance = Number(balRow.rows[0].balance) || 0;
+        if (sourceBalance < amt) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: `Insufficient ${pMode === 'CASH' ? 'cash' : 'bank'} balance at the source branch. Available: ₹${sourceBalance.toLocaleString('en-IN')}, Requested: ₹${amt.toLocaleString('en-IN')}`
+            });
+        }
+
         // Branch transfers: insert into cash_transfers table
         const row = await client.query(
             `INSERT INTO cash_transfers (company_id, from_branch_id, to_branch_id, transfer_type, amount, payment_mode, transfer_date, reference_no, notes, created_by)
