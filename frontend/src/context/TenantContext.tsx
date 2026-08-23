@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { apiFetch } from "../utils/api";
+import { getBranchAccessToken } from "../utils/branchAccessSession";
 
 interface Branch {
   id: number;
@@ -35,6 +36,17 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({
       if (res.ok) {
         const data = await res.json();
         setBranches(data);
+
+        // A branch-access session (admin viewing a branch as its manager, see
+        // branchAccessSession.ts) is pinned to exactly one branch. It must
+        // never fall through to the "All Branches" default below or to a
+        // stale active-branch-id — both come from localStorage, which is
+        // shared with whatever the admin's own tab last had selected.
+        if (getBranchAccessToken()) {
+          const own = data.find((b: Branch) => b.id === user?.branch_id);
+          setActiveBranchState(own || data[0] || null);
+          return;
+        }
 
         // Set default branch if none selected
         const savedBranchId = localStorage.getItem("active-branch-id");
