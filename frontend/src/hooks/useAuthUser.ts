@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { jwtDecode } from "jwt-decode";
 import { User, UserRole } from "../types";
+import { getBranchAccessToken, clearBranchAccessSession } from "../utils/branchAccessSession";
 
 const TOKEN_KEY = "erp-token";
 
@@ -11,6 +12,15 @@ export function useAuthUser() {
   const [error, setError] = useState<string | null>(null);
 
   const logout = useCallback(() => {
+    // A branch-access session must only ever clear its own sessionStorage —
+    // it never touches erp-token, which may be the admin's own real session
+    // shared across every tab on this origin.
+    if (getBranchAccessToken()) {
+      clearBranchAccessSession();
+      setUser(null);
+      window.location.href = "/company-login";
+      return;
+    }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem("erp-refresh-token");
     setUser(null);
@@ -53,7 +63,10 @@ export function useAuthUser() {
   }, [logout]);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    // A branch-access session (tab-scoped) takes priority when present, so a
+    // branch-billing tab opened by an admin renders as the branch manager,
+    // not as whatever admin session happens to already be in localStorage.
+    const token = getBranchAccessToken() || localStorage.getItem(TOKEN_KEY);
     if (token) {
       const cleanup = decodeAndSetUser(token);
       setLoading(false);

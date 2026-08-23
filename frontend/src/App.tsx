@@ -53,6 +53,7 @@ import InvoiceDetails from "./pages/InvoiceDetails";
 import Ledgers from "./pages/Ledgers";
 import Login from "./pages/Login";
 import BranchLogin from "./pages/BranchLogin";
+import BranchAccessRedeem from "./pages/BranchAccessRedeem";
 import PlatformAdmin from "./pages/PlatformAdmin";
 import PurchaseBills from "./pages/PurchaseBills";
 import SimplifiedPurchaseBill from "./pages/SimplifiedPurchaseBill";
@@ -333,6 +334,11 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/company-login" element={<Login />} />
           <Route path="/branch-login" element={<BranchLogin />} />
+          {/* One-click "Open Branch Billing" landing — redeems a one-time
+              admin-generated token into a tab-scoped session, then renders
+              the existing BranchBilling component unchanged. Deliberately
+              outside AdminRoute so it isn't gated on role === 'admin'. */}
+          <Route path="/branch-access/:token" element={<BranchAccessRedeem />} />
           {/* One login page for everyone now — Login.tsx detects
               role === 'field_employee' after auth and routes them to
               their own dashboard. EmployeeLogin.tsx's backend endpoint

@@ -1,4 +1,5 @@
 // frontend/src/utils/api.ts
+import { getBranchAccessToken, clearBranchAccessSession } from "./branchAccessSession";
 
 interface FetchOptions extends Omit<RequestInit, "headers" | "body"> {
   headers?: Record<string, string>;
@@ -61,7 +62,11 @@ export const apiFetch = async (
   const url = endpoint.startsWith("http")
     ? endpoint
     : `${API_BASE_URL}${endpoint}`;
-  const token = localStorage.getItem("erp-token");
+  // A branch-access session (see branchAccessSession.ts) is tab-scoped and
+  // takes priority when present, so an "open branch billing" tab never picks
+  // up the admin's own localStorage token.
+  const branchAccessToken = getBranchAccessToken();
+  const token = branchAccessToken || localStorage.getItem("erp-token");
   const branchId = localStorage.getItem("active-branch-id");
 
   let defaultHeaders: Record<string, string> = {};
@@ -101,6 +106,15 @@ export const apiFetch = async (
     });
 
     if (res.status === 401 && !_isRetry && endpoint !== "/auth/login") {
+      if (branchAccessToken) {
+        // Isolated tab session expired/invalid — clear only its own sessionStorage,
+        // never the shared localStorage the admin's real session lives in.
+        console.warn("🔒 Branch-access session expired");
+        clearBranchAccessSession();
+        window.location.replace("/company-login");
+        return res;
+      }
+
       console.warn(`⚠️ API 401 Unauthorized for ${endpoint} — attempting token refresh`);
 
       if (!isRefreshing) {

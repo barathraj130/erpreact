@@ -43,6 +43,7 @@ interface Branch {
   manager_name: string;
   manager_phone: string;
   manager_email: string;
+  manager_user_id?: number;
   login_email?: string; // From the join
   bill_prefix: string;
   gstin: string;
@@ -66,6 +67,29 @@ const Branches: React.FC = () => {
   const [reassignTo, setReassignTo] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+
+  // ── Open branch billing as its manager, in a new tab ──
+  const [openingBranchId, setOpeningBranchId] = useState<number | null>(null);
+
+  const openBranchBilling = async (branch: Branch) => {
+    setOpeningBranchId(branch.id);
+    try {
+      const res = await apiFetch("/branch-access/generate", {
+        method: "POST",
+        body: { branch_id: branch.id },
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.open(`${window.location.origin}${data.redirect_path}`, "_blank");
+      } else {
+        alert(`Cannot open branch: ${data.error}`);
+      }
+    } catch {
+      alert("Failed to open branch billing.");
+    } finally {
+      setOpeningBranchId(null);
+    }
+  };
 
   const openDeleteModal = async (branch: Branch) => {
     setDeleteBranch(branch);
@@ -489,6 +513,16 @@ const Branches: React.FC = () => {
                             </td>
                             <td style={{ padding: "15px 20px", textAlign: "right" }}>
                                 <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                                    {branch.manager_user_id && (
+                                        <button
+                                            onClick={() => openBranchBilling(branch)}
+                                            disabled={openingBranchId === branch.id}
+                                            title="Open this branch's billing dashboard as its manager, in a new tab"
+                                            style={{ background: "#eef2ff", border: "1px solid #c7d2fe", padding: "8px 16px", borderRadius: "8px", color: "#4f46e5", fontWeight: 700, cursor: openingBranchId === branch.id ? "not-allowed" : "pointer" }}
+                                        >
+                                            {openingBranchId === branch.id ? "Opening…" : "Open Billing"}
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setViewBranch(branch)}
                                         style={{ background: "#f8fafc", border: "1px solid #e2e8f0", padding: "8px 16px", borderRadius: "8px", color: "#475569", fontWeight: 700, cursor: "pointer" }}
