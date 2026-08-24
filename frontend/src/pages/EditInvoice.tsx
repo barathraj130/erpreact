@@ -427,7 +427,11 @@ const EditInvoice: React.FC = () => {
   };
 
   const handleUpdate = async () => {
-    if (!customerId) {
+    // Retail Sale is a walk-in bill type — it only ever shows the free-text
+    // retailCustomerName field (see the Bill Type section below), never a
+    // customer picker, so customerId can never be set here. Matches
+    // CreateInvoice.tsx's requiresCustomer:false for RETAIL_SALE.
+    if (!customerId && invoiceType !== "RETAIL_SALE") {
       alert("Please select a customer");
       return;
     }
