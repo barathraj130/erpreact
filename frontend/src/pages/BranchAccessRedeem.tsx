@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../utils/api";
-import { setBranchAccessSession } from "../utils/branchAccessSession";
+import { getBranchAccessToken, setBranchAccessSession } from "../utils/branchAccessSession";
 import BranchBilling from "./BranchBilling";
 
 export default function BranchAccessRedeem() {
@@ -17,6 +17,18 @@ export default function BranchAccessRedeem() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // App-root state (useAuthUser's `user`, TenantContext's `activeBranch`)
+    // resolves identity synchronously on first mount — before this effect's
+    // async redeem call below could ever finish. Without this reload, those
+    // stay frozen on whatever was already in localStorage (the admin's own
+    // session), never picking up the branch-access session at all. If it's
+    // already in sessionStorage, this is that reload — skip straight to
+    // rendering (re-POSTing would fail anyway: the token is single-use).
+    if (getBranchAccessToken()) {
+      setStatus("ready");
+      return;
+    }
+
     if (!token) {
       setStatus("error");
       setError("Missing access token.");
@@ -31,7 +43,7 @@ export default function BranchAccessRedeem() {
         const data = await res.json();
         if (data.success && data.token) {
           setBranchAccessSession(data.token, data.expires_in_ms || 4 * 60 * 60 * 1000);
-          setStatus("ready");
+          window.location.reload();
         } else {
           setStatus("error");
           setError(data.error || "Invalid or expired access link.");
