@@ -123,6 +123,9 @@ export default function ProductMovement() {
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [costPriceInput, setCostPriceInput] = useState("");
+  const [savingCost, setSavingCost] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -144,6 +147,8 @@ export default function ProductMovement() {
   const fetchProductDetail = async (productName: string) => {
     setDetailLoading(true);
     setSelectedProduct(productName);
+    setCostPriceInput("");
+    setSaveMsg(null);
     try {
       let url = `/reports/product-movement/detail/${encodeURIComponent(productName)}?period=${period}`;
       if (period === "custom" && fromDate && toDate) {
@@ -159,6 +164,34 @@ export default function ProductMovement() {
   };
 
   useEffect(() => { fetchData(); }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveCostPrice = async () => {
+    if (!selectedProduct) return;
+    const cost = parseFloat(costPriceInput);
+    if (!cost || cost <= 0) { setSaveMsg("Enter a valid cost price."); return; }
+    setSavingCost(true);
+    setSaveMsg(null);
+    try {
+      const productRow = data?.products.find((p) => p.product_name === selectedProduct);
+      const fd = new FormData();
+      fd.append("name", selectedProduct);
+      fd.append("selling_price", String(productRow?.avg_selling_rate || 0));
+      fd.append("cost_price", String(cost));
+      const res = await apiFetch("/products", { method: "POST", body: fd }, false);
+      if (res.ok) {
+        setSaveMsg(`✅ Added "${selectedProduct}" to Product List with cost price ₹${cost}.`);
+        setCostPriceInput("");
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setSaveMsg(err.error || "Failed to save.");
+      }
+    } catch {
+      setSaveMsg("Failed to save.");
+    } finally {
+      setSavingCost(false);
+    }
+  };
 
   const exportCsv = () => {
     const rows = [
@@ -408,6 +441,31 @@ export default function ProductMovement() {
                   ))}
                 </div>
               </div>
+
+              {data?.typed_only_products?.includes(productDetail.product_name) && (
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "16px 20px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 240px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>⌨️ Not in Product List yet</div>
+                    <div style={{ fontSize: 12, color: "#92400e" }}>
+                      Enter its purchase (cost) rate to add it properly — sell rate ₹
+                      {(data?.products.find((p) => p.product_name === productDetail.product_name)?.avg_selling_rate || 0).toFixed(0)} carries over automatically.
+                    </div>
+                  </div>
+                  <input
+                    type="number" min={0} placeholder="Cost price ₹"
+                    value={costPriceInput}
+                    onChange={(e) => setCostPriceInput(e.target.value)}
+                    style={{ width: 140, padding: "9px 12px", borderRadius: 8, border: "1.5px solid #fde68a", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+                  />
+                  <button onClick={saveCostPrice} disabled={savingCost}
+                    style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: "#d97706", color: "#fff", fontWeight: 700, fontSize: 13, cursor: savingCost ? "not-allowed" : "pointer" }}>
+                    {savingCost ? "Saving…" : "Add to Product List"}
+                  </button>
+                </div>
+              )}
+              {saveMsg && (
+                <div style={{ fontSize: 12, color: saveMsg.startsWith("✅") ? "#16a34a" : "#dc2626", marginBottom: 16, fontWeight: 600 }}>{saveMsg}</div>
+              )}
 
               {productDetail.sales?.length > 0 && (
                 <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #f1f5f9", overflow: "auto", marginBottom: 16 }}>
