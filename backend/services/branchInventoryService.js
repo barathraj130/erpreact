@@ -117,6 +117,10 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
             (company_id, branch_id, product_id, product_name, sku, unit, current_stock,
              cost_price, selling_price, hsn_code, gst_percent, stock_type, last_updated)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+         ON CONFLICT (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+         DO UPDATE SET
+            current_stock = inventory.current_stock + EXCLUDED.current_stock,
+            last_updated = NOW()
          RETURNING id, branch_id, product_id, stock_type, current_stock`,
         [company_id, to_branch_id, product_id, p.name || null, p.sku || null, p.unit || null,
          amount, p.cost_price || 0, p.selling_price || 0, p.hsn_code || null, p.gst_percent || 0, type]
