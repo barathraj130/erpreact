@@ -38,10 +38,14 @@ router.get('/vendor-performance', authMiddleware, async (req, res) => {
       LIMIT 20
     `;
     let rawData = await db.pgAll(sql, [companyId, startDate, endDate]);
-    // Auto-expand: show all-time if no data in selected period
+    // Auto-expand: show all-time if no data in selected period — but the
+    // caller must be told this happened, or the KPI cards silently show
+    // numbers from a completely different range than the filter says.
+    let expandedToAllTime = false;
     if (rawData.length === 0) {
       const allTimeSql = sql.replace('AND pb.bill_date BETWEEN $2::date AND $3::date', '');
       rawData = await db.pgAll(allTimeSql, [companyId]);
+      expandedToAllTime = rawData.length > 0;
     }
     const data = rawData.map(r => ({
       ...r,
@@ -54,6 +58,7 @@ router.get('/vendor-performance', authMiddleware, async (req, res) => {
       total_vendors: data.length,
       total_purchased: data.reduce((a, b) => a + (b.total_purchased || 0), 0),
       total_outstanding: data.reduce((a, b) => a + (b.outstanding || 0), 0),
+      expanded_to_all_time: expandedToAllTime,
     };
     res.json({ data: data || [], summary });
   } catch (err) {
@@ -124,18 +129,20 @@ router.get('/monthly-trend', authMiddleware, async (req, res) => {
       [companyId, startDate, endDate]
     );
     // Auto-expand to last 12 months if no data in selected period
+    let expandedToLast12Months = false;
     if (rawData.length === 0) {
       rawData = await db.pgAll(
         baseSql + ` AND pb.bill_date >= (CURRENT_DATE - INTERVAL '12 months') GROUP BY period_sort, period ORDER BY period_sort ASC`,
         [companyId]
       );
+      expandedToLast12Months = rawData.length > 0;
     }
     const data = rawData.map(r => ({
       ...r,
       amount: parseFloat(r.amount || 0),
       bill_count: parseFloat(r.bill_count || 0),
     }));
-    res.json({ data: data || [], summary: {} });
+    res.json({ data: data || [], summary: { expanded_to_last_12_months: expandedToLast12Months } });
   } catch (err) {
     console.error('purchase/monthly-trend error:', err.message);
     res.json({ data: [], summary: {} });

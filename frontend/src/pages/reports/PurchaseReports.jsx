@@ -164,6 +164,14 @@ const PurchaseReports = () => {
         />
       )}
 
+      {(tabSummary.expanded_to_all_time || tabSummary.expanded_to_last_12_months) && (
+        <div style={{
+          padding: '10px 16px', marginBottom: '16px', background: '#fef9c3', border: '1px solid #fde68a',
+          borderRadius: '8px', fontSize: '13px', color: '#854d0e', fontWeight: 500,
+        }}>
+          ⚠️ No purchases in the selected date range — showing {tabSummary.expanded_to_all_time ? 'all-time' : 'the last 12 months'} data instead.
+        </div>
+      )}
       {renderKPIs()}
       <div style={{ marginBottom: '20px' }}>{renderChart()}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
