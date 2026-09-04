@@ -75,6 +75,9 @@ const Inventory: React.FC = () => {
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [convertForm, setConvertForm] = useState<ConvertForm>({ product_id: 0, product_name: "", lot_id: "", mistake_qty: 0, repair_cost_per_piece: 0, notes: "" });
   const [converting, setConverting] = useState(false);
+  const [showAddStockModal, setShowAddStockModal] = useState(false);
+  const [addStockForm, setAddStockForm] = useState<{ product_id: number; stock_type: "fresh" | "mistake"; qty: number; notes: string }>({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" });
+  const [addingStock, setAddingStock] = useState(false);
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -130,6 +133,31 @@ const Inventory: React.FC = () => {
       refresh();
     } finally {
       setConverting(false);
+    }
+  };
+
+  const handleAddStock = async () => {
+    if (!addStockForm.product_id || addStockForm.qty <= 0) return alert("Select a product and enter a quantity.");
+    setAddingStock(true);
+    try {
+      const res = await apiFetch("/inventory/add-stock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: addStockForm.product_id,
+          stock_type: addStockForm.stock_type,
+          qty: addStockForm.qty,
+          notes: addStockForm.notes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || "Failed to add stock.");
+      alert(`Added ${addStockForm.qty} ${addStockForm.stock_type} pcs.`);
+      setShowAddStockModal(false);
+      setBreakdownCache({});
+      refresh();
+    } finally {
+      setAddingStock(false);
     }
   };
 
@@ -233,6 +261,63 @@ const Inventory: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Add Stock Modal — Fresh or Mistake, replaces the old Stock Management pages */}
+      <AnimatePresence>
+        {showAddStockModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) setShowAddStockModal(false); }}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "440px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+              <h2 style={{ margin: "0 0 20px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Add Stock</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Product</label>
+                  <CustomSelect value={String(addStockForm.product_id)} onChange={(e: any) => {
+                    setAddStockForm(f => ({ ...f, product_id: Number(e.target.value) }));
+                  }}>
+                    <option value="">Select Product</option>
+                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </CustomSelect>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Stock Quality</label>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button type="button" onClick={() => setAddStockForm(f => ({ ...f, stock_type: "fresh" }))}
+                      style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: addStockForm.stock_type === "fresh" ? "2px solid #16a34a" : "1.5px solid #e2e8f0", background: addStockForm.stock_type === "fresh" ? "#f0fdf4" : "#fff", color: addStockForm.stock_type === "fresh" ? "#16a34a" : "#64748b" }}>
+                      Fresh
+                    </button>
+                    <button type="button" onClick={() => setAddStockForm(f => ({ ...f, stock_type: "mistake" }))}
+                      style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: addStockForm.stock_type === "mistake" ? "2px solid #f59e0b" : "1.5px solid #e2e8f0", background: addStockForm.stock_type === "mistake" ? "#fffbeb" : "#fff", color: addStockForm.stock_type === "mistake" ? "#b45309" : "#64748b" }}>
+                      Mistake
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Quantity (pcs) *</label>
+                  <input type="number" min="1" value={addStockForm.qty || ""}
+                    onChange={e => setAddStockForm(f => ({ ...f, qty: Number(e.target.value) }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Notes</label>
+                  <input value={addStockForm.notes} onChange={e => setAddStockForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="e.g. Physical count adjustment" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
+                <button className="btn btn-secondary" onClick={() => setShowAddStockModal(false)} style={{ flex: 1 }}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleAddStock} disabled={addingStock} style={{ flex: 1 }}>
+                  {addingStock ? "Adding..." : "Add Stock"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="finance-header">
         <div className="header-info">
@@ -265,6 +350,13 @@ const Inventory: React.FC = () => {
             style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#3b82f6", borderColor: "#3b82f6" }}
           >
             <FaExchangeAlt size={13} /> Convert Mistake
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => { setAddStockForm({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" }); setShowAddStockModal(true); }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#16a34a", borderColor: "#16a34a" }}
+          >
+            <FaBoxOpen size={13} /> Add Stock
           </button>
           <button className="btn btn-primary" onClick={handleAdd} style={{ height: "42px", padding: "0 24px" }}>
             <FaPlus /> Add New Product

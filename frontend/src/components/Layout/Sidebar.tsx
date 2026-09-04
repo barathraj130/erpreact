@@ -122,16 +122,11 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
     });
   }
 
-  // Stock Management (always visible — JBS Knit Wear surplus module)
-  baseItems.push({
-      name: "Stock Mgmt",
-      icon: <FaBox />,
-      section: "Stock Management",
-      subItems: [
-          { name: "Stock Lots", path: "/stock-lots" },
-          { name: "Stock Inventory", path: "/stock-inventory" },
-      ]
-  });
+  // Stock Management section removed — Stock Lots / Stock Inventory (the
+  // lot-based quantity/stock_type system) is superseded by adding stock
+  // directly from the Inventory page, which now covers Fresh + Mistake.
+  // Routes still exist (not deleted) in case old data needs a look, just
+  // no longer linked from navigation.
 
   // Production Inventory — JBS Knit Wear production house flow
   baseItems.push({

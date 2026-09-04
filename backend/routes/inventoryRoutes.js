@@ -158,6 +158,84 @@ router.post('/convert', authMiddleware, async (req, res) => {
 });
 
 /**
+ * POST /api/inventory/add-stock
+ * Add Fresh or Mistake stock directly to a product — the replacement for
+ * the removed Stock Management pages. Writes both inventory.current_stock
+ * (what Branch Billing and Stock Transfer actually read) AND
+ * branch_inventory.current_stock (what Product List / Global Stock read),
+ * so the two stay in sync going forward instead of drifting apart again.
+ */
+router.post('/add-stock', authMiddleware, async (req, res) => {
+    const companyId = req.user?.active_company_id;
+    if (!companyId) return res.status(401).json({ error: "Unauthorized." });
+
+    const { product_id, branch_id, stock_type, qty, notes } = req.body;
+    const amount = parseFloat(qty);
+    if (!product_id) return res.status(400).json({ error: "product_id is required." });
+    if (!amount || amount <= 0) return res.status(400).json({ error: "qty must be a positive number." });
+    const type = (stock_type || 'fresh').toLowerCase() === 'mistake' ? 'mistake' : 'fresh';
+
+    let client;
+    try {
+        client = await pgModule.getClient();
+        await client.query('BEGIN');
+
+        let resolvedBranchId = branch_id ? parseInt(branch_id) : null;
+        if (!resolvedBranchId) {
+            const mb = await client.query(
+                `SELECT id FROM branches WHERE company_id = $1
+                 ORDER BY (LOWER(COALESCE(branch_type,'')) LIKE '%main%') DESC, id ASC LIMIT 1`,
+                [companyId]
+            );
+            resolvedBranchId = mb.rows[0]?.id || null;
+        }
+        if (!resolvedBranchId) throw new Error("No branch found to add stock to.");
+
+        const product = await client.query(
+            `SELECT name, sku, unit, cost_price, selling_price, hsn_code, gst_percent
+             FROM products WHERE id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+            [product_id, companyId]
+        );
+        if (product.rowCount === 0) throw new Error("Product not found.");
+        const p = product.rows[0];
+
+        await client.query(
+            `INSERT INTO inventory
+                (company_id, branch_id, product_id, product_name, sku, unit,
+                 current_stock, cost_price, selling_price, hsn_code, gst_percent, stock_type, last_updated)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+             ON CONFLICT (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
+             DO UPDATE SET current_stock = inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()`,
+            [companyId, resolvedBranchId, product_id, p.name, p.sku, p.unit || 'pcs',
+             amount, p.cost_price || 0, p.selling_price || 0, p.hsn_code, p.gst_percent || 0, type]
+        );
+
+        await client.query(
+            `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
+             VALUES ($1,$2,$3,$4,NOW())
+             ON CONFLICT (branch_id, product_id)
+             DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()`,
+            [companyId, resolvedBranchId, product_id, amount]
+        );
+
+        await client.query(
+            `INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, qty_out, reference_type, note)
+             VALUES ($1,$2,$3,'Manual Stock Add',$4,0,'manual_add',$5)`,
+            [companyId, resolvedBranchId, product_id, amount, notes || `Added ${amount} ${type} pcs`]
+        ).catch(() => {});
+
+        await client.query('COMMIT');
+        res.json({ success: true, added: amount, stock_type: type, branch_id: resolvedBranchId });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        console.error('add-stock error:', err.message);
+        res.status(500).json({ error: err.message || 'Failed to add stock.' });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+/**
  * GET /api/inventory/product/:id/breakdown
  */
 router.get('/product/:id/breakdown', authMiddleware, async (req, res) => {
