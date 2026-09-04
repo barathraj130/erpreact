@@ -31,10 +31,17 @@ export async function createNotification(client, { company_id, branch_id, type, 
  * To transfer from the main hub, look up its branch ID first.
  */
 export async function transferStock(client, { company_id, from_branch_id, to_branch_id, product_id, qty, userId, notes, reference_type, reference_id, stock_type }) {
+    // TEMPORARY DIAGNOSTIC — records exactly what each step did/received, so
+    // the caller can report it back without needing server log access.
+    const trace = {
+        input: { company_id, from_branch_id, to_branch_id, product_id, qty, stock_type },
+    };
+
     const amount = parseFloat(qty);
     if (isNaN(amount) || amount <= 0) throw new Error("Transfer quantity must be a positive number");
     if (!from_branch_id) throw new Error("from_branch_id is required. Resolve the main hub branch ID before calling transferStock.");
     const type = (stock_type || "fresh").toLowerCase() === "mistake" ? "mistake" : "fresh";
+    trace.parsed = { amount, from_branch_id_type: typeof from_branch_id, to_branch_id_type: typeof to_branch_id, product_id_type: typeof product_id, type };
 
     // 1. Deduct from source branch's total — only if sufficient stock exists
     const srcResult = await client.query(
@@ -44,6 +51,7 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
          RETURNING current_stock`,
         [amount, from_branch_id, product_id]
     );
+    trace.step1_branch_inventory_deduct = { rowCount: srcResult.rowCount, resultingRows: srcResult.rows };
     if (srcResult.rowCount === 0) {
         // Distinguish "no row" from "insufficient stock"
         const check = await client.query(
@@ -65,27 +73,34 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
         [from_branch_id, product_id, type]
     );
     const availableOfType = sourceLots.rows.reduce((s, r) => s + Number(r.current_stock), 0);
+    trace.step1b_source_lots_found = sourceLots.rows;
+    trace.step1b_available_of_type = availableOfType;
     if (availableOfType < amount) {
         throw new Error(
             `Insufficient ${type} stock in source branch. Available: ${availableOfType}, Requested: ${amount}. ` +
             `(Total stock at this branch may include the other quality — check Fresh vs Mistake.)`
         );
     }
+    const deductedLots = [];
     for (const lot of sourceLots.rows) {
         if (remaining <= 0) break;
         const take = Math.min(remaining, Number(lot.current_stock));
-        await client.query(`UPDATE inventory SET current_stock = current_stock - $1, last_updated = NOW() WHERE id = $2`, [take, lot.id]);
+        const r = await client.query(`UPDATE inventory SET current_stock = current_stock - $1, last_updated = NOW() WHERE id = $2 RETURNING id, current_stock`, [take, lot.id]);
+        deductedLots.push({ lot_id: lot.id, took: take, resultRow: r.rows[0] });
         remaining -= take;
     }
+    trace.step1b_deducted_lots = deductedLots;
 
     // 2. Add to destination branch's total
-    await client.query(
+    const branchInvUpsert = await client.query(
         `INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (branch_id, product_id)
-         DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()`,
+         DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()
+         RETURNING id, branch_id, product_id, current_stock`,
         [company_id, to_branch_id, product_id, amount]
     );
+    trace.step2_branch_inventory_upsert = branchInvUpsert.rows[0];
     // Note: products.current_stock (the SUM cache) does not change — stock is conserved.
 
     // 2b. Add to destination branch's inventory (same stock_type), carrying
@@ -96,14 +111,17 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
         [product_id]
     );
     const p = product.rows[0] || {};
-    await client.query(
+    trace.step2b_product_lookup = { found: !!product.rows[0], product_id, row: p };
+    const destInsert = await client.query(
         `INSERT INTO inventory
             (company_id, branch_id, product_id, product_name, sku, unit, current_stock,
              cost_price, selling_price, hsn_code, gst_percent, stock_type, last_updated)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+         RETURNING id, branch_id, product_id, stock_type, current_stock`,
         [company_id, to_branch_id, product_id, p.name || null, p.sku || null, p.unit || null,
          amount, p.cost_price || 0, p.selling_price || 0, p.hsn_code || null, p.gst_percent || 0, type]
     );
+    trace.step2b_inventory_insert = destInsert.rows[0];
 
     // 3. Log the transfer record
     await client.query(
@@ -140,7 +158,7 @@ export async function transferStock(client, { company_id, from_branch_id, to_bra
         console.warn('[transferStock] notification failed (non-fatal):', e.message);
     }
 
-    return { success: true };
+    return { success: true, trace };
 }
 
 /**

@@ -69,7 +69,9 @@ const StockTransfer: React.FC = () => {
       // TEMPORARY DIAGNOSTIC — shows exactly what the server returned, since
       // multiple transfers reported success with zero effect in the DB.
       const rawText = await res.text();
-      alert(`DIAGNOSTIC\nHTTP status: ${res.status}\nURL: ${res.url}\nBody: ${rawText}`);
+      let pretty = rawText;
+      try { pretty = JSON.stringify(JSON.parse(rawText), null, 2); } catch {}
+      alert(`DIAGNOSTIC\nHTTP status: ${res.status}\n${pretty}`);
 
       if (res.ok) {
         navigate("/inventory/consolidated");

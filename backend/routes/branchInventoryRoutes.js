@@ -115,11 +115,11 @@ router.post("/requests/manual-transfer", authMiddleware, async (req, res) => {
             if (!sourceBranchId) throw new Error("Main branch not found for this company");
         }
 
-        await transferStock(client, {
+        const result = await transferStock(client, {
             company_id: companyId,
             from_branch_id: sourceBranchId,
-            to_branch_id,
-            product_id,
+            to_branch_id: to_branch_id ? parseInt(to_branch_id) : to_branch_id,
+            product_id: product_id ? parseInt(product_id) : product_id,
             qty,
             userId: req.user.id,
             notes,
@@ -128,7 +128,7 @@ router.post("/requests/manual-transfer", authMiddleware, async (req, res) => {
         });
 
         await client.query("COMMIT");
-        res.json({ success: true, message: "Manual transfer completed" });
+        res.json({ success: true, message: "Manual transfer completed", trace: result?.trace });
     } catch (err) {
         await client.query("ROLLBACK");
         res.status(500).json({ error: err.message });
