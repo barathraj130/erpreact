@@ -66,15 +66,16 @@ const StockTransfer: React.FC = () => {
         })
       });
 
+      // TEMPORARY DIAGNOSTIC — shows exactly what the server returned, since
+      // multiple transfers reported success with zero effect in the DB.
+      const rawText = await res.text();
+      alert(`DIAGNOSTIC\nHTTP status: ${res.status}\nURL: ${res.url}\nBody: ${rawText}`);
+
       if (res.ok) {
-        alert("Stock Transferred Successfully!");
         navigate("/inventory/consolidated");
-      } else {
-        const err = await res.json();
-        alert(err.error || "Transfer failed.");
       }
-    } catch (err) {
-      alert("System error during transfer.");
+    } catch (err: any) {
+      alert(`DIAGNOSTIC — request threw: ${err?.message || err}`);
     } finally {
       setLoading(false);
     }
