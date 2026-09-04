@@ -259,12 +259,33 @@ router.get('/', authMiddleware, async (req, res) => {
             allMovements = allMovements.filter((m) => m.movement_type === movement_type.toUpperCase());
         }
 
+        // Products created (with a cost price) from this report's own "Add to
+        // Product List" action — or any other way — never generate a real
+        // purchase transaction on their own, so total_purchase_amount above
+        // stays 0 forever for them without this. Once a name matches a real
+        // product record, treat its cost_price as an ESTIMATED per-unit cost
+        // for any sale that has no real purchase behind it (flagged as such).
+        const productRows = await db.pgAll(
+            `SELECT LOWER(TRIM(name)) AS key, cost_price FROM products
+             WHERE company_id = $1 AND COALESCE(is_deleted, false) = false`,
+            [companyId]
+        ).catch(() => []);
+        const productByName = new Map(productRows.map((r) => [r.key, parseFloat(r.cost_price) || 0]));
+
         const productMap = mergeMovements(allMovements);
         const productSummary = Object.values(productMap).map((p) => {
             // Net of returns: a returned piece was never really "sold" from the
             // business's point of view, so both qty and revenue exclude it here.
             const netSoldQty = p.total_sold_qty - p.total_returned_qty;
             const netSaleAmount = p.total_sale_amount - p.total_return_amount;
+
+            const nameKey = p.product_name.toLowerCase().trim();
+            const inProductList = productByName.has(nameKey);
+            const costPrice = productByName.get(nameKey) || 0;
+            const costIsEstimated = p.purchase_count === 0 && costPrice > 0;
+            const purchaseAmount = costIsEstimated ? costPrice * netSoldQty : p.total_purchase_amount;
+            const purchasedQtyForRate = costIsEstimated ? netSoldQty : p.total_purchased_qty;
+
             return {
                 product_name: p.product_name,
                 total_sold_qty: netSoldQty,
@@ -275,9 +296,11 @@ router.get('/', authMiddleware, async (req, res) => {
                 net_movement: p.total_purchased_qty + p.total_converted_qty - netSoldQty,
                 total_sale_amount: netSaleAmount,
                 gross_sale_amount: p.total_sale_amount,
-                total_purchase_amount: p.total_purchase_amount,
+                total_purchase_amount: purchaseAmount,
                 total_return_amount: p.total_return_amount,
-                gross_profit: netSaleAmount - p.total_purchase_amount,
+                gross_profit: netSaleAmount - purchaseAmount,
+                cost_is_estimated: costIsEstimated,
+                in_product_list: inProductList,
                 fresh_sold: p.fresh_sold,
                 mistake_sold: p.mistake_sold,
                 fresh_purchased: p.fresh_purchased,
@@ -294,7 +317,7 @@ router.get('/', authMiddleware, async (req, res) => {
                 first_movement: p.first_movement,
                 last_movement: p.last_movement,
                 avg_selling_rate: netSoldQty > 0 ? netSaleAmount / netSoldQty : 0,
-                avg_purchase_rate: p.total_purchased_qty > 0 ? p.total_purchase_amount / p.total_purchased_qty : 0,
+                avg_purchase_rate: purchasedQtyForRate > 0 ? purchaseAmount / purchasedQtyForRate : 0,
             };
         }).sort((a, b) => b.total_sold_qty - a.total_sold_qty);
 
@@ -304,8 +327,12 @@ router.get('/', authMiddleware, async (req, res) => {
         const totalSaleAmount = productSummary.reduce((s, p) => s + p.total_sale_amount, 0);
         const totalPurchaseAmount = productSummary.reduce((s, p) => s + p.total_purchase_amount, 0);
 
+        // "Typed" now means genuinely not in the Product List at all — not
+        // merely "no real purchase transaction yet". A product added via
+        // "Add to Product List" (with or without a purchase bill behind it)
+        // must drop out of this list; that's the whole point of that action.
         const typedOnlyProducts = productSummary
-            .filter((p) => p.total_sold_qty > 0 && p.purchase_count === 0)
+            .filter((p) => p.total_sold_qty > 0 && !p.in_product_list)
             .map((p) => p.product_name);
 
         res.json({
@@ -432,6 +459,28 @@ router.get('/detail/:productName', authMiddleware, async (req, res) => {
         ]);
 
         const purchases = [...purchaseLots, ...purchaseItems];
+        const totalSold = sales.reduce((s, r) => s + parseFloat(r.quantity || 0), 0);
+        const realPurchaseCost = purchases.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+
+        // Same fallback as the summary endpoint: no real purchase transaction
+        // for this name, but it's been added to the Product List with a cost
+        // price (e.g. via this report's own "Add to Product List") — use that
+        // as an estimated cost basis instead of leaving this at 0 forever.
+        let purchaseCost = realPurchaseCost;
+        let costIsEstimated = false;
+        if (purchases.length === 0 && totalSold > 0) {
+            const productRow = await db.pgGet(
+                `SELECT cost_price FROM products
+                 WHERE company_id = $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+                   AND COALESCE(is_deleted, false) = false LIMIT 1`,
+                [companyId, productName]
+            ).catch(() => null);
+            const costPrice = parseFloat(productRow?.cost_price || 0);
+            if (costPrice > 0) {
+                purchaseCost = costPrice * totalSold;
+                costIsEstimated = true;
+            }
+        }
 
         res.json({
             product_name: productName,
@@ -440,11 +489,12 @@ router.get('/detail/:productName', authMiddleware, async (req, res) => {
             purchases,
             returns,
             summary: {
-                total_sold: sales.reduce((s, r) => s + parseFloat(r.quantity || 0), 0),
+                total_sold: totalSold,
                 total_purchased: purchases.reduce((s, r) => s + parseFloat(r.fresh_qty || 0) + parseFloat(r.mistake_qty || 0), 0),
                 total_returned: returns.reduce((s, r) => s + parseFloat(r.quantity || 0), 0),
                 sale_revenue: sales.reduce((s, r) => s + parseFloat(r.amount || 0), 0),
-                purchase_cost: purchases.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0),
+                purchase_cost: purchaseCost,
+                cost_is_estimated: costIsEstimated,
             },
         });
     } catch (e) {

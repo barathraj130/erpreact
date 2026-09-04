@@ -31,6 +31,8 @@ interface ProductSummary {
   last_movement: string | null;
   avg_selling_rate: number;
   avg_purchase_rate: number;
+  cost_is_estimated: boolean;
+  in_product_list: boolean;
 }
 
 interface MovementSummary {
@@ -95,6 +97,7 @@ interface ProductDetail {
     total_returned?: number;
     sale_revenue?: number;
     purchase_cost?: number;
+    cost_is_estimated?: boolean;
   };
 }
 
@@ -372,7 +375,10 @@ export default function ProductMovement() {
                     )}
                   </td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>₹{fmt(p.total_sale_amount)}</td>
-                  <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, color: "#dc2626" }}>₹{fmt(p.total_purchase_amount)}</td>
+                  <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, color: "#dc2626" }}>
+                    ₹{fmt(p.total_purchase_amount)}
+                    {p.cost_is_estimated && <span title="Estimated from the product's cost price — no purchase bill on file" style={{ fontSize: 9, marginLeft: 4, padding: "1px 5px", borderRadius: 20, background: "#f5f3ff", color: "#7c3aed", fontWeight: 700 }}>Est.</span>}
+                  </td>
                   <td style={{ padding: "11px 12px", textAlign: "right", fontSize: 13, fontWeight: 800, color: p.gross_profit >= 0 ? "#16a34a" : "#dc2626" }}>
                     {p.gross_profit >= 0 ? "+" : ""}₹{fmt(p.gross_profit)}
                   </td>
@@ -432,10 +438,16 @@ export default function ProductMovement() {
                     { label: "Total Purchased", value: `${fmtQty(productDetail.summary?.total_purchased)} pcs`, color: "#dc2626" },
                     { label: "Total Returned", value: `${fmtQty(productDetail.summary?.total_returned)} pcs`, color: "#f59e0b" },
                     { label: "Sale Revenue", value: `₹${fmt(productDetail.summary?.sale_revenue)}`, color: "#0f172a" },
-                    { label: "Purchase Cost", value: `₹${fmt(productDetail.summary?.purchase_cost)}`, color: "#dc2626" },
+                    {
+                      label: "Purchase Cost", value: `₹${fmt(productDetail.summary?.purchase_cost)}`, color: "#dc2626",
+                      badge: productDetail.summary?.cost_is_estimated ? "Est." : undefined,
+                    },
                   ].map((s, i) => (
                     <div key={i} style={{ textAlign: "center", padding: 12, background: "#f8fafc", borderRadius: 8 }}>
-                      <div style={{ fontSize: 10, color: "#64748b", fontWeight: 600, marginBottom: 4 }}>{s.label}</div>
+                      <div style={{ fontSize: 10, color: "#64748b", fontWeight: 600, marginBottom: 4 }}>
+                        {s.label}
+                        {s.badge && <span title="Estimated from the product's cost price — no purchase bill on file" style={{ fontSize: 9, marginLeft: 4, padding: "1px 5px", borderRadius: 20, background: "#f5f3ff", color: "#7c3aed", fontWeight: 700 }}>{s.badge}</span>}
+                      </div>
                       <div style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.value}</div>
                     </div>
                   ))}
