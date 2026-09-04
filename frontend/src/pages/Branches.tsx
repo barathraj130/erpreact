@@ -68,7 +68,14 @@ const Branches: React.FC = () => {
   const [fundSubmitting, setFundSubmitting] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
 
-  const mainBranch = branches.find(b => (b.branch_type || "").toLowerCase().includes("main")) || branches[0];
+  // Matches the backend's own main-hub resolution exactly (branchInventoryRoutes.js,
+  // hrRoutes.js, productRoutes.js): prefer a branch_type containing "main", else the
+  // lowest id (the originally-created branch). branches[] here is sorted by
+  // created_at DESC, so branches[0] would silently pick the NEWEST branch instead —
+  // which is exactly backwards, and is what caused Fund Branch to target the wrong
+  // direction when no branch_type here actually says "main".
+  const mainBranch = branches.find(b => (b.branch_type || "").toLowerCase().includes("main"))
+    || branches.reduce<Branch | null>((min, b) => (!min || b.id < min.id ? b : min), null);
 
   const submitFundBranch = async () => {
     if (!fundBranch) return;
