@@ -79,10 +79,38 @@ const SalesReports = () => {
 
   const renderKPIs = () => {
     if (activeTab === 0) return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <KPICard label="Total Customers" value={String(tabSummary.total_customers || 0)} color="#6366f1" isAmount={false} />
-        <KPICard label="Total Revenue" value={tabSummary.total_revenue || 0} color="#10b981" isAmount={true} />
-      </div>
+      <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+          <KPICard label="Total Customers" value={String(tabSummary.total_customers || 0)} color="#6366f1" isAmount={false} />
+          <KPICard label="Total Revenue" value={tabSummary.total_revenue || 0} color="#10b981" isAmount={true} />
+          <KPICard label="Top 10 Customer Revenue" value={tabSummary.top10_customer_revenue || 0} color="#8b5cf6" isAmount={true} />
+          <KPICard
+            label="Net Revenue"
+            value={tabSummary.net_revenue || 0}
+            color={(tabSummary.net_revenue || 0) >= 0 ? '#10b981' : '#dc2626'}
+            isAmount={true}
+          />
+        </div>
+        {/* Waterfall: how Net Revenue was actually derived, for this date range */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px',
+          padding: '14px 16px', marginBottom: '20px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px',
+        }}>
+          {[
+            { label: 'Gross Sales', value: tabSummary.gross_revenue, color: '#334155' },
+            { label: '− Sales Returns', value: tabSummary.total_returns, color: '#dc2626' },
+            { label: '− Purchases', value: tabSummary.total_purchases, color: '#dc2626' },
+            { label: '− Salaries (all)', value: tabSummary.total_salaries, color: '#dc2626' },
+            { label: '− Other Expenses', value: tabSummary.total_expenses, color: '#dc2626' },
+            { label: '= Net Revenue', value: tabSummary.net_revenue, color: (tabSummary.net_revenue || 0) >= 0 ? '#065f46' : '#dc2626', bold: true },
+          ].map((row, i) => (
+            <div key={i}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, marginBottom: '2px' }}>{row.label}</div>
+              <div style={{ fontSize: '14px', fontWeight: row.bold ? 800 : 600, color: row.color }}>{formatINR(row.value || 0)}</div>
+            </div>
+          ))}
+        </div>
+      </>
     );
     if (activeTab === 2) return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>

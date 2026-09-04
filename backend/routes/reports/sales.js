@@ -96,9 +96,81 @@ router.get('/top-customers', authMiddleware, async (req, res) => {
       total_paid: parseFloat(r.total_paid || 0),
       outstanding: parseFloat(r.outstanding || 0),
     }));
+
+    // The figure below (top10_customer_revenue) is only ever the sum of the
+    // top N customer rows above — never the company's real total, since
+    // walk-in/no-customer invoices are excluded by this query's own JOIN.
+    // The block below computes the actual date-ranged P&L instead: real
+    // gross revenue (every invoice, customer or walk-in) minus returns,
+    // purchases, all three wage systems, and other approved expenses.
+    const [
+      grossRevRow, returnsRow, purchasesRow,
+      monthlySalaryRow, dailySalaryRow, weeklySalaryRow, expensesRow,
+    ] = await Promise.all([
+      db.pgGet(`
+        SELECT COALESCE(SUM(total_amount), 0) AS total
+        FROM invoices
+        WHERE company_id = $1
+          AND COALESCE(is_deleted, false) = false
+          AND COALESCE(bill_purpose, '') != 'name_only'
+          AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'
+          AND invoice_date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`
+        SELECT COALESCE(SUM(total_amount), 0) AS total FROM sales_returns
+        WHERE company_id = $1 AND return_date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`
+        SELECT COALESCE(SUM(total_amount), 0) AS total FROM purchase_bills
+        WHERE company_id = $1 AND COALESCE(is_deleted, false) = false
+          AND bill_date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Monthly payroll — salary_payments has no company_id of its own,
+      // scope through the employee it was paid to.
+      db.pgGet(`
+        SELECT COALESCE(SUM(sp.amount), 0) AS total
+        FROM salary_payments sp JOIN employees e ON e.id = sp.employee_id
+        WHERE e.company_id = $1 AND sp.date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Daily-wage workers — daily_salary_payments.daily_wage is already the
+      // NET amount paid (gross minus that day's advance deduction), so this
+      // and the advance-repayment ledger never double-count each other.
+      db.pgGet(`
+        SELECT COALESCE(SUM(daily_wage), 0) AS total FROM daily_salary_payments
+        WHERE company_id = $1 AND payment_date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      db.pgGet(`
+        SELECT COALESCE(SUM(net_salary), 0) AS total FROM weekly_salary
+        WHERE company_id = $1 AND status = 'paid' AND paid_at::date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Approved business expenses — separate from salary/purchases, which
+      // have their own dedicated tables above and are never entered here.
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM expense_entries
+        WHERE company_id = $1 AND status = 'approved' AND expense_date BETWEEN $2::date AND $3::date
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+    ]);
+
+    const grossRevenue = parseFloat(grossRevRow?.total || 0);
+    const totalReturns = parseFloat(returnsRow?.total || 0);
+    const netSalesRevenue = grossRevenue - totalReturns;
+    const totalPurchases = parseFloat(purchasesRow?.total || 0);
+    const totalSalaries = parseFloat(monthlySalaryRow?.total || 0)
+      + parseFloat(dailySalaryRow?.total || 0)
+      + parseFloat(weeklySalaryRow?.total || 0);
+    const totalExpenses = parseFloat(expensesRow?.total || 0);
+    const netRevenue = netSalesRevenue - totalPurchases - totalSalaries - totalExpenses;
+
     const summary = {
       total_customers: data.length,
-      total_revenue: data.reduce((a, b) => a + (b.total_sales || 0), 0),
+      top10_customer_revenue: data.reduce((a, b) => a + (b.total_sales || 0), 0),
+      gross_revenue: grossRevenue,
+      total_returns: totalReturns,
+      total_revenue: netSalesRevenue,
+      total_purchases: totalPurchases,
+      total_salaries: totalSalaries,
+      total_expenses: totalExpenses,
+      net_revenue: netRevenue,
     };
     res.json({ data: data || [], summary });
   } catch (err) {
