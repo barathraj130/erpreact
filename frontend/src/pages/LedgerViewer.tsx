@@ -33,7 +33,7 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
   const handleDownloadPDF = async () => {
     setPdfLoading(true);
     try {
-      const res = await apiFetch(`/ledgers/party/${type}/${id}/pdf`);
+      const res = await apiFetch(`/ledger/party/${type}/${id}/pdf`);
       if (!res.ok) throw new Error('PDF generation failed');
       const blob = await res.blob();
       const url  = window.URL.createObjectURL(blob);
@@ -49,7 +49,7 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
   const handleSendWhatsApp = async () => {
     setWaLoading(true); setWaStatus('idle'); setWaMsg('');
     try {
-      const res  = await apiFetch(`/ledgers/party/${type}/${id}/send-whatsapp`, { method: 'POST' });
+      const res  = await apiFetch(`/ledger/party/${type}/${id}/send-whatsapp`, { method: 'POST' });
       const json = await res.json();
       if (json.success) {
         setWaStatus('sent'); setWaMsg(json.message || 'Sent!');
@@ -64,7 +64,7 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
   const handleDeleteEntry = async (entryId: number, desc: string) => {
     if (!window.confirm(`Delete "${desc}" entry? This cannot be undone.`)) return;
     try {
-      const res = await apiFetch(`/ledgers/party/entry/${entryId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/ledger/party/entry/${entryId}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok) { alert(json.error || 'Failed to delete entry'); return; }
       fetchLedger();
@@ -76,7 +76,7 @@ const LedgerViewer: React.FC<{ type: 'supplier' | 'customer' | 'lender' | 'emplo
   const fetchLedger = async () => {
     try {
       setLoading(true);
-      const endpoint = type === 'supplier' ? `/ledgers/supplier/${id}` : `/ledgers/party/${type}/${id}`;
+      const endpoint = type === 'supplier' ? `/ledger/supplier/${id}` : `/ledger/party/${type}/${id}`;
       const res = await apiFetch(endpoint);
       if (res.ok) {
         const json = await res.json();

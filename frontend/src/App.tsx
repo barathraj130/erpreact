@@ -34,7 +34,6 @@ import EditInvoice from "./pages/EditInvoice";
 import DocumentManager from "./pages/DocumentManager";
 import Employees from "./pages/Employees";
 import FileManager from "./pages/FileManager";
-import HostLogin from "./pages/HostLogin";
 import Attendance from "./pages/hr/Attendance";
 import MobileAttendance from "./pages/hr/MobileAttendance";
 import WeeklySalary from "./pages/hr/WeeklySalary";
@@ -349,7 +348,6 @@ const App: React.FC = () => {
           <Route path="/employee/groups" element={<EmployeeMyGroups />} />
           <Route path="/employee/daily-log" element={<EmployeeDailyLogForm />} />
           <Route path="/customer-login" element={<CustomerLogin />} />
-          <Route path="/host-login" element={<HostLogin />} />
           <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
           <Route path="/mark-attendance" element={<MobileAttendance />} />
           <Route path="/store/:slug" element={<StorePage />} />

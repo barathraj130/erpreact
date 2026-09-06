@@ -379,6 +379,10 @@ const syncBankLedger = async (companyId) => {
     await Promise.all([
         db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
         db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
+        // Bank Reconciliation (Finance > Reconciliation): lets you check off each entry
+        // against your physical bank statement.
+        db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS is_reconciled BOOLEAN NOT NULL DEFAULT false`).catch(() => {}),
+        db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS reconciled_at TIMESTAMP`).catch(() => {}),
         db.pgRun(`CREATE TABLE IF NOT EXISTS purchase_returns (
             id               SERIAL PRIMARY KEY,
             company_id       INTEGER NOT NULL,
@@ -663,6 +667,33 @@ router.get('/bank', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error("Bank ledger error:", err);
         res.status(500).json({ error: "Failed to fetch bank ledger" });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PATCH /ledger/bank/:id/reconcile — Bank Reconciliation
+// Marks one bank_ledger row as checked off against the physical bank statement
+// (or clears that mark). Admin-only, same tier as the other ledger-correction
+// actions above.
+// ══════════════════════════════════════════════════════════════════════════════
+router.patch('/bank/:id/reconcile', authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Only admin can reconcile bank entries.' });
+    }
+    const companyId = req.user.active_company_id;
+    const { id } = req.params;
+    const reconciled = req.body?.reconciled !== false; // default true
+    try {
+        const result = await db.pgRun(
+            `UPDATE bank_ledger SET is_reconciled = $1, reconciled_at = CASE WHEN $1 THEN NOW() ELSE NULL END
+             WHERE id = $2 AND company_id = $3 RETURNING id, is_reconciled, reconciled_at`,
+            [reconciled, id, companyId]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Entry not found' });
+        res.json({ success: true, entry: result.rows[0] });
+    } catch (err) {
+        console.error('[bank reconcile]', err.message);
+        res.status(500).json({ error: 'Failed to update reconciliation status' });
     }
 });
 
@@ -1130,6 +1161,13 @@ router.get('/debug-opening', authMiddleware, async (req, res) => {
 // Only allows deleting entries that are not OPENING_BALANCE
 // ══════════════════════════════════════════════════════════════════════════════
 router.delete('/entry/:table/:id', authMiddleware, async (req, res) => {
+    // Rule 2/6 (strict branch billing): ledger corrections are admin-only, same as
+    // cash-reconciliation and set-opening-balance above. Permanently deleting a real
+    // financial entry is at least as sensitive as those two — branch staff must go
+    // through a ledger correction request instead.
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Only admin can delete ledger entries. Branch users must submit a ledger correction request.' });
+    }
     const companyId = req.user.active_company_id;
     const { table, id } = req.params;
     const tbl = table === 'bank' ? 'bank_ledger' : 'cash_ledger';

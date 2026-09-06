@@ -317,8 +317,12 @@ router.post("/opening-balance", authMiddleware, async (req, res) => {
 // After this the DB is empty; the user must re-register from scratch.
 // Confirm phrase: "DELETE EVERYTHING"
 router.post("/nuclear", authMiddleware, async (req, res) => {
-    if (req.user?.role !== "admin") {
-        return res.status(403).json({ error: "Admin access required" });
+    // This truncates EVERY table in the shared database — every tenant's data,
+    // not just the caller's own company (unlike /reset/full, which is scoped to
+    // req.user.active_company_id). A per-company "admin" must never be able to
+    // reach this — only the platform's own superadmin should.
+    if (req.user?.role !== "superadmin") {
+        return res.status(403).json({ error: "Superadmin access required — this wipes every company on the platform, not just yours." });
     }
     const { confirm_text } = req.body || {};
     if (confirm_text !== "DELETE EVERYTHING") {

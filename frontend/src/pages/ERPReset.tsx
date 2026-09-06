@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { apiFetch } from '../utils/api';
+import { useAuthUser } from '../hooks/useAuthUser';
 import {
   FaExclamationTriangle, FaTrash, FaCheckCircle,
   FaDatabase, FaRupeeSign, FaArrowRight, FaShieldAlt, FaBomb,
@@ -15,6 +16,8 @@ const fmt = (n: number) =>
   Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
 const ERPReset: React.FC = () => {
+  const { user } = useAuthUser();
+  const isSuperadmin = user?.role === 'superadmin';
   const [phase, setPhase]     = useState<Phase>('idle');
   const [typed, setTyped]     = useState('');
   const [message, setMessage] = useState('');
@@ -200,22 +203,28 @@ const ERPReset: React.FC = () => {
             <FaTrash /> Begin Market Launch Reset
           </button>
 
-          {/* Nuclear wipe — separate, more destructive */}
-          <button
-            onClick={() => setPhase('nuclear_confirm')}
-            style={{
-              width: '100%', padding: 14,
-              background: '#18181b', color: '#fff',
-              border: '2px solid #ef4444',
-              borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}
-          >
-            <FaBomb color="#ef4444" /> NUCLEAR WIPE — Delete Absolutely Everything
-          </button>
-          <p style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-            Wipes ALL tables including company &amp; admin. You must re-register after.
-          </p>
+          {/* Nuclear wipe — separate, more destructive. Superadmin only: this
+              truncates every table in the shared database, every tenant's data,
+              not just this company's — a per-company admin must never see it. */}
+          {isSuperadmin && (
+            <>
+              <button
+                onClick={() => setPhase('nuclear_confirm')}
+                style={{
+                  width: '100%', padding: 14,
+                  background: '#18181b', color: '#fff',
+                  border: '2px solid #ef4444',
+                  borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
+              >
+                <FaBomb color="#ef4444" /> NUCLEAR WIPE — Delete Absolutely Everything
+              </button>
+              <p style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+                Wipes ALL tables for every company on the platform. You must re-register after.
+              </p>
+            </>
+          )}
         </>
       )}
 

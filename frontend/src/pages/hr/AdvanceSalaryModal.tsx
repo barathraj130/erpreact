@@ -42,7 +42,7 @@ const AdvanceSalaryModal: React.FC<Props> = ({
   // Fetch live balances on mount
   useEffect(() => {
     setBalLoading(true);
-    apiFetch("/ledgers/balance/current")
+    apiFetch("/ledger/balance/current")
       .then((r) => r.json())
       .then((d) => {
         setCashBal(Number(d.cash ?? 0));

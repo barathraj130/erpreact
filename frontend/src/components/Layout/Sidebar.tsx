@@ -353,7 +353,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
               alert("Daily ledger closed successfully. Logging out...");
               localStorage.removeItem("erp-token");
               localStorage.removeItem("erp-refresh-token");
-              navigate(mode === "HOST" ? "/host-login" : "/company-login");
+              navigate("/company-login");
             } else {
               if (window.confirm("Failed to close ledger: " + (closeRes.error || "Internal error") + ". Force logout anyway?")) {
                 handleLogout(true);
@@ -376,13 +376,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen, isMobile, mode, is
       // Successful logout
       localStorage.removeItem("erp-token");
       localStorage.removeItem("erp-refresh-token");
-      navigate(mode === "HOST" ? "/host-login" : "/company-login");
+      navigate("/company-login");
     } catch (err) {
       console.error("Logout error", err);
       // Even on network error, clear local tokens to allow user to try logging in again
       localStorage.removeItem("erp-token");
       localStorage.removeItem("erp-refresh-token");
-      navigate(mode === "HOST" ? "/host-login" : "/company-login");
+      navigate("/company-login");
     }
   };
 

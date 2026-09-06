@@ -191,6 +191,8 @@ const EditInvoice: React.FC = () => {
       reference_no: "",
     },
   ]);
+  const [showBackdateModal, setShowBackdateModal] = useState(false);
+  const [pendingUpdatePayload, setPendingUpdatePayload] = useState<any>(null);
 
   const [meta, setMeta] = useState({
     invoiceDate: new Date().toISOString().slice(0, 10),
@@ -492,13 +494,45 @@ const EditInvoice: React.FC = () => {
 
     // Note: We might need to handle how new payments are appended to history, for now we update total paid
 
+    // Same backdate safety net as Transactions/Loans: a new payment dated before
+    // today silently shifts historical cash/bank totals, so confirm first — this
+    // is exactly how tonight's ₹14,000 payment ended up posted under the wrong day.
+    const today = new Date().toISOString().split("T")[0];
+    const hasBackdatedPayment = validPayments.some((p) => p.payment_date < today);
+    if (hasBackdatedPayment) {
+      setPendingUpdatePayload(payload);
+      setShowBackdateModal(true);
+      return;
+    }
+    await postUpdate(payload, false);
+  };
+
+  const postUpdate = async (payload: any, adjustOpeningBalance: boolean) => {
     try {
+      let balanceBefore = 0;
+      const newPayments = payload.payments || [];
+      const ledgerType: "CASH" | "BANK" =
+        newPayments[0]?.payment_method?.toUpperCase() === "BANK" ? "BANK" : "CASH";
+      if (adjustOpeningBalance && newPayments.length > 0) {
+        const balRes = await apiFetch("/ledger/balance/current");
+        const balData = await balRes.json();
+        balanceBefore = ledgerType === "BANK" ? Number(balData.bank || 0) : Number(balData.cash || 0);
+      }
+
       const response = await apiFetch(`/invoice/${id}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
 
       if (response.ok) {
+        if (adjustOpeningBalance && balanceBefore !== 0) {
+          await apiFetch("/ledger/set-opening-balance", {
+            method: "POST",
+            body: { ledger_type: ledgerType, amount: balanceBefore, date: "2024-04-01" },
+          });
+        }
+        setShowBackdateModal(false);
+        setPendingUpdatePayload(null);
         alert("Invoice updated successfully!");
         navigate("/invoices");
       } else {
@@ -1143,6 +1177,26 @@ const EditInvoice: React.FC = () => {
                     </option>
                   ))}
                 </CustomSelect>
+                <input
+                  type="date"
+                  value={payments[0].payment_date}
+                  onChange={(e) =>
+                    updatePayment(0, "payment_date", e.target.value)
+                  }
+                  style={inputStyle}
+                  title="Payment date"
+                />
+                {payments[0].payment_method !== "CASH" && (
+                  <input
+                    type="text"
+                    placeholder="Reference / UTR no."
+                    value={payments[0].reference_no || ""}
+                    onChange={(e) =>
+                      updatePayment(0, "reference_no", e.target.value)
+                    }
+                    style={inputStyle}
+                  />
+                )}
               </div>
             </div>
 
@@ -2043,6 +2097,46 @@ const EditInvoice: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Backdated Payment Confirmation Modal ── */}
+      {showBackdateModal && pendingUpdatePayload && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "#fff", borderRadius: "18px", width: "100%", maxWidth: "460px", boxShadow: "0 24px 60px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+            <div style={{ padding: "24px 28px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+                <div style={{ width: "42px", height: "42px", borderRadius: "12px", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>📅</div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b" }}>Backdated Payment</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Date: {pendingUpdatePayload.payments?.[0]?.payment_date}</div>
+                </div>
+              </div>
+              <p style={{ fontSize: "0.9rem", color: "#374151", lineHeight: 1.6, marginBottom: "8px" }}>
+                This payment is dated <strong>before today</strong>. Should it adjust the opening balance so your <strong>current balance stays the same</strong>?
+              </p>
+              <div style={{ display: "grid", gap: "10px", marginBottom: "20px" }}>
+                <button
+                  onClick={() => postUpdate(pendingUpdatePayload, true)}
+                  style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #6366f1", background: "#eef2ff", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, color: "#4338ca", fontSize: "0.92rem" }}>✅ Save &amp; adjust opening balance</div>
+                  <div style={{ fontSize: "0.78rem", color: "#6366f1", marginTop: "3px" }}>Payment appears on that date — current balance stays the same</div>
+                </button>
+                <button
+                  onClick={() => postUpdate(pendingUpdatePayload, false)}
+                  style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "0.92rem" }}>➕ Save normally</div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "3px" }}>Payment appears on that date — current balance updates too</div>
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: "14px 28px", borderTop: "1px solid #f1f5f9", background: "#fafafa", display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowBackdateModal(false); setPendingUpdatePayload(null); }}
+                style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid #ef4444", background: "#fff", color: "#ef4444", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                ✕ Cancel — don't save yet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

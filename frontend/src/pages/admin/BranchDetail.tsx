@@ -36,7 +36,7 @@ const BranchDetail: React.FC = () => {
           apiFetch(`/admin/branches/${id}/detail`),
           apiFetch(`/admin/branches/${id}/invoices`),
           apiFetch(`/admin/branches/${id}/stock`),
-          apiFetch(`/ledgers/cash`),
+          apiFetch(`/ledger/cash`),
           apiFetch(`/admin/branches/${id}/customers`),
         ]);
         if (dRes.ok) setDetail(await dRes.json());
