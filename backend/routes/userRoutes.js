@@ -21,6 +21,16 @@ const ensureCustomerTypeColumn = async () => {
     customerTypeColumnEnsured = true;
 };
 
+// Idempotent — adds the is_default flag customers can be marked with, so
+// billing screens can surface/pre-select the ones used every day instead of
+// searching the full list each time.
+let customerDefaultColumnEnsured = false;
+const ensureCustomerDefaultColumn = async () => {
+    if (customerDefaultColumnEnsured) return;
+    await db.pgRun(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false`).catch(() => {});
+    customerDefaultColumnEnsured = true;
+};
+
 /* ============================================================
    STAFF MANAGEMENT (Settings > Users)
    - Only Admins or those with 'access_settings' can manage staff
@@ -293,6 +303,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
     const { scope, branch_id: branchFilterRaw, customer_type: customerTypeFilter } = req.query;
     try {
         await ensureCustomerTypeColumn();
+        await ensureCustomerDefaultColumn();
         const params = [companyId];
         let branchClause = '';
         if (scope === 'all') {
@@ -318,6 +329,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                 u.id, u.username, u.nickname, u.email, u.phone, u.role, u.gstin,
                 u.address_line1, u.city_pincode, u.state, u.state_code,
                 u.branch_id, b.branch_name, COALESCE(u.customer_type, 'company') AS customer_type,
+                u.is_default,
                 -- Use the effective opening balance (meta takes priority over raw column).
                 -- This ensures the Edit Customer form shows the same value used in outstanding calculations.
                 COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0)) AS initial_balance,
@@ -372,7 +384,7 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
             FROM users u
             LEFT JOIN branches b ON b.id = u.branch_id
             WHERE u.role IN ('user', 'customer') AND u.company_id = $1${branchClause}${customerTypeClause}
-            ORDER BY u.id ASC
+            ORDER BY u.is_default DESC, u.id ASC
         `, params);
         res.json(users);
     } catch (err) {
@@ -574,6 +586,25 @@ router.put("/:id", authMiddleware, checkPermission("Sales", "edit_invoices"), as
         res.status(500).json({ error: "Failed to update customer" });
     } finally {
         if (client) client.release();
+    }
+});
+
+// ── PATCH /users/:id/default — mark/unmark a customer as a default, so
+// billing screens can surface the ones used every day without a search ──
+router.patch("/:id/default", authMiddleware, checkPermission("Sales", "edit_invoices"), async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        await ensureCustomerDefaultColumn();
+        const isDefault = req.body?.is_default !== false; // default true
+        const result = await db.pgRun(
+            `UPDATE users SET is_default = $1 WHERE id = $2 AND company_id = $3 AND role IN ('user', 'customer') RETURNING id, is_default`,
+            [isDefault, req.params.id, companyId]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: "Customer not found" });
+        res.json({ success: true, customer: result.rows[0] });
+    } catch (err) {
+        console.error("Toggle default customer error:", err);
+        res.status(500).json({ error: "Failed to update default status" });
     }
 });
 

@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import "../../styles/aurora.css";
 
 // Public marketing page for the Fluxora ERP product itself — not tied to any
-// single company/tenant. Contact number below is a placeholder; replace with
-// the real business WhatsApp/phone before going live.
-const CONTACT_PHONE_DISPLAY = "+91 00000 00000";
-const CONTACT_PHONE_WA = "910000000000";
+// single company/tenant.
+const CONTACT_PHONE_DISPLAY = "+91 81482 32205";
+const CONTACT_PHONE_WA = "918148232205";
+const CONTACT_EMAIL = "barathraj13752@gmail.com";
 
 const FEATURES = [
   { icon: "🧾", title: "Smart Invoicing", desc: "TAX, NON-TAX, NSB, RETAIL and GIFT bills. GST auto-calculated. WhatsApp delivery instant." },
@@ -269,14 +269,16 @@ const FluxoraLanding: React.FC = () => {
         <h2 style={styles.sectionTitle}>Simple Transparent Pricing</h2>
         <p style={styles.sectionSub}>No hidden charges. Cancel anytime.</p>
 
-        <div style={styles.pricingGrid} className="pricing-grid">
+        <div style={{ ...styles.pricingGrid, maxWidth: 1280 }} className="pricing-grid">
           {[
-            { name: "Starter", price: "₹999", period: "per month", recommended: false, features: ["Invoicing & Sales", "Basic Inventory", "Customer Management", "Cash & Bank Ledger", "Basic Reports", "Up to 3 Users"] },
-            { name: "Growth", price: "₹2,499", period: "per month", recommended: true, features: ["Everything in Starter", "Multi-Branch POS", "GST Reports", "Employee & Payroll", "Expense Tracking", "WhatsApp Automation", "Up to 10 Users"] },
-            { name: "Enterprise", price: "₹4,999", period: "per month", recommended: false, features: ["Everything in Growth", "Production Lots", "Debt Settlements", "AI Business Insights", "Custom Reports", "API Access", "Unlimited Users"] },
+            { name: "Starter", price: "₹999", period: "per month", recommended: false, custom: false, features: ["Invoicing & Sales", "Basic Inventory", "Customer Management", "Cash & Bank Ledger", "Basic Reports", "Up to 3 Users"] },
+            { name: "Growth", price: "₹2,499", period: "per month", recommended: true, custom: false, features: ["Everything in Starter", "Multi-Branch POS", "GST Reports", "Employee & Payroll", "Expense Tracking", "WhatsApp Automation", "Up to 10 Users"] },
+            { name: "Enterprise", price: "₹4,999", period: "per month", recommended: false, custom: false, features: ["Everything in Growth", "Production Lots", "Debt Settlements", "AI Business Insights", "Custom Reports", "API Access", "Unlimited Users"] },
+            { name: "Customize", price: "Custom", period: "tailored to your business", recommended: false, custom: true, features: ["Pick only the modules you need", "Flexible user & branch limits", "Dedicated onboarding", "Custom integrations", "Priority support & SLA", "Volume-based discounts"] },
           ].map((plan, i) => (
-            <div key={i} className="neo-pricing-card" style={plan.recommended ? styles.pricingCardRecommended : styles.pricingCard}>
+            <div key={i} className="neo-pricing-card" style={plan.recommended ? styles.pricingCardRecommended : plan.custom ? { ...styles.pricingCard, borderStyle: "dashed", borderColor: "rgba(124,108,255,0.5)" } : styles.pricingCard}>
               {plan.recommended && <div style={styles.pricingBadge}>★ Most Popular</div>}
+              {plan.custom && <div style={{ ...styles.pricingBadge, background: "#111827", color: "#7C6CFF", border: "1.5px solid rgba(124,108,255,0.5)" }}>✦ Build Your Own</div>}
               <div style={styles.pricingPlan}>{plan.name}</div>
               <div style={styles.pricingPrice}>{plan.price}</div>
               <div style={styles.pricingPeriod}>{plan.period}</div>
@@ -287,8 +289,19 @@ const FluxoraLanding: React.FC = () => {
                   {f}
                 </div>
               ))}
-              <button className="neo-nav-demo" style={plan.recommended ? styles.pricingBtn : styles.pricingBtnOutline} onClick={() => scrollTo("demo")}>
-                {plan.recommended ? "Get Started →" : "Start Free Trial"}
+              <button
+                className="neo-nav-demo"
+                style={plan.recommended ? styles.pricingBtn : styles.pricingBtnOutline}
+                onClick={() => {
+                  if (plan.custom) {
+                    const msg = encodeURIComponent("Hi Fluxora, I'd like to discuss a custom pricing plan tailored to my business.");
+                    window.open(`https://wa.me/${CONTACT_PHONE_WA}?text=${msg}`, "_blank");
+                  } else {
+                    scrollTo("demo");
+                  }
+                }}
+              >
+                {plan.custom ? "Get a Custom Quote →" : plan.recommended ? "Get Started →" : "Start Free Trial"}
               </button>
             </div>
           ))}
@@ -351,6 +364,12 @@ const FluxoraLanding: React.FC = () => {
               {CONTACT_PHONE_DISPLAY}
             </a>
           </div>
+          <div style={{ marginTop: 6, textAlign: "center", fontSize: 12, color: "rgba(245,240,232,0.35)" }}>
+            Or email:{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "#7C6CFF", textDecoration: "none", fontWeight: 700 }}>
+              {CONTACT_EMAIL}
+            </a>
+          </div>
         </div>
       </section>
 
@@ -379,6 +398,16 @@ const FluxoraLanding: React.FC = () => {
                 style={{ fontSize: 13, color: "rgba(245,240,232,0.55)", marginBottom: 8, cursor: "pointer", transition: "color 150ms" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#F5F0E8")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(245,240,232,0.55)")}
+                onClick={() => {
+                  if (link === "Contact" || link === "WhatsApp Support") {
+                    const msg = encodeURIComponent("Hi Fluxora, I have a query.");
+                    window.open(`https://wa.me/${CONTACT_PHONE_WA}?text=${msg}`, "_blank");
+                  } else if (link === "Pricing" || link === "Features") {
+                    scrollTo(link.toLowerCase());
+                  } else if (link === "Login") {
+                    navigate("/company-login");
+                  }
+                }}
               >
                 {link}
               </div>

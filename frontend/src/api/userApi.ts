@@ -16,6 +16,7 @@ export interface Customer {
   branch_id?: number | null;
   branch_name?: string | null;
   customer_type?: "company" | "retail";
+  is_default?: boolean;
   address_line1?: string;
   address_line2?: string;
   city_pincode?: string;
@@ -137,6 +138,20 @@ export const deleteCustomer = async (id: number, force = false): Promise<ApiResp
   if (!res.ok && res.status !== 400 && res.status !== 409) {
     throw new Error(body?.error || `Failed to delete customer (${res.status})`);
   }
+  return body;
+};
+
+/**
+ * Marks (or unmarks) a customer as a default — surfaced first in the list
+ * and, going forward, in billing screens' customer pickers.
+ */
+export const setCustomerDefault = async (id: number, isDefault: boolean): Promise<ApiResponse> => {
+  const res = await apiFetch(`/users/${id}/default`, {
+    method: "PATCH",
+    body: { is_default: isDefault },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `Failed to update default status (${res.status})`);
   return body;
 };
 

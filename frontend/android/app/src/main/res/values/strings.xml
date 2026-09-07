@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Fluxora ERP</string>
+    <string name="title_activity_main">Fluxora ERP</string>
+    <string name="package_name">com.fluxora.erp</string>
+    <string name="custom_url_scheme">com.fluxora.erp</string>
+</resources>

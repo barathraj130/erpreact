@@ -18,9 +18,11 @@ import {
   FaWhatsapp,
   FaFileInvoice,
   FaFilePdf,
+  FaStar,
+  FaRegStar,
 } from "react-icons/fa";
 import { Link, useNavigate } from "react-router-dom";
-import { deleteCustomer } from "../api/userApi";
+import { deleteCustomer, setCustomerDefault } from "../api/userApi";
 import { apiFetch } from "../utils/api";
 import TransactionHistoryModal from "../components/TransactionHistoryModal";
 import { useUsers } from "../hooks/useUsers";
@@ -210,6 +212,15 @@ const Customers: React.FC = () => {
   const handleEdit = (customer: any) => {
     setCustomerToEdit(customer);
     setShowModal(true);
+  };
+
+  const handleToggleDefault = async (customer: any) => {
+    try {
+      await setCustomerDefault(customer.id, !customer.is_default);
+      refresh();
+    } catch (err: any) {
+      alert(err.message || "Failed to update default status.");
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -606,6 +617,14 @@ const Customers: React.FC = () => {
                   <button className="page-btn-round" style={{ flex: 1 }} onClick={() => handleEdit(user)}>
                     <FaEdit size={11} /> Edit
                   </button>
+                  <button
+                    className="page-btn-round"
+                    style={{ flex: 1, color: user.is_default ? "#d97706" : undefined }}
+                    onClick={() => handleToggleDefault(user)}
+                    title={user.is_default ? "Remove as default" : "Mark as default"}
+                  >
+                    {user.is_default ? <><FaStar size={11} /> Default</> : <><FaRegStar size={11} /> Set Default</>}
+                  </button>
                   <button className="page-btn-round-danger" onClick={() => handleDelete(user.id)} aria-label="Delete customer">
                     <FaTrash size={11} />
                   </button>
@@ -635,7 +654,14 @@ const Customers: React.FC = () => {
                     transition={{ delay: idx * 0.03 }}
                   >
                     <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleToggleDefault(user); }}
+                          title={user.is_default ? "Remove as default" : "Mark as default"}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", color: user.is_default ? "#d97706" : "#cbd5e1" }}
+                        >
+                          {user.is_default ? <FaStar size={14} /> : <FaRegStar size={14} />}
+                        </button>
                         <div style={{
                           width: "34px", height: "34px", borderRadius: "10px",
                           background: "rgba(99, 102, 241, 0.1)", color: "#6366f1",
