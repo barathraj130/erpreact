@@ -307,6 +307,12 @@ const SalesReturns: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
+  // ── List filters — search + date range, so older returns don't get lost
+  // scrolling past everything entered today ──
+  const [listSearch, setListSearch] = useState("");
+  const [listFrom, setListFrom] = useState("");
+  const [listTo, setListTo] = useState("");
+
   // ── Create modal ──
   const [showModal, setShowModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -713,6 +719,30 @@ const SalesReturns: React.FC = () => {
     </div>
   );
 
+  // ── Apply search + date-range filters to the full list (backend already
+  // returns every return, oldest to newest, with no limit — this just makes
+  // the older ones findable instead of buried below today's entries) ──
+  const filteredReturns = returns.filter((r) => {
+    if (listFrom && r.return_date < listFrom) return false;
+    if (listTo && r.return_date > listTo) return false;
+    if (listSearch.trim()) {
+      const q = listSearch.trim().toLowerCase();
+      const haystack = [
+        r.return_number,
+        r.customer_name,
+        r.customer_display,
+        r.original_invoice_number,
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+  const hasActiveFilter = !!(listSearch.trim() || listFrom || listTo);
+  const filteredTotal = filteredReturns.reduce((s, r) => s + Number(r.total_amount), 0);
+  const filteredCashRefunds = filteredReturns
+    .filter((r) => r.refund_type === "CASH_REFUND")
+    .reduce((s, r) => s + Number(r.total_amount), 0);
+
   /* ════════════════════════════════════════════════════════════════════════════
      RENDER
   ════════════════════════════════════════════════════════════════════════════ */
@@ -733,22 +763,58 @@ const SalesReturns: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "32px" }}>
+      {/* Summary cards — reflect the active filter, so the numbers match what's visible below */}
+      <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "20px" }}>
         <div style={{ flex: "1 1 180px", padding: "24px", borderRadius: "20px", background: "linear-gradient(135deg,#fef2f2,#fee2e2)", border: "1px solid #fecaca" }}>
-          <div style={{ fontSize: "12px", fontWeight: 800, color: "#991b1b", textTransform: "uppercase", letterSpacing: "1px" }}>Total Returns</div>
-          <div style={{ fontSize: "28px", fontWeight: 900, color: "#7f1d1d", marginTop: "8px" }}>{returns.length}</div>
+          <div style={{ fontSize: "12px", fontWeight: 800, color: "#991b1b", textTransform: "uppercase", letterSpacing: "1px" }}>
+            {hasActiveFilter ? "Returns (filtered)" : "Total Returns"}
+          </div>
+          <div style={{ fontSize: "28px", fontWeight: 900, color: "#7f1d1d", marginTop: "8px" }}>
+            {filteredReturns.length}{hasActiveFilter && <span style={{ fontSize: "14px", fontWeight: 600, color: "#b91c1c" }}> / {returns.length}</span>}
+          </div>
         </div>
         <div style={{ flex: "1 1 180px", padding: "24px", borderRadius: "20px", background: "linear-gradient(135deg,#fff7ed,#fed7aa)", border: "1px solid #fdba74" }}>
-          <div style={{ fontSize: "12px", fontWeight: 800, color: "#9a3412", textTransform: "uppercase", letterSpacing: "1px" }}>Total Value Returned</div>
-          <div style={{ fontSize: "28px", fontWeight: 900, color: "#7c2d12", marginTop: "8px" }}>{fmt(totalReturnsAmt)}</div>
+          <div style={{ fontSize: "12px", fontWeight: 800, color: "#9a3412", textTransform: "uppercase", letterSpacing: "1px" }}>
+            {hasActiveFilter ? "Value Returned (filtered)" : "Total Value Returned"}
+          </div>
+          <div style={{ fontSize: "28px", fontWeight: 900, color: "#7c2d12", marginTop: "8px" }}>{fmt(hasActiveFilter ? filteredTotal : totalReturnsAmt)}</div>
         </div>
         <div style={{ flex: "1 1 180px", padding: "24px", borderRadius: "20px", background: "linear-gradient(135deg,#f0fdf4,#dcfce7)", border: "1px solid #bbf7d0" }}>
           <div style={{ fontSize: "12px", fontWeight: 800, color: "#065f46", textTransform: "uppercase", letterSpacing: "1px" }}>Cash Refunds</div>
           <div style={{ fontSize: "28px", fontWeight: 900, color: "#064e3b", marginTop: "8px" }}>
-            {fmt(returns.filter(r => r.refund_type === "CASH_REFUND").reduce((s, r) => s + Number(r.total_amount), 0))}
+            {fmt(hasActiveFilter ? filteredCashRefunds : returns.filter(r => r.refund_type === "CASH_REFUND").reduce((s, r) => s + Number(r.total_amount), 0))}
           </div>
         </div>
+      </div>
+
+      {/* Filter bar */}
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-end", marginBottom: "20px", padding: "16px 20px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "14px" }}>
+        <div style={{ flex: "2 1 220px" }}>
+          <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Search</label>
+          <input
+            type="text"
+            placeholder="Return no., customer, or invoice…"
+            value={listSearch}
+            onChange={(e) => setListSearch(e.target.value)}
+            style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px" }}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.04em" }}>From</label>
+          <input type="date" value={listFrom} onChange={(e) => setListFrom(e.target.value)} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px" }} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.04em" }}>To</label>
+          <input type="date" value={listTo} onChange={(e) => setListTo(e.target.value)} style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "13px" }} />
+        </div>
+        {hasActiveFilter && (
+          <button
+            onClick={() => { setListSearch(""); setListFrom(""); setListTo(""); }}
+            style={{ padding: "9px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "#fff", color: "#475569", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Returns table */}
@@ -767,13 +833,15 @@ const SalesReturns: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {returns.length === 0 ? (
+            {filteredReturns.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ textAlign: "center", color: "#94a3b8", padding: "48px" }}>
-                  No sales returns recorded yet. Click <strong>New Return</strong> to add one.
+                  {hasActiveFilter
+                    ? "No returns match this search or date range."
+                    : <>No sales returns recorded yet. Click <strong>New Return</strong> to add one.</>}
                 </td>
               </tr>
-            ) : returns.map((r) => (
+            ) : filteredReturns.map((r) => (
               <tr key={r.id}>
                 <td style={{ fontWeight: 700, color: "#ef4444" }}>{r.return_number}</td>
                 <td>{new Date(r.return_date).toLocaleDateString("en-IN")}</td>
