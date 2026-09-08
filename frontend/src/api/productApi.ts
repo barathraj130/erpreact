@@ -25,6 +25,10 @@ export interface Product {
   is_active: number;
   updated_at: string;
   created_at: string;
+  is_auto_created?: boolean;
+  auto_created_from_invoice_id?: number | null;
+  cost_price_pending?: boolean;
+  cost_price_updated_at?: string | null;
 }
 
 

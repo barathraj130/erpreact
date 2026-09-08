@@ -526,6 +526,14 @@ const Inventory: React.FC = () => {
                       <td style={{ textAlign: "right" }}>
                         <div style={{ fontWeight: 800, color: "var(--erp-primary)" }}>₹{(Number(p.selling_price) || 0).toLocaleString()}</div>
                         <div style={{ fontSize: "0.7rem", color: "#16a34a", fontWeight: 700 }}>Cost: ₹{(Number(p.cost_price) || 0).toFixed(2)}</div>
+                        {p.cost_price_pending && (
+                          <div
+                            title="Auto-created from a sale typed straight into an invoice — real purchase cost not entered yet"
+                            style={{ fontSize: "0.65rem", color: "#b45309", background: "#fef3c7", padding: "2px 7px", borderRadius: "100px", fontWeight: 700, marginTop: "3px", display: "inline-block" }}
+                          >
+                            ⏳ Cost pending
+                          </div>
+                        )}
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`status-badge ${isOut ? "status-error" : isLow ? "status-warning" : "status-success"}`}>

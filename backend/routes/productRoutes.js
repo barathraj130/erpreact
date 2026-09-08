@@ -266,6 +266,14 @@ router.put("/:id", upload.single("image"), authMiddleware, async (req, res) => {
         index++;
     }
 
+    // A real cost price being entered/confirmed here — even ₹0 — means this product
+    // is no longer "auto-created from a typed sale, cost unknown". Clears on its own,
+    // no separate step needed from whoever fills it in.
+    if (Object.prototype.hasOwnProperty.call(body, 'cost_price')) {
+        updateFields.push(`cost_price_pending = false`);
+        updateFields.push(`cost_price_updated_at = NOW()`);
+    }
+
     if (req.file) {
         updateFields.push(`image_url = $${index}`);
         values.push(`/uploads/products/${req.file.filename}`);

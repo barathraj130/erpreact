@@ -683,6 +683,51 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS profit_per_piece NUMERIC(15,2)`).catch(() => {});
         await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS total_profit NUMERIC(15,2)`).catch(() => {});
 
+        // ── Auto-link/auto-create a real product for typed (catalog-free) line items ──
+        // A cashier can bill an item by typing its name in Description without ever
+        // touching the "Product" dropdown, leaving product_id permanently NULL — that's
+        // how items pile up as untracked "Typed products" in the Product Movement report.
+        // This closes that gap for good: every line item ends up pointing at a real
+        // products row, either an existing one matched by name or a freshly minted one
+        // flagged is_auto_created/cost_price_pending so it can be found and its real
+        // purchase cost filled in later. This ONLY sets item.resolved_product_id, used
+        // below purely for the invoice_line_items.product_id column — it never feeds the
+        // stock-deduction block above/below, which still checks the original,
+        // browser-supplied item.product_id exactly as before. No existing behavior changes.
+        for (const item of allItems) {
+            if (item.product_id) continue;
+            const typedName = String(item.name || item.desc || item.description || "").trim();
+            if (!typedName) continue;
+            try {
+                const existing = await client.query(
+                    `SELECT id FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
+                    [companyId, typedName]
+                );
+                if (existing.rows[0]) {
+                    item.resolved_product_id = existing.rows[0].id;
+                } else if (!item.is_return) {
+                    // Never mint a brand-new product off a return line — only off a sale.
+                    const createdProduct = await client.query(
+                        `INSERT INTO products (
+                            company_id, name, selling_price, cost_price, unit, gst_percent,
+                            sku, category, is_active, is_deleted,
+                            is_auto_created, auto_created_from_invoice_id, cost_price_pending
+                         ) VALUES ($1,$2,$3,0,$4,$5,$6,'Other',1,false,true,$7,true)
+                         RETURNING id`,
+                        [
+                            companyId, typedName, item.rate || 0,
+                            item.uom || "pcs", item.taxRate || item.gst_rate || 0,
+                            `AUTO-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`,
+                            invoiceId,
+                        ]
+                    );
+                    item.resolved_product_id = createdProduct.rows[0].id;
+                }
+            } catch (e) {
+                console.warn(`[invoice-create] auto-link/create product for "${typedName}" failed:`, e.message);
+            }
+        }
+
         for (const item of allItems) {
             console.log(`[invoice-create] item: product_id=${item.product_id} desc=${item.desc || item.description} qty=${item.qty}`);
             if (item.product_id) {
@@ -733,7 +778,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 RETURNING id`,
                 [
                     invoiceId,
-                    item.product_id || null,
+                    item.product_id || item.resolved_product_id || null,
                     item.name || item.desc || item.description || "Item",
                     item.qty,
                     item.rate,
@@ -2044,6 +2089,42 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             }
         }
 
+        // ── Auto-link/auto-create a real product for each line item — same fix as
+        // POST / (invoice creation) above. This edit form has no catalog dropdown
+        // at all (items here are always typed by name), so without this every
+        // single invoice edit would permanently wipe product_id on save, not just
+        // for genuinely-typed items — that was the actual bug being fixed.
+        for (const item of processedItems) {
+            const typedName = String(item.description || "").trim();
+            if (!typedName) continue;
+            try {
+                const existing = await client.query(
+                    `SELECT id FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
+                    [companyId, typedName]
+                );
+                if (existing.rows[0]) {
+                    item.resolved_product_id = existing.rows[0].id;
+                } else {
+                    const createdProduct = await client.query(
+                        `INSERT INTO products (
+                            company_id, name, selling_price, cost_price, unit, gst_percent,
+                            sku, category, is_active, is_deleted,
+                            is_auto_created, auto_created_from_invoice_id, cost_price_pending
+                         ) VALUES ($1,$2,$3,0,'pcs',$4,$5,'Other',1,false,true,$6,true)
+                         RETURNING id`,
+                        [
+                            companyId, typedName, item.rate || 0, item.gstRate || 0,
+                            `AUTO-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`,
+                            id,
+                        ]
+                    );
+                    item.resolved_product_id = createdProduct.rows[0].id;
+                }
+            } catch (e) {
+                console.warn(`[invoice-edit] auto-link/create product for "${typedName}" failed:`, e.message);
+            }
+        }
+
         // 5. Sync Line Items — store full GST breakdown so print preview works correctly
         await client.query("DELETE FROM invoice_line_items WHERE invoice_id = $1", [id]);
 
@@ -2051,14 +2132,14 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             const lineTax = item.cgstA + item.sgstA + item.igstA;
             await client.query(
                 `INSERT INTO invoice_line_items (
-                    invoice_id, description, hsn_acs_code, quantity,
+                    invoice_id, product_id, description, hsn_acs_code, quantity,
                     unit_price, taxable_value, tax_percent,
                     cgst_rate, sgst_rate, igst_rate,
                     cgst_amount, sgst_amount, igst_amount,
                     line_total
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
                 [
-                    id, item.description, item.hsn, item.qty, item.rate, item.amount,
+                    id, item.resolved_product_id || null, item.description, item.hsn, item.qty, item.rate, item.amount,
                     item.gstRate,
                     item.cgstR, item.sgstR, item.igstR,
                     item.cgstA, item.sgstA, item.igstA,

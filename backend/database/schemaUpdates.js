@@ -324,6 +324,10 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_type VARCHAR(20) DEFAULT 'PCS';
             ALTER TABLE products ADD COLUMN IF NOT EXISTS pieces_per_bundle NUMERIC(10,2) DEFAULT 1;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS is_auto_created BOOLEAN DEFAULT false;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS auto_created_from_invoice_id INTEGER;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price_pending BOOLEAN DEFAULT false;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price_updated_at TIMESTAMP;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS meta JSONB;
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_category VARCHAR(50);
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
