@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -134,24 +134,27 @@ const ReturnBillView: React.FC<{
   const totalIgst = rets.reduce((s, r) => s + Number(r.total_igst || 0), 0);
   const grandTotal = rets.reduce((s, r) => s + Number(r.total_amount || 0), 0);
 
+  // Print via an isolated window holding only this document's markup — the
+  // "hide everything else with CSS" approach kept producing blank pages,
+  // since #return-bill-doc is nested inside the modal overlay rather than
+  // being a direct child of body, and browsers vary in how they handle
+  // visibility overrides through a chain of ancestors. A fresh window with
+  // just the document's own HTML sidesteps that entirely (same pattern
+  // EditInvoice.tsx's print button already uses successfully).
+  const docRef = useRef<HTMLDivElement>(null);
+  const handlePrint = () => {
+    const printContents = docRef.current?.innerHTML;
+    if (!printContents) return;
+    const w = window.open("", "", "width=900,height=700");
+    if (!w) return;
+    w.document.write(`<html><head><title>Credit Note</title></head><body>${printContents}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+
   return (
     <div className="page-modal-overlay" style={{ zIndex: 1100 }}>
-      {/* Print-specific style: #return-bill-doc is nested several levels deep
-          inside the modal overlay, not a direct child of body — so hiding
-          "body > *" leaves it hidden too (a display:none ancestor can't be
-          overridden by a descendant's own display). Use visibility instead:
-          it's inheritable but every descendant can re-declare it, so the
-          target and its children can opt back in while everything else
-          around them stays invisible. */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          #return-bill-doc, #return-bill-doc * { visibility: visible !important; }
-          #return-bill-doc { position: absolute; top: 0; left: 0; width: 100%; max-height: none !important; overflow: visible !important; }
-          .no-print { display: none !important; }
-        }
-      `}</style>
-
       <motion.div
         initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
         style={{
@@ -165,7 +168,7 @@ const ReturnBillView: React.FC<{
           <span style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>Return Bill / Credit Note</span>
           <div style={{ display: "flex", gap: 10 }}>
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               style={{ display: "flex", alignItems: "center", gap: 6, background: "#4f46e5", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontWeight: 600, fontSize: 13 }}
             >
               <FaPrint size={12} /> Print
@@ -177,7 +180,7 @@ const ReturnBillView: React.FC<{
         </div>
 
         {/* Document — scrolls on its own; the toolbar above stays put */}
-        <div id="return-bill-doc" style={{ padding: "32px 36px", fontFamily: "Arial, sans-serif", overflowY: "auto" }}>
+        <div ref={docRef} style={{ padding: "32px 36px", fontFamily: "Arial, sans-serif", overflowY: "auto" }}>
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, paddingBottom: 20, borderBottom: "2px solid #ef4444" }}>
             <div>

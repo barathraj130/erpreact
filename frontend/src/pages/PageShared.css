@@ -367,7 +367,12 @@ body { font-family: 'Satoshi', sans-serif; }
 .page-table-wrapper {
   background: var(--surface);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* A table wider than its wrapper (extra columns, wide action groups) must
+     scroll horizontally instead of clipping content past the edge with no
+     way to reach it — overflow-y stays hidden so the rounded corners still
+     clip cleanly on the top/bottom, where content never overflows. */
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid var(--border);
 }
 
