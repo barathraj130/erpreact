@@ -130,7 +130,12 @@ router.get('/invoices-for-return', authMiddleware, async (req, res) => {
                                   'id', li.id, 'description', li.description,
                                   'quantity', li.quantity, 'unit_price', li.unit_price,
                                   'line_total', li.line_total, 'product_id', li.product_id,
-                                  'gst_rate', li.gst_rate, 'hsn_code', li.hsn_code
+                                  -- invoice_line_items has no "gst_rate" column — invoices are
+                                  -- created/edited writing the combined rate into tax_percent
+                                  -- (see invoiceRoutes.js). Reading gst_rate here always came
+                                  -- back null, so every return silently computed ₹0 GST even
+                                  -- when is_gst_return was correctly true.
+                                  'gst_rate', li.tax_percent, 'hsn_code', li.hsn_code
                               )) FROM invoice_line_items li
                               WHERE li.invoice_id = i.id AND COALESCE(li.is_return, false) = false
                           ), '[]') AS line_items

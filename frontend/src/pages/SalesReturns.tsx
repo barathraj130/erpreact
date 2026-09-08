@@ -68,6 +68,7 @@ interface SalesReturn {
   id: number;
   return_number: string;
   return_date: string;
+  customer_id?: number | null;
   customer_name: string;
   customer_display: string;
   original_invoice_id: number | null;
@@ -108,21 +109,45 @@ const EMPTY_ITEM: ReturnItem = { product_id: null, description: "", qty: 1, rate
    Return Bill Print View Component
 ───────────────────────────────────────────────────────────────────────────── */
 const ReturnBillView: React.FC<{
-  ret: SalesReturn; company: CompanyProfile | null; onClose: () => void;
-}> = ({ ret, company, onClose }) => {
-  const items: ReturnItem[] = Array.isArray(ret.items)
-    ? ret.items
-    : (typeof ret.items === "string" ? JSON.parse(ret.items) : []);
+  rets: SalesReturn[]; company: CompanyProfile | null; onClose: () => void;
+}> = ({ rets, company, onClose }) => {
+  const combined = rets.length > 1;
+  // Primary return drives single-note fields (return no., date, refund type, notes);
+  // combined notes show these per-line instead of once at the top.
+  const ret = rets[0];
+  const parseItems = (r: SalesReturn): ReturnItem[] => Array.isArray(r.items)
+    ? r.items
+    : (typeof r.items === "string" ? JSON.parse(r.items) : []);
+
+  // Flatten every selected return's items into one list, tagging each row
+  // with its origin return number so a combined note stays auditable.
+  const items: (ReturnItem & { _returnNo?: string })[] = combined
+    ? rets.flatMap(r => parseItems(r).map(it => ({ ...it, _returnNo: r.return_number })))
+    : parseItems(ret);
 
   const refundLabel = REFUND_TYPES.find(t => t.value === ret.refund_type)?.label.replace(/^[^ ]+ /, "") || ret.refund_type;
 
+  const isGstReturn = rets.some(r => r.is_gst_return);
+  const totalTaxable = rets.reduce((s, r) => s + Number(r.total_taxable_amount || 0), 0);
+  const totalCgst = rets.reduce((s, r) => s + Number(r.total_cgst || 0), 0);
+  const totalSgst = rets.reduce((s, r) => s + Number(r.total_sgst || 0), 0);
+  const totalIgst = rets.reduce((s, r) => s + Number(r.total_igst || 0), 0);
+  const grandTotal = rets.reduce((s, r) => s + Number(r.total_amount || 0), 0);
+
   return (
     <div className="page-modal-overlay" style={{ zIndex: 1100 }}>
-      {/* Print-specific style: hide overlay, show only #return-bill-doc */}
+      {/* Print-specific style: #return-bill-doc is nested several levels deep
+          inside the modal overlay, not a direct child of body — so hiding
+          "body > *" leaves it hidden too (a display:none ancestor can't be
+          overridden by a descendant's own display). Use visibility instead:
+          it's inheritable but every descendant can re-declare it, so the
+          target and its children can opt back in while everything else
+          around them stays invisible. */}
       <style>{`
         @media print {
-          body > * { display: none !important; }
-          #return-bill-doc { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
+          body * { visibility: hidden !important; }
+          #return-bill-doc, #return-bill-doc * { visibility: visible !important; }
+          #return-bill-doc { position: absolute; top: 0; left: 0; width: 100%; }
           .no-print { display: none !important; }
         }
       `}</style>
@@ -168,8 +193,8 @@ const ReturnBillView: React.FC<{
               <div style={{ fontSize: 20, fontWeight: 900, color: "#ef4444", textTransform: "uppercase", letterSpacing: "1px" }}>
                 Credit Note
               </div>
-              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>Sales Return</div>
-              {ret.is_gst_return && (
+              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{combined ? `Combined Sales Return (${rets.length} returns)` : "Sales Return"}</div>
+              {isGstReturn && (
                 <div style={{ fontSize: 11, color: "#dc2626", fontWeight: 600, marginTop: 4 }}>
                   GST Credit Note under Section 34 of CGST Act
                 </div>
@@ -180,28 +205,49 @@ const ReturnBillView: React.FC<{
           {/* Meta grid */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
             <div>
-              <table style={{ fontSize: 13, borderCollapse: "collapse", width: "100%" }}>
-                <tbody>
-                  <tr>
-                    <td style={{ color: "#6b7280", paddingRight: 12, paddingBottom: 6, whiteSpace: "nowrap" }}>Return No.</td>
-                    <td style={{ fontWeight: 700, color: "#1e293b", paddingBottom: 6 }}>{ret.return_number}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ color: "#6b7280", paddingRight: 12, paddingBottom: 6 }}>Return Date</td>
-                    <td style={{ fontWeight: 600, paddingBottom: 6 }}>{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                  </tr>
-                  {ret.original_invoice_number && (
+              {combined ? (
+                <table style={{ fontSize: 12, borderCollapse: "collapse", width: "100%" }}>
+                  <thead>
                     <tr>
-                      <td style={{ color: "#6b7280", paddingRight: 12, paddingBottom: 6, whiteSpace: "nowrap" }}>Orig. Invoice</td>
-                      <td style={{ fontWeight: 600, color: "#1d4ed8", paddingBottom: 6 }}>{ret.original_invoice_number}</td>
+                      <th style={{ textAlign: "left", color: "#9ca3af", fontWeight: 600, paddingBottom: 6 }}>Return No.</th>
+                      <th style={{ textAlign: "left", color: "#9ca3af", fontWeight: 600, paddingBottom: 6 }}>Date</th>
+                      <th style={{ textAlign: "left", color: "#9ca3af", fontWeight: 600, paddingBottom: 6 }}>Orig. Invoice</th>
                     </tr>
-                  )}
-                  <tr>
-                    <td style={{ color: "#6b7280", paddingRight: 12 }}>Refund Type</td>
-                    <td style={{ fontWeight: 600 }}>{refundLabel}</td>
-                  </tr>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rets.map(r => (
+                      <tr key={r.id}>
+                        <td style={{ fontWeight: 700, color: "#1e293b", paddingBottom: 4, paddingRight: 10 }}>{r.return_number}</td>
+                        <td style={{ paddingBottom: 4, paddingRight: 10 }}>{new Date(r.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
+                        <td style={{ paddingBottom: 4, color: "#1d4ed8" }}>{r.original_invoice_number || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table style={{ fontSize: 13, borderCollapse: "collapse", width: "100%" }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ color: "#6b7280", paddingRight: 12, paddingBottom: 6, whiteSpace: "nowrap" }}>Return No.</td>
+                      <td style={{ fontWeight: 700, color: "#1e293b", paddingBottom: 6 }}>{ret.return_number}</td>
+                    </tr>
+                    <tr>
+                      <td style={{ color: "#6b7280", paddingRight: 12, paddingBottom: 6 }}>Return Date</td>
+                      <td style={{ fontWeight: 600, paddingBottom: 6 }}>{new Date(ret.return_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                    </tr>
+                    {ret.original_invoice_number && (
+                      <tr>
+                        <td style={{ color: "#6b7280", paddingRight: 12, paddingBottom: 6, whiteSpace: "nowrap" }}>Orig. Invoice</td>
+                        <td style={{ fontWeight: 600, color: "#1d4ed8", paddingBottom: 6 }}>{ret.original_invoice_number}</td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td style={{ color: "#6b7280", paddingRight: 12 }}>Refund Type</td>
+                      <td style={{ fontWeight: 600 }}>{refundLabel}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
             </div>
             <div style={{ background: "#fef2f2", borderRadius: 10, padding: "14px 16px", border: "1px solid #fecaca" }}>
               <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>Customer</div>
@@ -216,6 +262,7 @@ const ReturnBillView: React.FC<{
             <thead>
               <tr style={{ background: "#ef4444" }}>
                 <th style={{ padding: "9px 12px", textAlign: "left", color: "#fff", fontWeight: 700 }}>#</th>
+                {combined && <th style={{ padding: "9px 12px", textAlign: "left", color: "#fff", fontWeight: 700 }}>Return No.</th>}
                 <th style={{ padding: "9px 12px", textAlign: "left", color: "#fff", fontWeight: 700 }}>Description</th>
                 <th style={{ padding: "9px 12px", textAlign: "right", color: "#fff", fontWeight: 700 }}>Qty</th>
                 <th style={{ padding: "9px 12px", textAlign: "right", color: "#fff", fontWeight: 700 }}>Rate (₹)</th>
@@ -226,6 +273,7 @@ const ReturnBillView: React.FC<{
               {items.map((item, i) => (
                 <tr key={i} style={{ borderBottom: "0.5px solid #f1f5f9", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
                   <td style={{ padding: "9px 12px", color: "#6b7280" }}>{i + 1}</td>
+                  {combined && <td style={{ padding: "9px 12px", color: "#ef4444", fontWeight: 600 }}>{item._returnNo}</td>}
                   <td style={{ padding: "9px 12px", fontWeight: 500 }}>{item.description}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right" }}>{item.qty}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right" }}>{Number(item.rate).toLocaleString("en-IN")}</td>
@@ -236,43 +284,43 @@ const ReturnBillView: React.FC<{
               ))}
             </tbody>
             <tfoot>
-              {ret.is_gst_return && (
+              {isGstReturn && (
                 <>
                   <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>Taxable Amount</td>
-                    <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_taxable_amount || 0)}</td>
+                    <td colSpan={combined ? 5 : 4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>Taxable Amount</td>
+                    <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(totalTaxable)}</td>
                   </tr>
-                  {Number(ret.total_cgst || 0) > 0 && (
+                  {totalCgst > 0 && (
                     <tr>
-                      <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>CGST</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_cgst || 0)}</td>
+                      <td colSpan={combined ? 5 : 4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>CGST</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(totalCgst)}</td>
                     </tr>
                   )}
-                  {Number(ret.total_sgst || 0) > 0 && (
+                  {totalSgst > 0 && (
                     <tr>
-                      <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>SGST</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_sgst || 0)}</td>
+                      <td colSpan={combined ? 5 : 4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>SGST</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(totalSgst)}</td>
                     </tr>
                   )}
-                  {Number(ret.total_igst || 0) > 0 && (
+                  {totalIgst > 0 && (
                     <tr>
-                      <td colSpan={4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>IGST</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(ret.total_igst || 0)}</td>
+                      <td colSpan={combined ? 5 : 4} style={{ padding: "6px 12px", textAlign: "right", color: "#6b7280" }}>IGST</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmt(totalIgst)}</td>
                     </tr>
                   )}
                 </>
               )}
               <tr style={{ background: "#fef2f2", borderTop: "2px solid #ef4444" }}>
-                <td colSpan={4} style={{ padding: "11px 12px", textAlign: "right", fontWeight: 700, fontSize: 14 }}>Total Return Amount</td>
+                <td colSpan={combined ? 5 : 4} style={{ padding: "11px 12px", textAlign: "right", fontWeight: 700, fontSize: 14 }}>Total Return Amount</td>
                 <td style={{ padding: "11px 12px", textAlign: "right", fontWeight: 900, fontSize: 16, color: "#ef4444" }}>
-                  {fmt(ret.total_amount)}
+                  {fmt(grandTotal)}
                 </td>
               </tr>
             </tfoot>
           </table>
 
           {/* Notes */}
-          {ret.notes && (
+          {!combined && ret.notes && (
             <div style={{ padding: "10px 14px", background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, color: "#6b7280", marginBottom: 24 }}>
               <strong>Notes:</strong> {ret.notes}
             </div>
@@ -335,6 +383,17 @@ const SalesReturns: React.FC = () => {
 
   // ── View bill ──
   const [viewReturn, setViewReturn] = useState<SalesReturn | null>(null);
+
+  // ── Combine several returns for the same customer into one credit note ──
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [combineView, setCombineView] = useState<SalesReturn[] | null>(null);
+  const toggleSelected = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   // ── Inspect / grade return items (Good / Mistake / Rejected) ──
   const [inspectReturn, setInspectReturn] = useState<SalesReturn | null>(null);
@@ -743,6 +802,12 @@ const SalesReturns: React.FC = () => {
     .filter((r) => r.refund_type === "CASH_REFUND")
     .reduce((s, r) => s + Number(r.total_amount), 0);
 
+  const selectedReturns = filteredReturns.filter(r => selectedIds.has(r.id));
+  const selectedCustomerIds = new Set(selectedReturns.map(r => r.customer_id));
+  const canCombine = selectedReturns.length >= 2
+    && selectedCustomerIds.size === 1
+    && selectedReturns.every(r => r.customer_id != null);
+
   /* ════════════════════════════════════════════════════════════════════════════
      RENDER
   ════════════════════════════════════════════════════════════════════════════ */
@@ -817,11 +882,43 @@ const SalesReturns: React.FC = () => {
         )}
       </div>
 
+      {/* Combine-into-one-credit-note action bar — only shows once something's checked */}
+      {selectedReturns.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 14, marginBottom: 16, padding: "12px 18px",
+          background: canCombine ? "#eff6ff" : "#fef2f2", border: `1px solid ${canCombine ? "#bfdbfe" : "#fecaca"}`, borderRadius: 12,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: canCombine ? "#1d4ed8" : "#991b1b" }}>
+            {selectedReturns.length} return{selectedReturns.length > 1 ? "s" : ""} selected
+            {!canCombine && selectedReturns.length >= 2 && " — all selected returns must be for the same customer"}
+            {!canCombine && selectedReturns.length < 2 && " — select at least 2 to combine"}
+          </span>
+          <button
+            disabled={!canCombine}
+            onClick={() => setCombineView(selectedReturns)}
+            style={{
+              padding: "8px 16px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13,
+              background: canCombine ? "#4f46e5" : "#e2e8f0", color: canCombine ? "#fff" : "#94a3b8",
+              cursor: canCombine ? "pointer" : "not-allowed",
+            }}
+          >
+            Combine into Single Credit Note
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", color: "#475569", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Returns table */}
       <div className="page-table-wrapper">
         <table className="page-table">
           <thead>
             <tr>
+              <th style={{ width: 34 }}></th>
               <th>Return No.</th>
               <th>Date</th>
               <th>Customer</th>
@@ -835,7 +932,7 @@ const SalesReturns: React.FC = () => {
           <tbody>
             {filteredReturns.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "#94a3b8", padding: "48px" }}>
+                <td colSpan={9} style={{ textAlign: "center", color: "#94a3b8", padding: "48px" }}>
                   {hasActiveFilter
                     ? "No returns match this search or date range."
                     : <>No sales returns recorded yet. Click <strong>New Return</strong> to add one.</>}
@@ -843,6 +940,14 @@ const SalesReturns: React.FC = () => {
               </tr>
             ) : filteredReturns.map((r) => (
               <tr key={r.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(r.id)}
+                    onChange={() => toggleSelected(r.id)}
+                    title="Select for combining into one credit note"
+                  />
+                </td>
                 <td style={{ fontWeight: 700, color: "#ef4444" }}>{r.return_number}</td>
                 <td>{new Date(r.return_date).toLocaleDateString("en-IN")}</td>
                 <td style={{ fontWeight: 600 }}>{r.customer_name || r.customer_display || "—"}</td>
@@ -906,10 +1011,17 @@ const SalesReturns: React.FC = () => {
         </table>
       </div>
 
-      {/* ── View Bill Modal ── */}
+      {/* ── View Bill Modal (single, or combined for the same customer) ── */}
       <AnimatePresence>
         {viewReturn && (
-          <ReturnBillView ret={viewReturn} company={companyProfile} onClose={() => setViewReturn(null)} />
+          <ReturnBillView rets={[viewReturn]} company={companyProfile} onClose={() => setViewReturn(null)} />
+        )}
+        {combineView && (
+          <ReturnBillView
+            rets={combineView}
+            company={companyProfile}
+            onClose={() => { setCombineView(null); setSelectedIds(new Set()); }}
+          />
         )}
       </AnimatePresence>
 

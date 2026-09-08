@@ -197,19 +197,6 @@ const FluxoraLanding: React.FC = () => {
           </button>
         </div>
 
-        <div style={styles.heroStats} className="hero-stats-wrap">
-          {[
-            { value: "25+", label: "Active Businesses" },
-            { value: "50K+", label: "Invoices Generated" },
-            { value: "8+", label: "Cities" },
-            { value: "99.9%", label: "Uptime" },
-          ].map((stat, i) => (
-            <div key={i} style={styles.statItem}>
-              <div style={styles.statValue}>{stat.value}</div>
-              <div style={styles.statLabel}>{stat.label}</div>
-            </div>
-          ))}
-        </div>
       </section>
 
       <section id="features" style={styles.featuresSection}>
