@@ -511,6 +511,7 @@ const InvoiceDetails: React.FC = () => {
       qty: Math.abs(qty), rate, taxable, gstRate, cgst, sgst, igst,
       isReturn,
       lineTotal: taxable + cgst + sgst + igst,
+      product_id: item.product_id || null, // on-screen only — never read by buildPrintHTML
     };
   });
 
@@ -630,7 +631,12 @@ const InvoiceDetails: React.FC = () => {
             return (
               <tr key={i}>
                 <td style={{ ...TD, textAlign: "center" }}>{i + 1}</td>
-                <td style={{ ...TD, textAlign: "left", paddingLeft: "4px", fontWeight: 500 }}>{r.name}</td>
+                <td style={{ ...TD, textAlign: "left", paddingLeft: "4px", fontWeight: 500 }}>
+                  {r.name}
+                  {r.product_id && (
+                    <div style={{ fontSize: "8px", fontWeight: 700, color: "#5B4BFF" }}>Product #{r.product_id}</div>
+                  )}
+                </td>
                 <td style={{ ...TD, textAlign: "center" }}>{r.hsn}</td>
                 <td style={{ ...TD, textAlign: "center" }}>{r.uom}</td>
                 <td style={{ ...TD, textAlign: "right" }}>{fmtInt(r.qty)}</td>

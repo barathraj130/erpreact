@@ -155,6 +155,7 @@ interface InvoiceItem {
   uom: string;
   qty: number;
   rate: number;
+  product_id?: number | null; // read-only here — this form has no catalog picker; shown for staff reference only
 }
 
 const EditInvoice: React.FC = () => {
@@ -292,6 +293,7 @@ const EditInvoice: React.FC = () => {
                 uom: "Pcs",
                 qty: Number(i.quantity) || 0,
                 rate: Number(i.unit_price) || 0,
+                product_id: i.product_id || null,
               })));
             }
 
@@ -914,12 +916,24 @@ const EditInvoice: React.FC = () => {
                 }}
               >
                 <div style={{ paddingRight: "30px" }}>
+                  {it.product_id ? (
+                    <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#5B4BFF", marginBottom: "3px" }}>
+                      Product #{it.product_id}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "0.68rem", color: "#94a3b8", marginBottom: "3px" }}>
+                      Not linked to catalog yet — will be auto-linked/added on save
+                    </div>
+                  )}
                   <input
                     placeholder="Item Name"
                     value={it.name}
                     onChange={(e) => {
                       const t = [...items];
                       t[i].name = e.target.value;
+                      // The linked product is only valid for the name it was matched
+                      // against — a rename re-resolves (match or auto-create) on save.
+                      t[i].product_id = null;
                       setItems(t);
                     }}
                     style={{ ...inputStyle, marginBottom: "8px" }}

@@ -1301,7 +1301,14 @@ const CreateInvoice: React.FC = () => {
                     )}
                     <div className="ci-row-2" style={{ marginBottom: "8px" }}>
                       <div className="ci-field">
-                        <label>Description</label>
+                        <label>
+                          Description
+                          {it.product_id && (
+                            <span style={{ marginLeft: "6px", fontSize: "0.7rem", fontWeight: 700, color: "#5B4BFF" }}>
+                              (Product #{it.product_id})
+                            </span>
+                          )}
+                        </label>
                         <input
                           value={it.desc}
                           onChange={(e) =>
@@ -1309,6 +1316,11 @@ const CreateInvoice: React.FC = () => {
                           }
                           placeholder="Item name"
                         />
+                        {!it.product_id && it.desc?.trim() && (
+                          <div style={{ fontSize: "0.68rem", color: "#94a3b8", marginTop: "3px" }}>
+                            Not picked from catalog — will be auto-linked/added on save
+                          </div>
+                        )}
                       </div>
                       <div className="ci-field">
                         <label>HSN</label>
