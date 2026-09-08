@@ -99,7 +99,8 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
               { name: "Global Stock", path: "/inventory/consolidated" },
               { name: "Stock Transfer", path: "/inventory/transfer" },
               { name: "Stock Requests", path: "/inventory/requests" },
-              { name: "Product List", path: "/products" }
+              { name: "Product List", path: "/products" },
+              { name: "🔍 Product Journey", path: "/inventory/journey" }
           ]
       });
       baseItems.push({ 

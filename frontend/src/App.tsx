@@ -154,6 +154,8 @@ import StockTransfer from "./pages/StockTransfer";
 import StockRequestsInbox from "./pages/StockRequestsInbox";
 import BranchBilling from "./pages/BranchBilling";
 import GlobalInventory from "./pages/GlobalInventory";
+import ProductJourneyList from "./pages/journey/ProductJourneyList";
+import ProductJourneyDetail from "./pages/journey/ProductJourneyDetail";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
 import SystemTester from "./pages/SystemTester";
@@ -450,6 +452,8 @@ const App: React.FC = () => {
             <Route path="/inventory/consolidated" element={<GlobalInventory />} />
             <Route path="/inventory/transfer" element={<StockTransfer />} />
             <Route path="/inventory/requests" element={<StockRequestsInbox />} />
+            <Route path="/inventory/journey" element={<ProductJourneyList />} />
+            <Route path="/inventory/journey/:id" element={<ProductJourneyDetail />} />
             <Route path="/branch/billing" element={<BranchBilling />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/employees" element={<Employees />} />
