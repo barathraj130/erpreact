@@ -516,7 +516,10 @@ const Inventory: React.FC = () => {
                               : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8" }}><FaBox size={20} /></div>}
                           </div>
                           <div>
-                            <div style={{ fontWeight: 700, color: "var(--erp-text-main)", fontSize: "0.95rem" }}>{p.name}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ fontWeight: 700, color: "var(--erp-text-main)", fontSize: "0.95rem" }}>{p.name}</span>
+                              <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#5B4BFF", background: "#eef2ff", padding: "1px 6px", borderRadius: "100px" }}>#{p.id}</span>
+                            </div>
                             <div style={{ fontSize: "0.75rem", color: "var(--erp-text-muted)" }}>{p.description || "N/A"}</div>
                           </div>
                         </div>
