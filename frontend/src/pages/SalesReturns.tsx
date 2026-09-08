@@ -147,17 +147,21 @@ const ReturnBillView: React.FC<{
         @media print {
           body * { visibility: hidden !important; }
           #return-bill-doc, #return-bill-doc * { visibility: visible !important; }
-          #return-bill-doc { position: absolute; top: 0; left: 0; width: 100%; }
+          #return-bill-doc { position: absolute; top: 0; left: 0; width: 100%; max-height: none !important; overflow: visible !important; }
           .no-print { display: none !important; }
         }
       `}</style>
 
       <motion.div
         initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-        style={{ background: "#fff", borderRadius: 16, maxWidth: 680, width: "100%", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}
+        style={{
+          background: "#fff", borderRadius: 16, maxWidth: 680, width: "100%",
+          maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+        }}
       >
         {/* Toolbar */}
-        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", borderBottom: "1px solid #e5e7eb", background: "#f8fafc" }}>
+        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", borderBottom: "1px solid #e5e7eb", background: "#f8fafc", flexShrink: 0 }}>
           <span style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>Return Bill / Credit Note</span>
           <div style={{ display: "flex", gap: 10 }}>
             <button
@@ -172,8 +176,8 @@ const ReturnBillView: React.FC<{
           </div>
         </div>
 
-        {/* Document */}
-        <div id="return-bill-doc" style={{ padding: "32px 36px", fontFamily: "Arial, sans-serif" }}>
+        {/* Document — scrolls on its own; the toolbar above stays put */}
+        <div id="return-bill-doc" style={{ padding: "32px 36px", fontFamily: "Arial, sans-serif", overflowY: "auto" }}>
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, paddingBottom: 20, borderBottom: "2px solid #ef4444" }}>
             <div>
