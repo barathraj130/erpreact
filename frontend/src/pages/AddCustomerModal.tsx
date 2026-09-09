@@ -18,6 +18,7 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   customerToEdit?: any;
+  initialName?: string;
 }
 
 const styles = {
@@ -202,6 +203,7 @@ const AddCustomerModal: React.FC<Props> = ({
   onClose,
   onSuccess,
   customerToEdit,
+  initialName,
 }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
 
@@ -214,8 +216,8 @@ const AddCustomerModal: React.FC<Props> = ({
   const [balanceType, setBalanceType] = useState<"receivable" | "advance">("receivable");
 
   const [formData, setFormData] = useState({
-    username: "",
-    nickname: "",
+    username: initialName || "",
+    nickname: initialName || "",
     email: "",
     phone: "",
     gstin: "",

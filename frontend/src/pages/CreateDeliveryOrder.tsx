@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaArrowLeft, FaPlus, FaTrash, FaSave } from "react-icons/fa";
+import { FaArrowLeft, FaPlus, FaTrash, FaSave, FaUserPlus } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import { useUsers } from "../hooks/useUsers";
 import { fetchProducts, Product } from "../api/productApi";
+import AddCustomerModal from "./AddCustomerModal";
 import "./PageShared.css";
 
 interface BundleLine {
@@ -108,11 +109,104 @@ const ProductInput: React.FC<ProductInputProps> = ({ value, products, onChange }
 };
 // ───────────────────────────────────────────────────────────────────────────
 
+// ── Typeahead customer input — suggests as you type; offers to add a new
+// customer inline when nothing matches, instead of a long native <select>.
+interface CustomerInputProps {
+  value: string;
+  customers: any[];
+  onSelect: (id: number, name: string) => void;
+  onAddNew: (typedName: string) => void;
+}
+
+const CustomerInput: React.FC<CustomerInputProps> = ({ value, customers, onSelect, onAddNew }) => {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const filtered = query.trim()
+    ? customers.filter((c: any) => (c.username || "").toLowerCase().includes(query.toLowerCase())).slice(0, 8)
+    : customers.slice(0, 8);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selectCustomer = (c: any) => {
+    setQuery(c.username);
+    setOpen(false);
+    onSelect(c.id, c.username);
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Type customer name..."
+        autoComplete="off"
+        style={{
+          width: "100%", padding: "9px 12px", borderRadius: 8,
+          border: "1px solid var(--border-1)", background: "var(--surface-2)",
+          color: "var(--text-1)", fontSize: 13, boxSizing: "border-box",
+        }}
+      />
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          background: "var(--surface-1)", border: "1px solid var(--border-1)",
+          borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          zIndex: 100, maxHeight: 260, overflowY: "auto",
+        }}>
+          {filtered.map((c: any) => (
+            <div
+              key={c.id}
+              onMouseDown={() => selectCustomer(c)}
+              style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid var(--border-1)", color: "var(--text-1)" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              {c.username}
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div style={{ padding: "10px 14px", fontSize: 12.5, color: "var(--text-3)" }}>
+              No customer matches "{query}"
+            </div>
+          )}
+          <div
+            onMouseDown={() => { setOpen(false); onAddNew(query.trim()); }}
+            style={{
+              padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700,
+              color: "var(--erp-primary, #5B4BFF)", display: "flex", alignItems: "center", gap: 8,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+          >
+            <FaUserPlus size={12} /> {query.trim() ? `Add "${query.trim()}" as new customer` : "Add New Customer"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+// ───────────────────────────────────────────────────────────────────────────
+
 const CreateDeliveryOrder: React.FC = () => {
   const navigate = useNavigate();
-  const { customers } = useUsers();
+  const { customers, refresh: refreshCustomers } = useUsers();
   const [products, setProducts] = useState<Product[]>([]);
   const [customerId, setCustomerId] = useState<number | "">("");
+  const [customerName, setCustomerName] = useState("");
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [pendingAutoSelectName, setPendingAutoSelectName] = useState<string | null>(null);
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0]);
   const [items, setItems] = useState<DOItem[]>([
     { id: Date.now(), product_id: null, product_name: "", bundle_lines: [emptyBundleLine()] },
@@ -123,6 +217,21 @@ const CreateDeliveryOrder: React.FC = () => {
   useEffect(() => {
     fetchProducts().then(p => setProducts(Array.isArray(p) ? p : [])).catch(() => {});
   }, []);
+
+  // After adding a new customer inline, auto-select them once the refreshed
+  // customer list actually contains them (customers may re-render a beat
+  // after refresh() resolves, so this watches for it rather than assuming).
+  useEffect(() => {
+    if (!pendingAutoSelectName) return;
+    const match = customers.find(
+      (c: any) => (c.username || "").toLowerCase() === pendingAutoSelectName.toLowerCase()
+    );
+    if (match) {
+      setCustomerId(match.id);
+      setCustomerName(match.username);
+      setPendingAutoSelectName(null);
+    }
+  }, [customers, pendingAutoSelectName]);
 
   const totalPieces = (bundleLines: BundleLine[]) =>
     bundleLines.reduce((s, b) => s + (b.total || 0), 0);
@@ -249,20 +358,12 @@ const CreateDeliveryOrder: React.FC = () => {
             <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-3)", display: "block", marginBottom: 6 }}>
               Customer *
             </label>
-            <select
-              value={customerId}
-              onChange={e => setCustomerId(Number(e.target.value))}
-              style={{
-                width: "100%", padding: "9px 12px", borderRadius: 8,
-                border: "1px solid var(--border-1)", background: "var(--surface-2)",
-                color: "var(--text-1)", fontSize: 13,
-              }}
-            >
-              <option value="">Select customer...</option>
-              {customers.map((c: any) => (
-                <option key={c.id} value={c.id}>{c.username}</option>
-              ))}
-            </select>
+            <CustomerInput
+              value={customerName}
+              customers={customers}
+              onSelect={(id, name) => { setCustomerId(id); setCustomerName(name); }}
+              onAddNew={(typedName) => { setPendingAutoSelectName(typedName || null); setShowAddCustomer(true); }}
+            />
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-3)", display: "block", marginBottom: 6 }}>
@@ -422,6 +523,14 @@ const CreateDeliveryOrder: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showAddCustomer && (
+        <AddCustomerModal
+          initialName={pendingAutoSelectName || ""}
+          onClose={() => { setShowAddCustomer(false); setPendingAutoSelectName(null); }}
+          onSuccess={() => { setShowAddCustomer(false); refreshCustomers(); }}
+        />
+      )}
     </div>
   );
 };
