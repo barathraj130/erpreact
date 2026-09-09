@@ -101,7 +101,12 @@ router.get('/', authMiddleware, async (req, res) => {
         await ensureTable();
         const rows = await db.pgAll(
             `SELECT sr.*,
-                    c.username AS customer_display
+                    c.username AS customer_display,
+                    c.gstin AS customer_gstin,
+                    c.address_line1 AS customer_address_line1,
+                    c.city_pincode AS customer_city_pincode,
+                    c.state AS customer_state,
+                    c.state_code AS customer_state_code
              FROM sales_returns sr
              LEFT JOIN users c ON c.id = sr.customer_id
              WHERE sr.company_id = $1
@@ -404,7 +409,13 @@ router.get('/:id', authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     try {
         const row = await db.pgGet(
-            `SELECT sr.*, c.username AS customer_display
+            `SELECT sr.*,
+                    c.username AS customer_display,
+                    c.gstin AS customer_gstin,
+                    c.address_line1 AS customer_address_line1,
+                    c.city_pincode AS customer_city_pincode,
+                    c.state AS customer_state,
+                    c.state_code AS customer_state_code
              FROM sales_returns sr
              LEFT JOIN users c ON c.id = sr.customer_id
              WHERE sr.id = $1 AND sr.company_id = $2`,

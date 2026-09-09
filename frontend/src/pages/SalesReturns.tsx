@@ -71,6 +71,11 @@ interface SalesReturn {
   customer_id?: number | null;
   customer_name: string;
   customer_display: string;
+  customer_gstin?: string | null;
+  customer_address_line1?: string | null;
+  customer_city_pincode?: string | null;
+  customer_state?: string | null;
+  customer_state_code?: string | null;
   original_invoice_id: number | null;
   original_invoice_number: string;
   original_invoice_type?: string;
@@ -261,6 +266,17 @@ const ReturnBillView: React.FC<{
               <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>
                 {ret.customer_name || ret.customer_display || "Walk-in Customer"}
               </div>
+              {(ret.customer_address_line1 || ret.customer_city_pincode) && (
+                <div style={{ fontSize: 12, color: "#475569", marginTop: 4, lineHeight: 1.5 }}>
+                  {ret.customer_address_line1}{ret.customer_address_line1 && ret.customer_city_pincode ? ", " : ""}{ret.customer_city_pincode}
+                  {ret.customer_state ? `, ${ret.customer_state}` : ""}
+                </div>
+              )}
+              {ret.customer_gstin && (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1e293b", marginTop: 4 }}>
+                  GSTIN: {ret.customer_gstin}
+                </div>
+              )}
             </div>
           </div>
 
