@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
@@ -198,7 +199,7 @@ const HubForms: React.FC = () => {
         </div>
       </div>
 
-      {respondingId && respondAction && (
+      {respondingId && respondAction && createPortal(
         <div className="neo-modal-overlay" onClick={() => setRespondingId(null)}>
           <div className="neo-modal neo-modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="neo-modal-header">
@@ -223,7 +224,8 @@ const HubForms: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

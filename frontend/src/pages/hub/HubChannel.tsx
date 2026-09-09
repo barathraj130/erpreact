@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
@@ -380,7 +381,7 @@ const HubChannel: React.FC<Props> = ({ channelId: propChannelId, onClose }) => {
       </div>
 
       {/* Forms panel */}
-      {showFormsPanel && (
+      {showFormsPanel && createPortal(
         <div className="neo-modal-overlay" onClick={() => setShowFormsPanel(false)}>
           <div className="neo-modal neo-modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="neo-modal-header">
@@ -399,7 +400,8 @@ const HubChannel: React.FC<Props> = ({ channelId: propChannelId, onClose }) => {
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Form field modal */}
@@ -486,7 +488,7 @@ const FormFieldModal: React.FC<{
 
   const label = FORM_LABELS[formType] || "REQUEST";
 
-  return (
+  return createPortal(
     <div className="neo-modal-overlay" onClick={onCancel}>
       <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
         <div className="neo-modal-header">
@@ -603,7 +605,8 @@ const FormFieldModal: React.FC<{
           <button className="neo-btn-primary" disabled={submitting} onClick={onSubmit}>{submitting ? "Submitting…" : "Submit"}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

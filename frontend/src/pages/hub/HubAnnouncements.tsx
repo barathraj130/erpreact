@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
@@ -164,7 +165,7 @@ const HubAnnouncements: React.FC = () => {
         </div>
       )}
 
-      {showNew && (
+      {showNew && createPortal(
         <div className="neo-modal-overlay" onClick={() => setShowNew(false)}>
           <div className="neo-modal" onClick={(e) => e.stopPropagation()}>
             <div className="neo-modal-header">
@@ -209,7 +210,8 @@ const HubAnnouncements: React.FC = () => {
               <button className="neo-btn-primary" disabled={posting} onClick={post}>{posting ? "Posting…" : "Post"}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

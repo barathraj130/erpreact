@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
@@ -213,7 +214,7 @@ const TeamHub: React.FC = () => {
         {rightColumn}
       </div>
 
-      {showNewDM && (
+      {showNewDM && createPortal(
         <div className="neo-modal-overlay" onClick={() => setShowNewDM(false)}>
           <div className="neo-modal neo-modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="neo-modal-header"><h3 className="neo-modal-title">New Message</h3><button className="neo-modal-close" onClick={() => setShowNewDM(false)}>×</button></div>
@@ -230,10 +231,11 @@ const TeamHub: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showNewChannel && (
+      {showNewChannel && createPortal(
         <div className="neo-modal-overlay" onClick={() => setShowNewChannel(false)}>
           <div className="neo-modal neo-modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="neo-modal-header"><h3 className="neo-modal-title">New Channel</h3><button className="neo-modal-close" onClick={() => setShowNewChannel(false)}>×</button></div>
@@ -261,7 +263,8 @@ const TeamHub: React.FC = () => {
               <button className="neo-btn-primary" onClick={createChannel}>Create Channel</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
