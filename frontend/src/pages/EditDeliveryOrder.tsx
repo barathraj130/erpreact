@@ -120,9 +120,10 @@ interface CustomerInputProps {
   onSelect: (id: number, name: string) => void;
   onAddNew: (typedName: string) => void;
   onSuggest: (typedName: string) => void;
+  onTextChange: (typedName: string) => void;
 }
 
-const CustomerInput: React.FC<CustomerInputProps> = ({ value, customers, canCreate, onSelect, onAddNew, onSuggest }) => {
+const CustomerInput: React.FC<CustomerInputProps> = ({ value, customers, canCreate, onSelect, onAddNew, onSuggest, onTextChange }) => {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -152,7 +153,7 @@ const CustomerInput: React.FC<CustomerInputProps> = ({ value, customers, canCrea
       <input
         type="text"
         value={query}
-        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onChange={e => { setQuery(e.target.value); setOpen(true); onTextChange(e.target.value); }}
         onFocus={() => setOpen(true)}
         placeholder="Type customer name..."
         autoComplete="off"
@@ -438,6 +439,7 @@ const EditDeliveryOrder: React.FC = () => {
               onSelect={(cid, name) => { setCustomerId(cid); setCustomerName(name); setIsSuggestedCustomer(false); }}
               onAddNew={(typedName) => { setPendingAutoSelectName(typedName || null); setShowAddCustomer(true); }}
               onSuggest={(typedName) => { setCustomerId(""); setCustomerName(typedName); setIsSuggestedCustomer(true); }}
+              onTextChange={(typedName) => { setCustomerId(""); setCustomerName(typedName); setIsSuggestedCustomer(!!typedName.trim()); }}
             />
             {isSuggestedCustomer && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 11.5, color: "#b45309" }}>
