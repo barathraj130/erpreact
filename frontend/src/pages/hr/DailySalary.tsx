@@ -482,7 +482,7 @@ const DailySalary: React.FC = () => {
                 </div>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#1e293b" }}>Confirm Payment</div>
-                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Set deduction (if any) for each employee</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Add a bonus, or recover an advance where one is outstanding</div>
                 </div>
               </div>
               <button onClick={() => setShowPayModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: "1.2rem" }}><FaTimes /></button>
