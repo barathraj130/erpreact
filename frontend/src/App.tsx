@@ -156,6 +156,11 @@ import BranchBilling from "./pages/BranchBilling";
 import GlobalInventory from "./pages/GlobalInventory";
 import ProductJourneyList from "./pages/journey/ProductJourneyList";
 import ProductJourneyDetail from "./pages/journey/ProductJourneyDetail";
+import TeamHub from "./pages/hub/TeamHub";
+import HubChannel from "./pages/hub/HubChannel";
+import HubForms from "./pages/hub/HubForms";
+import HubAnnouncements from "./pages/hub/HubAnnouncements";
+import AuthorityManagement from "./pages/admin/authority/AuthorityManagement";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
 import SystemTester from "./pages/SystemTester";
@@ -417,6 +422,7 @@ const App: React.FC = () => {
             <Route path="/work/job-detail/:jobId" element={<WorkJobWorkLog />} />
             <Route path="/work/daily-log/:id/confirm" element={<WorkConfirmEODReport />} />
             <Route path="/admin/employee-portal" element={<EmployeePortalAdmin />} />
+            <Route path="/admin/authority" element={<AuthorityManagement />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>
@@ -454,6 +460,10 @@ const App: React.FC = () => {
             <Route path="/inventory/requests" element={<StockRequestsInbox />} />
             <Route path="/inventory/journey" element={<ProductJourneyList />} />
             <Route path="/inventory/journey/:id" element={<ProductJourneyDetail />} />
+            <Route path="/hub" element={<TeamHub />} />
+            <Route path="/hub/channel/:id" element={<HubChannel />} />
+            <Route path="/hub/forms" element={<HubForms />} />
+            <Route path="/hub/announcements" element={<HubAnnouncements />} />
             <Route path="/branch/billing" element={<BranchBilling />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/employees" element={<Employees />} />

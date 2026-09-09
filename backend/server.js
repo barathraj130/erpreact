@@ -105,6 +105,8 @@ import groupAttendanceRoutes from "./routes/groupAttendance.js";
 import workDailyLogsRoutes from "./routes/workDailyLogs.js";
 import workAccountabilityDailyLogRoutes from "./routes/workAccountabilityDailyLog.js";
 import productJourneyRoutes from "./routes/productJourney.js";
+import hubRoutes from "./routes/hub.js";
+import authorityRoutes from "./routes/authority.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -251,6 +253,8 @@ app.use("/api/work-accountability", workAccountabilityDailyLogRoutes);
 app.use("/api/work-attendance", groupAttendanceRoutes);
 app.use("/api/work-daily-logs", workDailyLogsRoutes);
 app.use("/api/journey", productJourneyRoutes);
+app.use("/api/hub", hubRoutes);
+app.use("/api/authority", authorityRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");

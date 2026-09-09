@@ -12,7 +12,8 @@ import {
   FaUsers,
   FaHistory,
   FaChevronDown,
-  FaFolder
+  FaFolder,
+  FaComments
 } from "react-icons/fa";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuthUser } from "../../hooks/useAuthUser";
@@ -198,6 +199,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
             { name: "Subscriptions", path: "/admin/subscriptions" },
             { name: "Audit Log", path: "/admin/audit-log" },
             { name: "🧪 System Test", path: "/admin/system-test" },
+            { name: "🔐 Authority Management", path: "/admin/authority" },
         ]
       });
 
@@ -223,6 +225,15 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
         });
       }
   }
+
+  // Team Hub — visible to all logged-in staff (not admin-only); a top-level
+  // link (no subItems) rather than a dropdown, same pattern as Documents.
+  baseItems.push({
+    name: "Team Hub",
+    path: "/hub",
+    icon: <FaComments />,
+    section: "Operations",
+  });
 
   // Work Accountability & Strict Audit — visible to all logged-in staff
   // (not admin-only); each server-side action is permission-gated
