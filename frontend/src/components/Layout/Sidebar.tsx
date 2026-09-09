@@ -200,6 +200,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
             { name: "Audit Log", path: "/admin/audit-log" },
             { name: "🧪 System Test", path: "/admin/system-test" },
             { name: "🔐 Authority Management", path: "/admin/authority" },
+            { name: "🖨️ Print HR Forms", path: "/admin/hr-forms" },
         ]
       });
 

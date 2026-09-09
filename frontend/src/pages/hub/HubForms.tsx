@@ -114,6 +114,9 @@ const HubForms: React.FC = () => {
           <p className="neo-page-sub">Leave, advance, expense, and other requests submitted from Team Hub.</p>
         </div>
         <div className="neo-page-actions">
+          {isAdmin && (
+            <button className="neo-btn-secondary neo-btn-sm" onClick={() => navigate("/admin/hr-forms")}>🖨️ Print Blank Forms</button>
+          )}
           <button className="neo-btn-secondary neo-btn-sm" onClick={() => navigate("/hub")}>← Back to Hub</button>
         </div>
       </div>

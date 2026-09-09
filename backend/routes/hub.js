@@ -145,12 +145,18 @@ router.post("/channels", authMiddleware, async (req, res) => {
     const {
       channel_type, name, description, member_ids,
       task_reference_type, task_reference_id, task_reference_number,
+      on_behalf_of_user_id,
     } = req.body;
 
-    const userId = req.user.id;
+    const isAdmin = req.user.role === "admin" || req.user.role === "superadmin";
+    // Admin entering a paper form for an employee without app access — the DM
+    // is created as that employee, not the admin, so it lands correctly under
+    // their own identity. Only admins may use this; everyone else is
+    // byte-identical to before (on_behalf_of_user_id is simply absent).
+    const userId = (on_behalf_of_user_id && isAdmin) ? on_behalf_of_user_id : req.user.id;
     const companyId = req.user.active_company_id;
 
-    if ((channel_type === "group" || channel_type === "announcement") && !(req.user.role === "admin" || req.user.role === "superadmin")) {
+    if ((channel_type === "group" || channel_type === "announcement") && !isAdmin) {
       throw new Error("Only admins can create group or announcement channels");
     }
 
@@ -264,10 +270,14 @@ router.post("/channels/:id/messages", authMiddleware, async (req, res) => {
 
     const {
       content, message_type, file_url, file_name, file_size, file_type,
-      reply_to_id, form_type, form_data,
+      reply_to_id, form_type, form_data, on_behalf_of_user_id,
     } = req.body;
 
-    const userId = req.user.id;
+    // Admin entering a paper form for an employee without app access — the
+    // message/form is recorded as that employee, not the admin. Only admins
+    // may use this; everyone else is byte-identical to before.
+    const isAdmin = req.user.role === "admin" || req.user.role === "superadmin";
+    const userId = (on_behalf_of_user_id && isAdmin) ? on_behalf_of_user_id : req.user.id;
     const channelId = parseInt(req.params.id);
 
     const memberCheck = await client.query(
@@ -309,10 +319,16 @@ router.post("/channels/:id/messages", authMiddleware, async (req, res) => {
         submittedTo = adminRow.rows[0]?.id || null;
       }
 
+      // Server-stamped, not client-claimed — trustworthy record of who
+      // actually entered a paper form on someone else's behalf.
+      const finalFormData = (on_behalf_of_user_id && isAdmin)
+        ? { ...form_data, entered_from_paper_form: true, entered_by_admin_id: req.user.id, entered_at: new Date().toISOString() }
+        : form_data;
+
       await client.query(
         `INSERT INTO hub_forms (company_id, form_type, submitted_by, submitted_to, channel_message_id, form_data, status)
          VALUES ($1,$2,$3,$4,$5,$6,'pending')`,
-        [companyId, form_type, userId, submittedTo, msg.id, JSON.stringify(form_data)]
+        [companyId, form_type, userId, submittedTo, msg.id, JSON.stringify(finalFormData)]
       );
     }
 

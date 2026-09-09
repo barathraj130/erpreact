@@ -161,6 +161,8 @@ import HubChannel from "./pages/hub/HubChannel";
 import HubForms from "./pages/hub/HubForms";
 import HubAnnouncements from "./pages/hub/HubAnnouncements";
 import AuthorityManagement from "./pages/admin/authority/AuthorityManagement";
+import HRFormsPrint from "./pages/admin/hrforms/HRFormsPrint";
+import HRFormsEntry from "./pages/admin/hrforms/HRFormsEntry";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
 import SystemTester from "./pages/SystemTester";
@@ -423,6 +425,8 @@ const App: React.FC = () => {
             <Route path="/work/daily-log/:id/confirm" element={<WorkConfirmEODReport />} />
             <Route path="/admin/employee-portal" element={<EmployeePortalAdmin />} />
             <Route path="/admin/authority" element={<AuthorityManagement />} />
+            <Route path="/admin/hr-forms" element={<HRFormsPrint />} />
+            <Route path="/admin/hr-forms/entry" element={<HRFormsEntry />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>
