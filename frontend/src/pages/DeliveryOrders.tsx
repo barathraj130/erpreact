@@ -9,6 +9,7 @@ interface DeliveryOrder {
   order_number: string;
   order_date: string;
   customer_name: string;
+  is_suggested_customer?: boolean;
   item_count: number;
   total_pieces: number;
   status: "draft" | "ready" | "invoiced";
@@ -181,7 +182,10 @@ const DeliveryOrders: React.FC = () => {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Customer</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{o.customer_name || "---"}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                    {o.customer_name || "---"}
+                    {o.is_suggested_customer && <span title="Suggested — not yet a real customer" style={{ marginLeft: 6 }}>⏳</span>}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Pieces</div>
@@ -234,7 +238,12 @@ const DeliveryOrders: React.FC = () => {
                       {o.order_date ? new Date(o.order_date).toLocaleDateString("en-IN") : "---"}
                     </span>
                   </td>
-                  <td><div className="font-bold">{o.customer_name || "---"}</div></td>
+                  <td>
+                    <div className="font-bold">
+                      {o.customer_name || "---"}
+                      {o.is_suggested_customer && <span title="Suggested — not yet a real customer" style={{ marginLeft: 6 }}>⏳</span>}
+                    </div>
+                  </td>
                   <td>{o.item_count} product{Number(o.item_count) !== 1 ? "s" : ""}</td>
                   <td>{Number(o.total_pieces).toLocaleString()} pcs</td>
                   <td>

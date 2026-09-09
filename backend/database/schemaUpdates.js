@@ -37,6 +37,14 @@ export const runSchemaUpdates = async () => {
         )
     `).catch(() => {});
 
+    // Free-text customer name for delivery orders created by staff who can
+    // suggest a customer but not create one outright — the order saves with
+    // customer_id NULL and this name instead, shown through to Edit and to
+    // Create Invoice so an admin can link/create the real customer at bill time.
+    await db.query(`
+        ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
+    `).catch(() => {});
+
     // ── Critical standalone migrations (each isolated — never blocks others) ──
     // customer_points table — required by pointsService / invoiceRoutes
     await db.query(`

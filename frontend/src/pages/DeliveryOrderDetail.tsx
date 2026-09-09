@@ -31,6 +31,7 @@ interface DeliveryOrder {
   order_date: string;
   customer_name: string;
   customer_id: number;
+  is_suggested_customer?: boolean;
   status: "draft" | "ready" | "invoiced";
   converted_invoice_id: number | null;
   converted_invoice_number: string | null;
@@ -150,7 +151,13 @@ const DeliveryOrderDetail: React.FC = () => {
               }}>{statusBadge.label}</span>
             </h1>
             <p>
-              {order.customer_name} &nbsp;·&nbsp;
+              {order.customer_name}
+              {order.is_suggested_customer && (
+                <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", padding: "2px 8px", borderRadius: 20 }}>
+                  ⏳ suggested — not yet a real customer
+                </span>
+              )}
+              &nbsp;·&nbsp;
               {order.order_date ? new Date(order.order_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "---"}
             </p>
           </div>

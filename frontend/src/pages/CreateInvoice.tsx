@@ -279,6 +279,10 @@ const CreateInvoice: React.FC = () => {
   const [deliveryOrderNumber, setDeliveryOrderNumber] = useState<string>("");
   const [deliveryOrderBanner, setDeliveryOrderBanner] = useState(false);
   const [doItemBundleSummary, setDoItemBundleSummary] = useState<Record<number, string>>({});
+  // Set when the delivery order has no linked customer_id — a staff member
+  // could only suggest this name (see CreateDeliveryOrder.tsx); an admin
+  // needs to pick or create the real customer before this invoice is saved.
+  const [suggestedCustomerName, setSuggestedCustomerName] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -325,6 +329,7 @@ const CreateInvoice: React.FC = () => {
         setFromDeliveryOrderId(Number(doId));
         setDeliveryOrderNumber(order.order_number);
         setDeliveryOrderBanner(true);
+        setSuggestedCustomerName(!order.customer_id && order.customer_name ? order.customer_name : null);
 
         // Pre-fill customer
         setCustomerId(order.customer_id);
@@ -715,6 +720,14 @@ const CreateInvoice: React.FC = () => {
                   >
                     ← Back to Delivery Order
                   </button>
+                </div>
+              )}
+              {suggestedCustomerName && (
+                <div style={{
+                  background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 10,
+                  padding: "12px 16px", marginBottom: 16, fontSize: 12.5, color: "#92400e",
+                }}>
+                  <b>⚠️ No customer linked yet</b> — whoever created this delivery order only had "{suggestedCustomerName}" typed as a name, not a real customer record. Select an existing customer below, or add "{suggestedCustomerName}" as a new customer, before saving this invoice.
                 </div>
               )}
               <div className="db-page-header" style={{ marginBottom: '24px' }}>

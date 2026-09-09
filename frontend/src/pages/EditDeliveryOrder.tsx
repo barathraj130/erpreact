@@ -1,10 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { FaArrowLeft, FaPlus, FaTrash, FaSave } from "react-icons/fa";
+import { FaArrowLeft, FaPlus, FaTrash, FaSave, FaUserPlus, FaLightbulb } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import { useUsers } from "../hooks/useUsers";
+import { useAuthUser } from "../hooks/useAuthUser";
 import { fetchProducts, Product } from "../api/productApi";
+import AddCustomerModal from "./AddCustomerModal";
 import "./PageShared.css";
+
+// Only these roles can create a brand-new customer record outright — everyone
+// else (staff, field employees) can only suggest a name; the order saves with
+// that name and no customer_id until an admin links/creates the real customer.
+const CAN_CREATE_CUSTOMER_ROLES = ["admin", "superadmin", "branch_manager"];
 
 interface BundleLine {
   bundles: number;
@@ -104,12 +111,126 @@ const ProductInput: React.FC<ProductInputProps> = ({ value, products, onChange }
 };
 // ───────────────────────────────────────────────────────────────────────────
 
+// ── Typeahead customer input — suggests as you type; offers to add a new
+// customer inline when nothing matches, instead of a long native <select>.
+interface CustomerInputProps {
+  value: string;
+  customers: any[];
+  canCreate: boolean;
+  onSelect: (id: number, name: string) => void;
+  onAddNew: (typedName: string) => void;
+  onSuggest: (typedName: string) => void;
+}
+
+const CustomerInput: React.FC<CustomerInputProps> = ({ value, customers, canCreate, onSelect, onAddNew, onSuggest }) => {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const filtered = query.trim()
+    ? customers.filter((c: any) => (c.username || "").toLowerCase().includes(query.toLowerCase())).slice(0, 8)
+    : customers.slice(0, 8);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selectCustomer = (c: any) => {
+    setQuery(c.username);
+    setOpen(false);
+    onSelect(c.id, c.username);
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Type customer name..."
+        autoComplete="off"
+        style={{
+          width: "100%", padding: "9px 12px", borderRadius: 8,
+          border: "1px solid var(--border-1)", background: "var(--surface-2)",
+          color: "var(--text-1)", fontSize: 13, boxSizing: "border-box",
+        }}
+      />
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+          background: "var(--surface-1)", border: "1px solid var(--border-1)",
+          borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          zIndex: 1000, maxHeight: 260, overflowY: "auto",
+        }}>
+          {filtered.map((c: any) => (
+            <div
+              key={c.id}
+              onMouseDown={() => selectCustomer(c)}
+              style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid var(--border-1)", color: "var(--text-1)" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              {c.username}
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div style={{ padding: "10px 14px", fontSize: 12.5, color: "var(--text-3)" }}>
+              No customer matches "{query}"
+            </div>
+          )}
+          {canCreate ? (
+            <div
+              onMouseDown={() => { setOpen(false); onAddNew(query.trim()); }}
+              style={{
+                padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700,
+                color: "var(--erp-primary, #5B4BFF)", display: "flex", alignItems: "center", gap: 8,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              <FaUserPlus size={12} /> {query.trim() ? `Add "${query.trim()}" as new customer` : "Add New Customer"}
+            </div>
+          ) : (
+            query.trim() && (
+              <div
+                onMouseDown={() => { setOpen(false); onSuggest(query.trim()); }}
+                style={{
+                  padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700,
+                  color: "#b45309", display: "flex", alignItems: "center", gap: 8,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                <FaLightbulb size={12} /> Use "{query.trim()}" — pending admin approval
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+// ───────────────────────────────────────────────────────────────────────────
+
 const EditDeliveryOrder: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { customers } = useUsers();
+  const { user } = useAuthUser();
+  const canCreateCustomer = !!user?.role && CAN_CREATE_CUSTOMER_ROLES.includes(user.role);
+  const { customers, refresh: refreshCustomers } = useUsers();
   const [products, setProducts] = useState<Product[]>([]);
   const [customerId, setCustomerId] = useState<number | "">("");
+  const [customerName, setCustomerName] = useState("");
+  const [isSuggestedCustomer, setIsSuggestedCustomer] = useState(false);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [pendingAutoSelectName, setPendingAutoSelectName] = useState<string | null>(null);
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0]);
   const [orderNumber, setOrderNumber] = useState("");
   const [items, setItems] = useState<DOItem[]>([
@@ -122,6 +243,21 @@ const EditDeliveryOrder: React.FC = () => {
   useEffect(() => {
     fetchProducts().then(p => setProducts(Array.isArray(p) ? p : [])).catch(() => {});
   }, []);
+
+  // After adding a new customer inline, auto-select them once the refreshed
+  // customer list actually contains them.
+  useEffect(() => {
+    if (!pendingAutoSelectName) return;
+    const match = customers.find(
+      (c: any) => (c.username || "").toLowerCase() === pendingAutoSelectName.toLowerCase()
+    );
+    if (match) {
+      setCustomerId(match.id);
+      setCustomerName(match.username);
+      setIsSuggestedCustomer(false);
+      setPendingAutoSelectName(null);
+    }
+  }, [customers, pendingAutoSelectName]);
 
   // Load existing order
   useEffect(() => {
@@ -138,6 +274,8 @@ const EditDeliveryOrder: React.FC = () => {
         setOrderNumber(o.order_number);
         setOrderDate(o.order_date?.split("T")[0] || new Date().toISOString().split("T")[0]);
         setCustomerId(o.customer_id || "");
+        setCustomerName(o.customer_name || "");
+        setIsSuggestedCustomer(!o.customer_id && !!o.customer_name);
         setItems(
           (o.items || []).map((item: any) => ({
             id: item.id,
@@ -204,7 +342,7 @@ const EditDeliveryOrder: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!customerId) return setError("Select a customer.");
+    if (!customerId && !customerName.trim()) return setError("Select a customer, or type a name to suggest.");
     const validItems = items.filter(i => i.product_name.trim() && totalPieces(i.bundle_lines) > 0);
     if (validItems.length === 0) return setError("Add at least one product with bundle quantities.");
     setError(null);
@@ -213,7 +351,8 @@ const EditDeliveryOrder: React.FC = () => {
       const res = await apiFetch(`/delivery-orders/${id}`, {
         method: "PUT",
         body: JSON.stringify({
-          customer_id: customerId,
+          customer_id: customerId || null,
+          customer_name: customerId ? undefined : customerName.trim(),
           order_date: orderDate,
           items: validItems.map(item => ({
             product_id: item.product_id,
@@ -292,20 +431,19 @@ const EditDeliveryOrder: React.FC = () => {
             <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-3)", display: "block", marginBottom: 6 }}>
               Customer *
             </label>
-            <select
-              value={customerId}
-              onChange={e => setCustomerId(Number(e.target.value))}
-              style={{
-                width: "100%", padding: "9px 12px", borderRadius: 8,
-                border: "1px solid var(--border-1)", background: "var(--surface-2)",
-                color: "var(--text-1)", fontSize: 13,
-              }}
-            >
-              <option value="">Select customer...</option>
-              {customers.map((c: any) => (
-                <option key={c.id} value={c.id}>{c.username}</option>
-              ))}
-            </select>
+            <CustomerInput
+              value={customerName}
+              customers={customers}
+              canCreate={canCreateCustomer}
+              onSelect={(cid, name) => { setCustomerId(cid); setCustomerName(name); setIsSuggestedCustomer(false); }}
+              onAddNew={(typedName) => { setPendingAutoSelectName(typedName || null); setShowAddCustomer(true); }}
+              onSuggest={(typedName) => { setCustomerId(""); setCustomerName(typedName); setIsSuggestedCustomer(true); }}
+            />
+            {isSuggestedCustomer && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 11.5, color: "#b45309" }}>
+                <FaLightbulb size={11} /> New customer — an admin will need to add "{customerName}" properly before this order is billed.
+              </div>
+            )}
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-3)", display: "block", marginBottom: 6 }}>
@@ -465,6 +603,14 @@ const EditDeliveryOrder: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showAddCustomer && (
+        <AddCustomerModal
+          initialName={pendingAutoSelectName || ""}
+          onClose={() => { setShowAddCustomer(false); setPendingAutoSelectName(null); }}
+          onSuccess={() => { setShowAddCustomer(false); refreshCustomers(); }}
+        />
+      )}
     </div>
   );
 };

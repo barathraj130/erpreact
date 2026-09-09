@@ -12,7 +12,8 @@ router.get('/', authMiddleware, async (req, res) => {
       SELECT
         dord.id, dord.order_number, dord.order_date, dord.status,
         dord.converted_invoice_id, dord.created_at,
-        u.username AS customer_name,
+        COALESCE(u.username, dord.customer_name) AS customer_name,
+        dord.customer_id IS NULL AS is_suggested_customer,
         COUNT(doi.id) AS item_count,
         COALESCE(SUM(doi.total_pieces), 0) AS total_pieces,
         inv.invoice_number AS converted_invoice_number
@@ -21,7 +22,7 @@ router.get('/', authMiddleware, async (req, res) => {
       LEFT JOIN delivery_order_items doi ON doi.delivery_order_id = dord.id
       LEFT JOIN invoices inv ON inv.id = dord.converted_invoice_id
       WHERE dord.company_id = $1
-      GROUP BY dord.id, u.username, inv.invoice_number
+      GROUP BY dord.id, u.username, dord.customer_name, inv.invoice_number
       ORDER BY dord.created_at DESC
     `, [companyId]);
     res.json({ success: true, orders: rows });
@@ -34,7 +35,10 @@ router.get('/', authMiddleware, async (req, res) => {
 // POST /api/delivery-orders
 router.post('/', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
-  const { customer_id, order_date, items } = req.body;
+  const { customer_id, customer_name, order_date, items } = req.body;
+  if (!customer_id && !customer_name?.trim()) {
+    return res.json({ success: false, error: 'Select a customer, or suggest a name for one that doesn\'t exist yet.' });
+  }
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -47,11 +51,14 @@ router.post('/', authMiddleware, async (req, res) => {
     const dateStr = (order_date || new Date().toISOString().split('T')[0]).replace(/-/g, '');
     const orderNumber = `DO-${dateStr}-${seq}`;
 
+    // A suggested (unlinked) customer stores only the typed name — customer_id
+    // stays NULL until an admin links/creates the real customer, at latest by
+    // the time this order is converted into an invoice.
     const orderRes = await client.query(`
-      INSERT INTO delivery_orders (company_id, customer_id, order_number, order_date, status, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, 'draft', NOW(), NOW())
+      INSERT INTO delivery_orders (company_id, customer_id, customer_name, order_number, order_date, status, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, 'draft', NOW(), NOW())
       RETURNING *
-    `, [companyId, customer_id || null, orderNumber, order_date || new Date().toISOString().split('T')[0]]);
+    `, [companyId, customer_id || null, customer_id ? null : (customer_name || null), orderNumber, order_date || new Date().toISOString().split('T')[0]]);
 
     const orderId = orderRes.rows[0].id;
 
@@ -82,7 +89,10 @@ router.get('/:id', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
   try {
     const orderRes = await db.pgGet(`
-      SELECT dord.*, u.username AS customer_name, inv.invoice_number AS converted_invoice_number
+      SELECT dord.*,
+        COALESCE(u.username, dord.customer_name) AS customer_name,
+        dord.customer_id IS NULL AS is_suggested_customer,
+        inv.invoice_number AS converted_invoice_number
       FROM delivery_orders dord
       LEFT JOIN users u ON u.id = dord.customer_id
       LEFT JOIN invoices inv ON inv.id = dord.converted_invoice_id
@@ -117,7 +127,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // PUT /api/delivery-orders/:id  (edit — draft only)
 router.put('/:id', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
-  const { customer_id, order_date, items } = req.body;
+  const { customer_id, customer_name, order_date, items } = req.body;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -136,8 +146,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 
     await client.query(
-      `UPDATE delivery_orders SET customer_id = $1, order_date = $2, updated_at = NOW() WHERE id = $3`,
-      [customer_id || null, order_date, req.params.id]
+      `UPDATE delivery_orders SET customer_id = $1, customer_name = $2, order_date = $3, updated_at = NOW() WHERE id = $4`,
+      [customer_id || null, customer_id ? null : (customer_name || null), order_date, req.params.id]
     );
 
     // Replace items
