@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../../utils/api";
+import { fetchProfile } from "../../../api/companyApi";
 import "../../../styles/neo-neu-motion.css";
 
 export interface FormMeta {
@@ -256,7 +257,11 @@ const FORM_FIELD_DEFS: Record<string, FormDef> = {
 
 export const getFormDefinition = (formId: string): FormDef => FORM_FIELD_DEFS[formId] || FORM_FIELD_DEFS.leave_request;
 
-const generatePrintHTML = (form: FormDef) => `
+interface CompanyHeader { name: string; addressLine: string; }
+
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -295,8 +300,8 @@ const generatePrintHTML = (form: FormDef) => `
 <body>
   <div class="form-header">
     <div>
-      <div class="company-name">FLUXORA ERP</div>
-      <div class="company-sub">JBS Knit Wear · Tiruppur, Tamil Nadu</div>
+      <div class="company-name">${escapeHtml(company.name)}</div>
+      ${company.addressLine ? `<div class="company-sub">${escapeHtml(company.addressLine)}</div>` : ""}
     </div>
     <div class="form-title-block">
       <div class="form-title">${form.title}</div>
@@ -335,6 +340,7 @@ const generatePrintHTML = (form: FormDef) => `
 const HRFormsPrint: React.FC = () => {
   const navigate = useNavigate();
   const [todayCount, setTodayCount] = useState(0);
+  const [company, setCompany] = useState<CompanyHeader>({ name: "Company Name", addressLine: "" });
 
   useEffect(() => {
     apiFetch("/hub/forms?view=inbox")
@@ -347,13 +353,20 @@ const HRFormsPrint: React.FC = () => {
         setTodayCount(count);
       })
       .catch(() => {});
+
+    fetchProfile()
+      .then((p) => {
+        const addressLine = [p.address_line1, p.city_pincode, p.state].filter(Boolean).join(", ");
+        setCompany({ name: p.company_name || "Company Name", addressLine });
+      })
+      .catch(() => {});
   }, []);
 
   const printForm = (formId: string) => {
     const form = getFormDefinition(formId);
     const printWindow = window.open("", "_blank", "width=794,height=1123");
     if (!printWindow) { alert("Please allow popups to print."); return; }
-    printWindow.document.write(generatePrintHTML(form));
+    printWindow.document.write(generatePrintHTML(form, company));
     printWindow.document.close();
     setTimeout(() => { printWindow.print(); }, 500);
   };
