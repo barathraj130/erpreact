@@ -11,6 +11,10 @@ const FORM_LABELS: Record<string, string> = {
   leave_request: "Leave Request", advance_request: "Advance Request", expense_claim: "Expense Claim",
   complaint: "Complaint", suggestion: "Suggestion", overtime_request: "Overtime Request",
   work_from_home: "Work From Home", asset_request: "Asset Request",
+  loan_request: "Employee Loan Request", chit_fund_join: "Chit Fund Enrollment", chit_bid_request: "Chit Bid Request",
+  customer_complaint: "Customer Complaint", customer_feedback: "Customer Feedback",
+  customer_registration: "New Customer Registration", customer_visit_report: "Customer Visit Report",
+  customer_credit_request: "Customer Credit Request",
 };
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -340,6 +344,172 @@ const HRFormsEntry: React.FC = () => {
                 <Field label="Asset Name"><input className="neu-input" value={fields.asset_name || ""} onChange={(e) => set("asset_name", e.target.value)} /></Field>
                 <Field label="Required By"><input type="date" className="neu-input" value={fields.needed_by || ""} onChange={(e) => set("needed_by", e.target.value)} /></Field>
                 <Field label="Purpose / Reason"><textarea className="neu-textarea" value={fields.reason || ""} onChange={(e) => set("reason", e.target.value)} /></Field>
+              </>
+            )}
+            {formType === "loan_request" && (
+              <>
+                <Field label="Loan Amount Requested (₹)"><input type="number" className="neu-input" value={fields.loan_amount || ""} onChange={(e) => set("loan_amount", Number(e.target.value))} /></Field>
+                <Field label="Repayment Period (months)"><input type="number" className="neu-input" value={fields.repayment_months || ""} onChange={(e) => set("repayment_months", Number(e.target.value))} /></Field>
+                <Field label="Monthly EMI (₹)"><input type="number" className="neu-input" value={fields.monthly_emi || ""} onChange={(e) => set("monthly_emi", Number(e.target.value))} /></Field>
+                <Field label="Purpose">
+                  <select className="neu-select" value={fields.purpose || ""} onChange={(e) => set("purpose", e.target.value)}>
+                    <option value="">Select…</option><option>Medical</option><option>House Repair</option><option>Marriage</option><option>Education</option><option>Vehicle</option><option>Other</option>
+                  </select>
+                </Field>
+                <Field label="Detailed Reason"><textarea className="neu-textarea" value={fields.description || ""} onChange={(e) => set("description", e.target.value)} /></Field>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Years of Service"><input type="number" className="neu-input" value={fields.years_of_service || ""} onChange={(e) => set("years_of_service", Number(e.target.value))} /></Field>
+                  <Field label="Current Monthly Salary (₹)"><input type="number" className="neu-input" value={fields.current_salary || ""} onChange={(e) => set("current_salary", Number(e.target.value))} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="Guarantor Name"><input className="neu-input" value={fields.guarantor_name || ""} onChange={(e) => set("guarantor_name", e.target.value)} /></Field>
+                  <Field label="Relation"><input className="neu-input" value={fields.guarantor_relation || ""} onChange={(e) => set("guarantor_relation", e.target.value)} /></Field>
+                  <Field label="Guarantor Phone"><input className="neu-input" value={fields.guarantor_phone || ""} onChange={(e) => set("guarantor_phone", e.target.value)} /></Field>
+                </div>
+              </>
+            )}
+            {formType === "chit_fund_join" && (
+              <>
+                <Field label="Chit Type">
+                  <select className="neu-select" value={fields.chit_type || ""} onChange={(e) => set("chit_type", e.target.value)}>
+                    <option value="">Select…</option><option value="internal">Company Internal</option><option value="external">External</option>
+                  </select>
+                </Field>
+                <Field label="Chit Group Name"><input className="neu-input" value={fields.group_name || ""} onChange={(e) => set("group_name", e.target.value)} /></Field>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="Monthly Contribution (₹)"><input type="number" className="neu-input" value={fields.monthly_contribution || ""} onChange={(e) => set("monthly_contribution", Number(e.target.value))} /></Field>
+                  <Field label="Duration (months)"><input type="number" className="neu-input" value={fields.duration_months || ""} onChange={(e) => set("duration_months", Number(e.target.value))} /></Field>
+                  <Field label="Total Chit Value (₹)"><input type="number" className="neu-input" value={fields.total_chit_value || ""} onChange={(e) => set("total_chit_value", Number(e.target.value))} /></Field>
+                </div>
+                <Field label="Payment Method">
+                  <select className="neu-select" value={fields.payment_method || ""} onChange={(e) => set("payment_method", e.target.value)}>
+                    <option value="">Select…</option><option>Salary Deduction</option><option>Cash Payment</option><option>Bank Transfer</option>
+                  </select>
+                </Field>
+                <Field label="Reason for Joining"><textarea className="neu-textarea" value={fields.reason || ""} onChange={(e) => set("reason", e.target.value)} /></Field>
+              </>
+            )}
+            {formType === "chit_bid_request" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="Chit Group"><input className="neu-input" value={fields.group_name || ""} onChange={(e) => set("group_name", e.target.value)} /></Field>
+                  <Field label="Ticket Number"><input type="number" className="neu-input" value={fields.ticket_number || ""} onChange={(e) => set("ticket_number", Number(e.target.value))} /></Field>
+                  <Field label="Bid Month"><input type="number" className="neu-input" value={fields.bid_month || ""} onChange={(e) => set("bid_month", Number(e.target.value))} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="My Bid Amount (₹)"><input type="number" className="neu-input" value={fields.bid_amount || ""} onChange={(e) => set("bid_amount", Number(e.target.value))} /></Field>
+                  <Field label="Expected Receive Amount (₹)"><input type="number" className="neu-input" value={fields.expected_amount || ""} onChange={(e) => set("expected_amount", Number(e.target.value))} /></Field>
+                </div>
+                <Field label="Reason for Taking Chit Now"><textarea className="neu-textarea" value={fields.reason || ""} onChange={(e) => set("reason", e.target.value)} /></Field>
+                <Field label="How will you use the amount"><textarea className="neu-textarea" value={fields.usage || ""} onChange={(e) => set("usage", e.target.value)} /></Field>
+              </>
+            )}
+            {formType === "customer_complaint" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Customer Name"><input className="neu-input" value={fields.customer_name || ""} onChange={(e) => set("customer_name", e.target.value)} /></Field>
+                  <Field label="Phone"><input className="neu-input" value={fields.customer_phone || ""} onChange={(e) => set("customer_phone", e.target.value)} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Invoice Number"><input className="neu-input" value={fields.invoice_number || ""} onChange={(e) => set("invoice_number", e.target.value)} /></Field>
+                  <Field label="City"><input className="neu-input" value={fields.customer_city || ""} onChange={(e) => set("customer_city", e.target.value)} /></Field>
+                </div>
+                <Field label="Complaint Type">
+                  <select className="neu-select" value={fields.complaint_type || ""} onChange={(e) => set("complaint_type", e.target.value)}>
+                    <option value="">Select…</option><option>Product Quality</option><option>Wrong Item</option><option>Short Quantity</option><option>Delivery Issue</option><option>Billing Issue</option><option>Staff Behaviour</option><option>Other</option>
+                  </select>
+                </Field>
+                <Field label="Product Name"><input className="neu-input" value={fields.product_name || ""} onChange={(e) => set("product_name", e.target.value)} /></Field>
+                <Field label="Complaint Description"><textarea className="neu-textarea" value={fields.description || ""} onChange={(e) => set("description", e.target.value)} /></Field>
+                <Field label="Expected Resolution">
+                  <select className="neu-select" value={fields.expected_resolution || ""} onChange={(e) => set("expected_resolution", e.target.value)}>
+                    <option value="">Select…</option><option>Replace Product</option><option>Refund</option><option>Credit Note</option><option>Apology</option><option>Other</option>
+                  </select>
+                </Field>
+              </>
+            )}
+            {formType === "customer_feedback" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Customer Name"><input className="neu-input" value={fields.customer_name || ""} onChange={(e) => set("customer_name", e.target.value)} /></Field>
+                  <Field label="Phone"><input className="neu-input" value={fields.customer_phone || ""} onChange={(e) => set("customer_phone", e.target.value)} /></Field>
+                </div>
+                {["product_quality", "pricing", "staff_behaviour", "delivery_speed", "overall_satisfaction"].map((k) => (
+                  <Field key={k} label={`${k.replace(/_/g, " ")} (1–4)`}>
+                    <select className="neu-select" value={fields[k] || ""} onChange={(e) => set(k, Number(e.target.value))}>
+                      <option value="">—</option><option value="1">1 Poor</option><option value="2">2 Average</option><option value="3">3 Good</option><option value="4">4 Excellent</option>
+                    </select>
+                  </Field>
+                ))}
+                <Field label="What did you like most"><textarea className="neu-textarea" value={fields.liked_most || ""} onChange={(e) => set("liked_most", e.target.value)} /></Field>
+                <Field label="What can we improve"><textarea className="neu-textarea" value={fields.improve || ""} onChange={(e) => set("improve", e.target.value)} /></Field>
+                <Field label="Will recommend us?">
+                  <select className="neu-select" value={fields.recommend || ""} onChange={(e) => set("recommend", e.target.value)}>
+                    <option value="">Select…</option><option>Yes</option><option>No</option><option>Maybe</option>
+                  </select>
+                </Field>
+              </>
+            )}
+            {formType === "customer_registration" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Business / Shop Name"><input className="neu-input" value={fields.business_name || ""} onChange={(e) => set("business_name", e.target.value)} /></Field>
+                  <Field label="Owner Name"><input className="neu-input" value={fields.owner_name || ""} onChange={(e) => set("owner_name", e.target.value)} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Phone 1"><input className="neu-input" value={fields.customer_phone || ""} onChange={(e) => set("customer_phone", e.target.value)} /></Field>
+                  <Field label="WhatsApp"><input className="neu-input" value={fields.whatsapp || ""} onChange={(e) => set("whatsapp", e.target.value)} /></Field>
+                </div>
+                <Field label="Full Address"><textarea className="neu-textarea" value={fields.customer_address || ""} onChange={(e) => set("customer_address", e.target.value)} /></Field>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="City"><input className="neu-input" value={fields.customer_city || ""} onChange={(e) => set("customer_city", e.target.value)} /></Field>
+                  <Field label="State"><input className="neu-input" value={fields.state || ""} onChange={(e) => set("state", e.target.value)} /></Field>
+                  <Field label="GSTIN"><input className="neu-input" value={fields.customer_gstin || ""} onChange={(e) => set("customer_gstin", e.target.value)} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Est. Monthly Purchase (₹)"><input type="number" className="neu-input" value={fields.est_monthly_purchase || ""} onChange={(e) => set("est_monthly_purchase", Number(e.target.value))} /></Field>
+                  <Field label="Credit Limit Requested (₹)"><input type="number" className="neu-input" value={fields.credit_limit || ""} onChange={(e) => set("credit_limit", Number(e.target.value))} /></Field>
+                </div>
+              </>
+            )}
+            {formType === "customer_visit_report" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Customer Name"><input className="neu-input" value={fields.customer_name || ""} onChange={(e) => set("customer_name", e.target.value)} /></Field>
+                  <Field label="Customer Phone"><input className="neu-input" value={fields.customer_phone || ""} onChange={(e) => set("customer_phone", e.target.value)} /></Field>
+                </div>
+                <Field label="Visit Date"><input type="date" className="neu-input" value={fields.visit_date || ""} onChange={(e) => set("visit_date", e.target.value)} /></Field>
+                <Field label="Visit Purpose">
+                  <select className="neu-select" value={fields.visit_purpose || ""} onChange={(e) => set("visit_purpose", e.target.value)}>
+                    <option value="">Select…</option><option>Sales</option><option>Collection</option><option>Complaint</option><option>Follow Up</option>
+                  </select>
+                </Field>
+                <Field label="Discussion Summary"><textarea className="neu-textarea" value={fields.summary || ""} onChange={(e) => set("summary", e.target.value)} /></Field>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Order Amount (₹)"><input type="number" className="neu-input" value={fields.order_amount || ""} onChange={(e) => set("order_amount", Number(e.target.value))} /></Field>
+                  <Field label="Payment Collected (₹)"><input type="number" className="neu-input" value={fields.payment_collected || ""} onChange={(e) => set("payment_collected", Number(e.target.value))} /></Field>
+                </div>
+                <Field label="Next Action"><textarea className="neu-textarea" value={fields.next_action || ""} onChange={(e) => set("next_action", e.target.value)} /></Field>
+                <Field label="Next Follow Up Date"><input type="date" className="neu-input" value={fields.follow_up_date || ""} onChange={(e) => set("follow_up_date", e.target.value)} /></Field>
+              </>
+            )}
+            {formType === "customer_credit_request" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Customer Name"><input className="neu-input" value={fields.customer_name || ""} onChange={(e) => set("customer_name", e.target.value)} /></Field>
+                  <Field label="Phone"><input className="neu-input" value={fields.customer_phone || ""} onChange={(e) => set("customer_phone", e.target.value)} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="Current Credit Limit (₹)"><input type="number" className="neu-input" value={fields.current_limit || ""} onChange={(e) => set("current_limit", Number(e.target.value))} /></Field>
+                  <Field label="Requested New Limit (₹)"><input type="number" className="neu-input" value={fields.requested_limit || ""} onChange={(e) => set("requested_limit", Number(e.target.value))} /></Field>
+                  <Field label="Current Outstanding (₹)"><input type="number" className="neu-input" value={fields.outstanding || ""} onChange={(e) => set("outstanding", Number(e.target.value))} /></Field>
+                </div>
+                <Field label="Payment History">
+                  <select className="neu-select" value={fields.payment_history || ""} onChange={(e) => set("payment_history", e.target.value)}>
+                    <option value="">Select…</option><option>Always on time</option><option>Sometimes delayed</option><option>Often delayed</option>
+                  </select>
+                </Field>
+                <Field label="Reason for Credit Increase"><textarea className="neu-textarea" value={fields.reason || ""} onChange={(e) => set("reason", e.target.value)} /></Field>
               </>
             )}
           </div>

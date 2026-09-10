@@ -107,6 +107,7 @@ import workAccountabilityDailyLogRoutes from "./routes/workAccountabilityDailyLo
 import productJourneyRoutes from "./routes/productJourney.js";
 import hubRoutes from "./routes/hub.js";
 import authorityRoutes from "./routes/authority.js";
+import loanChitRoutes from "./routes/loanChitManagement.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -255,6 +256,7 @@ app.use("/api/work-daily-logs", workDailyLogsRoutes);
 app.use("/api/journey", productJourneyRoutes);
 app.use("/api/hub", hubRoutes);
 app.use("/api/authority", authorityRoutes);
+app.use("/api/loan-chit", loanChitRoutes);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 console.log("✅ Routes Mounted.");

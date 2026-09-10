@@ -201,6 +201,8 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
             { name: "🧪 System Test", path: "/admin/system-test" },
             { name: "🔐 Authority Management", path: "/admin/authority" },
             { name: "🖨️ Print HR Forms", path: "/admin/hr-forms" },
+            { name: "🏦 Loan Management", path: "/admin/loan-management" },
+            { name: "🎫 Chit Management", path: "/admin/chit-management" },
         ]
       });
 

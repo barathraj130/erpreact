@@ -163,6 +163,8 @@ import HubAnnouncements from "./pages/hub/HubAnnouncements";
 import AuthorityManagement from "./pages/admin/authority/AuthorityManagement";
 import HRFormsPrint from "./pages/admin/hrforms/HRFormsPrint";
 import HRFormsEntry from "./pages/admin/hrforms/HRFormsEntry";
+import EmployeeLoanManagement from "./pages/admin/hrforms/LoanManagement";
+import EmployeeChitManagement from "./pages/admin/hrforms/ChitManagement";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
 import SystemTester from "./pages/SystemTester";
@@ -427,6 +429,8 @@ const App: React.FC = () => {
             <Route path="/admin/authority" element={<AuthorityManagement />} />
             <Route path="/admin/hr-forms" element={<HRFormsPrint />} />
             <Route path="/admin/hr-forms/entry" element={<HRFormsEntry />} />
+            <Route path="/admin/loan-management" element={<EmployeeLoanManagement />} />
+            <Route path="/admin/chit-management" element={<EmployeeChitManagement />} />
           </Route>
 
           <Route element={<WorkspaceRoute />}>
