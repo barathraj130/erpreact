@@ -376,7 +376,7 @@ const HRFormsPrint: React.FC = () => {
       <div className="neo-page-header">
         <div>
           <h1 className="neo-page-title">🖨️ Print HR Forms</h1>
-          <p className="neo-page-sub">For employees without smartphones — print blank forms, collect filled forms, enter data on their behalf.</p>
+          <p className="neo-page-sub">For employees who can't (or would rather not) use the app — print blank forms, collect filled forms, enter data on their behalf. Anyone with a login can also submit these from Team Hub themselves.</p>
         </div>
         <div className="neo-page-actions">
           {todayCount > 0 && (

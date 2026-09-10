@@ -180,13 +180,18 @@ const HRFormsEntry: React.FC = () => {
       <div className="neu-card" style={{ padding: 18, marginBottom: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 800, color: "var(--neu-text-muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Step 1 — Select Employee</div>
         {selectedEmployee ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(91,75,255,0.06)", border: "1px solid rgba(91,75,255,0.2)", borderRadius: 8, padding: "10px 14px" }}>
-            <div>
-              <div style={{ fontWeight: 700 }}>{selectedEmployee.name}</div>
-              <div style={{ fontSize: 11.5, color: "var(--neu-text-muted)", textTransform: "capitalize" }}>{selectedEmployee.role.replace(/_/g, " ")}{selectedEmployee.phone ? ` · ${selectedEmployee.phone}` : ""}</div>
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(91,75,255,0.06)", border: "1px solid rgba(91,75,255,0.2)", borderRadius: 8, padding: "10px 14px" }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{selectedEmployee.name}</div>
+                <div style={{ fontSize: 11.5, color: "var(--neu-text-muted)", textTransform: "capitalize" }}>{selectedEmployee.role.replace(/_/g, " ")}{selectedEmployee.phone ? ` · ${selectedEmployee.phone}` : ""}</div>
+              </div>
+              <button className="neo-btn-secondary neo-btn-sm" onClick={() => setSelectedEmployee(null)}>Change</button>
             </div>
-            <button className="neo-btn-secondary neo-btn-sm" onClick={() => setSelectedEmployee(null)}>Change</button>
-          </div>
+            <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--neu-text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+              📱 This employee has a login — they can also submit this form themselves from Team Hub. Entering the paper form here is one option.
+            </div>
+          </>
         ) : (
           <>
             <input className="neu-input" placeholder="Search employee by name…" value={employeeSearch} onChange={(e) => setEmployeeSearch(e.target.value)} style={{ marginBottom: 8 }} />
