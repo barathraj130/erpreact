@@ -15,8 +15,24 @@ interface Props {
   onClose: () => void;
 }
 
+// The QR is printed onto a physical card, so it must encode a stable, public
+// URL — never a Vercel *preview* deployment origin, which sits behind Vercel's
+// login wall (scanning it just shows "Log in to Vercel"). Priority:
+//   1. VITE_PUBLIC_APP_URL if set (use this for a custom domain)
+//   2. the known production alias, when we're currently on any *.vercel.app
+//      that isn't already that alias (i.e. a preview build)
+//   3. window.location.origin (localhost, or already on the real domain)
+const PROD_APP_URL = "https://erpreact-dwzj.vercel.app";
+const resolvePublicBaseUrl = (): string => {
+  const envUrl = (import.meta as any).env?.VITE_PUBLIC_APP_URL;
+  if (envUrl) return String(envUrl).replace(/\/$/, "");
+  const { origin, hostname } = window.location;
+  if (hostname.endsWith(".vercel.app") && hostname !== "erpreact-dwzj.vercel.app") return PROD_APP_URL;
+  return origin;
+};
+
 const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
-  const baseUrl = window.location.origin;
+  const baseUrl = resolvePublicBaseUrl();
   const qrToken = `EMP_${employee.id}_SECRET`;
   // Use path param (/mark-attendance/TOKEN) — more reliable than query string
   // which gets stripped by some hosting redirects.
