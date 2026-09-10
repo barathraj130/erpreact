@@ -482,7 +482,7 @@ const DailySalary: React.FC = () => {
                 </div>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#1e293b" }}>Confirm Payment</div>
-                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Add a bonus, or recover an advance where one is outstanding</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Add a bonus or a deduction (fine, damage, advance recovery) for each employee</div>
                 </div>
               </div>
               <button onClick={() => setShowPayModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: "1.2rem" }}><FaTimes /></button>
@@ -525,12 +525,12 @@ const DailySalary: React.FC = () => {
                           />
                         </div>
                       </div>
-                    ) : p.has_advance ? (
+                    ) : (
                       <button onClick={() => openField(p.employee_id, "deduction")}
                         style={{ display: "flex", alignItems: "center", gap: "5px", padding: "9px 14px", borderRadius: "10px", border: "1.5px dashed #cbd5e1", background: "none", color: "#64748b", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
-                        <FaCut size={11} /> Deduct
+                        <FaCut size={11} /> Deduct{p.has_advance ? " / Advance" : ""}
                       </button>
-                    ) : null}
+                    )}
                     {openFields[p.employee_id]?.extra ? (
                       <div style={{ flex: "1 1 120px" }}>
                         <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "5px" }}>
