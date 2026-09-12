@@ -5,21 +5,22 @@ import * as db from "../database/pg.js";
  */
 export const getProcurementAnalytics = async (companyId) => {
     try {
-        // 1. Purchase bill stats — use COALESCE for different column naming conventions
+        // 1. Purchase bill stats — total_amount/paid_amount/status are the real
+        // columns on purchase_bills (verified against schemaDef.js); the
+        // previous grand_total/net_amount/purchase_bill_payments references
+        // don't exist anywhere in this schema, so this query always threw and
+        // silently fell back to zero via the .catch() below, every time.
         const stats = await db.pgGet(`
             SELECT
                 COUNT(*) as total_bills,
                 COUNT(*) FILTER (WHERE COALESCE(is_deleted,false)=false) as active_bills,
-                SUM(COALESCE(total_amount, grand_total, net_amount, 0)) as total_outflow,
-                AVG(COALESCE(total_amount, grand_total, net_amount, 0)) as avg_bill_value,
-                -- "paid" = fully settled via purchase_bill_payments
-                COUNT(DISTINCT pb.id) FILTER (WHERE COALESCE(pbp.paid,0) >= COALESCE(total_amount, grand_total, net_amount, 0) AND COALESCE(total_amount, grand_total, net_amount, 0) > 0) as paid_bills
+                SUM(COALESCE(total_amount, 0)) as total_outflow,
+                AVG(COALESCE(total_amount, 0)) as avg_bill_value,
+                COUNT(*) FILTER (
+                    WHERE status = 'PAID'
+                       OR (COALESCE(total_amount,0) > 0 AND COALESCE(paid_amount,0) >= total_amount)
+                ) as paid_bills
             FROM purchase_bills pb
-            LEFT JOIN (
-                SELECT purchase_bill_id, SUM(amount) as paid
-                FROM purchase_bill_payments
-                GROUP BY purchase_bill_id
-            ) pbp ON pbp.purchase_bill_id = pb.id
             WHERE pb.company_id = $1 AND COALESCE(pb.is_deleted,false) = false
         `, [companyId]).catch(() => ({ total_bills: 0, paid_bills: 0, total_outflow: 0, avg_bill_value: 0 }));
 
@@ -31,7 +32,7 @@ export const getProcurementAnalytics = async (companyId) => {
         const trend = await db.pgAll(`
             SELECT
                 TO_CHAR(bill_date, 'Mon YYYY') as month,
-                SUM(COALESCE(total_amount, grand_total, net_amount, 0)) as amount,
+                SUM(COALESCE(total_amount, 0)) as amount,
                 COUNT(*) as count
             FROM purchase_bills
             WHERE company_id = $1
@@ -45,7 +46,7 @@ export const getProcurementAnalytics = async (companyId) => {
         const suppliers = await db.pgAll(`
             SELECT
                 COALESCE(supplier_name, 'Unknown') as name,
-                SUM(COALESCE(total_amount, grand_total, net_amount, 0)) as value,
+                SUM(COALESCE(total_amount, 0)) as value,
                 COUNT(*) as count
             FROM purchase_bills
             WHERE company_id = $1 AND COALESCE(is_deleted,false) = false
@@ -68,24 +69,19 @@ export const getProcurementAnalytics = async (companyId) => {
             SELECT
                 COALESCE(s.name, pb.supplier_name, 'Unknown') as name,
                 COUNT(*) as total_bills,
-                COUNT(DISTINCT pb.id) FILTER (
-                    WHERE COALESCE(pbp.paid,0) >= COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)
-                      AND COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) > 0
+                COUNT(*) FILTER (
+                    WHERE pb.status = 'PAID'
+                       OR (COALESCE(pb.total_amount,0) > 0 AND COALESCE(pb.paid_amount,0) >= pb.total_amount)
                 ) as paid_bills,
                 ROUND(
-                    COUNT(DISTINCT pb.id) FILTER (
-                        WHERE COALESCE(pbp.paid,0) >= COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)
-                          AND COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0) > 0
+                    COUNT(*) FILTER (
+                        WHERE pb.status = 'PAID'
+                           OR (COALESCE(pb.total_amount,0) > 0 AND COALESCE(pb.paid_amount,0) >= pb.total_amount)
                     )::numeric / NULLIF(COUNT(*), 0) * 100
                 ) as success_rate,
-                SUM(COALESCE(pb.total_amount, pb.grand_total, pb.net_amount, 0)) as order_volume
+                SUM(COALESCE(pb.total_amount, 0)) as order_volume
             FROM purchase_bills pb
             LEFT JOIN suppliers s ON s.id = pb.supplier_id
-            LEFT JOIN (
-                SELECT purchase_bill_id, SUM(amount) as paid
-                FROM purchase_bill_payments
-                GROUP BY purchase_bill_id
-            ) pbp ON pbp.purchase_bill_id = pb.id
             WHERE pb.company_id = $1 AND COALESCE(pb.is_deleted,false) = false
             GROUP BY s.name, pb.supplier_name
             ORDER BY order_volume DESC
