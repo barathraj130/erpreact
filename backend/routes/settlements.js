@@ -7,8 +7,40 @@ import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
 import { recomputeCustomerBalance, createCustomerLedgerEvent } from "../services/customerLedgerService.js";
 import { sendWhatsApp } from "../utils/whatsapp.js";
+import { createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 
 const router = express.Router();
+
+// Posts a customer-payment double-entry: Debit Cash/Bank, Credit Accounts
+// Receivable (1100) — the same pair invoiceRoutes.js posts for a normal
+// invoice payment. Best-effort: a chart-of-accounts hiccup must never block
+// the settlement itself.
+async function postCustomerPaymentAccounting(client, { companyId, branchId, amount, mode, date, description, userId, referenceType }) {
+    if (!(amount > 0)) return;
+    try {
+        const debitAccount = await getAccountByCode(companyId, mode === 'bank' ? '1200' : '1000');
+        const arAccount = await getAccountByCode(companyId, '1100');
+        if (!debitAccount || !arAccount) return;
+
+        await client.query('SAVEPOINT sp_settlement_accounting');
+        try {
+            await createTransactionInternal(client, {
+                company_id: companyId, branch_id: branchId, transaction_date: date,
+                reference_type: referenceType, description, created_by: userId, bill_purpose: 'real',
+            }, [
+                { account_id: debitAccount.id, debit_amount: amount, credit_amount: 0, description },
+                { account_id: arAccount.id, debit_amount: 0, credit_amount: amount, description },
+            ]);
+            await client.query('RELEASE SAVEPOINT sp_settlement_accounting');
+        } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_settlement_accounting');
+            await client.query('RELEASE SAVEPOINT sp_settlement_accounting');
+            console.warn('[settlements] accounting entry skipped:', e.message);
+        }
+    } catch (e) {
+        console.warn('[settlements] accounting entry skipped:', e.message);
+    }
+}
 
 const isAdmin = (req) => ["admin", "superadmin"].includes(String(req.user?.role || "").toLowerCase());
 
@@ -38,7 +70,7 @@ async function getUserName(queryable, userId) {
  * (customer ledger page, ledger PDF export) — so this stays consistent with the rest
  * of the app instead of maintaining a second, parallel balance calculation.
  */
-async function applySettlementPayments(client, settlement, companyId) {
+async function applySettlementPayments(client, settlement, companyId, userId) {
     const links = await client.query(`SELECT * FROM settlement_invoice_links WHERE settlement_id = $1`, [settlement.id]);
 
     for (const link of links.rows) {
@@ -70,6 +102,11 @@ async function applySettlementPayments(client, settlement, companyId) {
              VALUES ($1, $2, 'SETTLEMENT_CASH', $3, 'in', CURRENT_DATE, $4, NOW())`,
             [companyId, settlement.branch_id, settlement.cash_amount, `Cash from settlement ${settlement.settlement_number}`]
         );
+        await postCustomerPaymentAccounting(client, {
+            companyId, branchId: settlement.branch_id, amount: parseFloat(settlement.cash_amount),
+            mode: 'cash', date: new Date().toISOString().split('T')[0], userId,
+            referenceType: 'SETTLEMENT', description: `Cash from settlement ${settlement.settlement_number}`,
+        });
     }
 }
 
@@ -369,7 +406,7 @@ router.post("/:id/approve", authMiddleware, async (req, res) => {
         );
 
         if (!s.is_conditional) {
-            await applySettlementPayments(client, s, companyId);
+            await applySettlementPayments(client, s, companyId, req.user.id);
         }
 
         const doneByName = await getUserName(client, req.user.id);
@@ -581,7 +618,7 @@ router.post("/:id/confirm-transfer", authMiddleware, async (req, res) => {
 
         await client.query(`UPDATE debt_settlements SET legal_transfer_done = true, updated_at = NOW() WHERE id = $1`, [s.id]);
 
-        await applySettlementPayments(client, s, companyId);
+        await applySettlementPayments(client, s, companyId, req.user.id);
 
         const doneByName = await getUserName(client, req.user.id);
         await client.query(
@@ -633,6 +670,11 @@ router.post("/cheques/:id/cleared", authMiddleware, async (req, res) => {
              VALUES ($1,$2,'SETTLEMENT_CHEQUE',$3,'in',$4,CURRENT_DATE,$5,NOW())`,
             [companyId, cheque.branch_id, cheque.amount, cheque.bank_name, `Cheque cleared: ${cheque.cheque_number} — ${cheque.settlement_number}`]
         );
+        await postCustomerPaymentAccounting(client, {
+            companyId, branchId: cheque.branch_id, amount: parseFloat(cheque.amount),
+            mode: 'bank', date: new Date().toISOString().split('T')[0], userId: req.user.id,
+            referenceType: 'SETTLEMENT', description: `Cheque cleared: ${cheque.cheque_number} — ${cheque.settlement_number}`,
+        });
 
         await client.query("COMMIT");
         res.json({ success: true, message: "Cheque cleared — bank ledger updated" });

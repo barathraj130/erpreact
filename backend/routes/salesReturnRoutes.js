@@ -2,8 +2,43 @@ import express from 'express';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as db from '../database/pg.js';
 import { ensureCustomerLedgerMetadata, recomputeCustomerBalance } from '../services/customerLedgerService.js';
+import { createTransactionInternal, getAccountByCode } from '../utils/accountingEngine.js';
 
 const router = express.Router();
+
+// Posts the double-entry for a sales return: Debit Sales Returns (4200) for the
+// taxable portion and GST Payable (2100) for the tax portion (reversing output
+// tax), Credit whatever left the business — Cash/Bank for a refund, Accounts
+// Receivable (1100) for a credit note (reduces what the customer owes).
+// Best-effort: a chart-of-accounts hiccup must never block the return itself.
+async function postSalesReturnAccounting(client, { companyId, branchId, taxable, gst, refundType, date, description, userId }) {
+    try {
+        const salesReturnAccount = await getAccountByCode(companyId, '4200');
+        const gstAccount = gst > 0 ? await getAccountByCode(companyId, '2100') : null;
+        const creditCode = refundType === 'BANK_REFUND' ? '1200' : (refundType === 'CASH_REFUND' ? '1000' : '1100');
+        const creditAccount = await getAccountByCode(companyId, creditCode);
+        if (!salesReturnAccount || !creditAccount) return;
+
+        const lines = [{ account_id: salesReturnAccount.id, debit_amount: taxable, credit_amount: 0, description }];
+        if (gst > 0 && gstAccount) lines.push({ account_id: gstAccount.id, debit_amount: gst, credit_amount: 0, description: `Output GST reversal — ${description}` });
+        lines.push({ account_id: creditAccount.id, debit_amount: 0, credit_amount: taxable + gst, description });
+
+        await client.query('SAVEPOINT sp_return_accounting');
+        try {
+            await createTransactionInternal(client, {
+                company_id: companyId, branch_id: branchId, transaction_date: date,
+                reference_type: 'SALES_RETURN', description, created_by: userId, bill_purpose: 'real',
+            }, lines);
+            await client.query('RELEASE SAVEPOINT sp_return_accounting');
+        } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_return_accounting');
+            await client.query('RELEASE SAVEPOINT sp_return_accounting');
+            console.warn('[sales-return] accounting entry skipped:', e.message);
+        }
+    } catch (e) {
+        console.warn('[sales-return] accounting entry skipped:', e.message);
+    }
+}
 
 // ── Ensure sales_returns table exists in production ───────────────────────────
 const ensureTable = async () => {
@@ -287,7 +322,15 @@ router.post('/', authMiddleware, async (req, res) => {
                 [companyId, branchId, totalAmt, `RET-${record.id}`, rDate]
             );
         }
-        // CREDIT_NOTE: no immediate cash/bank movement
+        // CREDIT_NOTE: no immediate cash/bank movement, but still reduces AR below
+
+        if (rType !== 'CREDIT_NOTE' || origCustomerId) {
+            await postSalesReturnAccounting(client, {
+                companyId, branchId, taxable: totalTaxable, gst: totalGST, refundType: rType,
+                date: rDate, userId: req.user.id,
+                description: `Sales Return ${retNumber}${origInvNumber ? ' against ' + origInvNumber : ''}`,
+            });
+        }
 
         // ── Update original invoice return_amount ────────────────────────────
         if (original_invoice_id) {
