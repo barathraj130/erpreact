@@ -139,33 +139,36 @@ export async function deductStock(client, {
     // ── Ensure row exists ──────────────────────────────────────
     await ensureBranchInventoryRow(client, { companyId, branchId, productId });
 
-    // ── Read current stock ─────────────────────────────────────
-    const stockRes = await client.query(`
-        SELECT bi.current_stock, p.name
-        FROM branch_inventory bi
-        JOIN products p ON p.id = bi.product_id
-        WHERE bi.branch_id = $1 AND bi.product_id = $2
-    `, [branchId, productId]);
+    const productRes = await client.query('SELECT name FROM products WHERE id = $1', [productId]);
+    const productName = productRes.rows[0]?.name ?? `Product #${productId}`;
 
-    const prevQty     = Number(stockRes.rows[0]?.current_stock ?? 0);
-    const productName = stockRes.rows[0]?.name ?? `Product #${productId}`;
+    // ── 1. Atomic deduct ────────────────────────────────────────
+    // A single conditional UPDATE (current_stock - $1 WHERE current_stock >= $1)
+    // closes the race a prior read-then-write had: two concurrent sales could
+    // both read the same prevQty, both pass the "enough stock" check, and both
+    // write an absolute newQty — silently overselling with no error. This form
+    // lets Postgres's row-level locking serialize concurrent deductions instead.
+    const deductRes = await client.query(`
+        UPDATE branch_inventory
+        SET current_stock = current_stock - $1, last_updated = NOW()
+        WHERE branch_id = $2 AND product_id = $3 AND current_stock >= $1
+        RETURNING current_stock AS new_qty
+    `, [qty, branchId, productId]);
 
-    // ── Block negative stock ───────────────────────────────────
-    if (prevQty < qty) {
+    if (deductRes.rowCount === 0) {
+        const availRes = await client.query(
+            'SELECT current_stock FROM branch_inventory WHERE branch_id = $1 AND product_id = $2',
+            [branchId, productId]
+        );
+        const available = Number(availRes.rows[0]?.current_stock ?? 0);
         throw new Error(
             `Insufficient stock for "${productName}". ` +
-            `Available in branch #${branchId}: ${prevQty}, Required: ${qty}`
+            `Available in branch #${branchId}: ${available}, Required: ${qty}`
         );
     }
 
-    const newQty = prevQty - qty;
-
-    // ── 1. Update branch_inventory ─────────────────────────────
-    await client.query(`
-        UPDATE branch_inventory
-        SET current_stock = $1, last_updated = NOW()
-        WHERE branch_id = $2 AND product_id = $3
-    `, [newQty, branchId, productId]);
+    const newQty  = Number(deductRes.rows[0].new_qty);
+    const prevQty = newQty + qty;
 
     // ── 2. Recompute products.current_stock (SUM cache) ────────
     await recomputeProductStock(client, productId);
