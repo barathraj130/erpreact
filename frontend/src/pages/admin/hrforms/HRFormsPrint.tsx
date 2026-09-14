@@ -656,6 +656,7 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
 </style>
 </head>
 <body>
+  <div id="print-page">
   <div class="form-header">
     <div>
       <div class="company-name">${escapeHtml(company.name)}</div>
@@ -691,6 +692,29 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
   <div style="margin-top:24px; border-top:1px dashed #999; padding-top:12px; font-size:9px; color:#666; text-align:center">
     For office use only / அலுவலக பயன்பாட்டிற்கு மட்டும் · Entered in ERP: _______ · Entered by: _______ · Date: _______
   </div>
+  </div>
+  <script>
+    // Every form must print on exactly one A4 page regardless of how much
+    // content it has (field count varies a lot across the 16 form types).
+    // Rather than hand-tuning spacing per form (fragile — breaks again the
+    // next time a form's fields change), shrink the whole page proportionally
+    // to fit if it would otherwise overflow. Text stays fully legible down to
+    // the floor below; this only engages for the longer forms.
+    window.onload = function () {
+      requestAnimationFrame(function () {
+        var el = document.getElementById('print-page');
+        if (!el) return;
+        var USABLE_HEIGHT_PX = 1000; // A4 (297mm) minus @page margins (15mm) and body print padding
+        var h = el.scrollHeight;
+        if (h > USABLE_HEIGHT_PX) {
+          var scale = Math.max(0.7, USABLE_HEIGHT_PX / h);
+          el.style.transformOrigin = 'top left';
+          el.style.transform = 'scale(' + scale + ')';
+          el.style.width = (100 / scale) + '%';
+        }
+      });
+    };
+  </script>
 </body>
 </html>
 `;
