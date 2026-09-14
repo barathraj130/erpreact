@@ -11,7 +11,7 @@ const router = express.Router();
 // tax), Credit whatever left the business — Cash/Bank for a refund, Accounts
 // Receivable (1100) for a credit note (reduces what the customer owes).
 // Best-effort: a chart-of-accounts hiccup must never block the return itself.
-async function postSalesReturnAccounting(client, { companyId, branchId, taxable, gst, refundType, date, description, userId }) {
+async function postSalesReturnAccounting(client, { companyId, branchId, taxable, gst, refundType, date, description, userId, reverse = false }) {
     try {
         const salesReturnAccount = await getAccountByCode(companyId, '4200');
         const gstAccount = gst > 0 ? await getAccountByCode(companyId, '2100') : null;
@@ -19,9 +19,14 @@ async function postSalesReturnAccounting(client, { companyId, branchId, taxable,
         const creditAccount = await getAccountByCode(companyId, creditCode);
         if (!salesReturnAccount || !creditAccount) return;
 
-        const lines = [{ account_id: salesReturnAccount.id, debit_amount: taxable, credit_amount: 0, description }];
-        if (gst > 0 && gstAccount) lines.push({ account_id: gstAccount.id, debit_amount: gst, credit_amount: 0, description: `Output GST reversal — ${description}` });
-        lines.push({ account_id: creditAccount.id, debit_amount: 0, credit_amount: taxable + gst, description });
+        // reverse=true swaps every debit/credit — used to undo a previously-posted
+        // return entry when editing it (an offsetting reversal, not a delete, so
+        // chart_of_accounts.current_balance — updated incrementally — stays correct).
+        const d = (amt) => reverse ? 0 : amt;
+        const c = (amt) => reverse ? amt : 0;
+        const lines = [{ account_id: salesReturnAccount.id, debit_amount: d(taxable), credit_amount: c(taxable), description }];
+        if (gst > 0 && gstAccount) lines.push({ account_id: gstAccount.id, debit_amount: d(gst), credit_amount: c(gst), description: `Output GST reversal — ${description}` });
+        lines.push({ account_id: creditAccount.id, debit_amount: c(taxable + gst), credit_amount: d(taxable + gst), description });
 
         await client.query('SAVEPOINT sp_return_accounting');
         try {
@@ -568,6 +573,22 @@ router.put('/:id', authMiddleware, async (req, res) => {
             );
         }
 
+        // ── Reverse old accounting entry, post new ────────────────────────────
+        if (oldType !== 'CREDIT_NOTE' || old.customer_id) {
+            await postSalesReturnAccounting(client, {
+                companyId, branchId, taxable: parseFloat(old.total_taxable_amount || 0),
+                gst: parseFloat(old.total_gst_amount || 0), refundType: oldType, date: old.return_date,
+                userId: req.user.id, description: `Reversal — Sales Return ${old.return_number} (edited)`,
+                reverse: true,
+            });
+        }
+        if (newType !== 'CREDIT_NOTE' || old.customer_id) {
+            await postSalesReturnAccounting(client, {
+                companyId, branchId, taxable: totalTaxable, gst: totalGST, refundType: newType,
+                date: rDate, userId: req.user.id, description: `Sales Return ${old.return_number} (edited)`,
+            });
+        }
+
         // ── Adjust customer ledger ────────────────────────────────────────────
         if (old.customer_id) {
             await client.query(
@@ -661,6 +682,16 @@ router.delete('/:id', authMiddleware, async (req, res) => {
                 `DELETE FROM customer_ledger WHERE customer_id=$1 AND company_id=$2 AND type='SALES_RETURN' AND description LIKE $3`,
                 [old.customer_id, companyId, `%${old.return_number}%`]
             );
+        }
+
+        // ── Reverse accounting entry ──────────────────────────────────────────
+        if (old.refund_type !== 'CREDIT_NOTE' || old.customer_id) {
+            await postSalesReturnAccounting(client, {
+                companyId, branchId, taxable: parseFloat(old.total_taxable_amount || 0),
+                gst: parseFloat(old.total_gst_amount || 0), refundType: old.refund_type, date: old.return_date,
+                userId: req.user.id, description: `Reversal — Sales Return ${old.return_number} (deleted)`,
+                reverse: true,
+            });
         }
 
         // ── Restore invoice return_amount ─────────────────────────────────────
