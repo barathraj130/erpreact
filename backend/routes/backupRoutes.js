@@ -52,23 +52,19 @@ router.get("/list", async (req, res) => {
 
 /**
  * POST /api/backups/:id/restore
- * Restore from backup
+ * DISABLED — restoreFromBackup() runs `psql < full_dump`, which restores the
+ * ENTIRE shared Postgres database, not just the calling company's data. Any
+ * tenant admin (not even superadmin) could trigger this, silently rolling
+ * back every OTHER tenant's current data to an old snapshot. The backup file
+ * also lives on the container's local disk, which Railway does not persist
+ * across redeploys, so it was already unlikely to work. Disabled until a
+ * real per-tenant restore path exists; backup CREATION (pg_dump + the JSON
+ * /export endpoint below) is unaffected.
  */
 router.post("/:id/restore", async (req, res) => {
-    try {
-        const { user } = req;
-        const { id } = req.params;
-
-        if (user.role !== "admin" && user.role !== "superadmin") {
-            return res.status(403).json({ error: "Insufficient permissions" });
-        }
-
-        const result = await backupService.restoreFromBackup(id, user.company_id, user.id);
-        res.json({ success: true, data: result });
-    } catch (err) {
-        console.error("❌ Restore backup error:", err);
-        res.status(500).json({ error: "Failed to restore backup" });
-    }
+    res.status(503).json({
+        error: "Restore is disabled. It would overwrite the entire shared database for every tenant, not just this company. Contact support for data recovery.",
+    });
 });
 
 /**
