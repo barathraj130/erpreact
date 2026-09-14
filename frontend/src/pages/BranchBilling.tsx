@@ -676,6 +676,10 @@ const BranchBilling: React.FC = () => {
 
   /* ── save bill ─────────────────────────────────────────────────────────── */
   const handleSaveBill = async () => {
+    // Guards against the F9 shortcut double-firing (key repeat, or a second
+    // press before the button's disabled={saving} re-render lands) — without
+    // this, two invoices could be created for the same bill.
+    if (saving) return;
     if (!customer) { custSearchRef.current?.focus(); return setFlash("Select a customer first"); }
     const validItems = items.filter(it => it.description && it.quantity > 0 && it.rate > 0);
     if (!validItems.length) { productSearchRef.current?.focus(); return setFlash("Add at least one item"); }
