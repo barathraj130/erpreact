@@ -42,6 +42,36 @@ async function postCustomerPaymentAccounting(client, { companyId, branchId, amou
     }
 }
 
+// Posts a company-paid cash outflow that isn't a customer receivable
+// settlement (land guideline-value transfers, bounced-cheque bank charges):
+// Debit Business Expenses (5900), Credit Cash/Bank. Best-effort.
+async function postSettlementExpenseAccounting(client, { companyId, branchId, amount, mode, date, description, userId, referenceType }) {
+    if (!(amount > 0)) return;
+    try {
+        const expenseAccount = await getAccountByCode(companyId, '5900');
+        const creditAccount = await getAccountByCode(companyId, mode === 'bank' ? '1200' : '1000');
+        if (!expenseAccount || !creditAccount) return;
+
+        await client.query('SAVEPOINT sp_settlement_expense');
+        try {
+            await createTransactionInternal(client, {
+                company_id: companyId, branch_id: branchId, transaction_date: date,
+                reference_type: referenceType, description, created_by: userId, bill_purpose: 'real',
+            }, [
+                { account_id: expenseAccount.id, debit_amount: amount, credit_amount: 0, description },
+                { account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description },
+            ]);
+            await client.query('RELEASE SAVEPOINT sp_settlement_expense');
+        } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_settlement_expense');
+            await client.query('RELEASE SAVEPOINT sp_settlement_expense');
+            console.warn('[settlements] expense accounting entry skipped:', e.message);
+        }
+    } catch (e) {
+        console.warn('[settlements] expense accounting entry skipped:', e.message);
+    }
+}
+
 const isAdmin = (req) => ["admin", "superadmin"].includes(String(req.user?.role || "").toLowerCase());
 
 /**
@@ -567,6 +597,10 @@ router.post("/:id/record-guideline-transfer", authMiddleware, async (req, res) =
                 [companyId, settlement.branch_id, parsedAmount, payment_date, reference_number || null, settlement.id]
             );
         }
+        await postSettlementExpenseAccounting(client, {
+            companyId, branchId: settlement.branch_id, amount: parsedAmount, mode, date: payment_date,
+            description, userId: req.user.id, referenceType: 'LAND_GUIDELINE_TRANSFER',
+        });
 
         const doneByName = await getUserName(client, req.user.id);
         await client.query(
@@ -728,11 +762,17 @@ router.post("/cheques/:id/bounced", authMiddleware, async (req, res) => {
         );
 
         if (charges > 0) {
+            const chargeDate = new Date().toISOString().split('T')[0];
+            const chargeDesc = `Bank charges — bounced cheque ${cheque.cheque_number}`;
             await client.query(
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes, created_at)
                  VALUES ($1,$2,'CHEQUE_BOUNCE_CHARGE',$3,'out',CURRENT_DATE,$4,NOW())`,
-                [companyId, cheque.branch_id, charges, `Bank charges — bounced cheque ${cheque.cheque_number}`]
+                [companyId, cheque.branch_id, charges, chargeDesc]
             );
+            await postSettlementExpenseAccounting(client, {
+                companyId, branchId: cheque.branch_id, amount: charges, mode: 'cash', date: chargeDate,
+                description: chargeDesc, userId: req.user.id, referenceType: 'CHEQUE_BOUNCE_CHARGE',
+            });
         }
 
         await client.query("COMMIT");

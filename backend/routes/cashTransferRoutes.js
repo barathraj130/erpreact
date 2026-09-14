@@ -2,8 +2,45 @@ import express from 'express';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as db from '../database/pg.js';
 import { checkSufficientBalance } from '../utils/balanceCheck.js';
+import { createTransactionInternal, getAccountByCode } from '../utils/accountingEngine.js';
 
 const router = express.Router();
+
+// Posts a Cash<->Bank reclassification: no P&L impact (both sides are
+// assets), but needed so the Balance Sheet's Cash(1000) vs Bank(1200) split
+// stays accurate. Branch-to-branch transfers of the SAME payment mode are
+// deliberately NOT posted here — chart_of_accounts has one company-wide
+// Cash/Bank account, so both legs would hit the same account and net to
+// zero, adding nothing.
+async function postCashBankReclass(client, { companyId, branchId, amount, direction, date, userId }) {
+    try {
+        const cashAccount = await getAccountByCode(companyId, '1000');
+        const bankAccount = await getAccountByCode(companyId, '1200');
+        if (!cashAccount || !bankAccount) return;
+        const description = direction === 'BANK_TO_CASH' ? 'Bank to Cash transfer' : 'Cash to Bank transfer';
+        const [debitAccount, creditAccount] = direction === 'BANK_TO_CASH'
+            ? [cashAccount, bankAccount]
+            : [bankAccount, cashAccount];
+
+        await client.query('SAVEPOINT sp_transfer_accounting');
+        try {
+            await createTransactionInternal(client, {
+                company_id: companyId, branch_id: branchId, transaction_date: date,
+                reference_type: 'CASH_TRANSFER', description, created_by: userId, bill_purpose: 'real',
+            }, [
+                { account_id: debitAccount.id, debit_amount: amount, credit_amount: 0, description },
+                { account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description },
+            ]);
+            await client.query('RELEASE SAVEPOINT sp_transfer_accounting');
+        } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_transfer_accounting');
+            await client.query('RELEASE SAVEPOINT sp_transfer_accounting');
+            console.warn('[cash-transfer] accounting entry skipped:', e.message);
+        }
+    } catch (e) {
+        console.warn('[cash-transfer] accounting entry skipped:', e.message);
+    }
+}
 
 // Ensure cash_transfers table exists (safe for production)
 let tableEnsured = false;
@@ -156,6 +193,7 @@ router.post('/', authMiddleware, async (req, res) => {
                 `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'in',$4)`,
                 [companyId, brId, amt, txDate]
             );
+            await postCashBankReclass(client, { companyId, branchId: brId, amount: amt, direction: 'BANK_TO_CASH', date: txDate, userId: req.user.id });
             await client.query('COMMIT');
             return res.status(201).json({ success: true, type: 'BANK_TO_CASH', amount: amt });
         }
@@ -171,6 +209,7 @@ router.post('/', authMiddleware, async (req, res) => {
                 `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date) VALUES ($1,$2,'CASH_TRANSFER',$3,'in','Main Account',$4)`,
                 [companyId, brId, amt, txDate]
             );
+            await postCashBankReclass(client, { companyId, branchId: brId, amount: amt, direction: 'CASH_TO_BANK', date: txDate, userId: req.user.id });
             await client.query('COMMIT');
             return res.status(201).json({ success: true, type: 'CASH_TO_BANK', amount: amt });
         }

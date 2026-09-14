@@ -184,6 +184,7 @@ export async function getProfitAndLoss(companyId, branchId, startDate, endDate, 
 const EXPECTED_ACCOUNT_TYPES = {
     '1000': 'ASSET',   // Cash
     '1100': 'ASSET',   // Accounts Receivable
+    '1150': 'ASSET',   // Employee Advances (Recoverable)
     '1200': 'ASSET',   // Bank Account
     '1400': 'ASSET',   // Inventory
     '2000': 'LIABILITY', // Accounts Payable
@@ -202,6 +203,7 @@ const EXPECTED_ACCOUNT_TYPES = {
 const DEFAULT_ACCOUNT_NAMES = {
     '1000': 'Cash',
     '1100': 'Accounts Receivable',
+    '1150': 'Employee Advances (Recoverable)',
     '1200': 'Bank Account',
     '1400': 'Inventory',
     '2000': 'Accounts Payable',

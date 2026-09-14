@@ -16,12 +16,49 @@ const router = express.Router();
 // transaction so a chart-of-accounts hiccup never blocks the actual wage
 // payment — the cash/bank ledger entry (the source of truth for balances)
 // already happened before this runs.
-async function postWageExpense(client, { companyId, branchId, amount, mode, date, description, userId }) {
+// Posts a salary advance as a balance-sheet item (not an expense — it's
+// recoverable from future wages): Debit Employee Advances (1150), Credit
+// Cash/Bank/Proprietor's Capital. Best-effort, same as postWageExpense.
+async function postAdvanceAccounting(client, { companyId, branchId, amount, mode, date, description, userId }) {
     if (!(amount > 0)) return;
+    const advanceAccount = await getAccountByCode(companyId, '1150');
+    const creditCode = mode === 'PROPRIETOR' ? '3000' : (mode === 'BANK' || mode === 'UPI' ? '1200' : '1000');
+    const creditAccount = await getAccountByCode(companyId, creditCode);
+    if (!advanceAccount || !creditAccount) return;
+
+    await client.query('SAVEPOINT sp_advance_accounting');
+    try {
+        await createTransactionInternal(client, {
+            company_id: companyId, branch_id: branchId, transaction_date: date,
+            reference_type: 'SALARY_ADVANCE', description, created_by: userId, bill_purpose: 'real',
+        }, [
+            { account_id: advanceAccount.id, debit_amount: amount, credit_amount: 0, description },
+            { account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description },
+        ]);
+        await client.query('RELEASE SAVEPOINT sp_advance_accounting');
+    } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_advance_accounting');
+        await client.query('RELEASE SAVEPOINT sp_advance_accounting');
+        console.warn('[hrRoutes] advance accounting entry skipped:', e.message);
+    }
+}
+
+async function postWageExpense(client, { companyId, branchId, amount, advanceRecovered = 0, mode, date, description, userId }) {
+    const expenseAmount = amount + advanceRecovered; // full wage earned, before advance deduction
+    if (!(expenseAmount > 0)) return;
     const expenseAccount = await getAccountByCode(companyId, '5300');
     const creditCode = mode === 'PROPRIETOR' ? '3000' : (mode === 'BANK' ? '1200' : '1000');
     const creditAccount = await getAccountByCode(companyId, creditCode);
-    if (!expenseAccount || !creditAccount) return;
+    const advanceAccount = advanceRecovered > 0 ? await getAccountByCode(companyId, '1150') : null;
+    if (!expenseAccount || !creditAccount || (advanceRecovered > 0 && !advanceAccount)) return;
+
+    const lines = [{ account_id: expenseAccount.id, debit_amount: expenseAmount, credit_amount: 0, description }];
+    if (advanceRecovered > 0) {
+        lines.push({ account_id: advanceAccount.id, debit_amount: 0, credit_amount: advanceRecovered, description: `Advance recovery — ${description}` });
+    }
+    if (amount > 0) {
+        lines.push({ account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description });
+    }
 
     await client.query('SAVEPOINT sp_wage_accounting');
     try {
@@ -33,10 +70,7 @@ async function postWageExpense(client, { companyId, branchId, amount, mode, date
             description,
             created_by: userId,
             bill_purpose: 'real',
-        }, [
-            { account_id: expenseAccount.id, debit_amount: amount, credit_amount: 0, description },
-            { account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description },
-        ]);
+        }, lines);
         await client.query('RELEASE SAVEPOINT sp_wage_accounting');
     } catch (e) {
         await client.query('ROLLBACK TO SAVEPOINT sp_wage_accounting');
@@ -146,6 +180,10 @@ router.post("/advance", authMiddleware, async (req, res) => {
                     );
                 }
             }
+            await postAdvanceAccounting(client, {
+                companyId, branchId, amount: advanceAmt, mode: pMethod, date: advanceDate, userId: req.user?.id,
+                description: `Salary Advance – employee #${employee_id} — ${reason || 'No reason'}`,
+            });
         }
 
         // 3. Record in transactions table for audit trail
@@ -950,10 +988,7 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                         [companyId, branchId, wage, date]);
                 }
             }
-            await postWageExpense(client, {
-                companyId, branchId, amount: wage, mode: pMode, date, userId: req.user?.id,
-                description: `Daily Wage – ${emp.name} (${date})`,
-            });
+            let actualAdvanceRecovered = 0;
 
             // If deduction > 0, record it as advance repayment in the employee ledger
             if (deduction > 0) {
@@ -973,6 +1008,7 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                     const advId        = advRow.rows[0].id;
                     const actualDeduct = Math.min(deduction, Number(advRow.rows[0].current_balance));
                     const noteText    = `Daily wage deduction on ${date}`;
+                    actualAdvanceRecovered = actualDeduct;
 
                     // Insert repayment record — shows in employee ledger
                     await client.query(
@@ -992,6 +1028,12 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                     );
                 }
             }
+
+            await postWageExpense(client, {
+                companyId, branchId, amount: wage, advanceRecovered: actualAdvanceRecovered,
+                mode: pMode, date, userId: req.user?.id,
+                description: `Daily Wage – ${emp.name} (${date})`,
+            });
 
             results.push({ employee_id: p.employee_id, name: emp.name, wage, deduction });
 
@@ -1241,8 +1283,11 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
                          VALUES ($1,$2,'weekly_salary',$3,'out',$4,CURRENT_DATE,$5)`,
                         [companyId, branchId, netSalary, 'Main Account', wkId]);
                 }
+            }
+            if (netSalary > 0 || advDeducted > 0) {
                 await postWageExpense(client, {
-                    companyId, branchId, amount: netSalary, mode: pMode, date: weStr, userId: req.user?.id,
+                    companyId, branchId, amount: netSalary, advanceRecovered: advDeducted,
+                    mode: pMode, date: weStr, userId: req.user?.id,
                     description: `Weekly Salary – ${emp.name} (${weStr})`,
                 });
             }
