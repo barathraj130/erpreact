@@ -164,11 +164,23 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         const emp = await db.pgGet('SELECT id FROM employees WHERE id = $1 AND company_id = $2', [id, companyId]);
         if (!emp) return res.status(404).json({ error: "Employee not found" });
 
-        // Delete dependent records first
+        // Delete dependent records first — every table with a real (enforced)
+        // foreign key to employees(id) must be cleared or the final DELETE
+        // below throws a constraint violation. weekly_salary,
+        // daily_salary_payments, and hub_forms were added after this route
+        // and never added here, so deleting any employee who'd ever been
+        // paid via Daily/Weekly Salary or submitted a Team Hub request
+        // silently failed (uncaught by the .catch()-wrapped steps below, but
+        // NOT the final DELETE — that one throws and 500s).
         await db.pgRun('DELETE FROM attendance_logs WHERE employee_id = $1', [id]).catch(() => {});
         await db.pgRun('DELETE FROM daily_attendance WHERE employee_id = $1', [id]).catch(() => {});
         await db.pgRun('DELETE FROM payroll_runs WHERE employee_id = $1', [id]).catch(() => {});
         await db.pgRun('DELETE FROM salary_advances WHERE employee_id = $1', [id]).catch(() => {});
+        await db.pgRun('DELETE FROM weekly_salary WHERE employee_id = $1', [id]).catch(() => {});
+        await db.pgRun('DELETE FROM daily_salary_payments WHERE employee_id = $1', [id]).catch(() => {});
+        // hub_forms rows are chat/request history worth keeping for audit —
+        // detach rather than delete.
+        await db.pgRun('UPDATE hub_forms SET submitted_by_employee_id = NULL WHERE submitted_by_employee_id = $1', [id]).catch(() => {});
         await db.pgRun('DELETE FROM employees WHERE id = $1 AND company_id = $2', [id, companyId]);
 
         res.json({ success: true, message: "Employee deleted" });

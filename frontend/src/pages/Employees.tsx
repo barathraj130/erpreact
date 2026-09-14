@@ -122,11 +122,22 @@ const Employees: React.FC = () => {
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this employee? This cannot be undone.")) return;
     try {
-      await apiFetch(`/employees/${id}`, {
+      const res = await apiFetch(`/employees/${id}`, {
         method: "DELETE",
       });
+      // apiFetch only throws on a network error — it does NOT throw on a
+      // non-2xx response, so a failed delete (e.g. a backend constraint
+      // error) was silently ignored here and the list just re-rendered
+      // with the employee still in it, looking like nothing had happened.
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to delete employee.");
+        return;
+      }
       fetchEmployees();
-    } catch (err) {}
+    } catch (err) {
+      alert("Failed to delete employee — check your connection.");
+    }
   };
 
   const filteredEmployees = employees.filter((emp) => {
