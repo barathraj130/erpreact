@@ -16,6 +16,15 @@ export async function checkSufficientBalance(client, companyId, paymentMode, req
         return { sufficient: true, currentBalance: 0, accountName: 'Personal', shortfall: 0, message: '✅ Personal account — no balance check' };
     }
 
+    // Serialize concurrent check-then-write sequences for the same company+mode.
+    // Without this, two simultaneous payments can both read the same balance,
+    // both pass the sufficiency check, and both write their ledger row —
+    // together overdrawing cash/bank with no error. Held for the rest of the
+    // caller's transaction (every caller already runs this inside BEGIN...COMMIT
+    // before its own ledger INSERT) and released automatically at COMMIT/ROLLBACK.
+    const lockClass = mode === 'cash' ? 1 : 2; // bank + upi share the bank_ledger pool
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [companyId, lockClass]);
+
     let currentBalance = 0;
     let accountName    = '';
 

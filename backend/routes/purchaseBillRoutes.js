@@ -8,6 +8,7 @@ import * as brokerService from "../services/brokerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
 import { recordProprietorCapital } from "../utils/proprietorLedger.js";
+import { checkSufficientBalance } from "../utils/balanceCheck.js";
 
 const router = express.Router();
 
@@ -642,14 +643,14 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                             [companyId, safeBranchId, paid, pMode, bill_date || new Date()]
                         );
                     } else {
-                        // CASH — check balance first to prevent negative cash
-                        const cashRow = await client.query(
-                            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1`,
-                            [companyId]
-                        );
-                        const cashBal = parseFloat(cashRow.rows[0]?.bal || 0);
-                        if (cashBal < paid) {
-                            throw new Error(`Insufficient cash balance (₹${cashBal.toLocaleString('en-IN')}) for payment of ₹${paid.toLocaleString('en-IN')}. Use Proprietor Account or Bank Transfer instead.`);
+                        // CASH — check balance first to prevent negative cash. Uses the
+                        // shared checkSufficientBalance (not an inline duplicate) so this
+                        // path is covered by its advisory-lock protection against two
+                        // concurrent payments both passing the check against the same
+                        // pre-write balance.
+                        const cashChk = await checkSufficientBalance(client, companyId, 'cash', paid);
+                        if (!cashChk.sufficient) {
+                            throw new Error(`Insufficient cash balance (₹${cashChk.currentBalance.toLocaleString('en-IN')}) for payment of ₹${paid.toLocaleString('en-IN')}. Use Proprietor Account or Bank Transfer instead.`);
                         }
                         await client.query(
                             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
@@ -860,14 +861,11 @@ async function recordPaymentSplit(client, { companyId, branchId, billId, billNum
             referenceType: 'PURCHASE_BILL',
         });
     } else if (pMode === "CASH") {
-        // Check available cash before deducting to prevent negative balance
-        const cashRow = await client.query(
-            `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS bal FROM cash_ledger WHERE company_id=$1`,
-            [companyId]
-        );
-        const cashBal = parseFloat(cashRow.rows[0]?.bal || 0);
-        if (cashBal < amount) {
-            throw new Error(`Insufficient cash balance (₹${cashBal.toLocaleString('en-IN')}) for payment of ₹${amount.toLocaleString('en-IN')}. Use Proprietor Account or Bank Transfer instead.`);
+        // Check available cash before deducting — via the shared, lock-protected
+        // checkSufficientBalance (not an inline duplicate of the same query).
+        const cashChk = await checkSufficientBalance(client, companyId, 'cash', amount);
+        if (!cashChk.sufficient) {
+            throw new Error(`Insufficient cash balance (₹${cashChk.currentBalance.toLocaleString('en-IN')}) for payment of ₹${amount.toLocaleString('en-IN')}. Use Proprietor Account or Bank Transfer instead.`);
         }
         await client.query(
             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)

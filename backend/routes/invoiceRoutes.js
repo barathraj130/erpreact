@@ -11,6 +11,7 @@ import {
 } from "../services/customerLedgerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import { deductStock, addStock, resolveStockBranch, restoreStockForInvoice } from "../utils/inventoryEngine.js";
+import { checkSufficientBalance } from "../utils/balanceCheck.js";
 import * as brokerService from "../services/brokerService.js";
 import * as pointsService from "../services/pointsService.js";
 import { triggerN8N } from "../utils/triggerN8N.js";
@@ -1379,28 +1380,13 @@ router.post("/nsb/:id/mark-gst-paid", authMiddleware, async (req, res) => {
         const pMode = (payment_mode || 'CASH').toUpperCase();
         const pDate = payment_date || new Date().toISOString().split('T')[0];
 
-        // Balance check for cash/bank
-        if (pMode === 'CASH') {
-            const bal = await client.query(
-                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS balance
-                 FROM cash_ledger WHERE company_id=$1`,
-                [companyId]
-            );
-            const cashBal = parseFloat(bal.rows[0]?.balance || 0);
-            if (cashBal < gstAmount) {
+        // Balance check for cash/bank — via the shared, lock-protected
+        // checkSufficientBalance (was an inline duplicate of the same query).
+        if (pMode === 'CASH' || pMode === 'BANK' || pMode === 'UPI') {
+            const chk = await checkSufficientBalance(client, companyId, pMode.toLowerCase(), gstAmount);
+            if (!chk.sufficient) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Insufficient cash balance. Available: ₹${cashBal.toFixed(2)}, Required: ₹${gstAmount.toFixed(2)}` });
-            }
-        } else if (pMode === 'BANK' || pMode === 'UPI') {
-            const bal = await client.query(
-                `SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS balance
-                 FROM bank_ledger WHERE company_id=$1`,
-                [companyId]
-            );
-            const bankBal = parseFloat(bal.rows[0]?.balance || 0);
-            if (bankBal < gstAmount) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Insufficient bank balance. Available: ₹${bankBal.toFixed(2)}, Required: ₹${gstAmount.toFixed(2)}` });
+                return res.status(400).json({ error: `Insufficient ${chk.accountName} balance. Available: ₹${chk.currentBalance.toFixed(2)}, Required: ₹${gstAmount.toFixed(2)}` });
             }
         }
 
