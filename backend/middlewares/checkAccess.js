@@ -17,11 +17,22 @@ export const checkAccess = (moduleName, actionName) => {
             }
 
             const user = req.user;
+            const roleLower = user.role?.toLowerCase();
+
+            // Portal-only roles (Employee Portal / customer storefront logins) have
+            // their own separate, narrower route sets (employeePortalRoutes.js,
+            // customerPortalRoutes.js) and should never reach ERP business routes
+            // like this one — deny outright rather than falling through to the
+            // fail-open default below, which used to grant them full access.
+            const PORTAL_ONLY_ROLES = ['field_employee', 'customer', 'user'];
+            if (PORTAL_ONLY_ROLES.includes(roleLower)) {
+                return res.status(403).json({ error: "Access Denied: Insufficient Permissions" });
+            }
 
             // 2. Operational-role bypass — these roles manage day-to-day ops and
             // are controlled by the user_permissions system, not the legacy roles table.
             const BYPASS_ROLES = ['admin', 'superadmin', 'branch_manager', 'billing_staff', 'manager', 'accountant', 'staff', 'employee'];
-            if (BYPASS_ROLES.includes(user.role?.toLowerCase())) {
+            if (BYPASS_ROLES.includes(roleLower)) {
                 return next();
             }
 

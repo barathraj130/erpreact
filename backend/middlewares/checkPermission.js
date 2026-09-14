@@ -15,6 +15,15 @@ const checkPermission = (moduleKey, action = 'view') => {
             // Admins always pass
             if (['admin', 'superadmin'].includes(role)) return next();
 
+            // Portal-only roles (Employee Portal / customer storefront logins) have
+            // their own separate, narrower route sets and should never reach ERP
+            // business routes gated by this middleware — deny outright rather than
+            // the "no row configured yet" fail-open default below, which used to
+            // grant them full access to whatever they could reach.
+            if (['field_employee', 'customer', 'user'].includes(role)) {
+                return res.status(403).json({ error: `You don't have permission to ${action} ${moduleKey}` });
+            }
+
             const actionColumn = `can_${action}`;
 
             const perm = await db.pgGet(
