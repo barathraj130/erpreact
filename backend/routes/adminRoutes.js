@@ -193,9 +193,14 @@ router.post('/users/:id/reset-password', authMiddleware, requireAdmin, async (re
     const { new_password } = req.body;
     if (!new_password || new_password.length < 6)
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const companyId = req.user.active_company_id;
     try {
         const hash = await bcrypt.hash(new_password, 10);
-        await db.pgRun(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, req.params.id]);
+        const result = await db.pgRun(
+            `UPDATE users SET password_hash = $1 WHERE id = $2 AND company_id = $3`,
+            [hash, req.params.id, companyId]
+        );
+        if (!result || result.rowCount === 0) return res.status(404).json({ error: 'User not found' });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -387,6 +392,15 @@ router.post('/users/:id/permissions', authMiddleware, requireAdmin, async (req, 
 
     const client = await db.getClient();
     try {
+        // requireAdmin only checks the caller's own role — without this, any
+        // admin in any tenant could rewrite any user's permissions in any
+        // OTHER tenant just by guessing a user id.
+        const target = await client.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+        if (!target.rows[0] || target.rows[0].company_id !== req.user.active_company_id) {
+            client.release();
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
         await client.query('BEGIN');
         for (const p of permissions) {
             await client.query(`
@@ -416,6 +430,14 @@ router.post('/users/:id/apply-template', authMiddleware, requireAdmin, async (re
 
     const client = await db.getClient();
     try {
+        // Same cross-tenant check as /permissions above — requireAdmin alone
+        // doesn't verify the target user belongs to the caller's own company.
+        const target = await client.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+        if (!target.rows[0] || target.rows[0].company_id !== req.user.active_company_id) {
+            client.release();
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
         await client.query('BEGIN');
 
         const items = await client.query(

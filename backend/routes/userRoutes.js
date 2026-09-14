@@ -123,9 +123,14 @@ router.post("/staff/:id/reset-password", authMiddleware, checkPermission("Settin
     const { new_password } = req.body;
     if (!new_password || new_password.length < 6)
         return res.status(400).json({ error: "Password must be at least 6 characters" });
+    const companyId = req.user?.active_company_id || req.user?.company_id || 1;
     try {
         const hash = await bcrypt.hash(new_password, 10);
-        await db.pgRun(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, req.params.id]);
+        const result = await db.pgRun(
+            `UPDATE users SET password_hash = $1 WHERE id = $2 AND company_id = $3`,
+            [hash, req.params.id, companyId]
+        );
+        if (!result || result.rowCount === 0) return res.status(404).json({ error: "User not found" });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
