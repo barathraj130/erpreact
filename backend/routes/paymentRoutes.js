@@ -8,8 +8,41 @@ import {
     deleteCustomerLedgerEvents,
     recomputeCustomerBalance,
 } from "../services/customerLedgerService.js";
+import { createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 
 const router = express.Router();
+
+// Posts a customer-payment double-entry: Debit Cash/Bank, Credit Accounts
+// Receivable (1100) — same pair invoiceRoutes.js posts for its own payment
+// route. Best-effort: a chart-of-accounts hiccup must never block the
+// payment itself.
+async function postPaymentAccounting(client, { companyId, branchId, amount, mode, date, description, userId, referenceType, referenceId }) {
+    if (!(amount > 0)) return;
+    try {
+        const debitAccount = await getAccountByCode(companyId, mode === 'CASH' ? '1000' : '1200');
+        const arAccount = await getAccountByCode(companyId, '1100');
+        if (!debitAccount || !arAccount) return;
+
+        await client.query('SAVEPOINT sp_payment_accounting');
+        try {
+            await createTransactionInternal(client, {
+                company_id: companyId, branch_id: branchId, transaction_date: date,
+                reference_type: referenceType, reference_id: referenceId,
+                description, created_by: userId, bill_purpose: 'real',
+            }, [
+                { account_id: debitAccount.id, debit_amount: amount, credit_amount: 0, description },
+                { account_id: arAccount.id, debit_amount: 0, credit_amount: amount, description },
+            ]);
+            await client.query('RELEASE SAVEPOINT sp_payment_accounting');
+        } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_payment_accounting');
+            await client.query('RELEASE SAVEPOINT sp_payment_accounting');
+            console.warn('[payments] accounting entry skipped:', e.message);
+        }
+    } catch (e) {
+        console.warn('[payments] accounting entry skipped:', e.message);
+    }
+}
 
 /* ============================================================
    1. GET ALL PAYMENTS (with filters)
@@ -194,13 +227,12 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         }
 
         await client.query(
-            `UPDATE invoices 
-             SET amount_paid = $1, 
-                 balance_due = $2,
-                 status = $3,
+            `UPDATE invoices
+             SET paid_amount = $1,
+                 status = $2,
                  updated_at = NOW()
-             WHERE id = $4`,
-            [newTotalPaid, invoiceTotal - newTotalPaid, newStatus, invoice_id]
+             WHERE id = $3`,
+            [newTotalPaid, newStatus, invoice_id]
         );
 
         await createCustomerLedgerEvent(client, {
@@ -254,6 +286,14 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             );
         }
         // CREDIT mode — no cash/bank entry; credit terms handled separately
+
+        if (pMethod === 'CASH' || ['BANK','UPI','CHEQUE','NEFT','RTGS','IMPS'].includes(pMethod)) {
+            await postPaymentAccounting(client, {
+                companyId, branchId: ledgerBranchId, amount: Number(amount),
+                mode: pMethod === 'CASH' ? 'CASH' : 'BANK', date: payDate, userId,
+                referenceType: 'INVOICE_PAYMENT', referenceId: invoice_id, description: ledgerNotes,
+            });
+        }
 
         await client.query("COMMIT");
 
@@ -364,13 +404,12 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             }
 
             await client.query(
-                `UPDATE invoices 
-                 SET amount_paid = $1, 
-                     balance_due = $2,
-                     status = $3,
+                `UPDATE invoices
+                 SET paid_amount = $1,
+                     status = $2,
                      updated_at = NOW()
-                 WHERE id = $4`,
-                [newTotalPaid, invoiceTotal - newTotalPaid, newStatus, invoiceId]
+                 WHERE id = $3`,
+                [newTotalPaid, newStatus, invoiceId]
             );
         }
 
@@ -452,18 +491,17 @@ router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), a
         }
 
         await client.query(
-            `UPDATE invoices 
-             SET amount_paid = $1, 
-                 balance_due = $2,
-                 status = $3,
+            `UPDATE invoices
+             SET paid_amount = $1,
+                 status = $2,
                  updated_at = NOW()
-             WHERE id = $4`,
-            [newTotalPaid, invoiceTotal - newTotalPaid, newStatus, invoiceId]
+             WHERE id = $3`,
+            [newTotalPaid, newStatus, invoiceId]
         );
 
         await client.query("COMMIT");
 
-        res.json({ 
+        res.json({
             message: "Payment deleted successfully",
             invoice_id: invoiceId,
             new_balance_due: invoiceTotal - newTotalPaid,
