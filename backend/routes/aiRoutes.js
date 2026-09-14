@@ -3,6 +3,7 @@ import express from 'express';
 import multer from 'multer';
 import { saveForTraining, scanBillWithAI } from '../services/aiService.js';
 import { runAIPoweredReport } from '../services/aiReportingService.js';
+import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -11,7 +12,7 @@ const upload = multer({ storage: multer.memoryStorage() });
  * @route POST /api/ai/scan
  * @desc World-class bill scanning endpoint
  */
-router.post('/scan', upload.single('bill'), async (req, res) => {
+router.post('/scan', authMiddleware, upload.single('bill'), async (req, res) => {
     console.log("📥 AI Scan Request Received:", req.file?.originalname);
     try {
         if (!req.file) {
@@ -41,7 +42,7 @@ router.post('/scan', upload.single('bill'), async (req, res) => {
  * @route POST /api/ai/feedback
  * @desc Save corrected data for model training
  */
-router.post('/feedback', async (req, res) => {
+router.post('/feedback', authMiddleware, async (req, res) => {
     try {
         const { scanId, correctedData } = req.body;
         await saveForTraining(null, { scanId, ...correctedData, isCorrection: true });
@@ -55,16 +56,23 @@ router.post('/feedback', async (req, res) => {
  * 📡 @route POST /api/ai/reports
  * 🧠 THE AI ANALYTICS ENGINE
  */
-router.post('/reports', async (req, res) => {
-    const { query, userContext } = req.body;
+router.post('/reports', authMiddleware, async (req, res) => {
+    const { query } = req.body;
     console.log("🚀 [AI EXPLORER] Prompt Requested:", query);
 
     try {
         if (!query) return res.status(400).json({ error: "No query provided" });
 
-        // User Context from token
-        // In a real app, use auth middleware, but we take it from body for simplicity here
-        const result = await runAIPoweredReport(query, userContext || { company_id: 1, role: 'admin' });
+        // company_id/role MUST come from the verified JWT, never the request body —
+        // this endpoint used to trust a client-supplied userContext (and defaulted
+        // to company_id: 1, role: 'admin' when absent), letting anyone query any
+        // tenant's data with admin-level access with zero authentication.
+        const userContext = {
+            company_id: req.user.active_company_id,
+            role: req.user.role,
+            enabled_modules: req.user.enabled_modules,
+        };
+        const result = await runAIPoweredReport(query, userContext);
 
         res.json({
             success: true,
