@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { 
-    FaUserCircle, FaMoneyBillWave, FaHandHoldingUsd, 
-    FaHistory, FaSignOutAlt, FaCalendarAlt, FaShieldAlt, FaUsers, FaClipboardList
+import {
+    FaUserCircle, FaMoneyBillWave, FaHandHoldingUsd,
+    FaHistory, FaSignOutAlt, FaCalendarAlt, FaShieldAlt, FaUsers, FaClipboardList, FaPaperPlane
 } from "react-icons/fa";
 
 const EmployeeDashboard: React.FC = () => {
@@ -75,6 +75,12 @@ const EmployeeDashboard: React.FC = () => {
                 style={{ display: "flex", alignItems: "center", gap: "8px", border: "1px solid #e2e8f0", background: "white", padding: "8px 16px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, color: "#16a34a" }}
             >
                 <FaClipboardList /> Daily Job Log
+            </button>
+            <button
+                onClick={() => navigate("/employee/requests")}
+                style={{ display: "flex", alignItems: "center", gap: "8px", border: "1px solid #e2e8f0", background: "white", padding: "8px 16px", borderRadius: "10px", cursor: "pointer", fontWeight: 600, color: "#d946ef" }}
+            >
+                <FaPaperPlane /> My Requests
             </button>
             <button
                 onClick={handleLogout}

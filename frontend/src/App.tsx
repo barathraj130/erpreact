@@ -67,6 +67,7 @@ import CustomerNotifications from "./pages/CustomerNotifications";
 import EmployeeDashboard from "./pages/employee/EmployeeDashboard";
 import EmployeeMyGroups from "./pages/employee/MyGroups";
 import EmployeeDailyLogForm from "./pages/employee/DailyLogForm";
+import EmployeeRequests from "./pages/employee/EmployeeRequests";
 import EmployeePortalAdmin from "./pages/admin/EmployeePortalAdmin";
 import CustomerShop from "./pages/customer/CustomerShop";
 import CustomerLedger from "./pages/customer/CustomerLedger";
@@ -358,6 +359,7 @@ const App: React.FC = () => {
           <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
           <Route path="/employee/groups" element={<EmployeeMyGroups />} />
           <Route path="/employee/daily-log" element={<EmployeeDailyLogForm />} />
+          <Route path="/employee/requests" element={<EmployeeRequests />} />
           <Route path="/customer-login" element={<CustomerLogin />} />
           <Route path="/mark-attendance/:token" element={<MobileAttendance />} />
           <Route path="/mark-attendance" element={<MobileAttendance />} />

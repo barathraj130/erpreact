@@ -233,10 +233,26 @@ const HubChannel: React.FC<Props> = ({ channelId: propChannelId, onClose }) => {
     load();
   };
 
-  const respondToForm = async (formId: number, status: "approved" | "rejected") => {
+  const respondToForm = async (formId: number, status: "approved" | "rejected", formType?: string | null) => {
     const response = status === "rejected" ? prompt("Reason for rejecting (required):") : prompt("Optional note:");
     if (status === "rejected" && !response?.trim()) return;
-    const res = await apiFetch(`/hub/forms/${formId}/respond`, { method: "PUT", body: JSON.stringify({ status, response: response || undefined }) });
+
+    // Approving these two actually creates a real salary advance / expense
+    // entry (see backend/utils/employeeRequestActions.js) — needs to know
+    // how it was paid. Use the richer Forms inbox (Admin Setup > Team Hub
+    // Forms) for a proper dropdown; this inline chat approval just prompts.
+    let payment_mode: string | undefined;
+    if (status === "approved" && (formType === "advance_request" || formType === "expense_claim")) {
+      const entered = prompt("Paid via — type CASH, BANK, or UPI:", "CASH");
+      const normalized = (entered || "").trim().toUpperCase();
+      if (!["CASH", "BANK", "UPI"].includes(normalized)) {
+        alert("Approval cancelled — must specify CASH, BANK, or UPI.");
+        return;
+      }
+      payment_mode = normalized;
+    }
+
+    const res = await apiFetch(`/hub/forms/${formId}/respond`, { method: "PUT", body: JSON.stringify({ status, response: response || undefined, payment_mode }) });
     const data = await res.json();
     if (!data.success) alert(data.error || "Failed to respond.");
     load();
@@ -431,7 +447,7 @@ const FORM_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = { pending: "#D97706", under_review: "#0891B2", approved: "#059669", rejected: "#DC2626", cancelled: "#64748B" };
 const STATUS_LABEL: Record<string, string> = { pending: "⏳ PENDING", under_review: "👀 UNDER REVIEW", approved: "✅ APPROVED", rejected: "❌ REJECTED", cancelled: "CANCELLED" };
 
-const FormCard: React.FC<{ message: HubMessage; isMe: boolean; isAdmin: boolean; currentUserId?: number; onRespond: (id: number, status: "approved" | "rejected") => void }> = ({ message, isMe, isAdmin, currentUserId, onRespond }) => {
+const FormCard: React.FC<{ message: HubMessage; isMe: boolean; isAdmin: boolean; currentUserId?: number; onRespond: (id: number, status: "approved" | "rejected", formType?: string | null) => void }> = ({ message, isMe, isAdmin, currentUserId, onRespond }) => {
   const d = message.form_data || {};
   const status = message.live_form_status || message.form_status || "pending";
   const color = STATUS_COLORS[status] || "#D97706";
@@ -461,8 +477,8 @@ const FormCard: React.FC<{ message: HubMessage; isMe: boolean; isAdmin: boolean;
         <div style={{ fontSize: 11, fontWeight: 800, color }}>Status: {STATUS_LABEL[status]}</div>
         {canDecide && message.form_id && (
           <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-            <button className="neo-btn-success neo-btn-sm" onClick={() => onRespond(message.form_id!, "approved")}>Approve</button>
-            <button className="neo-btn-danger neo-btn-sm" onClick={() => onRespond(message.form_id!, "rejected")}>Reject</button>
+            <button className="neo-btn-success neo-btn-sm" onClick={() => onRespond(message.form_id!, "approved", message.form_type)}>Approve</button>
+            <button className="neo-btn-danger neo-btn-sm" onClick={() => onRespond(message.form_id!, "rejected", message.form_type)}>Reject</button>
           </div>
         )}
       </div>

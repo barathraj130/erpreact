@@ -22,6 +22,7 @@ import path from "path";
 import fs from "fs";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { createAdvanceForEmployee, createExpenseForEmployee } from "../utils/employeeRequestActions.js";
 
 const router = express.Router();
 
@@ -456,7 +457,7 @@ router.put("/forms/:id/respond", authMiddleware, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const { status, response } = req.body;
+    const { status, response, payment_mode } = req.body;
     if (!["approved", "rejected", "under_review"].includes(status)) throw new Error("Invalid status");
 
     const formRes = await client.query(`SELECT * FROM hub_forms WHERE id = $1`, [req.params.id]);
@@ -466,6 +467,42 @@ router.put("/forms/:id/respond", authMiddleware, async (req, res) => {
     const isAdminUser = req.user.role === "admin" || req.user.role === "superadmin";
     if (!isAdminUser && form.submitted_to !== req.user.id) {
       throw new Error("You are not the assigned decision maker for this request");
+    }
+
+    // Approving an advance_request/expense_claim used to just flip a status
+    // flag — the employee got an "approved" notification but nothing was
+    // ever recorded in salary_advances/expense_entries or the books. This
+    // actually creates the real record, in the same transaction as the
+    // approval itself, so "approved" and "recorded" can never drift apart.
+    if (status === "approved" && (form.form_type === "advance_request" || form.form_type === "expense_claim")) {
+      const employeeRow = form.submitted_by_employee_id
+        ? { id: form.submitted_by_employee_id }
+        : (await client.query(`SELECT employee_id AS id FROM users WHERE id = $1 AND employee_id IS NOT NULL`, [form.submitted_by])).rows[0];
+      if (!employeeRow) {
+        throw new Error("Could not identify which employee this request is for — approve it via Employee Portal / Expense Entries directly instead.");
+      }
+      if (!payment_mode) {
+        throw new Error("payment_mode is required to approve this request");
+      }
+      const empDetail = await client.query(`SELECT name, branch_id FROM employees WHERE id = $1`, [employeeRow.id]);
+      const employeeName = empDetail.rows[0]?.name || "Employee";
+      const branchId = empDetail.rows[0]?.branch_id || req.user.branch_id || 1;
+      const d = form.form_data || {};
+
+      if (form.form_type === "advance_request") {
+        await createAdvanceForEmployee(client, {
+          companyId: req.user.active_company_id, branchId, employeeId: employeeRow.id,
+          amount: Number(d.amount) || 0, date: new Date().toISOString().split('T')[0],
+          reason: d.reason || null, paymentMode: payment_mode, userId: req.user.id,
+        });
+      } else {
+        await createExpenseForEmployee(client, {
+          companyId: req.user.active_company_id, branchId, employeeName,
+          expenseType: d.expense_type, amount: Number(d.amount) || 0,
+          date: new Date().toISOString().split('T')[0], description: d.description,
+          paymentMode: payment_mode, userId: req.user.id,
+        });
+      }
     }
 
     await client.query(

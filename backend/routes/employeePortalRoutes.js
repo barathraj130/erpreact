@@ -390,6 +390,56 @@ router.get("/my-advances", employeeAuth, async (req, res) => {
 
 /**
  * ============================================================
+ * MY REQUESTS — advance/expense/leave/etc. requests, submitted straight
+ * into Team Hub's own hub_forms table (req.employee.userId is a real
+ * users.id, same as /my-jobs above) so admins see and respond to them
+ * in the existing Team Hub Forms inbox — one approval queue, not two.
+ * ============================================================
+ */
+const REQUEST_FORM_TYPES = new Set([
+    'leave_request', 'advance_request', 'expense_claim', 'complaint',
+    'suggestion', 'asset_request', 'work_from_home', 'overtime_request',
+    'resignation', 'other',
+]);
+
+router.post("/requests", employeeAuth, async (req, res) => {
+    try {
+        const { form_type, form_data } = req.body || {};
+        if (!REQUEST_FORM_TYPES.has(form_type)) {
+            return res.status(400).json({ error: "Invalid request type" });
+        }
+        if (!form_data || typeof form_data !== 'object') {
+            return res.status(400).json({ error: "form_data is required" });
+        }
+
+        const row = await db.pgGet(
+            `INSERT INTO hub_forms (company_id, form_type, submitted_by, submitted_by_employee_id, form_data, status)
+             VALUES ($1,$2,$3,$4,$5,'pending') RETURNING *`,
+            [req.employee.companyId, form_type, req.employee.userId, req.employee.employeeId, JSON.stringify(form_data)]
+        );
+        res.json({ success: true, request: row });
+    } catch (e) {
+        console.error("portal create request error:", e.message);
+        res.status(500).json({ error: "Failed to submit request" });
+    }
+});
+
+router.get("/requests", employeeAuth, async (req, res) => {
+    try {
+        const rows = await db.pgAll(
+            `SELECT id, form_type, status, form_data, response, responded_at, created_at
+             FROM hub_forms WHERE submitted_by = $1 ORDER BY created_at DESC LIMIT 100`,
+            [req.employee.userId]
+        );
+        res.json({ requests: rows });
+    } catch (e) {
+        console.error("portal list requests error:", e.message);
+        res.json({ requests: [] });
+    }
+});
+
+/**
+ * ============================================================
  * MY JOBS & DAILY LOGS — corrected permission model: the employee
  * (not admin) records reached/check-in/check-out and EOD product
  * counts for jobs assigned to their own group(s). Admin's role is

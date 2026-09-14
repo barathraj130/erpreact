@@ -1388,6 +1388,12 @@ export const runSchemaUpdates = async () => {
             )
         `).catch(() => {});
 
+        // Team Hub requests submitted from the Employee Portal login (a real
+        // users row with employee_id set) carry the employee's id too, so an
+        // approved advance_request/expense_claim can be resolved back to a
+        // real employees(id) without guessing at the users<->employees link.
+        await db.query(`ALTER TABLE hub_forms ADD COLUMN IF NOT EXISTS submitted_by_employee_id INTEGER REFERENCES employees(id)`).catch(() => {});
+
         // ── Performance indexes ─────────────────────────────────────────────
         // Nearly every query in this codebase filters by company_id, but only
         // 4 indexes existed anywhere in the schema before this — every hot-path

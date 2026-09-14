@@ -50,6 +50,13 @@ const HubForms: React.FC = () => {
   const [respondingId, setRespondingId] = useState<number | null>(null);
   const [responseText, setResponseText] = useState("");
   const [respondAction, setRespondAction] = useState<"approved" | "rejected" | null>(null);
+  const [paymentMode, setPaymentMode] = useState<"CASH" | "BANK" | "UPI">("CASH");
+
+  // Approving these two actually records a real salary advance / expense entry
+  // (see backend/utils/employeeRequestActions.js) — needs to know how it was paid.
+  const respondingForm = forms.find((f) => f.id === respondingId);
+  const needsPaymentMode = respondAction === "approved" &&
+    (respondingForm?.form_type === "advance_request" || respondingForm?.form_type === "expense_claim");
 
   const canSeeInbox = isAdmin || isDecisionMaker;
 
@@ -91,10 +98,18 @@ const HubForms: React.FC = () => {
       alert("A response is required when rejecting a request.");
       return;
     }
+    if (needsPaymentMode && !paymentMode) {
+      alert("Select how this was paid.");
+      return;
+    }
     try {
       const res = await apiFetch(`/hub/forms/${respondingId}/respond`, {
         method: "PUT",
-        body: JSON.stringify({ status: respondAction, response: responseText.trim() || undefined }),
+        body: JSON.stringify({
+          status: respondAction,
+          response: responseText.trim() || undefined,
+          payment_mode: needsPaymentMode ? paymentMode : undefined,
+        }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Failed");
@@ -210,6 +225,18 @@ const HubForms: React.FC = () => {
               <button className="neo-modal-close" onClick={() => setRespondingId(null)}>×</button>
             </div>
             <div className="neo-modal-body">
+              {needsPaymentMode && (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--neu-text-muted)", display: "block", marginBottom: 6 }}>
+                    Paid via — this will create a real {respondingForm?.form_type === "advance_request" ? "salary advance" : "expense entry"}
+                  </label>
+                  <select className="neu-select" value={paymentMode} onChange={(e) => setPaymentMode(e.target.value as any)}>
+                    <option value="CASH">Cash</option>
+                    <option value="BANK">Bank</option>
+                    <option value="UPI">UPI</option>
+                  </select>
+                </div>
+              )}
               <label style={{ fontSize: 11, fontWeight: 700, color: "var(--neu-text-muted)", display: "block", marginBottom: 6 }}>
                 Response {respondAction === "rejected" ? "(required)" : "(optional)"}
               </label>
