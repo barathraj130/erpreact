@@ -123,8 +123,13 @@ router.get("/purchases", authMiddleware, async (req, res) => {
 });
 
 // GET /api/documents/view/:viewerId
-router.get("/view/:viewerId", async (req, res) => {
+// Was unauthenticated with no company_id scoping — anyone who guessed a
+// numeric id could be redirected straight to another tenant's stored
+// invoice/bill file_url. Now requires login and is scoped to the caller's
+// own company, matching /sales and /purchases above.
+router.get("/view/:viewerId", authMiddleware, async (req, res) => {
     try {
+        const companyId = req.user.active_company_id;
         const { viewerId } = req.params;
         const parts = viewerId.split('-');
         if (parts.length < 3) return res.status(400).json({ error: "Invalid viewer ID" });
@@ -134,12 +139,12 @@ router.get("/view/:viewerId", async (req, res) => {
 
         let sql = "";
         if (branch === "Sales") {
-            sql = `SELECT file_url FROM invoices WHERE id = $1`;
+            sql = `SELECT file_url FROM invoices WHERE id = $1 AND company_id = $2`;
         } else {
-            sql = `SELECT file_url FROM purchase_bills WHERE id = $1`;
+            sql = `SELECT file_url FROM purchase_bills WHERE id = $1 AND company_id = $2`;
         }
 
-        const result = await db.pgGet(sql, [fileId]);
+        const result = await db.pgGet(sql, [fileId, companyId]);
         if (!result) return res.status(404).send("Document not found");
 
         if (result.file_url) {
