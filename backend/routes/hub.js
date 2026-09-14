@@ -39,9 +39,19 @@ const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024 } });
 // ── POST /api/hub/upload — attach a file/image/document/voice note ─────────
 router.post("/upload", authMiddleware, upload.single("file"), async (req, res) => {
   if (!req.file) return res.json({ success: false, error: "No file received" });
+  // Must be an absolute URL: the frontend (Vercel) and this API (Railway) are
+  // on different domains, so a relative "/uploads/hub/..." path resolved
+  // against the FRONTEND's own origin — a guaranteed 404 there, which is why
+  // every image/voice/document attachment rendered broken (an <img>'s alt
+  // text showing instead of the picture, audio players stuck at 0:00/0:00).
+  // Read x-forwarded-proto directly rather than relying on req.protocol,
+  // since Express isn't configured with `trust proxy` and Railway's own
+  // proxy terminates TLS upstream (req.protocol would otherwise say "http").
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const baseUrl = `${proto}://${req.get('host')}`;
   res.json({
     success: true,
-    file_url: `/uploads/hub/${req.file.filename}`,
+    file_url: `${baseUrl}/uploads/hub/${req.file.filename}`,
     file_name: req.file.originalname,
     file_size: req.file.size,
     file_type: req.file.mimetype,

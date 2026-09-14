@@ -25,7 +25,13 @@ router.post("/upload-signature",
     upload.single("signature"),
     async (req, res) => {
         try {
-            const filePath = `/uploads/signatures/${req.file.filename}`;
+            // Absolute URL — the frontend (Vercel) and this API (Railway) are
+            // on different domains, so a relative path here would 404 when
+            // rendered (same bug found and fixed in hub.js's attachment
+            // uploads and transactionRoutes.js's proof uploads).
+            const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+            const baseUrl = `${proto}://${req.get('host')}`;
+            const filePath = `${baseUrl}/uploads/signatures/${req.file.filename}`;
 
             await db.query(
                 "UPDATE users SET signature_url = $1 WHERE id = $2",

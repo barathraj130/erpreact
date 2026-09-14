@@ -294,9 +294,14 @@ const upload = multer({
 // POST /api/transactions - Create a general transaction with optional proof
 router.post('/', authMiddleware, upload.single('proof'), async (req, res) => {
     try {
-        const txData = { 
-            ...req.body, 
-            proof_url: req.file ? `/uploads/proofs/${req.file.filename}` : null 
+        // Absolute URL — the frontend (Vercel) and this API (Railway) are on
+        // different domains, so a relative path here would 404 when rendered
+        // (same bug found and fixed in hub.js's attachment uploads).
+        const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const baseUrl = `${proto}://${req.get('host')}`;
+        const txData = {
+            ...req.body,
+            proof_url: req.file ? `${baseUrl}/uploads/proofs/${req.file.filename}` : null
         };
         
         const result = await processTransaction(txData, req.user);
