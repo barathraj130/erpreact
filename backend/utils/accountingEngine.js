@@ -195,6 +195,8 @@ const EXPECTED_ACCOUNT_TYPES = {
     '5000': 'EXPENSE', // Purchases
     '5100': 'EXPENSE', // Discount Allowed
     '5200': 'INCOME',  // Discount Received
+    '5300': 'EXPENSE', // Salary & Wages
+    '5900': 'EXPENSE', // Business Expenses (Other) — expense_entries module
 };
 
 const DEFAULT_ACCOUNT_NAMES = {
@@ -211,6 +213,8 @@ const DEFAULT_ACCOUNT_NAMES = {
     '5000': 'Purchases',
     '5100': 'Discount Allowed',
     '5200': 'Discount Received',
+    '5300': 'Salary & Wages',
+    '5900': 'Business Expenses (Other)',
 };
 
 /**

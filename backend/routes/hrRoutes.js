@@ -7,8 +7,43 @@ import { checkSufficientBalance } from "../utils/balanceCheck.js";
 import { recordProprietorCapital } from "../utils/proprietorLedger.js";
 import { sendWelcomeWhatsApp } from "../utils/sendWelcomeWhatsApp.js";
 import { sendWhatsApp, notifyOwner } from "../utils/whatsapp.js";
+import { createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 
 const router = express.Router();
+
+// Posts a Salary & Wages (5300) expense against Cash/Bank/Proprietor's Capital
+// for a wage payment. Best-effort: wrapped in a SAVEPOINT by the caller's
+// transaction so a chart-of-accounts hiccup never blocks the actual wage
+// payment — the cash/bank ledger entry (the source of truth for balances)
+// already happened before this runs.
+async function postWageExpense(client, { companyId, branchId, amount, mode, date, description, userId }) {
+    if (!(amount > 0)) return;
+    const expenseAccount = await getAccountByCode(companyId, '5300');
+    const creditCode = mode === 'PROPRIETOR' ? '3000' : (mode === 'BANK' ? '1200' : '1000');
+    const creditAccount = await getAccountByCode(companyId, creditCode);
+    if (!expenseAccount || !creditAccount) return;
+
+    await client.query('SAVEPOINT sp_wage_accounting');
+    try {
+        await createTransactionInternal(client, {
+            company_id: companyId,
+            branch_id: branchId,
+            transaction_date: date,
+            reference_type: 'DAILY_WAGE',
+            description,
+            created_by: userId,
+            bill_purpose: 'real',
+        }, [
+            { account_id: expenseAccount.id, debit_amount: amount, credit_amount: 0, description },
+            { account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description },
+        ]);
+        await client.query('RELEASE SAVEPOINT sp_wage_accounting');
+    } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_wage_accounting');
+        await client.query('RELEASE SAVEPOINT sp_wage_accounting');
+        console.warn('[hrRoutes] wage accounting entry skipped:', e.message);
+    }
+}
 
 // Half-day wage: divide by 2 then round DOWN to nearest ₹50
 // e.g. ₹850 / 2 = ₹425 → ₹400  |  ₹1300 / 2 = ₹650 → ₹650
@@ -859,6 +894,10 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                         referenceType: 'DAILY_WAGE',
                     });
                 }
+                await postWageExpense(client, {
+                    companyId, branchId, amount: wage, mode: pMode, date, userId: req.user?.id,
+                    description: `Daily Wage – ${tempName} (Temp, ${date})`,
+                });
                 results.push({ employee_id: null, name: tempName, wage, deduction: 0 });
                 continue;
             }
@@ -911,6 +950,10 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                         [companyId, branchId, wage, date]);
                 }
             }
+            await postWageExpense(client, {
+                companyId, branchId, amount: wage, mode: pMode, date, userId: req.user?.id,
+                description: `Daily Wage – ${emp.name} (${date})`,
+            });
 
             // If deduction > 0, record it as advance repayment in the employee ledger
             if (deduction > 0) {
@@ -1198,6 +1241,10 @@ router.post("/salary/weekly/process", authMiddleware, async (req, res) => {
                          VALUES ($1,$2,'weekly_salary',$3,'out',$4,CURRENT_DATE,$5)`,
                         [companyId, branchId, netSalary, 'Main Account', wkId]);
                 }
+                await postWageExpense(client, {
+                    companyId, branchId, amount: netSalary, mode: pMode, date: weStr, userId: req.user?.id,
+                    description: `Weekly Salary – ${emp.name} (${weStr})`,
+                });
             }
 
             // Update advance balance if deducted

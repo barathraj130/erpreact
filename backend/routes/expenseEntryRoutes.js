@@ -7,6 +7,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { createTransaction, getAccountByCode } from '../utils/accountingEngine.js';
 
 const router = express.Router();
 
@@ -99,15 +100,45 @@ async function isApprover(req) {
     }
 }
 
+// Posts a Business Expenses (5900) entry against Cash/Bank for a company-paid
+// expense. Best-effort and separate from the cash/bank ledger write above —
+// a chart-of-accounts hiccup here must never block the expense record itself.
+async function postExpenseAccountingEntry({ companyId, branchId, paymentMode, amount, date, description, userId }) {
+    try {
+        const creditCode = paymentMode === 'cash' ? '1000' : '1200';
+        const [expenseAccount, creditAccount] = await Promise.all([
+            getAccountByCode(companyId, '5900'),
+            getAccountByCode(companyId, creditCode),
+        ]);
+        if (!expenseAccount || !creditAccount) return;
+
+        await createTransaction({
+            company_id: companyId,
+            branch_id: branchId || 1,
+            transaction_date: date,
+            reference_type: 'EXPENSE_ENTRY',
+            description,
+            created_by: userId,
+            bill_purpose: 'real',
+        }, [
+            { account_id: expenseAccount.id, debit_amount: amount, credit_amount: 0, description },
+            { account_id: creditAccount.id, debit_amount: 0, credit_amount: amount, description },
+        ]);
+    } catch (e) {
+        console.warn('[expense-entries] accounting entry skipped:', e.message);
+    }
+}
+
 // Posts the ledger entry for an approved expense — shared by the auto-approve
 // path (POST /) and the explicit approval path (POST /:id/approve).
-async function postExpenseLedgerEntry({ companyId, branchId, paymentMode, amount, date }) {
+async function postExpenseLedgerEntry({ companyId, branchId, paymentMode, amount, date, description, userId }) {
     if (paymentMode === 'cash') {
         const inserted = await db.pgGet(
             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
              VALUES ($1, $2, 'EXPENSE', $3, 'out', $4) RETURNING id`,
             [companyId, branchId || 1, amount, date]
         );
+        await postExpenseAccountingEntry({ companyId, branchId, paymentMode, amount, date, description, userId });
         return { cashLedgerRef: inserted?.id || null, bankLedgerRef: null };
     }
     if (paymentMode === 'bank' || paymentMode === 'upi') {
@@ -116,6 +147,7 @@ async function postExpenseLedgerEntry({ companyId, branchId, paymentMode, amount
              VALUES ($1, $2, 'EXPENSE', $3, 'out', $4) RETURNING id`,
             [companyId, branchId || 1, amount, date]
         );
+        await postExpenseAccountingEntry({ companyId, branchId, paymentMode, amount, date, description, userId });
         return { cashLedgerRef: null, bankLedgerRef: inserted?.id || null };
     }
     // 'personal' → no ledger entry, company cash/bank untouched
@@ -275,6 +307,8 @@ router.post('/', authMiddleware, async (req, res) => {
         if (approver) {
             ({ cashLedgerRef, bankLedgerRef } = await postExpenseLedgerEntry({
                 companyId, branchId, paymentMode: payment_mode, amount: amt, date: expense_date,
+                description: `${CATEGORY_LOOKUP[category]?.label || category}: ${sub_category.trim()} — ${paid_to.trim()}`,
+                userId,
             }));
         }
 
@@ -323,6 +357,8 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
         const { cashLedgerRef, bankLedgerRef } = await postExpenseLedgerEntry({
             companyId, branchId: entry.branch_id, paymentMode: entry.payment_mode,
             amount: entry.amount, date: entry.expense_date,
+            description: `${CATEGORY_LOOKUP[entry.category]?.label || entry.category}: ${entry.sub_category} — ${entry.paid_to}`,
+            userId,
         });
 
         const row = await db.pgGet(
