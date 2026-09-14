@@ -15,6 +15,11 @@ const router = express.Router();
 router.get("/:id/pdf", authMiddleware, async (req, res) => {
     const invoiceId = Number(req.params.id);
     const companyId = parseInt(req.user.active_company_id);
+    // Customer/storefront logins may only fetch their OWN invoice PDF — this
+    // query was scoped only by company_id, so any customer could view any
+    // other customer's invoice (name, address, phone, GSTIN, pricing) just by
+    // guessing a sequential invoice id. Staff/admin roles are unaffected.
+    const isCustomerRole = ['customer', 'user'].includes((req.user.role || '').toLowerCase());
 
     try {
         // 1. Fetch Invoice + Company + Customer
@@ -40,8 +45,8 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
             FROM invoices i
             LEFT JOIN users u    ON i.customer_id = u.id
             LEFT JOIN companies c ON i.company_id  = c.id
-            WHERE i.id = $1 AND i.company_id = $2
-        `, [invoiceId, companyId]);
+            WHERE i.id = $1 AND i.company_id = $2 ${isCustomerRole ? 'AND i.customer_id = $3' : ''}
+        `, isCustomerRole ? [invoiceId, companyId, req.user.id] : [invoiceId, companyId]);
 
         if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 

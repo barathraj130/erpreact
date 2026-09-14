@@ -1643,6 +1643,11 @@ router.get('/retail-summary', authMiddleware, async (req, res) => {
 router.get("/:id/pdf", authMiddleware, async (req, res) => {
     const id        = Number(req.params.id);
     const companyId = req.user.active_company_id;
+    // Customer/storefront logins may only fetch their OWN invoice PDF — this
+    // was scoped only by company_id, so any customer could view any other
+    // customer's invoice (name, address, phone, GSTIN, pricing) just by
+    // guessing a sequential invoice id. Staff/admin roles are unaffected.
+    const isCustomerRole = ['customer', 'user'].includes((req.user.role || '').toLowerCase());
     try {
         const invoiceData = await db.pgGet(`
             SELECT i.*,
@@ -1657,13 +1662,13 @@ router.get("/:id/pdf", authMiddleware, async (req, res) => {
             LEFT JOIN users     u  ON i.customer_id = u.id
             LEFT JOIN companies c  ON i.company_id  = c.id
             LEFT JOIN invoice_line_items li ON li.invoice_id = i.id
-            WHERE i.id = $1 AND i.company_id = $2
+            WHERE i.id = $1 AND i.company_id = $2 ${isCustomerRole ? 'AND i.customer_id = $3' : ''}
             GROUP BY i.id, u.nickname, u.username, u.address_line1, u.city_pincode, u.state,
                      u.gstin, u.state_code, u.phone,
                      c.company_name, c.address_line1, c.city_pincode, c.state,
                      c.gstin, c.state_code, c.bank_name, c.bank_account_no,
                      c.bank_ifsc_code, c.phone
-        `, [id, companyId]);
+        `, isCustomerRole ? [id, companyId, req.user.id] : [id, companyId]);
 
         if (!invoiceData) return res.status(404).json({ error: 'Invoice not found' });
 
