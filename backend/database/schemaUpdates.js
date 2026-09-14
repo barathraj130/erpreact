@@ -1388,6 +1388,34 @@ export const runSchemaUpdates = async () => {
             )
         `).catch(() => {});
 
+        // ── Performance indexes ─────────────────────────────────────────────
+        // Nearly every query in this codebase filters by company_id, but only
+        // 4 indexes existed anywhere in the schema before this — every hot-path
+        // table below was relying on a sequential scan. Cheap, additive, and
+        // safe to run on every boot (IF NOT EXISTS is a no-op after the first).
+        const perfIndexes = [
+            `CREATE INDEX IF NOT EXISTS idx_invoices_company_date ON invoices(company_id, invoice_date DESC)`,
+            `CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_purchase_bills_company_date ON purchase_bills(company_id, bill_date DESC)`,
+            `CREATE INDEX IF NOT EXISTS idx_purchase_bills_supplier ON purchase_bills(supplier_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_products_company ON products(company_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_cash_ledger_company_date ON cash_ledger(company_id, date)`,
+            `CREATE INDEX IF NOT EXISTS idx_bank_ledger_company_date ON bank_ledger(company_id, date)`,
+            `CREATE INDEX IF NOT EXISTS idx_inventory_company_product ON inventory(company_id, product_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_branch_inventory_branch_product ON branch_inventory(branch_id, product_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_customer_ledger_customer ON customer_ledger(customer_id, company_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_ledger_entries_company_date ON ledger_entries(company_id, entry_date)`,
+            `CREATE INDEX IF NOT EXISTS idx_ledger_entries_account ON ledger_entries(account_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_employees_company ON employees(company_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_transactions_company_date ON transactions(company_id, transaction_date)`,
+            `CREATE INDEX IF NOT EXISTS idx_transaction_lines_transaction ON transaction_lines(transaction_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_inventory_movements_company_branch ON inventory_movements(company_id, branch_id, product_id)`,
+        ];
+        for (const idx of perfIndexes) {
+            await db.query(idx).catch((e) => console.warn('[schemaUpdates] index skipped:', e.message));
+        }
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);
