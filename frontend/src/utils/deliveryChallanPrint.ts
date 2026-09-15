@@ -92,10 +92,12 @@ export async function printDeliveryChallan(order: DOForPrint) {
   th { background: #f1f1f1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
   .text-center { text-align: center; }
   tfoot td { font-weight: 800; background: #f8f8f8; }
-  .signature-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 48px; }
+  .signature-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 48px; align-items: end; }
   .signature-block { text-align: center; }
   .signature-line { border-top: 1.5px solid #000; margin-bottom: 6px; padding-top: 48px; }
   .signature-label { font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .seal-box { border: 1.5px dashed #999; border-radius: 6px; height: 84px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
+  .seal-box-label { font-size: 9px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
   .footer-note { margin-top: 20px; font-size: 9px; color: #666; text-align: center; }
   @media print { body { padding: 20px; } .no-print { display: none; } @page { size: A4; margin: 15mm; } }
 </style>
@@ -139,6 +141,10 @@ export async function printDeliveryChallan(order: DOForPrint) {
 
   <div class="signature-row">
     <div class="signature-block"><div class="signature-line"></div><div class="signature-label">Dispatched By</div></div>
+    <div class="signature-block">
+      <div class="seal-box"><span class="seal-box-label">Company Seal</span></div>
+      <div class="signature-label">${escapeHtml(companyName)}</div>
+    </div>
     <div class="signature-block"><div class="signature-line"></div><div class="signature-label">Received By</div></div>
   </div>
 

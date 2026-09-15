@@ -466,6 +466,17 @@ const HRFormsEntry: React.FC = () => {
                   <Field label="State"><input className="neu-input" value={fields.state || ""} onChange={(e) => set("state", e.target.value)} /></Field>
                   <Field label="GSTIN"><input className="neu-input" value={fields.customer_gstin || ""} onChange={(e) => set("customer_gstin", e.target.value)} /></Field>
                 </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--neu-text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 4 }}>Bank / Account Details</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="Bank Name"><input className="neu-input" value={fields.bank_name || ""} onChange={(e) => set("bank_name", e.target.value)} /></Field>
+                  <Field label="Branch"><input className="neu-input" value={fields.bank_branch || ""} onChange={(e) => set("bank_branch", e.target.value)} /></Field>
+                  <Field label="IFSC Code"><input className="neu-input" value={fields.ifsc_code || ""} onChange={(e) => set("ifsc_code", e.target.value)} /></Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Field label="Account Holder Name"><input className="neu-input" value={fields.account_holder || ""} onChange={(e) => set("account_holder", e.target.value)} /></Field>
+                  <Field label="Account Number"><input className="neu-input" value={fields.account_number || ""} onChange={(e) => set("account_number", e.target.value)} /></Field>
+                  <Field label="UPI ID"><input className="neu-input" value={fields.upi_id || ""} onChange={(e) => set("upi_id", e.target.value)} /></Field>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Field label="Est. Monthly Purchase (₹)"><input type="number" className="neu-input" value={fields.est_monthly_purchase || ""} onChange={(e) => set("est_monthly_purchase", Number(e.target.value))} /></Field>
                   <Field label="Credit Limit Requested (₹)"><input type="number" className="neu-input" value={fields.credit_limit || ""} onChange={(e) => set("credit_limit", Number(e.target.value))} /></Field>

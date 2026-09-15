@@ -498,6 +498,17 @@ const FORM_FIELD_DEFS: Record<string, FormDef> = {
         <div class="field-group"><div class="field-label">Aadhar / PAN Number</div><div class="field-line"></div></div>
         <div class="field-group"><div class="field-label">Email</div><div class="field-line"></div></div>
       </div>
+      <div class="section-title">Bank / Account Details / வங்கி கணக்கு விவரங்கள்</div>
+      <div class="meta-row">
+        <div class="field-group"><div class="field-label">Bank Name / வங்கி பெயர்</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">Branch / கிளை</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">IFSC Code</div><div class="field-line"></div></div>
+      </div>
+      <div class="meta-row">
+        <div class="field-group"><div class="field-label">Account Holder Name / கணக்கு வைத்திருப்பவர் பெயர்</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">Account Number / கணக்கு எண்</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">UPI ID (if any)</div><div class="field-line"></div></div>
+      </div>
       <div class="section-title">Purchase Details / கொள்முதல் விவரங்கள்</div>
       <div class="meta-row">
         <div class="field-group"><div class="field-label">Products Interested In / தேவைப்படும் பொருட்கள்</div><div class="field-line"></div></div>
@@ -695,11 +706,15 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
   </div>
   <script>
     // Every form must print on exactly one A4 page regardless of how much
-    // content it has (field count varies a lot across the 16 form types).
-    // Rather than hand-tuning spacing per form (fragile — breaks again the
-    // next time a form's fields change), shrink the whole page proportionally
-    // to fit if it would otherwise overflow. Text stays fully legible down to
-    // the floor below; this only engages for the longer forms.
+    // content it has (field count varies a lot across the 16 form types —
+    // the longest ones, like New Customer Registration, have far more
+    // fields than the shortest). Rather than hand-tuning spacing per form
+    // (fragile — breaks again the next time a form's fields change), shrink
+    // the whole page proportionally to fit if it would otherwise overflow.
+    // No floor on the scale factor — a 0.7x floor previously left the
+    // longest forms still too tall to fit, spilling onto a second page
+    // exactly like this was meant to prevent. Single-page fit always wins;
+    // text on the longest forms will be smaller, not on a second sheet.
     window.onload = function () {
       requestAnimationFrame(function () {
         var el = document.getElementById('print-page');
@@ -707,7 +722,7 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
         var USABLE_HEIGHT_PX = 1000; // A4 (297mm) minus @page margins (15mm) and body print padding
         var h = el.scrollHeight;
         if (h > USABLE_HEIGHT_PX) {
-          var scale = Math.max(0.7, USABLE_HEIGHT_PX / h);
+          var scale = USABLE_HEIGHT_PX / h;
           el.style.transformOrigin = 'top left';
           el.style.transform = 'scale(' + scale + ')';
           el.style.width = (100 / scale) + '%';
