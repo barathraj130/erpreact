@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
+import { printExpenseReceipt } from "../../utils/expenseReceiptPrint";
 import "../PageShared.css";
 
 interface ExpenseEntry {
@@ -297,6 +298,19 @@ const ExpenseList: React.FC = () => {
                         <DetailRow label="Admin Notes">{e.admin_notes}</DetailRow>
                       </div>
                     )}
+                    <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={(ev) => { ev.stopPropagation(); printExpenseReceipt(e); }}
+                        style={{
+                          padding: "8px 16px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff",
+                          color: "#334155", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: 6,
+                        }}
+                      >
+                        🖨️ Print Receipt
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
