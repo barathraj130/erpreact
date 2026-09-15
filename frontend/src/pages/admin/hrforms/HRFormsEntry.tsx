@@ -13,7 +13,8 @@ const FORM_LABELS: Record<string, string> = {
   work_from_home: "Work From Home", asset_request: "Asset Request",
   loan_request: "Employee Loan Request", chit_fund_join: "Chit Fund Enrollment", chit_bid_request: "Chit Bid Request",
   customer_complaint: "Customer Complaint", customer_feedback: "Customer Feedback",
-  customer_registration: "New Customer Registration", customer_visit_report: "Customer Visit Report",
+  customer_registration: "New Customer Registration", customer_bank_details: "Bank / Account Details",
+  customer_visit_report: "Customer Visit Report",
   customer_credit_request: "Customer Credit Request",
 };
 
@@ -466,7 +467,19 @@ const HRFormsEntry: React.FC = () => {
                   <Field label="State"><input className="neu-input" value={fields.state || ""} onChange={(e) => set("state", e.target.value)} /></Field>
                   <Field label="GSTIN"><input className="neu-input" value={fields.customer_gstin || ""} onChange={(e) => set("customer_gstin", e.target.value)} /></Field>
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--neu-text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 4 }}>Bank / Account Details</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Est. Monthly Purchase (₹)"><input type="number" className="neu-input" value={fields.est_monthly_purchase || ""} onChange={(e) => set("est_monthly_purchase", Number(e.target.value))} /></Field>
+                  <Field label="Credit Limit Requested (₹)"><input type="number" className="neu-input" value={fields.credit_limit || ""} onChange={(e) => set("credit_limit", Number(e.target.value))} /></Field>
+                </div>
+              </>
+            )}
+            {formType === "customer_bank_details" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Field label="Customer / Business Name"><input className="neu-input" value={fields.customer_name || ""} onChange={(e) => set("customer_name", e.target.value)} /></Field>
+                  <Field label="Phone"><input className="neu-input" value={fields.customer_phone || ""} onChange={(e) => set("customer_phone", e.target.value)} /></Field>
+                </div>
+                <Field label="Related Invoice / Order No. (if any)"><input className="neu-input" value={fields.related_reference || ""} onChange={(e) => set("related_reference", e.target.value)} /></Field>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                   <Field label="Bank Name"><input className="neu-input" value={fields.bank_name || ""} onChange={(e) => set("bank_name", e.target.value)} /></Field>
                   <Field label="Branch"><input className="neu-input" value={fields.bank_branch || ""} onChange={(e) => set("bank_branch", e.target.value)} /></Field>
@@ -475,12 +488,18 @@ const HRFormsEntry: React.FC = () => {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                   <Field label="Account Holder Name"><input className="neu-input" value={fields.account_holder || ""} onChange={(e) => set("account_holder", e.target.value)} /></Field>
                   <Field label="Account Number"><input className="neu-input" value={fields.account_number || ""} onChange={(e) => set("account_number", e.target.value)} /></Field>
+                  <Field label="Account Type">
+                    <select className="neu-select" value={fields.account_type || ""} onChange={(e) => set("account_type", e.target.value)}>
+                      <option value="">Select…</option><option>Savings</option><option>Current</option>
+                    </select>
+                  </Field>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                   <Field label="UPI ID"><input className="neu-input" value={fields.upi_id || ""} onChange={(e) => set("upi_id", e.target.value)} /></Field>
+                  <Field label="PAN Number"><input className="neu-input" value={fields.pan_number || ""} onChange={(e) => set("pan_number", e.target.value)} /></Field>
+                  <Field label="GSTIN"><input className="neu-input" value={fields.gstin || ""} onChange={(e) => set("gstin", e.target.value)} /></Field>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <Field label="Est. Monthly Purchase (₹)"><input type="number" className="neu-input" value={fields.est_monthly_purchase || ""} onChange={(e) => set("est_monthly_purchase", Number(e.target.value))} /></Field>
-                  <Field label="Credit Limit Requested (₹)"><input type="number" className="neu-input" value={fields.credit_limit || ""} onChange={(e) => set("credit_limit", Number(e.target.value))} /></Field>
-                </div>
+                <Field label="Purpose / Note"><textarea className="neu-textarea" value={fields.note || ""} onChange={(e) => set("note", e.target.value)} /></Field>
               </>
             )}
             {formType === "customer_visit_report" && (

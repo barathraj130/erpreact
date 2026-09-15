@@ -29,6 +29,7 @@ export const FORMS: FormMeta[] = [
   { id: "customer_complaint", title: "Customer Complaint", tamil: "வாடிக்கையாளர் புகார்", icon: "😤", color: "#EF4444", desc: "Customer complaint about product or service", category: "customer" },
   { id: "customer_feedback", title: "Customer Feedback", tamil: "வாடிக்கையாளர் கருத்து", icon: "⭐", color: "#F59E0B", desc: "Customer rating and satisfaction feedback", category: "customer" },
   { id: "customer_registration", title: "New Customer Registration", tamil: "புதிய வாடிக்கையாளர் பதிவு", icon: "🆕", color: "#10B981", desc: "Register a new customer met during field visit", category: "customer" },
+  { id: "customer_bank_details", title: "Bank / Account Details Form", tamil: "வங்கி கணக்கு விவரங்கள் படிவம்", icon: "🏦", color: "#0EA5E9", desc: "Record a customer's bank / account details for payments and settlements", category: "customer" },
   { id: "customer_visit_report", title: "Customer Visit Report", tamil: "வாடிக்கையாளர் சந்திப்பு அறிக்கை", icon: "🤝", color: "#3B82F6", desc: "Report of customer visit by field employee", category: "customer" },
   { id: "customer_credit_request", title: "Customer Credit Request", tamil: "வாடிக்கையாளர் கடன் வரம்பு", icon: "💳", color: "#6366F1", desc: "Request to increase customer credit limit", category: "customer" },
 ];
@@ -498,17 +499,6 @@ const FORM_FIELD_DEFS: Record<string, FormDef> = {
         <div class="field-group"><div class="field-label">Aadhar / PAN Number</div><div class="field-line"></div></div>
         <div class="field-group"><div class="field-label">Email</div><div class="field-line"></div></div>
       </div>
-      <div class="section-title">Bank / Account Details / வங்கி கணக்கு விவரங்கள்</div>
-      <div class="meta-row">
-        <div class="field-group"><div class="field-label">Bank Name / வங்கி பெயர்</div><div class="field-line"></div></div>
-        <div class="field-group"><div class="field-label">Branch / கிளை</div><div class="field-line"></div></div>
-        <div class="field-group"><div class="field-label">IFSC Code</div><div class="field-line"></div></div>
-      </div>
-      <div class="meta-row">
-        <div class="field-group"><div class="field-label">Account Holder Name / கணக்கு வைத்திருப்பவர் பெயர்</div><div class="field-line"></div></div>
-        <div class="field-group"><div class="field-label">Account Number / கணக்கு எண்</div><div class="field-line"></div></div>
-        <div class="field-group"><div class="field-label">UPI ID (if any)</div><div class="field-line"></div></div>
-      </div>
       <div class="section-title">Purchase Details / கொள்முதல் விவரங்கள்</div>
       <div class="meta-row">
         <div class="field-group"><div class="field-label">Products Interested In / தேவைப்படும் பொருட்கள்</div><div class="field-line"></div></div>
@@ -530,6 +520,41 @@ const FORM_FIELD_DEFS: Record<string, FormDef> = {
         <div class="field-group"><div class="field-label">Visit Date / சந்தித்த தேதி</div><div class="field-line"></div></div>
         <div class="field-group"><div class="field-label">Follow Up Date / மீண்டும் தொடர்பு கொள்ள</div><div class="field-line"></div></div>
       </div>
+    `,
+  },
+  customer_bank_details: {
+    title: "Bank / Account Details Form",
+    tamil: "வங்கி கணக்கு விவரங்கள் படிவம்",
+    fields: `
+      <div class="section-title">Customer / Account Holder Details / வாடிக்கையாளர் விவரங்கள்</div>
+      <div class="meta-row">
+        <div class="field-group"><div class="field-label">Customer / Business Name / வாடிக்கையாளர் பெயர்</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">Phone Number / தொலைபேசி</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">Related Invoice / Order No. (if any)</div><div class="field-line"></div></div>
+      </div>
+      <div class="section-title">Bank / Account Details / வங்கி கணக்கு விவரங்கள்</div>
+      <div class="meta-row">
+        <div class="field-group"><div class="field-label">Bank Name / வங்கி பெயர்</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">Branch / கிளை</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">IFSC Code</div><div class="field-line"></div></div>
+      </div>
+      <div class="meta-row">
+        <div class="field-group"><div class="field-label">Account Holder Name / கணக்கு வைத்திருப்பவர் பெயர்</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">Account Number / கணக்கு எண்</div><div class="field-line"></div></div>
+        <div class="field-group">
+          <div class="field-label">Account Type / கணக்கு வகை</div>
+          <div class="checkbox-row">
+            <div class="checkbox-item"><div class="checkbox-box"></div> Savings</div>
+            <div class="checkbox-item"><div class="checkbox-box"></div> Current</div>
+          </div>
+        </div>
+      </div>
+      <div class="meta-row">
+        <div class="field-group"><div class="field-label">UPI ID (if any)</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">PAN Number (if any)</div><div class="field-line"></div></div>
+        <div class="field-group"><div class="field-label">GSTIN (if any)</div><div class="field-line"></div></div>
+      </div>
+      <div class="field-group"><div class="field-label">Purpose / Note / குறிப்பு</div><div class="field-textarea" style="height:56px;"></div></div>
     `,
   },
   customer_visit_report: {
@@ -715,6 +740,12 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
     // longest forms still too tall to fit, spilling onto a second page
     // exactly like this was meant to prevent. Single-page fit always wins;
     // text on the longest forms will be smaller, not on a second sheet.
+    // NOTE: this used to shrink with CSS `transform: scale()`, which only
+    // changes how the content is painted — Chrome's print-pagination decides
+    // how many physical pages content spans from the pre-transform layout
+    // box, so that never actually stopped a second sheet. `zoom` (unlike
+    // `transform`) reflows layout itself, so the box really does get
+    // shorter and pagination sees the smaller size.
     window.onload = function () {
       requestAnimationFrame(function () {
         var el = document.getElementById('print-page');
@@ -722,10 +753,7 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
         var USABLE_HEIGHT_PX = 1000; // A4 (297mm) minus @page margins (15mm) and body print padding
         var h = el.scrollHeight;
         if (h > USABLE_HEIGHT_PX) {
-          var scale = USABLE_HEIGHT_PX / h;
-          el.style.transformOrigin = 'top left';
-          el.style.transform = 'scale(' + scale + ')';
-          el.style.width = (100 / scale) + '%';
+          el.style.zoom = String(USABLE_HEIGHT_PX / h);
         }
       });
     };
