@@ -159,7 +159,7 @@ export async function printDeliveryChallan(order: DOForPrint) {
           <text x="60" y="70" font-size="8" font-weight="600" fill="#1d4ed8" text-anchor="middle">${fmtDate(order.order_date)}</text>
         </svg>
       </div>
-      <div class="signature-label">Company Seal</div>
+      <div class="signature-label">${escapeHtml(companyName)}</div>
     </div>
     <div class="signature-block"><div class="signature-line"></div><div class="signature-label">Received By</div></div>
   </div>
