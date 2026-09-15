@@ -9,6 +9,7 @@ import { createTransaction, createTransactionInternal, getAccountByCode } from "
 import { triggerN8N } from "../utils/triggerN8N.js";
 import { recordProprietorCapital } from "../utils/proprietorLedger.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
+import { createJourneyForPurchase } from "../utils/productJourneyEngine.js";
 
 const router = express.Router();
 
@@ -480,6 +481,30 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     await client.query(`ROLLBACK TO SAVEPOINT sp_inv_movement`);
                     await client.query(`RELEASE SAVEPOINT sp_inv_movement`);
                 }
+
+                // 4. Auto-create a Product Journey batch for this purchase —
+                //    best-effort, never blocks the actual purchase bill save.
+                //    Regular items carry no fresh/mistake split, so the whole
+                //    quantity is recorded as fresh (mistake pieces, if any,
+                //    get corrected later via the existing Convert flow).
+                await client.query(`SAVEPOINT sp_journey`);
+                try {
+                    await createJourneyForPurchase(client, {
+                        companyId, userId: safeUserId,
+                        product_id: pItem.product_id, product_name: pItem.description || null,
+                        purchase_bill_id: billId,
+                        supplier_id: safeSupplierId, supplier_name: supplierRes.rows[0]?.name || supplier_name || null,
+                        purchase_date: bill_date || new Date().toISOString().split("T")[0],
+                        purchase_rate: pItem.unit_price,
+                        total_purchased: pItem.quantity, fresh_purchased: pItem.quantity, mistake_purchased: 0,
+                        branch_id: safeBranchId,
+                    });
+                    await client.query(`RELEASE SAVEPOINT sp_journey`);
+                } catch (journeyErr) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_journey`);
+                    await client.query(`RELEASE SAVEPOINT sp_journey`);
+                    console.warn(`[purchase-bill] journey creation skipped: ${journeyErr.message}`);
+                }
             }
         }
 
@@ -763,6 +788,32 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         await client.query(`ROLLBACK TO SAVEPOINT sp_surplus_ledger_${lotId}`);
                         await client.query(`RELEASE SAVEPOINT sp_surplus_ledger_${lotId}`);
                         console.warn(`[surplus-ledger] skipped line "${desc}": ${le.message}`);
+                    }
+
+                    // Auto-create a Product Journey batch for this surplus line —
+                    // these lines are description-only (no catalog product_id),
+                    // so the journey's product_name is the typed description.
+                    // Unlike regular items, surplus lines already carry real
+                    // fresh/mistake quantities, so both are recorded as-is.
+                    await client.query(`SAVEPOINT sp_journey_surplus`);
+                    try {
+                        const blendedRate = linePcs > 0 ? (freshCost + mistakeCost) / linePcs : 0;
+                        await createJourneyForPurchase(client, {
+                            companyId, userId: safeUserId,
+                            product_id: null, product_name: desc,
+                            purchase_bill_id: billId,
+                            supplier_id: safeSupplierId, supplier_name: supplierRes.rows[0]?.name || supplier_name || null,
+                            purchase_date: bill_date || new Date().toISOString().split("T")[0],
+                            purchase_rate: blendedRate,
+                            total_purchased: linePcs, fresh_purchased: freshQty, mistake_purchased: mistakeQty,
+                            branch_id: safeBranchId,
+                            notes: lotNum ? `Lot ${lotNum}` : null,
+                        });
+                        await client.query(`RELEASE SAVEPOINT sp_journey_surplus`);
+                    } catch (journeyErr) {
+                        await client.query(`ROLLBACK TO SAVEPOINT sp_journey_surplus`);
+                        await client.query(`RELEASE SAVEPOINT sp_journey_surplus`);
+                        console.warn(`[purchase-bill] surplus journey creation skipped for "${desc}": ${journeyErr.message}`);
                     }
                 }
 

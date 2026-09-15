@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaSearch, FaPlus, FaSync, FaBoxOpen } from "react-icons/fa";
+import { FaSearch, FaPlus, FaSync, FaBoxOpen, FaMagic } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
+import { useAuthUser } from "../../hooks/useAuthUser";
 import "../PageShared.css";
 
 interface Journey {
@@ -40,12 +41,14 @@ const fmt = (n: number | undefined) => `₹${Number(n || 0).toLocaleString("en-I
 
 const ProductJourneyList: React.FC = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuthUser();
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [summary, setSummary] = useState<DashboardSummary>({});
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusTab, setStatusTab] = useState<"all" | "active" | "partial" | "exhausted">("all");
   const [showModal, setShowModal] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
 
   // Manual "New Journey" form data + dropdown sources
   const [products, setProducts] = useState<any[]>([]);
@@ -131,6 +134,28 @@ const ProductJourneyList: React.FC = () => {
     }
   };
 
+  const handleBackfill = async () => {
+    if (!confirm("Create an \"Opening Stock\" journey for every product/branch that currently has stock but no journey yet? This only fills gaps — anything already tracked is left untouched, and it's safe to run again later.")) {
+      return;
+    }
+    setBackfilling(true);
+    try {
+      const res = await apiFetch("/journey/backfill-opening-stock", { method: "POST" });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Backfill failed");
+      alert(
+        data.created_count > 0
+          ? `Created ${data.created_count} opening-stock journey${data.created_count === 1 ? "" : "s"} for stock that wasn't tracked yet.`
+          : "Nothing to backfill — every product with stock already has a journey."
+      );
+      load();
+    } catch (err: any) {
+      alert(err.message || "Failed to backfill opening stock.");
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
   const filtered = journeys.filter((j) => {
     if (statusTab !== "all" && j.status !== statusTab) return false;
     if (search.trim()) {
@@ -145,14 +170,19 @@ const ProductJourneyList: React.FC = () => {
       <div className="page-header">
         <div>
           <h1><FaBoxOpen style={{ marginRight: 8, color: "#5B4BFF" }} />Product Journey Tracker</h1>
-          <p>Every purchase batch, traced end to end — purchase, fresh/mistake split, conversions, sales, returns, re-sales.</p>
+          <p>Every purchase batch, traced end to end — purchase, fresh/mistake split, conversions, sales, returns, re-sales. Created automatically the moment you save a purchase bill.</p>
         </div>
         <div className="page-header-actions">
           <button className="page-btn-round-sm" onClick={load} title="Refresh">
             <FaSync className={loading ? "fa-spin" : ""} size={12} />
           </button>
+          {isAdmin && (
+            <button className="page-btn-round" onClick={handleBackfill} disabled={backfilling} title="Create opening-stock journeys for stock that predates this tracker">
+              <FaMagic size={11} /> {backfilling ? "Backfilling…" : "Backfill Opening Stock"}
+            </button>
+          )}
           <button className="page-btn-round page-btn-round-primary" onClick={openModal}>
-            <FaPlus size={11} /> New Journey
+            <FaPlus size={11} /> Manual Entry
           </button>
         </div>
       </div>
@@ -235,7 +265,7 @@ const ProductJourneyList: React.FC = () => {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={13} style={{ textAlign: "center", color: "#94a3b8", padding: 48 }}>
-                  {loading ? "Loading…" : "No product journeys yet. Click New Journey to start tracking a batch."}
+                  {loading ? "Loading…" : "No product journeys yet. They're created automatically from purchase bills — save one, or use Backfill Opening Stock for existing inventory."}
                 </td>
               </tr>
             ) : filtered.map((j) => {
@@ -284,8 +314,8 @@ const ProductJourneyList: React.FC = () => {
       {showModal && (
         <div className="page-modal-overlay" style={{ zIndex: 1100 }}>
           <div style={{ background: "#fff", borderRadius: 16, maxWidth: 560, width: "100%", maxHeight: "90vh", overflowY: "auto", padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>New Product Journey</h2>
-            <p style={{ fontSize: 12.5, color: "#64748b", marginBottom: 20 }}>Manually register a purchase batch — for a past bill that predates this tracker, or one placed elsewhere.</p>
+            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Manual Journey Entry</h2>
+            <p style={{ fontSize: 12.5, color: "#64748b", marginBottom: 20 }}>Most journeys are created automatically when you save a purchase bill — use this only as a fallback, e.g. to fix a batch the automation missed.</p>
             <form onSubmit={handleCreate} style={{ display: "grid", gap: 14 }}>
               <div>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 4, textTransform: "uppercase" }}>Product *</label>

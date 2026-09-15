@@ -21,8 +21,10 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { createJourneyForPurchase } from "../utils/productJourneyEngine.js";
 
 const router = express.Router();
+const isAdmin = (req) => req.user.role === "admin" || req.user.role === "superadmin";
 
 /**
  * Recomputes a journey's running totals (sold/returned/converted/revenue/
@@ -113,75 +115,17 @@ router.post("/create", authMiddleware, async (req, res) => {
 
     const companyId = req.user.active_company_id || 1;
 
-    const batchRes = await client.query(
-      `SELECT COUNT(*) + 1 AS next_batch FROM product_journeys
-       WHERE company_id = $1 AND product_id IS NOT DISTINCT FROM $2`,
-      [companyId, product_id || null]
-    );
-    const batchNumber = parseInt(batchRes.rows[0].next_batch);
-    const year = new Date().getFullYear();
-    const code = (product_code || product_name).substring(0, 4).toUpperCase().replace(/\s/g, "");
-    const journeyIdStr = `PJ/${year}/${code}/${String(batchNumber).padStart(3, "0")}`;
-    const totalCost = parseFloat(purchase_rate || 0) * parseInt(total_purchased || 0);
-    const freshQty = parseInt(fresh_purchased || total_purchased || 0);
-    const mistakeQty = parseInt(mistake_purchased || 0);
-
-    const result = await client.query(
-      `INSERT INTO product_journeys (
-          journey_id, company_id, product_id, product_name, product_code,
-          purchase_bill_id, supplier_id, supplier_name,
-          purchase_date, purchase_rate,
-          total_purchased, fresh_purchased, mistake_purchased,
-          fresh_remaining, mistake_remaining,
-          batch_number, branch_id,
-          total_purchase_cost, status, notes
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$12,$13,$14,$15,$16,'active',$17)
-       RETURNING *`,
-      [
-        journeyIdStr, companyId,
-        product_id || null, product_name, code,
-        purchase_bill_id,
-        supplier_id || null, supplier_name || null,
-        purchase_date || new Date().toISOString().split("T")[0],
-        parseFloat(purchase_rate || 0),
-        parseInt(total_purchased || 0),
-        freshQty, mistakeQty,
-        batchNumber,
-        branch_id || null,
-        totalCost,
-        notes || null,
-      ]
-    );
-    const journey = result.rows[0];
-
-    await client.query(
-      `INSERT INTO product_journey_events (
-          journey_id, event_type, event_date,
-          quantity, rate, total_value, stock_type,
-          reference_type, reference_id,
-          supplier_id, supplier_name, branch_id,
-          running_fresh_balance, running_mistake_balance,
-          description, recorded_by
-       ) VALUES ($1,'purchased',$2,$3,$4,$5,'fresh','purchase_bill',$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [
-        journey.id,
-        purchase_date || new Date().toISOString().split("T")[0],
-        parseInt(total_purchased || 0),
-        parseFloat(purchase_rate || 0),
-        totalCost,
-        purchase_bill_id,
-        supplier_id || null,
-        supplier_name || null,
-        branch_id || null,
-        freshQty,
-        mistakeQty,
-        `Purchased ${total_purchased} pcs from ${supplier_name || "supplier"} @ ₹${purchase_rate}/pc. Fresh: ${freshQty} pcs, Mistake: ${mistakeQty} pcs`,
-        req.user.id,
-      ]
-    );
+    const journey = await createJourneyForPurchase(client, {
+      companyId, userId: req.user.id,
+      product_id, product_name, product_code,
+      purchase_bill_id, supplier_id, supplier_name,
+      purchase_date, purchase_rate,
+      total_purchased, fresh_purchased, mistake_purchased,
+      branch_id, notes,
+    });
 
     await client.query("COMMIT");
-    res.json({ success: true, journey_id: journeyIdStr, journey_db_id: journey.id, journey });
+    res.json({ success: true, journey_id: journey.journey_id, journey_db_id: journey.id, journey });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("[journey/create]", e.message);
@@ -587,6 +531,67 @@ router.get("/summary/dashboard", authMiddleware, async (req, res) => {
     res.json(row || {});
   } catch (e) {
     res.json({});
+  }
+});
+
+// ── POST /api/journey/backfill-opening-stock — admin-only, safe to re-run ──
+// Creates one "Opening Stock" journey per product+branch that currently has
+// stock but no journey yet — covers inventory that existed before Product
+// Journey started tracking batches (either before this feature existed, or
+// before auto-create-on-purchase started running). Idempotent: a
+// product+branch that already has a journey (from a prior run of this same
+// route, a manual entry, or an auto-created purchase journey) is skipped,
+// so re-running it after new purchases only picks up genuinely new gaps.
+router.post("/backfill-opening-stock", authMiddleware, async (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ success: false, error: "Admin only" });
+  const client = await db.getClient();
+  try {
+    await client.query("BEGIN");
+    const companyId = req.user.active_company_id || 1;
+
+    const candidates = await client.query(
+      `SELECT bi.product_id, bi.branch_id, bi.current_stock,
+              p.name AS product_name, p.sku AS product_code, p.cost_price
+       FROM branch_inventory bi
+       JOIN products p ON p.id = bi.product_id
+       WHERE bi.company_id = $1 AND bi.current_stock > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM product_journeys pj
+           WHERE pj.company_id = $1 AND pj.product_id = bi.product_id
+             AND pj.branch_id IS NOT DISTINCT FROM bi.branch_id
+         )`,
+      [companyId]
+    );
+
+    const created = [];
+    for (const row of candidates.rows) {
+      const journey = await createJourneyForPurchase(client, {
+        companyId, userId: req.user.id,
+        product_id: row.product_id, product_name: row.product_name, product_code: row.product_code,
+        purchase_bill_id: null, supplier_id: null, supplier_name: null,
+        purchase_date: new Date().toISOString().split("T")[0],
+        purchase_rate: row.cost_price || 0,
+        total_purchased: row.current_stock, fresh_purchased: row.current_stock, mistake_purchased: 0,
+        branch_id: row.branch_id,
+        notes: "Opening stock — pre-existing inventory recorded before Product Journey tracking began.",
+        event_type: "adjustment",
+        reference_type: "opening_balance",
+        event_description: `Opening stock balance: ${row.current_stock} pcs already in stock before Product Journey tracking began.`,
+      });
+      created.push({
+        journey_id: journey.journey_id, product_name: row.product_name,
+        branch_id: row.branch_id, quantity: row.current_stock,
+      });
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true, created_count: created.length, created });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("[journey/backfill-opening-stock]", e.message);
+    res.json({ success: false, error: e.message });
+  } finally {
+    client.release();
   }
 });
 
