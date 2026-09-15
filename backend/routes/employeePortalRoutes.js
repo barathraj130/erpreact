@@ -38,6 +38,12 @@ router.post("/login", async (req, res) => {
         if (!user) {
             return res.status(401).json({ error: "Invalid credentials or not an employee account" });
         }
+        // is_active existed on this row but was never actually checked here —
+        // there was no way to revoke a portal login once created, short of
+        // editing the database directly.
+        if (user.is_active === false) {
+            return res.status(403).json({ error: "This login has been deactivated. Contact your admin." });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
@@ -75,13 +81,21 @@ router.post("/login", async (req, res) => {
 /**
  * AUTH MIDDLEWARE FOR EMPLOYEE PORTAL
  */
-const employeeAuth = (req, res, next) => {
+const employeeAuth = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "No token" });
 
     const token = authHeader.split(" ")[1];
     try {
         const decoded = jwt.verify(token, jwtSecret);
+        // Re-check is_active on every request, not just at login — otherwise
+        // a token issued before an admin deactivates the login (valid up to
+        // 24h) would keep working regardless. This is the actual revocation
+        // point for a portal login.
+        const row = await db.pgGet(`SELECT is_active FROM users WHERE id = $1`, [decoded.userId]);
+        if (!row || row.is_active === false) {
+            return res.status(403).json({ error: "This login has been deactivated. Contact your admin." });
+        }
         req.employee = decoded;
         next();
     } catch (err) {
@@ -655,6 +669,30 @@ router.get("/admin/portal-employees", authMiddleware, requirePortalAdmin, async 
     } catch (e) {
         console.error("admin portal-employees error:", e.message);
         res.json([]);
+    }
+});
+
+// Revoke or restore a portal login — there was previously no way to do this
+// once a login was created, short of editing the database directly. Blocks
+// both new logins (checked in /login) and already-issued tokens (re-checked
+// in employeeAuth on every request).
+router.patch("/admin/portal-employees/:userId/access", authMiddleware, requirePortalAdmin, async (req, res) => {
+    try {
+        const { is_active } = req.body;
+        if (typeof is_active !== "boolean") return res.json({ success: false, error: "is_active (boolean) required" });
+
+        const user = await db.pgGet(
+            `SELECT u.id FROM users u JOIN employees e ON e.id = u.employee_id
+             WHERE u.id = $1 AND e.company_id = $2`,
+            [req.params.userId, req.user.active_company_id]
+        );
+        if (!user) return res.json({ success: false, error: "Portal login not found" });
+
+        await db.pgRun(`UPDATE users SET is_active = $1 WHERE id = $2`, [is_active, req.params.userId]);
+        res.json({ success: true });
+    } catch (e) {
+        console.error("admin toggle portal access error:", e.message);
+        res.json({ success: false, error: e.message });
     }
 });
 

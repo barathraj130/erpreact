@@ -57,6 +57,32 @@ const EmployeePortalAdmin: React.FC = () => {
   const [bulkCreating, setBulkCreating] = useState(false);
   const [bulkResults, setBulkResults] = useState<{ employee_name: string; username: string; email?: string; password: string }[] | null>(null);
   const [bulkFailed, setBulkFailed] = useState<{ name: string; error: string }[]>([]);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  // Portal logins had no way to be revoked once created — an employee who
+  // left the company would keep working access indefinitely. Revoking here
+  // blocks both new logins and any already-issued token (re-checked server-side).
+  const toggleAccess = async (userId: number, currentlyActive: boolean) => {
+    const action = currentlyActive ? "revoke" : "restore";
+    if (!window.confirm(`${action === "revoke" ? "Revoke" : "Restore"} this employee's portal login access?`)) return;
+    setTogglingId(userId);
+    try {
+      const res = await apiFetch(`/employee-portal/admin/portal-employees/${userId}/access`, {
+        method: "PATCH",
+        body: { is_active: !currentlyActive },
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || `Failed to ${action} access.`);
+        return;
+      }
+      fetchAll();
+    } catch {
+      alert(`Failed to ${action} access — check your connection.`);
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const fetchAll = async () => {
     setLoading(true);
@@ -209,7 +235,7 @@ const EmployeePortalAdmin: React.FC = () => {
               <div className="page-empty">No portal logins created yet.</div>
             ) : (
               <table className="page-table">
-                <thead><tr><th>Employee</th><th>Username</th><th>Designation</th><th>Phone</th><th className="text-right">Outstanding Advance</th></tr></thead>
+                <thead><tr><th>Employee</th><th>Username</th><th>Designation</th><th>Phone</th><th className="text-right">Outstanding Advance</th><th>Access</th></tr></thead>
                 <tbody>
                   {portalEmployees.map((e) => (
                     <tr key={e.user_id}>
@@ -219,6 +245,20 @@ const EmployeePortalAdmin: React.FC = () => {
                       <td>{e.phone || "—"}</td>
                       <td className="text-right" style={{ color: Number(e.outstanding_advance) > 0 ? "#dc2626" : "inherit", fontWeight: 700 }}>
                         ₹{Number(e.outstanding_advance).toLocaleString("en-IN")}
+                      </td>
+                      <td>
+                        <button
+                          className="page-btn"
+                          disabled={togglingId === e.user_id}
+                          onClick={() => toggleAccess(e.user_id, e.is_active)}
+                          style={{
+                            padding: "4px 12px", fontSize: 12,
+                            color: e.is_active ? "#dc2626" : "#059669",
+                            borderColor: e.is_active ? "#fecaca" : "#bbf7d0",
+                          }}
+                        >
+                          {togglingId === e.user_id ? "…" : e.is_active ? "Revoke" : "Restore"}
+                        </button>
                       </td>
                     </tr>
                   ))}
