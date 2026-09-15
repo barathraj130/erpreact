@@ -959,6 +959,24 @@ router.post("/salary/daily/process", authMiddleware, async (req, res) => {
                   SET gross_wage=$5, deduction=$6, extra_pay=$7, daily_wage=$4, payment_mode=$8, status='paid', created_at=NOW()
             `, [companyId, p.employee_id, date, wage, grossWage, deduction, extraPay, pMode.toLowerCase()]);
 
+            // Ensure daily_attendance has a row for this date too — this is
+            // the table Weekly Salary's rollup reads (SUM(daily_wage) BETWEEN
+            // week_start AND week_end). It was only ever written by the
+            // separate "mark present/absent" buttons (POST /attendance/daily);
+            // paying someone here never touched it. If the admin pays without
+            // separately clicking each status button first (the normal fast
+            // path), daily_attendance stays empty for that day and Weekly
+            // Salary shows 0 days / ₹0 for every daily-wage worker, even
+            // though they were correctly paid. Upserting it here makes
+            // attendance a guaranteed side effect of payment, not a separate
+            // step that's easy to skip.
+            await client.query(`
+                INSERT INTO daily_attendance (company_id, employee_id, attendance_date, status, working_hours, daily_wage)
+                VALUES ($1,$2,$3,'present',8,$4)
+                ON CONFLICT (employee_id, attendance_date) DO UPDATE
+                  SET daily_wage = $4
+            `, [companyId, p.employee_id, date, grossWage]).catch(() => {});
+
             // Ledger deduction (net wage out of cash/bank/proprietor)
             if (pMode === 'PROPRIETOR') {
                 const { recordProprietorCapital } = await import('../utils/proprietorLedger.js');
