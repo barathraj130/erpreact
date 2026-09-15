@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaSync, FaEye, FaBox, FaFileInvoice, FaEdit, FaTrash } from "react-icons/fa";
+import { FaPlus, FaSync, FaEye, FaBox, FaFileInvoice, FaEdit, FaTrash, FaTruck } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
+import { printDeliveryChallan } from "../utils/deliveryChallanPrint";
 import "./PageShared.css";
 
 interface DeliveryOrder {
@@ -28,6 +29,7 @@ const DeliveryOrders: React.FC = () => {
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [printingId, setPrintingId] = useState<number | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   useEffect(() => {
@@ -69,6 +71,20 @@ const DeliveryOrders: React.FC = () => {
     }
   };
 
+  const handlePrintChallan = async (o: DeliveryOrder) => {
+    setPrintingId(o.id);
+    try {
+      const res = await apiFetch(`/delivery-orders/${o.id}`);
+      const data = await res.json();
+      if (!data.success) { alert(data.error || "Failed to load order for printing."); return; }
+      await printDeliveryChallan(data.order);
+    } catch (e: any) {
+      alert(e.message || "Failed to print challan.");
+    } finally {
+      setPrintingId(null);
+    }
+  };
+
   const badge = (status: string) => {
     const b = STATUS_BADGE[status] || STATUS_BADGE.draft;
     return (
@@ -88,6 +104,17 @@ const DeliveryOrders: React.FC = () => {
         title="View / Confirm"
       >
         <FaEye size={13} />
+      </button>
+      {/* Print Delivery Challan — available at any status, not just invoiced.
+          Some shipments only ever need a challan, never a tax invoice. */}
+      <button
+        className="page-btn-round-sm"
+        onClick={() => handlePrintChallan(o)}
+        title="Print Delivery Challan"
+        disabled={printingId === o.id}
+        style={{ color: "#16a34a", opacity: printingId === o.id ? 0.5 : 1 }}
+      >
+        <FaTruck size={13} />
       </button>
       {/* Edit — only draft */}
       {o.status === "draft" && (

@@ -2,9 +2,10 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   FaArrowLeft, FaCheckCircle, FaTimes, FaFileInvoice,
-  FaBox, FaSync,
+  FaBox, FaSync, FaTruck,
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
+import { printDeliveryChallan } from "../utils/deliveryChallanPrint";
 import "./PageShared.css";
 
 interface BundleLine {
@@ -165,6 +166,18 @@ const DeliveryOrderDetail: React.FC = () => {
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button className="page-btn-round-sm" onClick={load}>
             <FaSync size={13} />
+          </button>
+          <button
+            onClick={() => printDeliveryChallan(order)}
+            title="Print Delivery Challan"
+            style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 10, border: "1px solid #16a34a",
+              background: "#fff", color: "#16a34a", fontWeight: 700,
+              fontSize: 13, cursor: "pointer",
+            }}
+          >
+            <FaTruck size={13} /> Print Challan
           </button>
           {order.status === "ready" && (
             <button
