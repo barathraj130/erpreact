@@ -109,6 +109,22 @@ router.post("/groups/:id/members", authMiddleware, requirePermission("job.assign
         if (!employee_id) return res.json({ success: false, error: "employee_id required" });
         const group = await db.pgGet(`SELECT id FROM employee_groups WHERE id = $1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
         if (!group) return res.json({ success: false, error: "Group not found" });
+
+        // An employee can only be in one group at a time — otherwise job
+        // assignment and group attendance become ambiguous (which group's
+        // attendance/job counts for them?). Enforced here regardless of what
+        // the frontend's dropdown already filters out, since this is the
+        // real boundary.
+        const existing = await db.pgGet(
+            `SELECT gm.group_id, eg.name FROM group_members gm
+             JOIN employee_groups eg ON eg.id = gm.group_id
+             WHERE gm.employee_id = $1 AND gm.is_active = true AND gm.group_id != $2 AND eg.is_active = true`,
+            [employee_id, req.params.id]
+        );
+        if (existing) {
+            return res.json({ success: false, error: `This employee is already in "${existing.name}". Remove them from that group first.` });
+        }
+
         await db.pgRun(
             `INSERT INTO group_members (group_id, employee_id) VALUES ($1,$2)
              ON CONFLICT (group_id, employee_id) DO UPDATE SET is_active = true`,
@@ -142,6 +158,22 @@ router.delete("/groups/:id/members/:employeeId", authMiddleware, requirePermissi
             [req.params.id, req.params.employeeId]
         );
         await logAuditEvent(req, { entityType: "employee_group", entityId: parseInt(req.params.id), action: "member_removed", oldValue: { employee_id: req.params.employeeId } });
+        res.json({ success: true });
+    } catch (e) { res.json({ success: false, error: e.message }); }
+});
+
+// Soft-delete — matches the pattern GET /groups already relies on
+// (is_active = true) rather than a hard DELETE, so this is safely
+// reversible at the database level if ever needed. Also deactivates its
+// members so they're immediately free to join another group.
+router.delete("/groups/:id", authMiddleware, requirePermission("job.assign"), async (req, res) => {
+    try {
+        const group = await db.pgGet(`SELECT id FROM employee_groups WHERE id = $1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
+        if (!group) return res.json({ success: false, error: "Group not found" });
+
+        await db.pgRun(`UPDATE group_members SET is_active = false WHERE group_id = $1`, [req.params.id]);
+        await db.pgRun(`UPDATE employee_groups SET is_active = false WHERE id = $1 AND company_id = $2`, [req.params.id, req.user.active_company_id]);
+        await logAuditEvent(req, { entityType: "employee_group", entityId: parseInt(req.params.id), action: "group_deleted" });
         res.json({ success: true });
     } catch (e) { res.json({ success: false, error: e.message }); }
 });

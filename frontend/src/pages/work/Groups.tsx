@@ -40,13 +40,31 @@ const Groups: React.FC = () => {
   const [membersLoading, setMembersLoading] = useState(false);
   const [addMemberId, setAddMemberId] = useState("");
   const [addingMember, setAddingMember] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  // employee_id -> group name they're already active in (any group) — used
+  // to keep the "Add Member" dropdown from offering someone who's already
+  // elsewhere, since an employee can only be in one group at a time.
+  const [memberOf, setMemberOf] = useState<Map<number, string>>(new Map());
 
   const fetchGroups = async () => {
     setLoading(true);
     try {
       const res = await apiFetch("/work-accountability/groups");
       const data = await res.json();
-      setGroups(Array.isArray(data) ? data : []);
+      const list: Group[] = Array.isArray(data) ? data : [];
+      setGroups(list);
+
+      // Build the global "who's already in a group" map across all groups.
+      const entries = await Promise.all(
+        list.map(async (g) => {
+          try {
+            const r = await apiFetch(`/work-accountability/groups/${g.id}/members`);
+            const d = await r.json();
+            return Array.isArray(d) ? d.map((m: Member) => [m.employee_id, g.name] as const) : [];
+          } catch { return []; }
+        })
+      );
+      setMemberOf(new Map(entries.flat()));
     } finally {
       setLoading(false);
     }
@@ -149,6 +167,25 @@ const Groups: React.FC = () => {
     fetchGroups();
   };
 
+  const deleteGroup = async (groupId: number) => {
+    if (!window.confirm("Delete this group? Its members will be freed up to join another group. This cannot be undone.")) return;
+    setDeletingId(groupId);
+    try {
+      const res = await apiFetch(`/work-accountability/groups/${groupId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || "Failed to delete group.");
+        return;
+      }
+      if (expandedId === groupId) setExpandedId(null);
+      fetchGroups();
+    } catch {
+      alert("Failed to delete group — check your connection.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -187,9 +224,17 @@ const Groups: React.FC = () => {
                     <td className="font-bold">{g.name}</td>
                     <td>{g.leader_name || "—"}</td>
                     <td>{g.member_count}</td>
-                    <td className="text-center">
+                    <td className="text-center" style={{ display: "flex", gap: 6, justifyContent: "center" }}>
                       <button className="page-btn" style={{ padding: "4px 12px", fontSize: 12 }} onClick={() => toggleGroup(g.id)}>
                         {expandedId === g.id ? "Hide" : "Manage Members"}
+                      </button>
+                      <button
+                        onClick={() => deleteGroup(g.id)}
+                        disabled={deletingId === g.id}
+                        aria-label="Delete group"
+                        style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, color: "#dc2626", cursor: deletingId === g.id ? "not-allowed" : "pointer", padding: "4px 10px" }}
+                      >
+                        <FaTrash size={12} />
                       </button>
                     </td>
                   </tr>
@@ -204,7 +249,7 @@ const Groups: React.FC = () => {
                           >
                             <option value="">Select on-duty staff to add…</option>
                             {onDutyStaff
-                              .filter((s) => !members.some((m) => m.employee_id === s.id))
+                              .filter((s) => !memberOf.has(s.id))
                               .map((s) => <option key={s.id} value={s.id}>{s.username} ({s.role})</option>)}
                           </select>
                           <button className="page-btn page-btn-primary" disabled={!addMemberId || addingMember} onClick={() => addMember(g.id)}>
