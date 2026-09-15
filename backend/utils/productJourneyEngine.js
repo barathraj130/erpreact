@@ -32,14 +32,25 @@ export async function createJourneyForPurchase(client, p) {
 
   if (!product_name) throw new Error("Product name required to create a journey");
 
-  const batchRes = await client.query(
-    `SELECT COUNT(*) + 1 AS next_batch FROM product_journeys
-     WHERE company_id = $1 AND product_id IS NOT DISTINCT FROM $2`,
-    [companyId, product_id || null]
-  );
-  const batchNumber = parseInt(batchRes.rows[0].next_batch);
   const year = new Date(purchase_date || Date.now()).getFullYear();
   const code = (product_code || product_name).substring(0, 4).toUpperCase().replace(/\s/g, "");
+
+  // The batch number must be counted per (company, year, code) — the exact
+  // components embedded in journey_id below — not per product_id. `code` is
+  // only the first ~4 letters of the product name, so two DIFFERENT products
+  // (e.g. "L/K FROCK" and "L/K PANT" both truncate to "L/K") can share it;
+  // counting per product_id let each independently compute "batch 1" and
+  // collide on product_journeys' unique journey_id constraint. The advisory
+  // lock (keyed the same way) additionally serializes two concurrent
+  // transactions allocating a batch number for the same code before either
+  // commits — a plain COUNT alone doesn't close that race.
+  await client.query(`SELECT pg_advisory_xact_lock($1, hashtext($2))`, [companyId, `${year}:${code}`]);
+  const batchRes = await client.query(
+    `SELECT COUNT(*) + 1 AS next_batch FROM product_journeys
+     WHERE company_id = $1 AND journey_id LIKE $2`,
+    [companyId, `PJ/${year}/${code}/%`]
+  );
+  const batchNumber = parseInt(batchRes.rows[0].next_batch);
   const journeyIdStr = `PJ/${year}/${code}/${String(batchNumber).padStart(3, "0")}`;
 
   const totalQty = parseInt(total_purchased || 0);

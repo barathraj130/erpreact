@@ -143,11 +143,16 @@ const ProductJourneyList: React.FC = () => {
       const res = await apiFetch("/journey/backfill-opening-stock", { method: "POST" });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Backfill failed");
-      alert(
+      const parts: string[] = [];
+      parts.push(
         data.created_count > 0
           ? `Created ${data.created_count} opening-stock journey${data.created_count === 1 ? "" : "s"} for stock that wasn't tracked yet.`
           : "Nothing to backfill — every product with stock already has a journey."
       );
+      if (data.skipped_count > 0) {
+        parts.push(`${data.skipped_count} product${data.skipped_count === 1 ? "" : "s"} were skipped due to an error — check the browser console / server logs for details.`);
+      }
+      alert(parts.join("\n\n"));
       load();
     } catch (err: any) {
       alert(err.message || "Failed to backfill opening stock.");

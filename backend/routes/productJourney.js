@@ -564,28 +564,42 @@ router.post("/backfill-opening-stock", authMiddleware, async (req, res) => {
     );
 
     const created = [];
+    const skipped = [];
     for (const row of candidates.rows) {
-      const journey = await createJourneyForPurchase(client, {
-        companyId, userId: req.user.id,
-        product_id: row.product_id, product_name: row.product_name, product_code: row.product_code,
-        purchase_bill_id: null, supplier_id: null, supplier_name: null,
-        purchase_date: new Date().toISOString().split("T")[0],
-        purchase_rate: row.cost_price || 0,
-        total_purchased: row.current_stock, fresh_purchased: row.current_stock, mistake_purchased: 0,
-        branch_id: row.branch_id,
-        notes: "Opening stock — pre-existing inventory recorded before Product Journey tracking began.",
-        event_type: "adjustment",
-        reference_type: "opening_balance",
-        event_description: `Opening stock balance: ${row.current_stock} pcs already in stock before Product Journey tracking began.`,
-      });
-      created.push({
-        journey_id: journey.journey_id, product_name: row.product_name,
-        branch_id: row.branch_id, quantity: row.current_stock,
-      });
+      // One bad row (e.g. a genuinely unexpected DB error) must not roll
+      // back every journey already created in this same run — each row
+      // gets its own savepoint, same defensive pattern used elsewhere in
+      // this codebase for best-effort batch operations.
+      await client.query(`SAVEPOINT sp_backfill_row`);
+      try {
+        const journey = await createJourneyForPurchase(client, {
+          companyId, userId: req.user.id,
+          product_id: row.product_id, product_name: row.product_name, product_code: row.product_code,
+          purchase_bill_id: null, supplier_id: null, supplier_name: null,
+          purchase_date: new Date().toISOString().split("T")[0],
+          purchase_rate: row.cost_price || 0,
+          total_purchased: row.current_stock, fresh_purchased: row.current_stock, mistake_purchased: 0,
+          branch_id: row.branch_id,
+          notes: "Opening stock — pre-existing inventory recorded before Product Journey tracking began.",
+          event_type: "adjustment",
+          reference_type: "opening_balance",
+          event_description: `Opening stock balance: ${row.current_stock} pcs already in stock before Product Journey tracking began.`,
+        });
+        await client.query(`RELEASE SAVEPOINT sp_backfill_row`);
+        created.push({
+          journey_id: journey.journey_id, product_name: row.product_name,
+          branch_id: row.branch_id, quantity: row.current_stock,
+        });
+      } catch (rowErr) {
+        await client.query(`ROLLBACK TO SAVEPOINT sp_backfill_row`);
+        await client.query(`RELEASE SAVEPOINT sp_backfill_row`);
+        console.warn(`[journey/backfill-opening-stock] skipped product_id=${row.product_id}: ${rowErr.message}`);
+        skipped.push({ product_name: row.product_name, branch_id: row.branch_id, error: rowErr.message });
+      }
     }
 
     await client.query("COMMIT");
-    res.json({ success: true, created_count: created.length, created });
+    res.json({ success: true, created_count: created.length, created, skipped_count: skipped.length, skipped });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("[journey/backfill-opening-stock]", e.message);
