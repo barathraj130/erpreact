@@ -740,11 +740,11 @@ const generatePrintHTML = (form: FormDef, company: CompanyHeader) => `
     // longest forms still too tall to fit, spilling onto a second page
     // exactly like this was meant to prevent. Single-page fit always wins;
     // text on the longest forms will be smaller, not on a second sheet.
-    // NOTE: this used to shrink with CSS `transform: scale()`, which only
+    // NOTE: this used to shrink with CSS transform: scale(), which only
     // changes how the content is painted — Chrome's print-pagination decides
     // how many physical pages content spans from the pre-transform layout
-    // box, so that never actually stopped a second sheet. `zoom` (unlike
-    // `transform`) reflows layout itself, so the box really does get
+    // box, so that never actually stopped a second sheet. zoom (unlike
+    // transform) reflows layout itself, so the box really does get
     // shorter and pagination sees the smaller size.
     window.onload = function () {
       requestAnimationFrame(function () {

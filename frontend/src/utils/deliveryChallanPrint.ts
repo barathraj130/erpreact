@@ -96,8 +96,7 @@ export async function printDeliveryChallan(order: DOForPrint) {
   .signature-block { text-align: center; }
   .signature-line { border-top: 1.5px solid #000; margin-bottom: 6px; padding-top: 48px; }
   .signature-label { font-size: 11px; font-weight: 700; text-transform: uppercase; }
-  .seal-box { border: 1.5px dashed #999; border-radius: 6px; height: 84px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
-  .seal-box-label { font-size: 9px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+  .seal-stamp { height: 84px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; transform: rotate(-7deg); }
   .footer-note { margin-top: 20px; font-size: 9px; color: #666; text-align: center; }
   @media print { body { padding: 20px; } .no-print { display: none; } @page { size: A4; margin: 15mm; } }
 </style>
@@ -142,8 +141,25 @@ export async function printDeliveryChallan(order: DOForPrint) {
   <div class="signature-row">
     <div class="signature-block"><div class="signature-line"></div><div class="signature-label">Dispatched By</div></div>
     <div class="signature-block">
-      <div class="seal-box"><span class="seal-box-label">Company Seal</span></div>
-      <div class="signature-label">${escapeHtml(companyName)}</div>
+      <div class="seal-stamp">
+        <svg viewBox="0 0 120 120" width="92" height="92">
+          <defs>
+            <path id="sealTopCurve" d="M 12,64 A 48,48 0 0 1 108,64" fill="none" />
+            <path id="sealBottomCurve" d="M 22,72 A 38,38 0 0 0 98,72" fill="none" />
+          </defs>
+          <circle cx="60" cy="60" r="53" fill="none" stroke="#1d4ed8" stroke-width="2.5" />
+          <circle cx="60" cy="60" r="45" fill="none" stroke="#1d4ed8" stroke-width="1" />
+          <text font-size="9.5" font-weight="700" letter-spacing="1.2" fill="#1d4ed8">
+            <textPath href="#sealTopCurve" startOffset="50%" text-anchor="middle">${escapeHtml(companyName.toUpperCase())}</textPath>
+          </text>
+          <text font-size="7" font-weight="700" letter-spacing="1.5" fill="#1d4ed8">
+            <textPath href="#sealBottomCurve" startOffset="50%" text-anchor="middle">AUTHORIZED SEAL</textPath>
+          </text>
+          <text x="60" y="58" font-size="10" font-weight="800" fill="#1d4ed8" text-anchor="middle">DISPATCHED</text>
+          <text x="60" y="70" font-size="8" font-weight="600" fill="#1d4ed8" text-anchor="middle">${fmtDate(order.order_date)}</text>
+        </svg>
+      </div>
+      <div class="signature-label">Company Seal</div>
     </div>
     <div class="signature-block"><div class="signature-line"></div><div class="signature-label">Received By</div></div>
   </div>
