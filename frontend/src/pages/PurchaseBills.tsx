@@ -1042,7 +1042,24 @@ const PurchaseBills: React.FC = () => {
                   }}>
                     {viewBill.bill_category || 'PRODUCT'}
                   </span>
+                  {viewBill.is_surplus && (
+                    <span style={{
+                      fontSize: "0.65rem", fontWeight: 800, padding: "2px 8px",
+                      borderRadius: "4px", textTransform: "uppercase", letterSpacing: "0.5px",
+                      background: "#f5f3ff", color: "#6d28d9",
+                    }}>
+                      Surplus
+                    </span>
+                  )}
                 </div>
+
+                {/* What was actually typed in — most reliable when a surplus
+                    bill's per-item quantities couldn't be reconstructed below */}
+                {viewBill.notes && (
+                  <div style={{ marginBottom: "12px", padding: "10px 14px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", fontSize: "0.8rem", color: "#475569" }}>
+                    <b>Items entered:</b> {viewBill.notes}
+                  </div>
+                )}
 
                 {/* PRODUCT ITEMS TABLE */}
                 {(viewBill.bill_category !== 'EXPENSE') && (

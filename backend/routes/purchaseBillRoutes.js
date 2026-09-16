@@ -170,6 +170,25 @@ router.get("/:id", authMiddleware, async (req, res) => {
                 }
                 return rows;
             });
+
+            // No journeys found — either an older bill from before Product
+            // Journeys existed, or journey creation silently failed for this
+            // bill (it's wrapped in its own SAVEPOINT so a failure there never
+            // blocks the bill/inventory from saving). Fall back to the real
+            // fresh_qty/mistake_qty totals already stored directly on the
+            // bill, so there's still an honest, numeric summary instead of a
+            // bare "No product items" next to a real total_amount. The exact
+            // product names typed in are still recoverable from bill.notes
+            // (pipe-separated), which the frontend now shows alongside this.
+            if (items.length === 0) {
+                const freshQty = Number(bill.fresh_qty) || 0;
+                const mistakeQty = Number(bill.mistake_qty) || 0;
+                const totalQty = freshQty + mistakeQty;
+                const blendedRate = totalQty > 0 ? (Number(bill.total_amount) || 0) / totalQty : 0;
+                items = [];
+                if (freshQty > 0) items.push({ product_name: "Fresh stock (total)", quantity: freshQty, unit_price: blendedRate, tax_percent: 0, line_total: freshQty * blendedRate });
+                if (mistakeQty > 0) items.push({ product_name: "Mistake stock (total)", quantity: mistakeQty, unit_price: blendedRate, tax_percent: 0, line_total: mistakeQty * blendedRate });
+            }
         } else {
             items = await db.pgAll(`
                 SELECT pbi.*,

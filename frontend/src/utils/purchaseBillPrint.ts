@@ -19,6 +19,7 @@ interface BillForPrint {
   paid_amount?: number | string;
   balance_amount?: number | string;
   status?: string | null;
+  notes?: string | null;
 }
 
 const escapeHtml = (s: string) =>
@@ -136,6 +137,8 @@ export async function printPurchaseBill(bill: BillForPrint, items: PrintItem[], 
       <div class="meta-value ${balance <= 0 ? "status-paid" : paid > 0 ? "status-partial" : "status-pending"}">${escapeHtml((bill.status || (balance <= 0 ? "PAID" : paid > 0 ? "PARTIAL" : "PENDING")).toUpperCase())}</div>
     </div>
   </div>
+
+  ${bill.notes ? `<div class="meta-row"><div style="grid-column:1/-1;"><div class="meta-label">Items Entered</div><div class="meta-value" style="font-weight:500;">${escapeHtml(bill.notes)}</div></div></div>` : ""}
 
   <table>
     <thead><tr>${headCols}</tr></thead>
