@@ -30,7 +30,7 @@ interface AttendanceRecord {
   employee_id: number;
   employee_name?: string;
   date: string;
-  status: "PRESENT" | "ABSENT" | "OD" | "LEAVE" | "HALF_DAY";
+  status: "PRESENT" | "ABSENT" | "OD" | "LEAVE" | "HALF_DAY" | "LATE";
   check_in_time?: string;
   check_out_time?: string;
   work_assigned?: string;
@@ -121,13 +121,14 @@ const Attendance: React.FC = () => {
     OD: { label: "ON DUTY", color: "var(--accent)", bg: "var(--accent-bg)", icon: <FaBriefcase /> },
     LEAVE: { label: "LEAVE", color: "var(--amber)", bg: "var(--amber-bg)", icon: <FaUserClock /> },
     HALF_DAY: { label: "HALF DAY", color: "#8b5cf6", bg: "#ede9fe", icon: <FaClock /> },
+    LATE: { label: "LATE", color: "#f97316", bg: "#ffedd5", icon: <FaExclamationCircle /> },
   };
 
   const filteredEmployees = employees.filter(e => (e.name || "").toLowerCase().includes(search.toLowerCase()));
   // Stats
   const stats = {
     total: employees.length,
-    present: Object.values(attendance).filter(r => ["PRESENT", "OD", "HALF_DAY"].includes(r.status)).length,
+    present: Object.values(attendance).filter(r => ["PRESENT", "OD", "HALF_DAY", "LATE"].includes(r.status)).length,
     absent: Object.values(attendance).filter(r => r.status === "ABSENT").length,
   };
 

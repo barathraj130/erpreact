@@ -11,6 +11,26 @@ import { createTransactionInternal, getAccountByCode } from "../utils/accounting
 
 const router = express.Router();
 
+// Attendance check-in cutoff — everyone must scan in by 10:45 AM (IST) to
+// count as on-time; scanning in later auto-marks LATE instead of PRESENT.
+// Computed in Asia/Kolkata explicitly rather than the server's own clock —
+// this app is deployed on Railway, whose containers default to UTC, so
+// comparing against "10:45" using the server's local time would silently
+// check the wrong cutoff (UTC 10:45 = 4:15 PM IST) for every employee.
+const ATTENDANCE_CUTOFF_HOUR = 10;
+const ATTENDANCE_CUTOFF_MINUTE = 45;
+function isLateCheckIn() {
+    const istNow = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit" });
+    const [hour, minute] = istNow.split(":").map(Number);
+    return hour > ATTENDANCE_CUTOFF_HOUR || (hour === ATTENDANCE_CUTOFF_HOUR && minute > ATTENDANCE_CUTOFF_MINUTE);
+}
+// Only PRESENT check-ins are ever late — OD/Leave/etc. aren't "arriving at
+// the office" and shouldn't be downgraded by a clock check.
+function effectiveCheckInStatus(requestedStatus) {
+    const status = requestedStatus || "PRESENT";
+    return status === "PRESENT" && isLateCheckIn() ? "LATE" : status;
+}
+
 // Posts a Salary & Wages (5300) expense against Cash/Bank/Proprietor's Capital
 // for a wage payment. Best-effort: wrapped in a SAVEPOINT by the caller's
 // transaction so a chart-of-accounts hiccup never blocks the actual wage
@@ -387,12 +407,14 @@ router.post("/attendance/scan", authMiddleware, async (req, res) => {
             await db.pgRun(`UPDATE attendance_logs SET check_out_time=$1 WHERE id=$2`, [now, existing.id]);
             return res.json({ message: `Goodbye ${emp.name}! Check-out recorded.`, type: "OUT" });
         } else {
+            const finalStatus = effectiveCheckInStatus(status);
             await db.pgRun(
                 `INSERT INTO attendance_logs (company_id, employee_id, date, check_in_time, status, work_assigned)
                  VALUES ($1, $2, $3, $4, $5, $6)`,
-                [companyId, employeeId, today, now, status || 'PRESENT', work_assigned || '']
+                [companyId, employeeId, today, now, finalStatus, work_assigned || '']
             );
-            return res.json({ message: `Welcome ${emp.name}! Marked as ${status || 'PRESENT'}.`, type: "IN" });
+            const lateNote = finalStatus === "LATE" ? ` (after ${ATTENDANCE_CUTOFF_HOUR}:${String(ATTENDANCE_CUTOFF_MINUTE).padStart(2, "0")} AM cutoff)` : "";
+            return res.json({ message: `Welcome ${emp.name}! Marked as ${finalStatus}${lateNote}.`, type: "IN", status: finalStatus });
         }
     } catch (err) {
         console.error("Attendance Scan Error:", err);
@@ -425,13 +447,15 @@ router.post("/attendance/mobile", async (req, res) => {
             return res.json({ success: true, message: `Goodbye ${employee.name}!`, type: "CHECK_OUT" });
         }
 
+        const finalStatus = effectiveCheckInStatus(status);
         await db.pgRun(
             `INSERT INTO attendance_logs (company_id, employee_id, date, check_in_time, status, work_assigned, method)
              VALUES ($1, $2, $3, $4, $5, $6, 'QR_MOBILE')`,
-            [employee.company_id, employeeId, today, now, status || 'PRESENT', work_assigned || '']
+            [employee.company_id, employeeId, today, now, finalStatus, work_assigned || '']
         );
 
-        return res.json({ success: true, message: `Welcome ${employee.name}!`, type: "CHECK_IN" });
+        const lateNote = finalStatus === "LATE" ? ` You're marked LATE — check-in was after ${ATTENDANCE_CUTOFF_HOUR}:${String(ATTENDANCE_CUTOFF_MINUTE).padStart(2, "0")} AM.` : "";
+        return res.json({ success: true, message: `Welcome ${employee.name}!${lateNote}`, type: "CHECK_IN", status: finalStatus });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Failed to mark attendance" });

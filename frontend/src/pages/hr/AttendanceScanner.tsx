@@ -14,6 +14,7 @@ const AttendanceScanner: React.FC = () => {
   // Result States
   const [resultMessage, setResultMessage] = useState("");
   const [isError, setIsError] = useState(false);
+  const [isLate, setIsLate] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -48,12 +49,14 @@ const AttendanceScanner: React.FC = () => {
 
       if (res.ok) {
         setIsError(false);
+        setIsLate(data.status === "LATE");
         setResultMessage(data.message);
       } else {
         throw new Error(data.error);
       }
     } catch (err: any) {
       setIsError(true);
+      setIsLate(false);
       setResultMessage(err.message || "Invalid QR Code");
     }
 
@@ -64,6 +67,7 @@ const AttendanceScanner: React.FC = () => {
       setScanResult("");
       setWorkAssigned("");
       setStatusType("PRESENT");
+      setIsLate(false);
       setStep("SCAN");
     }, 3001);
   };
@@ -234,6 +238,14 @@ const AttendanceScanner: React.FC = () => {
               <div style={{ color: "#dc2626" }}>
                 <FaClock size={100} />
                 <h2 style={{ marginTop: "20px", fontSize: "1.5rem" }}>Error</h2>
+                <p>{resultMessage}</p>
+              </div>
+            ) : isLate ? (
+              <div style={{ color: "#f97316" }}>
+                <FaClock size={100} />
+                <h2 style={{ marginTop: "20px", fontSize: "1.5rem" }}>
+                  Marked Late
+                </h2>
                 <p>{resultMessage}</p>
               </div>
             ) : (

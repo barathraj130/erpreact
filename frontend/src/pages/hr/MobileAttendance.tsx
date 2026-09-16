@@ -19,6 +19,7 @@ interface AttendanceResponse {
   error?: string;
   employee_name?: string;
   type?: string;
+  status?: string;
 }
 
 const MobileAttendance: React.FC = () => {
@@ -401,16 +402,18 @@ const MobileAttendance: React.FC = () => {
                 width: "80px",
                 height: "80px",
                 borderRadius: "50%",
-                background: "#dcfce7",
+                background: result?.status === "LATE" ? "#ffedd5" : "#dcfce7",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 margin: "0 auto 20px",
               }}
             >
-              <FaCheckCircle size={40} color="#22c55e" />
+              <FaCheckCircle size={40} color={result?.status === "LATE" ? "#f97316" : "#22c55e"} />
             </div>
-            <h2 style={{ color: "#166534", marginBottom: "8px" }}>Success!</h2>
+            <h2 style={{ color: result?.status === "LATE" ? "#c2410c" : "#166534", marginBottom: "8px" }}>
+              {result?.status === "LATE" ? "Marked Late" : "Success!"}
+            </h2>
             <p
               style={{
                 color: "#64748b",
