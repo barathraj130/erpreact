@@ -380,8 +380,11 @@ const EditInvoice: React.FC = () => {
   // Calculate total from all payments being made now (New payments)
   const paymentNow = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
   const totalPaid = amountPaidAlready + paymentNow;
-  const balanceDue = grandTotal - totalPaid;
-  const paymentProgress = grandTotal > 0 ? (totalPaid / grandTotal) * 100 : 0;
+  // A waiver/discount reduces what the customer still owes, same as CreateInvoice's
+  // effectiveTotal — it never rewrites the invoice's own printed total.
+  const effectiveTotal = Math.max(0, grandTotal - editDiscount);
+  const balanceDue = effectiveTotal - totalPaid;
+  const paymentProgress = effectiveTotal > 0 ? (totalPaid / effectiveTotal) * 100 : 0;
 
   const getPaymentStatus = () => {
     if (balanceDue <= 0 && grandTotal > 0)
@@ -393,7 +396,7 @@ const EditInvoice: React.FC = () => {
   const status = getPaymentStatus();
 
   const handleQuickPayment = (percent: number) => {
-    const maxPayable = grandTotal - amountPaidAlready;
+    const maxPayable = effectiveTotal - amountPaidAlready;
     const amount = Math.round((maxPayable * percent) / 100);
     const newPayments = [...payments];
     newPayments[0] = { ...newPayments[0], amount };
@@ -1143,7 +1146,7 @@ const EditInvoice: React.FC = () => {
               />
               {editDiscount > 0 && (
                 <div style={{ fontSize: "0.75rem", color: "#92400e", marginTop: 4 }}>
-                  Set to 0 to remove an incorrect waiver entry
+                  Reduces the balance owed to ₹{fmt(Math.max(effectiveTotal - amountPaidAlready, 0))} — set to 0 to remove an incorrect waiver entry
                 </div>
               )}
             </div>
