@@ -52,6 +52,108 @@ const MODE_COLORS: Record<string, string> = {
   CHEQUE: "#f59e0b", PROPRIETOR: "#7c3aed", CREDIT: "#ef4444",
 };
 
+// Surplus stock (Fresh / Mistake) line model — one product's incoming qty is
+// rarely one uniform bundle count (e.g. 17 bundles of 50 plus one leftover
+// bundle of 4), so each product row holds multiple Bundles x Pcs/Bundle
+// sub-lines that sum to its total qty, the same bundle_lines[] pattern
+// already used by Delivery Orders (see CreateDeliveryOrder.tsx).
+interface BundleSubLine { bundles: string; pcs_per_bundle: string; }
+interface StockLine { description: string; bundle_lines: BundleSubLine[]; rate: string; }
+const emptyBundleSubLine = (): BundleSubLine => ({ bundles: "1", pcs_per_bundle: "" });
+const emptyStockLine = (): StockLine => ({ description: "", bundle_lines: [emptyBundleSubLine()], rate: "" });
+const bundleQtyOf = (b: BundleSubLine) => (parseFloat(b.bundles || "1") || 1) * parseFloat(b.pcs_per_bundle || "0");
+const stockQtyOf    = (l: StockLine) => l.bundle_lines.reduce((s, b) => s + bundleQtyOf(b), 0);
+const stockAmountOf = (l: StockLine) => stockQtyOf(l) * parseFloat(l.rate || "0");
+
+interface StockLineHelpers {
+  addLine: () => void;
+  removeLine: (index: number) => void;
+  updateLine: (index: number, field: "description" | "rate", value: string) => void;
+  addBundleLine: (index: number) => void;
+  removeBundleLine: (index: number, bundleIdx: number) => void;
+  updateBundleLine: (index: number, bundleIdx: number, field: keyof BundleSubLine, value: string) => void;
+}
+
+interface StockLineTableTheme { text: string; border: string; bg: string; addBorder: string; }
+const FRESH_THEME: StockLineTableTheme  = { text: "#166534", border: "#bbf7d0", bg: "#f0fdf4", addBorder: "#86efac" };
+const MISTAKE_THEME: StockLineTableTheme = { text: "#92400e", border: "#fde68a", bg: "#fffbeb", addBorder: "#fcd34d" };
+
+const StockLineTable: React.FC<{
+  title: string; theme: StockLineTableTheme; lines: StockLine[]; helpers: StockLineHelpers;
+  totalQty: number; totalAmount: number; addLabel: string;
+}> = ({ title, theme, lines, helpers, totalQty, totalAmount, addLabel }) => (
+  <>
+    <div style={{ fontSize: "0.78rem", fontWeight: 800, color: theme.text, marginBottom: "8px" }}>{title}</div>
+    {lines.map((line, index) => (
+      <div key={index} style={{ border: `0.5px solid ${theme.border}`, borderRadius: "10px", padding: "12px", marginBottom: "10px", background: "#fff" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "flex-start" }}>
+          <input type="text" placeholder="Product / description" value={line.description}
+            onChange={e => helpers.updateLine(index, "description", e.target.value)}
+            style={{ flex: 1, padding: "7px 9px", borderRadius: 6, border: "0.5px solid #e2e8f0", fontSize: 12.5, boxSizing: "border-box" }} />
+          <input type="number" placeholder="Rate" value={line.rate}
+            onChange={e => helpers.updateLine(index, "rate", e.target.value)}
+            onFocus={e => e.target.select()}
+            style={{ width: "90px", padding: "7px 9px", borderRadius: 6, border: `0.5px solid ${theme.border}`, background: theme.bg, fontSize: 12.5, textAlign: "right", boxSizing: "border-box" }} />
+          <div style={{ width: "100px", padding: "7px 9px", textAlign: "right", fontSize: 13, fontWeight: 700, color: theme.text, whiteSpace: "nowrap" }}>
+            {stockAmountOf(line) > 0 ? `₹${stockAmountOf(line).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
+          </div>
+          {lines.length > 1 && (
+            <button onClick={() => helpers.removeLine(index)}
+              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "18px", lineHeight: 1, padding: "6px 0" }}>×</button>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 30px", gap: 6, marginBottom: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>Bundles</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>Pcs / Bundle</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>Total Pcs</div>
+          <div />
+        </div>
+        {line.bundle_lines.map((b, bIdx) => (
+          <div key={bIdx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 30px", gap: 6, marginBottom: 5 }}>
+            <input type="number" min={1} placeholder="Bndl" value={b.bundles}
+              onChange={e => helpers.updateBundleLine(index, bIdx, "bundles", e.target.value)}
+              onFocus={e => e.target.select()}
+              style={{ padding: "6px", borderRadius: 6, border: `0.5px solid ${theme.border}`, background: theme.bg, fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
+            <input type="number" min={0} placeholder="Pcs/Bndl" value={b.pcs_per_bundle}
+              onChange={e => helpers.updateBundleLine(index, bIdx, "pcs_per_bundle", e.target.value)}
+              onFocus={e => e.target.select()}
+              style={{ padding: "6px", borderRadius: 6, border: `0.5px solid ${theme.border}`, background: theme.bg, fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
+            <div style={{ padding: "6px", borderRadius: 6, background: theme.bg, fontSize: 12, fontWeight: 700, color: theme.text, textAlign: "right" }}>
+              {bundleQtyOf(b)} pcs
+            </div>
+            <button onClick={() => helpers.removeBundleLine(index, bIdx)} disabled={line.bundle_lines.length === 1}
+              style={{
+                border: "none", borderRadius: 6, cursor: line.bundle_lines.length === 1 ? "default" : "pointer",
+                background: line.bundle_lines.length === 1 ? "transparent" : "#fee2e2",
+                color: line.bundle_lines.length === 1 ? "#d1d5db" : "#dc2626", fontSize: 14,
+              }}>×</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+          <button onClick={() => helpers.addBundleLine(index)}
+            style={{ padding: "4px 10px", border: `0.5px dashed ${theme.addBorder}`, borderRadius: 6, background: "transparent", fontSize: "0.75rem", color: theme.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            <FaPlus size={8} /> Add Bundle Line
+          </button>
+          {stockQtyOf(line) > 0 && <div style={{ fontSize: 11.5, fontWeight: 700, color: theme.text }}>{stockQtyOf(line)} pcs total</div>}
+        </div>
+      </div>
+    ))}
+
+    <button onClick={helpers.addLine}
+      style={{ padding: "7px 14px", border: `0.5px dashed ${theme.addBorder}`, borderRadius: "8px", background: "transparent", fontSize: "0.82rem", color: theme.text, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px" }}>
+      <FaPlus size={10} /> {addLabel}
+    </button>
+
+    {totalQty > 0 && (
+      <div style={{ background: theme.bg, border: `0.5px solid ${theme.border}`, borderRadius: "8px", padding: "8px 14px", marginBottom: "20px", display: "flex", justifyContent: "space-between" }}>
+        <span style={{ fontSize: "0.78rem", fontWeight: 700, color: theme.text }}>TOTAL — {totalQty} pcs</span>
+        <span style={{ fontSize: "0.85rem", fontWeight: 800, color: theme.text }}>₹{totalAmount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+      </div>
+    )}
+  </>
+);
+
 const SimplifiedPurchaseBill: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,33 +195,48 @@ const SimplifiedPurchaseBill: React.FC = () => {
   // mistake quantity for one description was wrong. Each list has its own
   // rows, added/removed independently, and each row becomes its own line
   // (and its own separate inventory entry / Product Journey) when saved.
-  // Qty is entered as Bundles x Pcs/Bundle (defaults to 1 bundle, so typing
-  // straight into Pcs/Bundle behaves like plain pcs entry).
-  interface StockLine {
-    description: string; bundles: string; pcs_per_bundle: string; rate: string;
-  }
-  const emptyStockLine = (): StockLine => ({ description: "", bundles: "1", pcs_per_bundle: "", rate: "" });
+  //
+  // One product's incoming qty is rarely one uniform bundle count either —
+  // e.g. 17 bundles of 50 plus one leftover bundle of 4 — so each row can
+  // hold multiple Bundles x Pcs/Bundle sub-lines that sum to its total qty,
+  // the same bundle_lines[] pattern already used by Delivery Orders.
+  // (Types, empty-value factories and stockQtyOf/stockAmountOf live at
+  // module scope, above, so the extracted StockLineTable can use them too.)
   const [freshLines, setFreshLines] = useState<StockLine[]>([emptyStockLine()]);
   const [mistakeLines, setMistakeLines] = useState<StockLine[]>([emptyStockLine()]);
 
-  const qtyOf    = (l: StockLine) => (parseFloat(l.bundles || "1") || 1) * parseFloat(l.pcs_per_bundle || "0");
-  const amountOf = (l: StockLine) => qtyOf(l) * parseFloat(l.rate || "0");
-
-  const addFreshLine    = () => setFreshLines(prev => [...prev, emptyStockLine()]);
-  const removeFreshLine = (index: number) => setFreshLines(prev => prev.filter((_, i) => i !== index));
-  const updateFreshLine = (index: number, field: keyof StockLine, value: string) =>
-    setFreshLines(prev => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
-
-  const addMistakeLine    = () => setMistakeLines(prev => [...prev, emptyStockLine()]);
-  const removeMistakeLine = (index: number) => setMistakeLines(prev => prev.filter((_, i) => i !== index));
-  const updateMistakeLine = (index: number, field: keyof StockLine, value: string) =>
-    setMistakeLines(prev => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
+  // Shared per-list line/bundle-line editing, parameterized by which list's
+  // setState to act on — fresh and mistake need identical logic.
+  const makeLineHelpers = (setLines: React.Dispatch<React.SetStateAction<StockLine[]>>) => ({
+    addLine:    () => setLines(prev => [...prev, emptyStockLine()]),
+    removeLine: (index: number) => setLines(prev => prev.filter((_, i) => i !== index)),
+    updateLine: (index: number, field: "description" | "rate", value: string) =>
+      setLines(prev => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line))),
+    addBundleLine: (index: number) =>
+      setLines(prev => prev.map((line, i) =>
+        i === index ? { ...line, bundle_lines: [...line.bundle_lines, emptyBundleSubLine()] } : line
+      )),
+    removeBundleLine: (index: number, bundleIdx: number) =>
+      setLines(prev => prev.map((line, i) => {
+        if (i !== index) return line;
+        const lines = line.bundle_lines.filter((_, j) => j !== bundleIdx);
+        return { ...line, bundle_lines: lines.length ? lines : [emptyBundleSubLine()] };
+      })),
+    updateBundleLine: (index: number, bundleIdx: number, field: keyof BundleSubLine, value: string) =>
+      setLines(prev => prev.map((line, i) => {
+        if (i !== index) return line;
+        const lines = line.bundle_lines.map((b, j) => (j === bundleIdx ? { ...b, [field]: value } : b));
+        return { ...line, bundle_lines: lines };
+      })),
+  });
+  const freshHelpers   = makeLineHelpers(setFreshLines);
+  const mistakeHelpers = makeLineHelpers(setMistakeLines);
 
   const surplusTotals = {
-    fresh_qty:      freshLines.reduce((s, l) => s + qtyOf(l), 0),
-    mistake_qty:    mistakeLines.reduce((s, l) => s + qtyOf(l), 0),
-    fresh_amount:   freshLines.reduce((s, l) => s + amountOf(l), 0),
-    mistake_amount: mistakeLines.reduce((s, l) => s + amountOf(l), 0),
+    fresh_qty:      freshLines.reduce((s, l) => s + stockQtyOf(l), 0),
+    mistake_qty:    mistakeLines.reduce((s, l) => s + stockQtyOf(l), 0),
+    fresh_amount:   freshLines.reduce((s, l) => s + stockAmountOf(l), 0),
+    mistake_amount: mistakeLines.reduce((s, l) => s + stockAmountOf(l), 0),
     get subtotal()    { return this.fresh_amount + this.mistake_amount; },
     get grand_total() { return this.subtotal + (surplusTransportCost || 0); },
   };
@@ -342,12 +459,12 @@ const SimplifiedPurchaseBill: React.FC = () => {
         }
         for (let i = 0; i < namedFresh.length; i++) {
           const line = namedFresh[i];
-          if (qtyOf(line) <= 0)              { setLoading(false); return alert(`Enter fresh qty for "${line.description}".`); }
+          if (stockQtyOf(line) <= 0)         { setLoading(false); return alert(`Enter fresh qty for "${line.description}".`); }
           if (!parseFloat(line.rate || "0")) { setLoading(false); return alert(`Enter fresh rate for "${line.description}".`); }
         }
         for (let i = 0; i < namedMistake.length; i++) {
           const line = namedMistake[i];
-          if (qtyOf(line) <= 0)              { setLoading(false); return alert(`Enter mistake qty for "${line.description}".`); }
+          if (stockQtyOf(line) <= 0)         { setLoading(false); return alert(`Enter mistake qty for "${line.description}".`); }
           if (!parseFloat(line.rate || "0")) { setLoading(false); return alert(`Enter mistake rate for "${line.description}".`); }
         }
         payload.is_surplus     = true;
@@ -363,7 +480,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
         // backend always stores/accounts stock in pieces.
         payload.surplus_lines = [
           ...namedFresh.map(l => {
-            const qty = qtyOf(l), rate = parseFloat(l.rate || "0");
+            const qty = stockQtyOf(l), rate = parseFloat(l.rate || "0");
             return {
               description: l.description.trim(),
               fresh_qty: qty, fresh_rate: rate,
@@ -372,7 +489,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
             };
           }),
           ...namedMistake.map(l => {
-            const qty = qtyOf(l), rate = parseFloat(l.rate || "0");
+            const qty = stockQtyOf(l), rate = parseFloat(l.rate || "0");
             return {
               description: l.description.trim(),
               fresh_qty: 0, fresh_rate: 0,
@@ -562,173 +679,24 @@ const SimplifiedPurchaseBill: React.FC = () => {
                       </div>
                     </div>
                     <div style={{ fontSize: "0.72rem", color: "#94a3b8", marginBottom: "16px" }}>
-                      Qty below is entered as Bundles x Pcs/Bundle — leave Bundles at 1 to type a plain piece count.
-                      A defective batch is rarely the same product as the good stock, so fresh and mistake items are
+                      Qty is entered as Bundles x Pcs/Bundle — leave Bundles at 1 to type a plain piece count. Use
+                      "Add Bundle Line" for uneven lots (e.g. 17 bundles of 50 plus 1 leftover bundle of 4). A
+                      defective batch is rarely the same product as the good stock, so fresh and mistake items are
                       entered as two separate lists below and added to inventory independently.
                     </div>
 
-                    {/* Fresh stock table */}
-                    <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#166534", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
-                      ✅ Fresh Stock Items
-                    </div>
-                    <div style={{ border: "0.5px solid #bbf7d0", borderRadius: "10px", overflow: "hidden", marginBottom: "10px" }}>
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: "520px" }}>
-                          <colgroup>
-                            <col style={{ width: "40%" }} />
-                            <col style={{ width: "22%" }} />
-                            <col style={{ width: "18%" }} />
-                            <col style={{ width: "16%" }} />
-                            <col style={{ width: "4%" }} />
-                          </colgroup>
-                          <thead>
-                            <tr>
-                              <th style={{ padding: "9px 12px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#166534", borderBottom: "0.5px solid #bbf7d0", background: "#f0fdf4", letterSpacing: "0.04em" }}>DESCRIPTION</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#166534", borderBottom: "0.5px solid #bbf7d0", background: "#f0fdf4", letterSpacing: "0.04em" }}>BNDL x PCS</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#166534", borderBottom: "0.5px solid #bbf7d0", background: "#f0fdf4", letterSpacing: "0.04em" }}>RATE</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#166534", borderBottom: "0.5px solid #bbf7d0", background: "#f0fdf4", letterSpacing: "0.04em" }}>AMOUNT</th>
-                              <th style={{ padding: "9px 4px", borderBottom: "0.5px solid #bbf7d0", background: "#f0fdf4" }} />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {freshLines.map((line, index) => (
-                              <tr key={index} style={{ borderBottom: "0.5px solid #f1f5f9", background: index % 2 === 0 ? "#fff" : "#fafafa" }}>
-                                <td style={{ padding: "7px 10px" }}>
-                                  <input type="text" placeholder="Product / description" value={line.description}
-                                    onChange={e => updateFreshLine(index, "description", e.target.value)}
-                                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "0.5px solid #e2e8f0", fontSize: 12, boxSizing: "border-box" }} />
-                                </td>
-                                <td style={{ padding: "7px 5px" }}>
-                                  <div style={{ display: "flex", gap: 3 }}>
-                                    <input type="number" min={1} placeholder="Bndl" title="Bundles" value={line.bundles}
-                                      onChange={e => updateFreshLine(index, "bundles", e.target.value)}
-                                      onFocus={e => e.target.select()}
-                                      style={{ width: "50%", padding: "6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 11, textAlign: "right", boxSizing: "border-box" }} />
-                                    <input type="number" min={0} placeholder="Pcs/Bndl" title="Pieces per bundle" value={line.pcs_per_bundle}
-                                      onChange={e => updateFreshLine(index, "pcs_per_bundle", e.target.value)}
-                                      onFocus={e => e.target.select()}
-                                      style={{ width: "50%", padding: "6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 11, textAlign: "right", boxSizing: "border-box" }} />
-                                  </div>
-                                  {qtyOf(line) > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#166534", textAlign: "right", marginTop: 2 }}>{qtyOf(line)} pcs</div>}
-                                </td>
-                                <td style={{ padding: "7px 5px" }}>
-                                  <input type="number" placeholder="0" value={line.rate}
-                                    onChange={e => updateFreshLine(index, "rate", e.target.value)}
-                                    onFocus={e => e.target.select()}
-                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #bbf7d0", background: "#f0fdf4", fontSize: 12, textAlign: "right", boxSizing: "border-box" }} />
-                                </td>
-                                <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#166534", whiteSpace: "nowrap" }}>
-                                  {amountOf(line) > 0 ? `₹${amountOf(line).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
-                                </td>
-                                <td style={{ padding: "7px 4px", textAlign: "center" }}>
-                                  {freshLines.length > 1 && (
-                                    <button onClick={() => removeFreshLine(index)}
-                                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "18px", lineHeight: 1, padding: 0 }}>×</button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          {surplusTotals.fresh_qty > 0 && (
-                            <tfoot>
-                              <tr style={{ background: "#f0fdf4", borderTop: "1px solid #bbf7d0" }}>
-                                <td style={{ padding: "8px 12px", fontSize: "0.78rem", fontWeight: 700, color: "#166534" }}>TOTAL</td>
-                                <td style={{ padding: "8px", textAlign: "right", fontSize: "0.78rem", fontWeight: 700, color: "#166534" }}>{surplusTotals.fresh_qty} pcs</td>
-                                <td></td>
-                                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 800, color: "#166534", whiteSpace: "nowrap" }}>₹{surplusTotals.fresh_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
-                                <td></td>
-                              </tr>
-                            </tfoot>
-                          )}
-                        </table>
-                      </div>
-                    </div>
-                    <button onClick={addFreshLine}
-                      style={{ padding: "7px 14px", border: "0.5px dashed #86efac", borderRadius: "8px", background: "transparent", fontSize: "0.82rem", color: "#166534", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", marginBottom: "20px" }}>
-                      <FaPlus size={10} /> Add Fresh Item
-                    </button>
-
-                    {/* Mistake / defect stock table */}
-                    <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
-                      ⚠️ Mistake / Defect Stock Items
-                    </div>
-                    <div style={{ border: "0.5px solid #fde68a", borderRadius: "10px", overflow: "hidden", marginBottom: "10px" }}>
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: "520px" }}>
-                          <colgroup>
-                            <col style={{ width: "40%" }} />
-                            <col style={{ width: "22%" }} />
-                            <col style={{ width: "18%" }} />
-                            <col style={{ width: "16%" }} />
-                            <col style={{ width: "4%" }} />
-                          </colgroup>
-                          <thead>
-                            <tr>
-                              <th style={{ padding: "9px 12px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "#92400e", borderBottom: "0.5px solid #fde68a", background: "#fffbeb", letterSpacing: "0.04em" }}>DESCRIPTION</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#92400e", borderBottom: "0.5px solid #fde68a", background: "#fffbeb", letterSpacing: "0.04em" }}>BNDL x PCS</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#92400e", borderBottom: "0.5px solid #fde68a", background: "#fffbeb", letterSpacing: "0.04em" }}>RATE</th>
-                              <th style={{ padding: "9px 8px", textAlign: "right", fontSize: 10, fontWeight: 600, color: "#92400e", borderBottom: "0.5px solid #fde68a", background: "#fffbeb", letterSpacing: "0.04em" }}>AMOUNT</th>
-                              <th style={{ padding: "9px 4px", borderBottom: "0.5px solid #fde68a", background: "#fffbeb" }} />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {mistakeLines.map((line, index) => (
-                              <tr key={index} style={{ borderBottom: "0.5px solid #f1f5f9", background: index % 2 === 0 ? "#fff" : "#fafafa" }}>
-                                <td style={{ padding: "7px 10px" }}>
-                                  <input type="text" placeholder="Product / description" value={line.description}
-                                    onChange={e => updateMistakeLine(index, "description", e.target.value)}
-                                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "0.5px solid #e2e8f0", fontSize: 12, boxSizing: "border-box" }} />
-                                </td>
-                                <td style={{ padding: "7px 5px" }}>
-                                  <div style={{ display: "flex", gap: 3 }}>
-                                    <input type="number" min={1} placeholder="Bndl" title="Bundles" value={line.bundles}
-                                      onChange={e => updateMistakeLine(index, "bundles", e.target.value)}
-                                      onFocus={e => e.target.select()}
-                                      style={{ width: "50%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 11, textAlign: "right", boxSizing: "border-box", color: "#92400e" }} />
-                                    <input type="number" min={0} placeholder="Pcs/Bndl" title="Pieces per bundle" value={line.pcs_per_bundle}
-                                      onChange={e => updateMistakeLine(index, "pcs_per_bundle", e.target.value)}
-                                      onFocus={e => e.target.select()}
-                                      style={{ width: "50%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 11, textAlign: "right", boxSizing: "border-box", color: "#92400e" }} />
-                                  </div>
-                                  {qtyOf(line) > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textAlign: "right", marginTop: 2 }}>{qtyOf(line)} pcs</div>}
-                                </td>
-                                <td style={{ padding: "7px 5px" }}>
-                                  <input type="number" placeholder="0" value={line.rate}
-                                    onChange={e => updateMistakeLine(index, "rate", e.target.value)}
-                                    onFocus={e => e.target.select()}
-                                    style={{ width: "100%", padding: "6px", borderRadius: 6, border: "0.5px solid #fde68a", background: "#fffbeb", fontSize: 12, textAlign: "right", boxSizing: "border-box", color: "#92400e", fontWeight: 500 }} />
-                                </td>
-                                <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 13, fontWeight: 700, color: "#92400e", whiteSpace: "nowrap" }}>
-                                  {amountOf(line) > 0 ? `₹${amountOf(line).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : <span style={{ color: "#cbd5e1" }}>—</span>}
-                                </td>
-                                <td style={{ padding: "7px 4px", textAlign: "center" }}>
-                                  {mistakeLines.length > 1 && (
-                                    <button onClick={() => removeMistakeLine(index)}
-                                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "18px", lineHeight: 1, padding: 0 }}>×</button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          {surplusTotals.mistake_qty > 0 && (
-                            <tfoot>
-                              <tr style={{ background: "#fffbeb", borderTop: "1px solid #fde68a" }}>
-                                <td style={{ padding: "8px 12px", fontSize: "0.78rem", fontWeight: 700, color: "#92400e" }}>TOTAL</td>
-                                <td style={{ padding: "8px", textAlign: "right", fontSize: "0.78rem", fontWeight: 700, color: "#92400e" }}>{surplusTotals.mistake_qty} pcs</td>
-                                <td></td>
-                                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "0.85rem", fontWeight: 800, color: "#92400e", whiteSpace: "nowrap" }}>₹{surplusTotals.mistake_amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
-                                <td></td>
-                              </tr>
-                            </tfoot>
-                          )}
-                        </table>
-                      </div>
-                    </div>
-                    <button onClick={addMistakeLine}
-                      style={{ padding: "7px 14px", border: "0.5px dashed #fcd34d", borderRadius: "8px", background: "transparent", fontSize: "0.82rem", color: "#92400e", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", marginBottom: "16px" }}>
-                      <FaPlus size={10} /> Add Mistake Item
-                    </button>
-
+                    <StockLineTable
+                      title="✅ Fresh Stock Items" theme={FRESH_THEME}
+                      lines={freshLines} helpers={freshHelpers}
+                      totalQty={surplusTotals.fresh_qty} totalAmount={surplusTotals.fresh_amount}
+                      addLabel="Add Fresh Item"
+                    />
+                    <StockLineTable
+                      title="⚠️ Mistake / Defect Stock Items" theme={MISTAKE_THEME}
+                      lines={mistakeLines} helpers={mistakeHelpers}
+                      totalQty={surplusTotals.mistake_qty} totalAmount={surplusTotals.mistake_amount}
+                      addLabel="Add Mistake Item"
+                    />
                     {/* Combined summary */}
                     <div style={{ border: "0.5px solid #e2e8f0", borderRadius: "10px", overflow: "hidden" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse" }}>
