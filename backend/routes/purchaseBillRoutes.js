@@ -134,25 +134,54 @@ router.get("/", authMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 router.get("/:id", authMiddleware, async (req, res) => {
     const { id } = req.params;
+    const companyId = req.user.active_company_id;
     try {
         const bill = await db.pgGet(`
             SELECT pb.*, s.name AS supplier_name, s.gstin AS supplier_gstin, s.phone AS supplier_phone
             FROM purchase_bills pb
             LEFT JOIN suppliers s ON s.id = pb.supplier_id
-            WHERE pb.id = $1
-        `, [id]);
+            WHERE pb.id = $1 AND pb.company_id = $2
+        `, [id, companyId]);
         if (!bill) return res.status(404).json({ error: "Bill not found" });
 
-        const items = await db.pgAll(`
-            SELECT pbi.*,
-                p.name AS product_name,
-                p.hsn_code,
-                p.unit
-            FROM purchase_bill_items pbi
-            LEFT JOIN products p ON p.id = pbi.product_id
-            WHERE pbi.bill_id = $1
-            ORDER BY pbi.id
-        `, [id]);
+        // Surplus bills (fresh/mistake description-only stock) never get
+        // purchase_bill_items rows — their lines live as Product Journeys
+        // instead (one per line, created in POST "/"). Without this, the
+        // Bill Details view showed "No product items on this bill" for
+        // every surplus bill despite a real total_amount on the bill.
+        let items;
+        if (bill.is_surplus) {
+            const journeys = await db.pgAll(`
+                SELECT product_name, fresh_purchased, mistake_purchased, purchase_rate, total_purchase_cost
+                FROM product_journeys
+                WHERE purchase_bill_id = $1 AND company_id = $2
+                ORDER BY id
+            `, [id, companyId]);
+            items = journeys.flatMap((j) => {
+                const rows = [];
+                const freshQty = Number(j.fresh_purchased) || 0;
+                const mistakeQty = Number(j.mistake_purchased) || 0;
+                const rate = Number(j.purchase_rate) || 0;
+                if (freshQty > 0) {
+                    rows.push({ product_name: `${j.product_name} (Fresh)`, quantity: freshQty, unit_price: rate, tax_percent: 0, line_total: freshQty * rate });
+                }
+                if (mistakeQty > 0) {
+                    rows.push({ product_name: `${j.product_name} (Mistake)`, quantity: mistakeQty, unit_price: rate, tax_percent: 0, line_total: mistakeQty * rate });
+                }
+                return rows;
+            });
+        } else {
+            items = await db.pgAll(`
+                SELECT pbi.*,
+                    p.name AS product_name,
+                    p.hsn_code,
+                    p.unit
+                FROM purchase_bill_items pbi
+                LEFT JOIN products p ON p.id = pbi.product_id
+                WHERE pbi.bill_id = $1
+                ORDER BY pbi.id
+            `, [id]);
+        }
         const expenses = await db.pgAll(`SELECT * FROM purchase_bill_expenses WHERE bill_id = $1`, [id]);
 
         res.json({ ...bill, items, expenses });
