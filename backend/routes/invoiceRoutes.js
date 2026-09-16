@@ -2056,17 +2056,20 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                     }
 
                     // --- Custom Ledgers Update ---
+                    // EditInvoice.tsx's payment-method dropdown sends "BANK_TRANSFER",
+                    // "UPI", "CARD", "CHEQUE" or "WALLET" — this used to only recognize
+                    // the literal string "BANK", so every one of those silently matched
+                    // no branch at all: invoice_payments and the customer ledger event
+                    // still got created (the invoice looked paid), but the actual
+                    // company Bank Ledger never received the entry. Any non-cash,
+                    // non-proprietor method now posts to bank_ledger, matching how
+                    // CreateInvoice's own "BANK"/"UPI" already do.
                     const pMethod = (p.payment_method || 'CASH').toUpperCase();
                     if (pMethod === 'CASH') {
                         await client.query(`
                             INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, invoice_id)
                             VALUES ($1, $2, $3, $4, $5, $6, $7)
                         `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', pDate, id]);
-                    } else if (pMethod === 'BANK') {
-                        await client.query(`
-                            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || 'Bank', p.reference_no || p.bank_transaction_id || '-', pDate, id]);
                     } else if (pMethod === 'PROPRIETOR_AC') {
                         await client.query(`
                             INSERT INTO proprietor_transactions
@@ -2075,6 +2078,11 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                         `, [companyId, req.user.branch_id || 1, pAmt, pDate,
                             `Customer payment via Proprietor A/C — Invoice #${id}`,
                             req.user.id, Number(id)]);
+                    } else {
+                        await client.query(`
+                            INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, transaction_id, date, invoice_id)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        `, [companyId, req.user.branch_id || 1, 'payment', pAmt, 'in', p.bank_name || pMethod, p.reference_no || p.bank_transaction_id || '-', pDate, id]);
                     }
                 }
             }
