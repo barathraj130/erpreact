@@ -212,6 +212,151 @@ router.get("/:id", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
+// RETROACTIVELY ITEMIZE A BILL THAT WAS NEVER ITEMIZED
+//
+// Some old bills were created through a lump-sum-only quick-entry path
+// (still identifiable today by bill_type "GST"/"NON_GST" — that path's own
+// vocabulary, distinct from the real "TAX"/"NON_TAX" every other bill uses)
+// that had no item-entry UI at all: it only ever sent items: []. Nothing
+// was ever recorded for them beyond a total amount — no purchase_bill_items,
+// no Product Journeys, no inventory. That path is no longer reachable for
+// creating new bills, but existing ones are stuck this way permanently
+// unless itemized after the fact.
+//
+// Refuses if the bill already has ANY items or Product Journeys — this
+// only ever fills in a genuinely empty bill, so there is no existing
+// inventory posting to reconcile against; it just runs the same product
+// auto-link + purchase_bill_items + branch_inventory + inventory_movements
+// steps POST "/" would have run at creation. Does NOT touch total_amount /
+// paid_amount / balance_amount / status / the accounting ledger — those
+// were already settled against whatever was actually paid and stay as-is.
+// ─────────────────────────────────────────────────────────
+router.post("/:id/items", authMiddleware, async (req, res) => {
+    const id = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+    const branchId = sanitizeInt(req.user.branch_id) || 1;
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+
+    if (items.length === 0) return res.status(400).json({ error: "Provide at least one item." });
+
+    let client;
+    try {
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        const billRes = await client.query(
+            `SELECT * FROM purchase_bills WHERE id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+            [id, companyId]
+        );
+        const bill = billRes.rows[0];
+        if (!bill) throw new Error("Bill not found");
+        if ((bill.bill_category || "PRODUCT") === "EXPENSE") throw new Error("Expense bills don't have product items.");
+
+        const existingItems = await client.query(`SELECT id FROM purchase_bill_items WHERE bill_id = $1 LIMIT 1`, [id]);
+        if (existingItems.rows.length > 0) throw new Error("This bill already has items — itemizing again would double-post inventory.");
+        const existingJourneys = await client.query(`SELECT id FROM product_journeys WHERE purchase_bill_id = $1 LIMIT 1`, [id]);
+        if (existingJourneys.rows.length > 0) throw new Error("This bill already has recorded stock — itemizing again would double-post inventory.");
+
+        const safeBranchId = bill.branch_id || branchId;
+        const gstType = bill.gst_type || "INTRA_STATE";
+        const isTaxBill = bill.bill_type === "TAX";
+
+        for (let pItem of items) {
+            const qty = parseFloat(pItem.quantity) || 0;
+            const price = parseFloat(pItem.unit_price) || 0;
+            if (qty <= 0) continue;
+            const taxRate = parseFloat(pItem.tax_percent) || 0;
+            const lineSubtotal = qty * price;
+            let cgstR = 0, sgstR = 0, igstR = 0, cgstA = 0, sgstA = 0, igstA = 0;
+            if (isTaxBill) {
+                if (gstType === "INTRA_STATE") {
+                    cgstR = taxRate / 2; sgstR = taxRate / 2;
+                    cgstA = (lineSubtotal * cgstR) / 100;
+                    sgstA = (lineSubtotal * sgstR) / 100;
+                } else {
+                    igstR = taxRate;
+                    igstA = (lineSubtotal * igstR) / 100;
+                }
+            }
+            const lineTotal = lineSubtotal + cgstA + sgstA + igstA;
+
+            // Auto-link/auto-create product by name — same as POST "/".
+            if (!pItem.product_id && (pItem.description || "").trim()) {
+                const productName = pItem.description.trim();
+                try {
+                    const autoProduct = await client.query(`
+                        INSERT INTO products
+                            (company_id, branch_id, name, cost_price, selling_price,
+                             current_stock, unit, hsn_code, gst_percent, is_active)
+                        VALUES ($1, $2, $3, $4, $4, 0, $5, $6, $7, 1)
+                        RETURNING id
+                    `, [companyId, safeBranchId, productName, price, pItem.unit || "pcs", pItem.hsn_code || null, taxRate]);
+                    pItem = { ...pItem, product_id: autoProduct.rows[0].id };
+                } catch (productErr) {
+                    if (productErr.code === "23505") {
+                        const existing = await client.query(
+                            `SELECT id FROM products WHERE company_id=$1 AND name=$2 AND is_deleted=false LIMIT 1`,
+                            [companyId, productName]
+                        );
+                        if (existing.rows.length > 0) pItem = { ...pItem, product_id: existing.rows[0].id };
+                        else throw productErr;
+                    } else {
+                        throw productErr;
+                    }
+                }
+            }
+
+            await client.query(`
+                INSERT INTO purchase_bill_items
+                    (bill_id, product_id, description, hsn_code, unit, quantity, unit_price,
+                     tax_percent, cgst_rate, sgst_rate, igst_rate,
+                     cgst_amount, sgst_amount, igst_amount, line_total)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            `, [
+                id, sanitizeInt(pItem.product_id), pItem.description || null, pItem.hsn_code || null,
+                pItem.unit || null, qty, price, taxRate, cgstR, sgstR, igstR, cgstA, sgstA, igstA, lineTotal,
+            ]);
+
+            if (pItem.product_id) {
+                await client.query(`
+                    INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
+                    VALUES ($1, $2, $3, $4, NOW())
+                    ON CONFLICT (branch_id, product_id)
+                    DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()
+                `, [companyId, safeBranchId, pItem.product_id, qty]);
+
+                await client.query(`
+                    UPDATE products SET
+                        current_stock = (SELECT COALESCE(SUM(bi.current_stock), 0) FROM branch_inventory bi WHERE bi.product_id = $1),
+                        cost_price = $2
+                    WHERE id = $1
+                `, [pItem.product_id, price]);
+
+                await client.query(`SAVEPOINT sp_inv_movement`);
+                try {
+                    await client.query(`
+                        INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
+                        VALUES ($1,$2,$3,'PURCHASE_IN',$4,'purchase_bill',$5,$6)
+                    `, [companyId, safeBranchId, pItem.product_id, qty, id, `Itemized retroactively for Bill #${bill.bill_number}`]);
+                    await client.query(`RELEASE SAVEPOINT sp_inv_movement`);
+                } catch (_) {
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_inv_movement`);
+                    await client.query(`RELEASE SAVEPOINT sp_inv_movement`);
+                }
+            }
+        }
+
+        await client.query("COMMIT");
+        res.json({ success: true, message: "Items added and stock updated." });
+    } catch (err) {
+        if (client) { try { await client.query("ROLLBACK"); } catch (_) {} }
+        res.status(400).json({ error: err.message || "Failed to add items" });
+    } finally {
+        if (client) client.release();
+    }
+});
+
+// ─────────────────────────────────────────────────────────
 // CREATE NEW BILL (Atomic with Inventory & Accounting)
 // ─────────────────────────────────────────────────────────
 router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) => {

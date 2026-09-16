@@ -123,6 +123,8 @@ const PurchaseBills: React.FC = () => {
     setViewBill(bill);
     setBillItems([]);
     setBillExpenses([]);
+    setShowPayForm(false);
+    setShowItemsForm(false);
     setLoadingItems(true);
     try {
       const res = await apiFetch(`/purchase-bills/${bill.id}`);
@@ -173,6 +175,52 @@ const PurchaseBills: React.FC = () => {
       alert("Failed to record payment — check your connection and try again.");
     } finally {
       setPayLoading(false);
+    }
+  };
+
+  // Retroactive itemization — for old bills that were logged as a lump sum
+  // with no items at all (see the POST /:id/items route for why). Only
+  // usable while the bill genuinely has zero items; the backend refuses
+  // otherwise so this can never double-post stock.
+  const emptyRetroItem = () => ({ description: "", quantity: "", unit_price: "", tax_percent: "0" });
+  const [showItemsForm, setShowItemsForm] = useState(false);
+  const [retroItems, setRetroItems] = useState([emptyRetroItem()]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  const updateRetroItem = (index: number, field: string, value: string) =>
+    setRetroItems((prev) => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)));
+  const addRetroItem = () => setRetroItems((prev) => [...prev, emptyRetroItem()]);
+  const removeRetroItem = (index: number) => setRetroItems((prev) => prev.filter((_, i) => i !== index));
+
+  const handleSaveRetroItems = async () => {
+    if (!viewBill) return;
+    const valid = retroItems.filter((it) => it.description.trim() && Number(it.quantity) > 0 && Number(it.unit_price) >= 0);
+    if (valid.length === 0) { alert("Enter a description and quantity for at least one item."); return; }
+    setItemsLoading(true);
+    try {
+      const res = await apiFetch(`/purchase-bills/${viewBill.id}/items`, {
+        method: "POST",
+        body: {
+          items: valid.map((it) => ({
+            description: it.description.trim(),
+            quantity: Number(it.quantity),
+            unit_price: Number(it.unit_price) || 0,
+            tax_percent: Number(it.tax_percent) || 0,
+          })),
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || "Failed to add items.");
+        return;
+      }
+      setShowItemsForm(false);
+      setRetroItems([emptyRetroItem()]);
+      await handleViewBill(viewBill);
+    } catch {
+      alert("Failed to add items — check your connection and try again.");
+    } finally {
+      setItemsLoading(false);
     }
   };
 
@@ -1110,6 +1158,55 @@ const PurchaseBills: React.FC = () => {
                         )}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {/* Retroactive itemization — only ever offered when this
+                    bill genuinely has zero items (the backend re-verifies
+                    and refuses if anything already exists, so this can't
+                    double-post stock). */}
+                {viewBill.bill_category !== 'EXPENSE' && !loadingItems && billItems.length === 0 && (
+                  <div style={{ marginBottom: "16px", padding: "14px 16px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "12px" }}>
+                    <div style={{ fontSize: "0.82rem", color: "#92400e", marginBottom: showItemsForm ? "12px" : 0 }}>
+                      This bill has no recorded items or stock — nothing was ever entered for it.
+                      {!showItemsForm && " If you know what was purchased, you can add it now; this will also add the stock."}
+                    </div>
+                    {!showItemsForm ? (
+                      <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setShowItemsForm(true)}>+ Add Items</button>
+                    ) : (
+                      <div>
+                        {retroItems.map((it, idx) => (
+                          <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                            <div style={{ flex: 2, minWidth: 160 }}>
+                              <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#92400e", display: "block", marginBottom: 3 }}>Description</label>
+                              <input className="input-modern" value={it.description} onChange={(e) => updateRetroItem(idx, "description", e.target.value)} placeholder="Product name" />
+                            </div>
+                            <div style={{ width: 90 }}>
+                              <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#92400e", display: "block", marginBottom: 3 }}>Qty</label>
+                              <input type="number" className="input-modern" value={it.quantity} onChange={(e) => updateRetroItem(idx, "quantity", e.target.value)} placeholder="0" />
+                            </div>
+                            <div style={{ width: 100 }}>
+                              <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#92400e", display: "block", marginBottom: 3 }}>Rate (₹)</label>
+                              <input type="number" className="input-modern" value={it.unit_price} onChange={(e) => updateRetroItem(idx, "unit_price", e.target.value)} placeholder="0" />
+                            </div>
+                            <div style={{ width: 80 }}>
+                              <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#92400e", display: "block", marginBottom: 3 }}>GST%</label>
+                              <input type="number" className="input-modern" value={it.tax_percent} onChange={(e) => updateRetroItem(idx, "tax_percent", e.target.value)} placeholder="0" />
+                            </div>
+                            {retroItems.length > 1 && (
+                              <button onClick={() => removeRetroItem(idx)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, padding: "6px 4px" }}>×</button>
+                            )}
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                          <button className="btn-secondary" onClick={addRetroItem}>+ Add Row</button>
+                          <button className="btn-primary" disabled={itemsLoading} onClick={handleSaveRetroItems}>
+                            {itemsLoading ? "Saving…" : "Save Items & Update Stock"}
+                          </button>
+                          <button className="btn-secondary" onClick={() => { setShowItemsForm(false); setRetroItems([emptyRetroItem()]); }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
