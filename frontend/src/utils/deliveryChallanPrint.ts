@@ -42,6 +42,11 @@ const fmtDate = (d: string) => {
 };
 
 export async function printDeliveryChallan(order: DOForPrint) {
+  // Not every delivery needs a vehicle recorded (e.g. hand delivery, courier)
+  // — asking each time and letting it be left blank keeps the challan
+  // useful for both cases without a separate settings toggle.
+  const vehicleNumber = (window.prompt("Vehicle number (optional) — leave blank if not applicable:") || "").trim();
+
   let companyName = "Company Name";
   let addressLine = "";
   try {
@@ -84,7 +89,7 @@ export async function printDeliveryChallan(order: DOForPrint) {
   .title-block { text-align: right; }
   .title { font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
   .not-tax-invoice { font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px; }
-  .meta-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .meta-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
   .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #333; margin-bottom: 4px; }
   .meta-value { font-size: 13px; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
@@ -125,6 +130,10 @@ export async function printDeliveryChallan(order: DOForPrint) {
     <div>
       <div class="meta-label">Delivered To</div>
       <div class="meta-value">${escapeHtml(order.customer_name || "-")}</div>
+    </div>
+    <div>
+      <div class="meta-label">Vehicle No.</div>
+      <div class="meta-value">${escapeHtml(vehicleNumber || "-")}</div>
     </div>
   </div>
 
