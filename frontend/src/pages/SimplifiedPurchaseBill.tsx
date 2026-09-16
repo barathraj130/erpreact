@@ -136,7 +136,11 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
   const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
 
-  const DRAFT_KEY = "purchase_bill_draft";
+  // Stored server-side (not localStorage) — localStorage is scoped to the
+  // exact browser origin, so a saved draft vanished the moment the app
+  // redeployed to a new Vercel preview URL (a new origin has its own empty
+  // localStorage). This survives redeploys and works from any device.
+  const DRAFT_FORM_TYPE = "purchase_bill";
 
   // Fetch Initial Data
   useEffect(() => {
@@ -156,53 +160,58 @@ const SimplifiedPurchaseBill: React.FC = () => {
   }, [showAddProductModal, showAddSupplierModal]);
 
   // Draft detection on mount
+  const [savedDraft, setSavedDraft] = useState<any>(null);
   useEffect(() => {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (raw) {
-      try {
-        const draft = JSON.parse(raw);
-        if (draft.savedAt) setDraftBanner({ savedAt: draft.savedAt });
-      } catch {}
-    }
+    apiFetch(`/document-drafts/${DRAFT_FORM_TYPE}`)
+      .then((r) => r.json())
+      .then((row) => {
+        if (row && row.draft_data) {
+          setSavedDraft(row.draft_data);
+          setDraftBanner({ savedAt: row.draft_data.savedAt || row.updated_at });
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     const draft = {
       savedAt: new Date().toISOString(),
       selectedSupplierId, billNumber, billDate, billType, billCategory,
       items, expenses, discountAmount, payments, brokerId, brokerCommRate,
       isSurplus, surplusLotNumber, surplusTransportCost, surplusLines,
     };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    alert("Draft saved! You can continue later.");
+    try {
+      await apiFetch(`/document-drafts/${DRAFT_FORM_TYPE}`, { method: "PUT", body: draft });
+      alert("Draft saved! You can continue later, from any device.");
+    } catch {
+      alert("Failed to save draft — check your connection and try again.");
+    }
   };
 
   const restoreDraft = () => {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return;
-    try {
-      const d = JSON.parse(raw);
-      if (d.selectedSupplierId !== undefined) setSelectedSupplierId(d.selectedSupplierId);
-      if (d.billNumber       !== undefined) setBillNumber(d.billNumber);
-      if (d.billDate         !== undefined) setBillDate(d.billDate);
-      if (d.billType         !== undefined) setBillType(d.billType);
-      if (d.billCategory     !== undefined) setBillCategory(d.billCategory);
-      if (d.items            !== undefined) setItems(d.items);
-      if (d.expenses         !== undefined) setExpenses(d.expenses);
-      if (d.discountAmount   !== undefined) setDiscountAmount(d.discountAmount);
-      if (d.payments         !== undefined) setPayments(d.payments);
-      if (d.brokerId         !== undefined) setBrokerId(d.brokerId);
-      if (d.brokerCommRate   !== undefined) setBrokerCommRate(d.brokerCommRate);
-      if (d.isSurplus        !== undefined) setIsSurplus(d.isSurplus);
-      if (d.surplusLotNumber !== undefined) setSurplusLotNumber(d.surplusLotNumber);
-      if (d.surplusTransportCost !== undefined) setSurplusTransportCost(d.surplusTransportCost);
-      if (d.surplusLines     !== undefined) setSurplusLines(d.surplusLines);
-    } catch {}
+    const d = savedDraft;
+    if (!d) return;
+    if (d.selectedSupplierId !== undefined) setSelectedSupplierId(d.selectedSupplierId);
+    if (d.billNumber       !== undefined) setBillNumber(d.billNumber);
+    if (d.billDate         !== undefined) setBillDate(d.billDate);
+    if (d.billType         !== undefined) setBillType(d.billType);
+    if (d.billCategory     !== undefined) setBillCategory(d.billCategory);
+    if (d.items            !== undefined) setItems(d.items);
+    if (d.expenses         !== undefined) setExpenses(d.expenses);
+    if (d.discountAmount   !== undefined) setDiscountAmount(d.discountAmount);
+    if (d.payments         !== undefined) setPayments(d.payments);
+    if (d.brokerId         !== undefined) setBrokerId(d.brokerId);
+    if (d.brokerCommRate   !== undefined) setBrokerCommRate(d.brokerCommRate);
+    if (d.isSurplus        !== undefined) setIsSurplus(d.isSurplus);
+    if (d.surplusLotNumber !== undefined) setSurplusLotNumber(d.surplusLotNumber);
+    if (d.surplusTransportCost !== undefined) setSurplusTransportCost(d.surplusTransportCost);
+    if (d.surplusLines     !== undefined) setSurplusLines(d.surplusLines);
     setDraftBanner(null);
   };
 
   const discardDraft = () => {
-    localStorage.removeItem(DRAFT_KEY);
+    apiFetch(`/document-drafts/${DRAFT_FORM_TYPE}`, { method: "DELETE" }).catch(() => {});
+    setSavedDraft(null);
     setDraftBanner(null);
   };
 
@@ -373,7 +382,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
 
       if (res.ok) {
         const result = await res.json();
-        localStorage.removeItem(DRAFT_KEY);
+        apiFetch(`/document-drafts/${DRAFT_FORM_TYPE}`, { method: "DELETE" }).catch(() => {});
         const summary = result.items_saved > 0
           ? `Bill saved! ${result.items_saved} item(s) recorded, ${result.products_created} new product(s) created, inventory updated.`
           : "Purchase Bill Saved Successfully!";

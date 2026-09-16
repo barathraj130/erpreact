@@ -1394,6 +1394,25 @@ export const runSchemaUpdates = async () => {
         // real employees(id) without guessing at the users<->employees link.
         await db.query(`ALTER TABLE hub_forms ADD COLUMN IF NOT EXISTS submitted_by_employee_id INTEGER REFERENCES employees(id)`).catch(() => {});
 
+        // "Save Draft (Continue Later)" on long forms (Purchase Bill, etc.) was
+        // storing the draft in browser localStorage — which is scoped to the
+        // exact origin, so it vanished the moment the app redeployed to a new
+        // Vercel preview URL (a new origin has its own empty localStorage).
+        // One draft per (company, user, form): saving overwrites the previous
+        // one, exactly like the old localStorage slot did.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS document_drafts (
+                id          SERIAL PRIMARY KEY,
+                company_id  INTEGER NOT NULL,
+                user_id     INTEGER NOT NULL,
+                form_type   VARCHAR(50) NOT NULL,
+                draft_data  JSONB NOT NULL,
+                updated_at  TIMESTAMP DEFAULT NOW(),
+                created_at  TIMESTAMP DEFAULT NOW(),
+                UNIQUE(company_id, user_id, form_type)
+            )
+        `).catch(() => {});
+
         // ── Performance indexes ─────────────────────────────────────────────
         // Nearly every query in this codebase filters by company_id, but only
         // 4 indexes existed anywhere in the schema before this — every hot-path
