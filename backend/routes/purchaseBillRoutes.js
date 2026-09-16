@@ -144,13 +144,27 @@ router.get("/:id", authMiddleware, async (req, res) => {
         `, [id, companyId]);
         if (!bill) return res.status(404).json({ error: "Bill not found" });
 
-        // Surplus bills (fresh/mistake description-only stock) never get
-        // purchase_bill_items rows — their lines live as Product Journeys
-        // instead (one per line, created in POST "/"). Without this, the
-        // Bill Details view showed "No product items on this bill" for
-        // every surplus bill despite a real total_amount on the bill.
-        let items;
-        if (bill.is_surplus) {
+        // Try every source of truth in order, regardless of the is_surplus
+        // flag — a bill can end up with real fresh_qty/mistake_qty/notes
+        // even when is_surplus wasn't actually set (or was reset by an edit),
+        // and gating this strictly on is_surplus meant those bills still
+        // showed a bare "No product items" next to a real total_amount.
+        //
+        // 1. purchase_bill_items — regular (non-surplus) Product Bill rows.
+        let items = await db.pgAll(`
+            SELECT pbi.*,
+                p.name AS product_name,
+                p.hsn_code,
+                p.unit
+            FROM purchase_bill_items pbi
+            LEFT JOIN products p ON p.id = pbi.product_id
+            WHERE pbi.bill_id = $1
+            ORDER BY pbi.id
+        `, [id]);
+
+        // 2. Product Journeys — surplus (fresh/mistake description-only
+        // stock) lines live here instead, one per line, created in POST "/".
+        if (items.length === 0) {
             const journeys = await db.pgAll(`
                 SELECT product_name, fresh_purchased, mistake_purchased, purchase_rate, total_purchase_cost
                 FROM product_journeys
@@ -170,36 +184,24 @@ router.get("/:id", authMiddleware, async (req, res) => {
                 }
                 return rows;
             });
+        }
 
-            // No journeys found — either an older bill from before Product
-            // Journeys existed, or journey creation silently failed for this
-            // bill (it's wrapped in its own SAVEPOINT so a failure there never
-            // blocks the bill/inventory from saving). Fall back to the real
-            // fresh_qty/mistake_qty totals already stored directly on the
-            // bill, so there's still an honest, numeric summary instead of a
-            // bare "No product items" next to a real total_amount. The exact
-            // product names typed in are still recoverable from bill.notes
-            // (pipe-separated), which the frontend now shows alongside this.
-            if (items.length === 0) {
-                const freshQty = Number(bill.fresh_qty) || 0;
-                const mistakeQty = Number(bill.mistake_qty) || 0;
-                const totalQty = freshQty + mistakeQty;
-                const blendedRate = totalQty > 0 ? (Number(bill.total_amount) || 0) / totalQty : 0;
-                items = [];
-                if (freshQty > 0) items.push({ product_name: "Fresh stock (total)", quantity: freshQty, unit_price: blendedRate, tax_percent: 0, line_total: freshQty * blendedRate });
-                if (mistakeQty > 0) items.push({ product_name: "Mistake stock (total)", quantity: mistakeQty, unit_price: blendedRate, tax_percent: 0, line_total: mistakeQty * blendedRate });
-            }
-        } else {
-            items = await db.pgAll(`
-                SELECT pbi.*,
-                    p.name AS product_name,
-                    p.hsn_code,
-                    p.unit
-                FROM purchase_bill_items pbi
-                LEFT JOIN products p ON p.id = pbi.product_id
-                WHERE pbi.bill_id = $1
-                ORDER BY pbi.id
-            `, [id]);
+        // 3. No journeys either — either an older bill from before Product
+        // Journeys existed, or journey creation silently failed for this
+        // bill (it's wrapped in its own SAVEPOINT so a failure there never
+        // blocks the bill/inventory from saving). Fall back to the real
+        // fresh_qty/mistake_qty totals already stored directly on the bill,
+        // so there's still an honest, numeric summary instead of a bare "No
+        // product items" next to a real total_amount. The exact product
+        // names typed in are still recoverable from bill.notes
+        // (pipe-separated), which the frontend now shows alongside this.
+        if (items.length === 0) {
+            const freshQty = Number(bill.fresh_qty) || 0;
+            const mistakeQty = Number(bill.mistake_qty) || 0;
+            const totalQty = freshQty + mistakeQty;
+            const blendedRate = totalQty > 0 ? (Number(bill.total_amount) || 0) / totalQty : 0;
+            if (freshQty > 0) items.push({ product_name: "Fresh stock (total)", quantity: freshQty, unit_price: blendedRate, tax_percent: 0, line_total: freshQty * blendedRate });
+            if (mistakeQty > 0) items.push({ product_name: "Mistake stock (total)", quantity: mistakeQty, unit_price: blendedRate, tax_percent: 0, line_total: mistakeQty * blendedRate });
         }
         const expenses = await db.pgAll(`SELECT * FROM purchase_bill_expenses WHERE bill_id = $1`, [id]);
 

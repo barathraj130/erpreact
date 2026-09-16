@@ -23,6 +23,14 @@ import "./PurchaseBills.css";
 import CustomSelect from "../components/CustomSelect";
 import { useNavigate } from "react-router-dom";
 
+// Bills store bill_type as "TAX"/"NON_TAX" (SimplifiedPurchaseBill's own
+// vocabulary — see the backend's `bill_type || "TAX"` default). This quick
+// Add/Edit modal used to have its own, different "GST"/"NON_GST" values for
+// the same field, so a real bill's stored "TAX" never matched either
+// <option>, leaving the dropdown showing blank on every edit. Normalizes
+// both the legacy "NON_GST" spelling and the real "NON_TAX" one.
+const isNonTaxBillType = (bt?: string | null) => bt === "NON_TAX" || bt === "NON_GST";
+
 const PurchaseBills: React.FC = () => {
   const navigate = useNavigate();
   const [bills, setBills] = useState<PurchaseBill[]>([]);
@@ -40,7 +48,7 @@ const PurchaseBills: React.FC = () => {
     due_date: "",
     total_amount: "",
     status: "PENDING",
-    bill_type: "GST",
+    bill_type: "TAX",
     paid_amount: "0",
     notes: "",
   });
@@ -267,7 +275,7 @@ const PurchaseBills: React.FC = () => {
       due_date: bill.due_date?.split("T")[0] || "",
       total_amount: bill.total_amount || "",
       status: bill.status || "PENDING",
-      bill_type: bill.bill_type || "GST",
+      bill_type: bill.bill_type || "TAX",
       paid_amount: bill.paid_amount || "0",
       notes: bill.notes || "",
     });
@@ -300,7 +308,7 @@ const PurchaseBills: React.FC = () => {
       due_date: "",
       total_amount: "",
       status: "PENDING",
-      bill_type: "GST",
+      bill_type: "TAX",
       paid_amount: "0",
       notes: "",
     });
@@ -483,8 +491,8 @@ const PurchaseBills: React.FC = () => {
                       <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600 }}>{bill.bill_number}</div>
                       <div style={{ fontSize: "1rem", fontWeight: 700, color: "#1e293b", marginTop: "2px" }}>{bill.supplier_name || "Unknown"}</div>
                     </div>
-                    <span className="bill-status-pill" style={{ fontSize: "0.7rem", padding: "4px 12px", background: bill.bill_type === "GST" ? "#eff6ff" : "#fef3c7", color: bill.bill_type === "GST" ? "#1e40af" : "#92400e", marginBottom: '4px' }}>
-                      {bill.bill_type || "GST"}
+                    <span className="bill-status-pill" style={{ fontSize: "0.7rem", padding: "4px 12px", background: isNonTaxBillType(bill.bill_type) ? "#fef3c7" : "#eff6ff", color: isNonTaxBillType(bill.bill_type) ? "#92400e" : "#1e40af", marginBottom: '4px' }}>
+                      {isNonTaxBillType(bill.bill_type) ? "NON-GST" : "GST"}
                     </span>
                     <span className="bill-status-pill" style={{ fontSize: "0.7rem", padding: "4px 12px" }}>
                       {bill.status}
@@ -555,8 +563,8 @@ const PurchaseBills: React.FC = () => {
                       {bill.supplier_name || "Unknown"}
                     </td>
                     <td>
-                       <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', background: bill.bill_type === "GST" ? "#eff6ff" : "#fef3c7", color: bill.bill_type === "GST" ? "#1e40af" : "#92400e" }}>
-                          {bill.bill_type || "GST"}
+                       <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', background: isNonTaxBillType(bill.bill_type) ? "#fef3c7" : "#eff6ff", color: isNonTaxBillType(bill.bill_type) ? "#92400e" : "#1e40af" }}>
+                          {isNonTaxBillType(bill.bill_type) ? "NON-GST" : "GST"}
                        </span>
                     </td>
                     <td style={{ color: "var(--text-muted)", fontWeight: 500 }}>
@@ -864,14 +872,14 @@ const PurchaseBills: React.FC = () => {
                       Bill Type
                     </label>
                     <CustomSelect
-                      value={newBill.bill_type}
+                      value={isNonTaxBillType(newBill.bill_type) ? "NON_TAX" : "TAX"}
                       onChange={(e) =>
                         setNewBill({ ...newBill, bill_type: e.target.value })
                       }
                       className="input-modern"
                     >
-                      <option value="GST">GST Bill</option>
-                      <option value="NON_GST">Non-GST Bill</option>
+                      <option value="TAX">GST Bill</option>
+                      <option value="NON_TAX">Non-GST Bill</option>
                     </CustomSelect>
                   </div>
                   {!isEditing && (
