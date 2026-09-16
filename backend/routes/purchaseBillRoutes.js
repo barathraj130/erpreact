@@ -1140,6 +1140,65 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
+// EDIT BILL — metadata only (supplier, bill number, date, type, notes).
+//
+// Deliberately does NOT touch items/expenses/surplus_lines, discount_amount,
+// paid_amount, total_amount, or status: creating a bill posts to
+// branch_inventory + inventory_movements (product bills), stock_lots +
+// Product Journeys (surplus bills), and the accounting ledger (Supplier
+// Payable, cash/bank, discount accounts) — recomputing any of those safely
+// on edit means reversing and re-applying every one of those postings,
+// which risks silent stock/ledger drift far more than it's worth for what
+// is usually just "I typed the bill number wrong" or "wrong date". Record
+// additional payments via POST/PATCH /:id/pay instead, which already
+// posts a correct, ledger-balanced entry.
+// ─────────────────────────────────────────────────────────
+router.put("/:id", authMiddleware, async (req, res) => {
+    const id = Number(req.params.id);
+    const companyId = req.user.active_company_id;
+    const { supplier_id, bill_number, bill_date, bill_type, notes } = req.body;
+    try {
+        const old = await db.pgGet(
+            `SELECT * FROM purchase_bills WHERE id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
+            [id, companyId]
+        );
+        if (!old) return res.status(404).json({ error: "Bill not found" });
+
+        const finalBillNumber = (bill_number && bill_number.trim()) ? bill_number.trim().toUpperCase() : old.bill_number;
+        if (finalBillNumber !== old.bill_number) {
+            const dup = await db.pgGet(
+                `SELECT id FROM purchase_bills WHERE bill_number = $1 AND company_id = $2 AND id <> $3 AND COALESCE(is_deleted, false) = false`,
+                [finalBillNumber, companyId, id]
+            );
+            if (dup) return res.status(409).json({ error: `Bill number "${finalBillNumber}" is already used by bill #${dup.id}.` });
+        }
+
+        let finalSupplierId = old.supplier_id;
+        let supplierName = old.supplier_name;
+        if (supplier_id !== undefined && sanitizeInt(supplier_id) && sanitizeInt(supplier_id) !== old.supplier_id) {
+            const s = await db.pgGet(`SELECT name FROM suppliers WHERE id = $1 AND company_id = $2`, [sanitizeInt(supplier_id), companyId]);
+            if (!s) return res.status(400).json({ error: "Selected supplier not found" });
+            finalSupplierId = sanitizeInt(supplier_id);
+            supplierName = s.name;
+        }
+
+        await db.pgRun(
+            `UPDATE purchase_bills SET
+                supplier_id = $1, supplier_name = $2, bill_number = $3,
+                bill_date = COALESCE($4::date, bill_date),
+                bill_type = COALESCE($5, bill_type),
+                notes = COALESCE($6, notes),
+                updated_at = NOW()
+             WHERE id = $7 AND company_id = $8`,
+            [finalSupplierId, supplierName, finalBillNumber, bill_date || null, bill_type || null, notes ?? null, id, companyId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message || "Failed to update bill" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────
 // ARCHIVE BILL (SOFT DELETE)
 // ─────────────────────────────────────────────────────────
 router.patch("/:id/archive", authMiddleware, async (req, res) => {

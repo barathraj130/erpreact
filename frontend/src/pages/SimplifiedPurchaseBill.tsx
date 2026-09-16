@@ -7,6 +7,7 @@ import {
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../utils/api";
+import { printPurchaseBill } from "../utils/purchaseBillPrint";
 import CustomSelect from "../components/CustomSelect";
 import ProductCombobox from "../components/ProductCombobox";
 import AddProductModal from "./AddProductModal";
@@ -516,10 +517,15 @@ const SimplifiedPurchaseBill: React.FC = () => {
           : "Purchase Bill Saved Successfully!";
         alert(summary);
         if (print) {
-            navigate(`/purchase-bills/${result.id}/print`);
-        } else {
-            navigate("/purchase-bills");
+            try {
+              const billRes = await apiFetch(`/purchase-bills/${result.id}`);
+              const bill = await billRes.json();
+              await printPurchaseBill(bill, bill.items || [], bill.expenses || []);
+            } catch {
+              // Bill saved fine either way — printing is best-effort.
+            }
         }
+        navigate("/purchase-bills");
       } else {
         const err = await res.json();
         alert(err.error || "Failed to save bill.");

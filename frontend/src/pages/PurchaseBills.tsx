@@ -18,6 +18,7 @@ import {
 import { PurchaseBill, fetchPurchaseBills } from "../api/purchaseBillApi";
 import { scanProductFromBill } from "../api/productApi";
 import { apiFetch } from "../utils/api";
+import { printPurchaseBill } from "../utils/purchaseBillPrint";
 import "./PurchaseBills.css";
 import CustomSelect from "../components/CustomSelect";
 import { useNavigate } from "react-router-dom";
@@ -41,6 +42,7 @@ const PurchaseBills: React.FC = () => {
     status: "PENDING",
     bill_type: "GST",
     paid_amount: "0",
+    notes: "",
   });
   const [billFile, setBillFile] = useState<File | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -118,6 +120,7 @@ const PurchaseBills: React.FC = () => {
       const res = await apiFetch(`/purchase-bills/${bill.id}`);
       if (res.ok) {
         const data = await res.json();
+        setViewBill(data);
         setBillItems(Array.isArray(data.items) ? data.items : []);
         setBillExpenses(Array.isArray(data.expenses) ? data.expenses : []);
       }
@@ -125,6 +128,43 @@ const PurchaseBills: React.FC = () => {
       // ignore — modal will show empty state
     } finally {
       setLoadingItems(false);
+    }
+  };
+
+  const handlePrintBill = () => {
+    if (!viewBill) return;
+    printPurchaseBill(viewBill, billItems, billExpenses);
+  };
+
+  // Record Payment mini-form, inside Bill Details
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMode, setPayMode] = useState("CASH");
+  const [payLoading, setPayLoading] = useState(false);
+
+  const handleRecordPayment = async () => {
+    if (!viewBill) return;
+    const amt = Number(payAmount);
+    if (!amt || amt <= 0) { alert("Enter a valid payment amount."); return; }
+    setPayLoading(true);
+    try {
+      const res = await apiFetch(`/purchase-bills/${viewBill.id}/payment`, {
+        method: "POST",
+        body: { amount: amt, payment_mode: payMode, payment_date: new Date().toISOString().split("T")[0] },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.error || "Failed to record payment.");
+        return;
+      }
+      setShowPayForm(false);
+      setPayAmount("");
+      await handleViewBill(viewBill);
+      loadData();
+    } catch {
+      alert("Failed to record payment — check your connection and try again.");
+    } finally {
+      setPayLoading(false);
     }
   };
 
@@ -171,15 +211,27 @@ const PurchaseBills: React.FC = () => {
   const handleCreateBill = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {
-        supplier_id: newBill.supplier_id || null,
-        bill_number: newBill.bill_number,
-        bill_date: newBill.bill_date,
-        due_date: newBill.due_date || null,
-        paid_amount: Number(newBill.paid_amount) || 0,
-        bill_type: newBill.bill_type,
-        items: []
-      };
+      // Editing only ever touches safe metadata (supplier, bill number, date,
+      // type, notes) — never total/paid amount, which are derived from real
+      // items/payments and would silently drift from the posted ledger and
+      // inventory if overwritten here. See the PUT /:id route's comment.
+      const payload = isEditing
+        ? {
+            supplier_id: newBill.supplier_id || null,
+            bill_number: newBill.bill_number,
+            bill_date: newBill.bill_date,
+            bill_type: newBill.bill_type,
+            notes: newBill.notes,
+          }
+        : {
+            supplier_id: newBill.supplier_id || null,
+            bill_number: newBill.bill_number,
+            bill_date: newBill.bill_date,
+            due_date: newBill.due_date || null,
+            paid_amount: Number(newBill.paid_amount) || 0,
+            bill_type: newBill.bill_type,
+            items: []
+          };
 
       const res = await apiFetch(
         isEditing ? `/purchase-bills/${editId}` : "/purchase-bills",
@@ -217,6 +269,7 @@ const PurchaseBills: React.FC = () => {
       status: bill.status || "PENDING",
       bill_type: bill.bill_type || "GST",
       paid_amount: bill.paid_amount || "0",
+      notes: bill.notes || "",
     });
     setBillFile(null);
     setShowCreateModal(true);
@@ -249,6 +302,7 @@ const PurchaseBills: React.FC = () => {
       status: "PENDING",
       bill_type: "GST",
       paid_amount: "0",
+      notes: "",
     });
     setBillFile(null);
   };
@@ -693,20 +747,22 @@ const PurchaseBills: React.FC = () => {
                       required
                     />
                   </div>
-                  <div>
-                    <label style={{ fontSize: "0.7rem", fontWeight: 600 }}>
-                      Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      value={newBill.total_amount}
-                      onChange={(e) =>
-                        setNewBill({ ...newBill, total_amount: e.target.value })
-                      }
-                      className="input-modern"
-                      required
-                    />
-                  </div>
+                  {!isEditing && (
+                    <div>
+                      <label style={{ fontSize: "0.7rem", fontWeight: 600 }}>
+                        Amount (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={newBill.total_amount}
+                        onChange={(e) =>
+                          setNewBill({ ...newBill, total_amount: e.target.value })
+                        }
+                        className="input-modern"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
                 <div
                   style={{
@@ -738,7 +794,34 @@ const PurchaseBills: React.FC = () => {
                       required
                     />
                   </div>
-                  <div>
+                  {!isEditing && (
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: 500,
+                          color: "#475569",
+                          marginBottom: "5px",
+                        }}
+                      >
+                        Due Date
+                      </label>
+                      <input
+                        type="date"
+                        value={newBill.due_date}
+                        onChange={(e) =>
+                          setNewBill({ ...newBill, due_date: e.target.value })
+                        }
+                        className="input-modern"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {isEditing && (
+                  <div style={{ marginBottom: "20px" }}>
                     <label
                       style={{
                         display: "block",
@@ -748,19 +831,17 @@ const PurchaseBills: React.FC = () => {
                         marginBottom: "5px",
                       }}
                     >
-                      Due Date
+                      Notes
                     </label>
-                    <input
-                      type="date"
-                      value={newBill.due_date}
-                      onChange={(e) =>
-                        setNewBill({ ...newBill, due_date: e.target.value })
-                      }
+                    <textarea
+                      value={newBill.notes}
+                      onChange={(e) => setNewBill({ ...newBill, notes: e.target.value })}
                       className="input-modern"
-                      required
+                      rows={2}
+                      style={{ width: "100%", resize: "vertical", boxSizing: "border-box" }}
                     />
                   </div>
-                </div>
+                )}
 
                 <div
                   style={{
@@ -793,73 +874,88 @@ const PurchaseBills: React.FC = () => {
                       <option value="NON_GST">Non-GST Bill</option>
                     </CustomSelect>
                   </div>
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "0.875rem",
-                        fontWeight: 500,
-                        color: "#475569",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Upload Copy (Optional)
-                    </label>
-                    <input
-                      type="file"
-                      onChange={(e) => setBillFile(e.target.files?.[0] || null)}
-                      accept="image/*,.pdf"
-                      className="input-modern"
-                      style={{ padding: "7px" }}
-                    />
-                  </div>
+                  {!isEditing && (
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: 500,
+                          color: "#475569",
+                          marginBottom: "5px",
+                        }}
+                      >
+                        Upload Copy (Optional)
+                      </label>
+                      <input
+                        type="file"
+                        onChange={(e) => setBillFile(e.target.files?.[0] || null)}
+                        accept="image/*,.pdf"
+                        className="input-modern"
+                        style={{ padding: "7px" }}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "15px",
-                    marginBottom: "24px",
-                    padding: "16px",
-                    background: "#f8fafc",
-                    borderRadius: "16px",
-                    border: "1px solid #e2e8f0"
-                  }}
-                >
-                  <div>
-                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
-                      Paid Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      value={newBill.paid_amount}
-                      onChange={(e) =>
-                        setNewBill({ ...newBill, paid_amount: e.target.value })
-                      }
-                      className="input-modern"
-                      placeholder="0"
-                      style={{ background: "#fff", marginTop: "4px" }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
-                      Remaining Balance
-                    </label>
-                    <div style={{ 
-                      marginTop: "4px",
-                      padding: "12px",
-                      background: "#fff",
-                      borderRadius: "12px",
-                      border: "1px solid #e2e8f0",
-                      fontWeight: 800,
-                      color: (Number(newBill.total_amount) - Number(newBill.paid_amount)) > 0 ? "#ef4444" : "#22c55e",
-                      fontSize: "1.1rem"
-                    }}>
+                {isEditing ? (
+                  <div style={{
+                    marginBottom: "24px", padding: "14px 16px", background: "#f8fafc",
+                    borderRadius: "16px", border: "1px solid #e2e8f0", fontSize: "0.8rem", color: "#64748b",
+                  }}>
+                    Paid: <b style={{ color: "#16a34a" }}>₹{Number(newBill.paid_amount || 0).toLocaleString()}</b>
+                    {" · "}Balance: <b style={{ color: (Number(newBill.total_amount) - Number(newBill.paid_amount)) > 0 ? "#ef4444" : "#16a34a" }}>
                       ₹{(Number(newBill.total_amount) - Number(newBill.paid_amount)).toLocaleString()}
+                    </b>
+                    <div style={{ marginTop: 4 }}>To record a new payment, use "Record Payment" from Bill Details instead.</div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "15px",
+                      marginBottom: "24px",
+                      padding: "16px",
+                      background: "#f8fafc",
+                      borderRadius: "16px",
+                      border: "1px solid #e2e8f0"
+                    }}
+                  >
+                    <div>
+                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
+                        Paid Amount (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={newBill.paid_amount}
+                        onChange={(e) =>
+                          setNewBill({ ...newBill, paid_amount: e.target.value })
+                        }
+                        className="input-modern"
+                        placeholder="0"
+                        style={{ background: "#fff", marginTop: "4px" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
+                        Remaining Balance
+                      </label>
+                      <div style={{
+                        marginTop: "4px",
+                        padding: "12px",
+                        background: "#fff",
+                        borderRadius: "12px",
+                        border: "1px solid #e2e8f0",
+                        fontWeight: 800,
+                        color: (Number(newBill.total_amount) - Number(newBill.paid_amount)) > 0 ? "#ef4444" : "#22c55e",
+                        fontSize: "1.1rem"
+                      }}>
+                        ₹{(Number(newBill.total_amount) - Number(newBill.paid_amount)).toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
                 <div
                   style={{
                     display: "grid",
@@ -1028,7 +1124,43 @@ const PurchaseBills: React.FC = () => {
                   </div>
                 )}
 
-                <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
+                {Number(viewBill.balance_amount || 0) > 0 && (
+                  <div style={{ marginTop: "16px", padding: "14px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px" }}>
+                    {!showPayForm ? (
+                      <button
+                        className="btn-secondary"
+                        onClick={() => { setShowPayForm(true); setPayAmount(String(viewBill.balance_amount)); }}
+                      >
+                        + Record Payment
+                      </button>
+                    ) : (
+                      <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <div>
+                          <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Amount (₹)</label>
+                          <input type="number" className="input-modern" value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
+                            style={{ width: "130px" }} placeholder="0" />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Mode</label>
+                          <CustomSelect value={payMode} onChange={(e) => setPayMode(e.target.value)} className="input-modern">
+                            <option value="CASH">Cash</option>
+                            <option value="BANK">Bank</option>
+                            <option value="UPI">UPI</option>
+                            <option value="CHEQUE">Cheque</option>
+                          </CustomSelect>
+                        </div>
+                        <button className="btn-primary" disabled={payLoading} onClick={handleRecordPayment}>
+                          {payLoading ? "Saving…" : "Save Payment"}
+                        </button>
+                        <button className="btn-secondary" onClick={() => setShowPayForm(false)}>Cancel</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                  <button className="btn-secondary" onClick={handlePrintBill}>🖨️ Print</button>
+                  <button className="btn-secondary" onClick={() => { setViewBill(null); handleEdit(viewBill); }}>✏️ Edit</button>
                   <button className="btn-primary" onClick={() => setViewBill(null)}>Close</button>
                 </div>
               </div>
