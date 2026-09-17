@@ -11,17 +11,28 @@ import { createTransactionInternal, getAccountByCode } from "../utils/accounting
 
 const router = express.Router();
 
-// Attendance check-in cutoff — everyone must scan in by 10:45 AM (IST) to
-// count as on-time; scanning in later auto-marks LATE instead of PRESENT.
+// Attendance check-in window (IST) — on-time is 10:00 to 10:30 AM; scanning
+// in before 10:00 is refused outright (come back after 10), scanning in
+// after 10:30 is still accepted but auto-marked LATE instead of PRESENT.
 // Computed in Asia/Kolkata explicitly rather than the server's own clock —
 // this app is deployed on Railway, whose containers default to UTC, so
-// comparing against "10:45" using the server's local time would silently
-// check the wrong cutoff (UTC 10:45 = 4:15 PM IST) for every employee.
+// comparing against these hours using the server's local time would
+// silently check the wrong window (10:00 UTC = 3:30 PM IST) for everyone.
+const ATTENDANCE_WINDOW_OPEN_HOUR = 10;
+const ATTENDANCE_WINDOW_OPEN_MINUTE = 0;
 const ATTENDANCE_CUTOFF_HOUR = 10;
-const ATTENDANCE_CUTOFF_MINUTE = 45;
-function isLateCheckIn() {
+const ATTENDANCE_CUTOFF_MINUTE = 30;
+function istNowHM() {
     const istNow = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit" });
     const [hour, minute] = istNow.split(":").map(Number);
+    return { hour, minute };
+}
+function isBeforeCheckInWindow() {
+    const { hour, minute } = istNowHM();
+    return hour < ATTENDANCE_WINDOW_OPEN_HOUR || (hour === ATTENDANCE_WINDOW_OPEN_HOUR && minute < ATTENDANCE_WINDOW_OPEN_MINUTE);
+}
+function isLateCheckIn() {
+    const { hour, minute } = istNowHM();
     return hour > ATTENDANCE_CUTOFF_HOUR || (hour === ATTENDANCE_CUTOFF_HOUR && minute > ATTENDANCE_CUTOFF_MINUTE);
 }
 // Only PRESENT check-ins are ever late — OD/Leave/etc. aren't "arriving at
@@ -30,6 +41,7 @@ function effectiveCheckInStatus(requestedStatus) {
     const status = requestedStatus || "PRESENT";
     return status === "PRESENT" && isLateCheckIn() ? "LATE" : status;
 }
+const CHECK_IN_TOO_EARLY_MESSAGE = `Attendance check-in opens at ${ATTENDANCE_WINDOW_OPEN_HOUR}:${String(ATTENDANCE_WINDOW_OPEN_MINUTE).padStart(2, "0")} AM. Please check in after 10:00 AM.`;
 
 // Posts a Salary & Wages (5300) expense against Cash/Bank/Proprietor's Capital
 // for a wage payment. Best-effort: wrapped in a SAVEPOINT by the caller's
@@ -407,6 +419,7 @@ router.post("/attendance/scan", authMiddleware, async (req, res) => {
             await db.pgRun(`UPDATE attendance_logs SET check_out_time=$1 WHERE id=$2`, [now, existing.id]);
             return res.json({ message: `Goodbye ${emp.name}! Check-out recorded.`, type: "OUT" });
         } else {
+            if (isBeforeCheckInWindow()) return res.status(400).json({ error: CHECK_IN_TOO_EARLY_MESSAGE });
             const finalStatus = effectiveCheckInStatus(status);
             await db.pgRun(
                 `INSERT INTO attendance_logs (company_id, employee_id, date, check_in_time, status, work_assigned)
@@ -447,6 +460,7 @@ router.post("/attendance/mobile", async (req, res) => {
             return res.json({ success: true, message: `Goodbye ${employee.name}!`, type: "CHECK_OUT" });
         }
 
+        if (isBeforeCheckInWindow()) return res.status(400).json({ error: CHECK_IN_TOO_EARLY_MESSAGE });
         const finalStatus = effectiveCheckInStatus(status);
         await db.pgRun(
             `INSERT INTO attendance_logs (company_id, employee_id, date, check_in_time, status, work_assigned, method)

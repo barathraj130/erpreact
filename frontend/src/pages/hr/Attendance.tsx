@@ -282,7 +282,10 @@ const Attendance: React.FC = () => {
                   </div>
                 </div>
 
-                {/* ON DUTY reason — show whenever work_assigned is present */}
+                {/* Reason / leave details — show whenever work_assigned is present.
+                    Label matches the actual status: LEAVE entries now carry
+                    full leave-request details (type/dates/reason) from the
+                    mobile self-service form, not just an on-duty note. */}
                 {record?.work_assigned && record.work_assigned.trim() && (
                   <div style={{
                     marginBottom: "12px",
@@ -297,7 +300,7 @@ const Attendance: React.FC = () => {
                     <FaBriefcase size={12} style={{ color: "var(--accent, #f59e0b)", marginTop: "2px", flexShrink: 0 }} />
                     <div>
                       <div style={{ fontSize: "9px", fontWeight: 800, color: "var(--accent, #f59e0b)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "2px" }}>
-                        On Duty Reason
+                        {record.status === "LEAVE" ? "Leave Details" : "On Duty Reason"}
                       </div>
                       <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-1, #1e293b)", lineHeight: "1.4" }}>
                         {record.work_assigned}

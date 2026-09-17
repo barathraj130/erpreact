@@ -35,6 +35,9 @@ const MobileAttendance: React.FC = () => {
   >("SELECT");
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [reason, setReason] = useState<string>("");
+  const [leaveType, setLeaveType] = useState<string>("Casual");
+  const [leaveFrom, setLeaveFrom] = useState<string>("");
+  const [leaveTo, setLeaveTo] = useState<string>("");
   const [result, setResult] = useState<AttendanceResponse | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(
     null,
@@ -126,6 +129,14 @@ const MobileAttendance: React.FC = () => {
   };
 
   const handleReasonSubmit = () => {
+    if (selectedStatus === "LEAVE") {
+      if (!leaveFrom || !leaveTo) { alert("Please select from and to dates."); return; }
+      if (leaveTo < leaveFrom) { alert("To date can't be before the from date."); return; }
+      if (!reason.trim()) { alert("Please enter a reason for your leave."); return; }
+      const details = `Leave Type: ${leaveType} | From: ${leaveFrom} | To: ${leaveTo} | Reason: ${reason.trim()}`;
+      submitAttendance(selectedStatus, details);
+      return;
+    }
     if (!reason.trim() && selectedStatus !== "PRESENT") {
       alert("Please enter a reason");
       return;
@@ -137,6 +148,9 @@ const MobileAttendance: React.FC = () => {
     setStep("SELECT");
     setSelectedStatus("");
     setReason("");
+    setLeaveType("Casual");
+    setLeaveFrom("");
+    setLeaveTo("");
     setResult(null);
   };
 
@@ -295,7 +309,7 @@ const MobileAttendance: React.FC = () => {
             >
               {selectedStatus === "OD"
                 ? "📍 On Duty Details"
-                : "📝 Leave Reason"}
+                : "📝 Leave Request"}
             </h2>
             <p
               style={{
@@ -306,8 +320,47 @@ const MobileAttendance: React.FC = () => {
             >
               {selectedStatus === "OD"
                 ? "Where are you working from today?"
-                : "Please provide a reason for your leave"}
+                : "Fill in your leave details"}
             </p>
+
+            {selectedStatus === "LEAVE" && (
+              <>
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>Leave Type</label>
+                  <select
+                    value={leaveType}
+                    onChange={(e) => setLeaveType(e.target.value)}
+                    style={{ width: "100%", padding: "14px", border: "2px solid #e2e8f0", borderRadius: "12px", fontSize: "1rem", fontFamily: "inherit", boxSizing: "border-box", background: "white" }}
+                  >
+                    <option value="Casual">Casual Leave</option>
+                    <option value="Sick">Sick Leave</option>
+                    <option value="Earned">Earned Leave</option>
+                    <option value="Unpaid">Unpaid Leave</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", gap: "12px", marginBottom: "14px" }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>From Date</label>
+                    <input
+                      type="date"
+                      value={leaveFrom}
+                      onChange={(e) => setLeaveFrom(e.target.value)}
+                      style={{ width: "100%", padding: "14px", border: "2px solid #e2e8f0", borderRadius: "12px", fontSize: "1rem", fontFamily: "inherit", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>To Date</label>
+                    <input
+                      type="date"
+                      value={leaveTo}
+                      onChange={(e) => setLeaveTo(e.target.value)}
+                      style={{ width: "100%", padding: "14px", border: "2px solid #e2e8f0", borderRadius: "12px", fontSize: "1rem", fontFamily: "inherit", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: "6px" }}>Reason</label>
+              </>
+            )}
 
             <textarea
               value={reason}
@@ -323,7 +376,7 @@ const MobileAttendance: React.FC = () => {
                 border: "2px solid #e2e8f0",
                 borderRadius: "12px",
                 fontSize: "1rem",
-                minHeight: "120px",
+                minHeight: selectedStatus === "LEAVE" ? "80px" : "120px",
                 resize: "none",
                 outline: "none",
                 fontFamily: "inherit",
