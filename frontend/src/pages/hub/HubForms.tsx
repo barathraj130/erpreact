@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
+import { printFilledHubForm } from "../../utils/hubFormPrint";
 import { useAuthUser } from "../../hooks/useAuthUser";
 import "../../styles/neo-neu-motion.css";
 
@@ -171,11 +172,12 @@ const HubForms: React.FC = () => {
                 <th>Status</th>
                 <th>Date</th>
                 {view === "inbox" && <th>Action</th>}
+                <th>Print</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--neu-text-muted)", padding: 32 }}>{loading ? "Loading…" : "No requests found."}</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--neu-text-muted)", padding: 32 }}>{loading ? "Loading…" : "No requests found."}</td></tr>
               ) : filtered.map((f) => {
                 const badge = STATUS_BADGE[f.status] || STATUS_BADGE.pending;
                 const isPending = f.status === "pending" || f.status === "under_review";
@@ -209,6 +211,11 @@ const HubForms: React.FC = () => {
                         ) : <span style={{ color: "var(--neu-text-muted)", fontSize: 11 }}>Resolved</span>}
                       </td>
                     )}
+                    <td>
+                      <button className="neo-btn-secondary neo-btn-sm" onClick={() => printFilledHubForm(f)} title="Print filled form">
+                        🖨️ Print
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

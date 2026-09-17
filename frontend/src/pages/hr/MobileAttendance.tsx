@@ -12,6 +12,7 @@ import {
   FaUserClock,
 } from "react-icons/fa";
 import { useParams, useSearchParams } from "react-router-dom";
+import { printFilledHubForm } from "../../utils/hubFormPrint";
 
 interface AttendanceResponse {
   success?: boolean;
@@ -498,6 +499,31 @@ const MobileAttendance: React.FC = () => {
               {currentTime.toLocaleTimeString("en-IN")}
             </p>
 
+            {selectedStatus === "LEAVE" && (
+              <button
+                onClick={() => printFilledHubForm({
+                  form_type: "leave_request",
+                  status: "recorded",
+                  form_data: { leave_type: leaveType, from_date: leaveFrom, to_date: leaveTo, reason },
+                  submitted_by_name: result?.employee_name,
+                  created_at: new Date().toISOString(),
+                })}
+                style={{
+                  marginTop: "24px",
+                  marginRight: "12px",
+                  padding: "12px 24px",
+                  border: "none",
+                  borderRadius: "12px",
+                  background: "#3b82f6",
+                  color: "white",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                🖨️ Print Leave Form
+              </button>
+            )}
             <button
               onClick={resetForm}
               style={{

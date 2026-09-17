@@ -469,7 +469,7 @@ router.post("/attendance/mobile", async (req, res) => {
         );
 
         const lateNote = finalStatus === "LATE" ? ` You're marked LATE — check-in was after ${ATTENDANCE_CUTOFF_HOUR}:${String(ATTENDANCE_CUTOFF_MINUTE).padStart(2, "0")} AM.` : "";
-        return res.json({ success: true, message: `Welcome ${employee.name}!${lateNote}`, type: "CHECK_IN", status: finalStatus });
+        return res.json({ success: true, message: `Welcome ${employee.name}!${lateNote}`, type: "CHECK_IN", status: finalStatus, employee_name: employee.name });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Failed to mark attendance" });
