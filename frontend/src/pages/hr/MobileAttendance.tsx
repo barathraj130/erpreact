@@ -21,6 +21,8 @@ interface AttendanceResponse {
   employee_name?: string;
   type?: string;
   status?: string;
+  request_id?: number;
+  form_data?: { leave_type: string; from_date: string; to_date: string; total_days: number | null; reason: string };
 }
 
 const MobileAttendance: React.FC = () => {
@@ -95,7 +97,7 @@ const MobileAttendance: React.FC = () => {
     }
   };
 
-  const submitAttendance = async (status: string, workReason: string) => {
+  const submitAttendance = async (status: string, workReason: string, leaveDetails?: { leave_type: string; from_date: string; to_date: string; reason: string }) => {
     setStep("SUBMITTING");
 
     try {
@@ -108,6 +110,7 @@ const MobileAttendance: React.FC = () => {
           qr_token: token,
           status: status,
           work_assigned: workReason,
+          leave_details: leaveDetails,
           latitude: location?.lat,
           longitude: location?.lng,
         }),
@@ -135,7 +138,7 @@ const MobileAttendance: React.FC = () => {
       if (leaveTo < leaveFrom) { alert("To date can't be before the from date."); return; }
       if (!reason.trim()) { alert("Please enter a reason for your leave."); return; }
       const details = `Leave Type: ${leaveType} | From: ${leaveFrom} | To: ${leaveTo} | Reason: ${reason.trim()}`;
-      submitAttendance(selectedStatus, details);
+      submitAttendance(selectedStatus, details, { leave_type: leaveType, from_date: leaveFrom, to_date: leaveTo, reason: reason.trim() });
       return;
     }
     if (!reason.trim() && selectedStatus !== "PRESENT") {
@@ -456,17 +459,17 @@ const MobileAttendance: React.FC = () => {
                 width: "80px",
                 height: "80px",
                 borderRadius: "50%",
-                background: result?.status === "LATE" ? "#ffedd5" : "#dcfce7",
+                background: result?.status === "PENDING" ? "#fef3c7" : result?.status === "LATE" ? "#ffedd5" : "#dcfce7",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 margin: "0 auto 20px",
               }}
             >
-              <FaCheckCircle size={40} color={result?.status === "LATE" ? "#f97316" : "#22c55e"} />
+              <FaCheckCircle size={40} color={result?.status === "PENDING" ? "#b45309" : result?.status === "LATE" ? "#f97316" : "#22c55e"} />
             </div>
-            <h2 style={{ color: result?.status === "LATE" ? "#c2410c" : "#166534", marginBottom: "8px" }}>
-              {result?.status === "LATE" ? "Marked Late" : "Success!"}
+            <h2 style={{ color: result?.status === "PENDING" ? "#92400e" : result?.status === "LATE" ? "#c2410c" : "#166534", marginBottom: "8px" }}>
+              {result?.status === "PENDING" ? "Submitted — Awaiting Approval" : result?.status === "LATE" ? "Marked Late" : "Success!"}
             </h2>
             <p
               style={{
@@ -477,7 +480,7 @@ const MobileAttendance: React.FC = () => {
             >
               {result?.message || "Attendance marked successfully"}
             </p>
-            {result?.employee_name && (
+            {result?.employee_name && selectedStatus !== "LEAVE" && (
               <p
                 style={{
                   color: "#1e293b",
@@ -503,8 +506,8 @@ const MobileAttendance: React.FC = () => {
               <button
                 onClick={() => printFilledHubForm({
                   form_type: "leave_request",
-                  status: "recorded",
-                  form_data: { leave_type: leaveType, from_date: leaveFrom, to_date: leaveTo, reason },
+                  status: "pending",
+                  form_data: result?.form_data || { leave_type: leaveType, from_date: leaveFrom, to_date: leaveTo, reason },
                   submitted_by_name: result?.employee_name,
                   created_at: new Date().toISOString(),
                 })}

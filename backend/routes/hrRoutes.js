@@ -440,7 +440,7 @@ router.post("/attendance/scan", authMiddleware, async (req, res) => {
 // ==========================================
 
 router.post("/attendance/mobile", async (req, res) => {
-    const { qr_token, status, work_assigned, latitude, longitude } = req.body;
+    const { qr_token, status, work_assigned, leave_details, latitude, longitude } = req.body;
     const today = new Date().toISOString().split('T')[0];
     const now = new Date().toLocaleTimeString('en-US', { hour12: false });
 
@@ -451,6 +451,50 @@ router.post("/attendance/mobile", async (req, res) => {
 
         const employee = await db.pgGet("SELECT id, name, company_id, status FROM employees WHERE id = $1", [employeeId]);
         if (!employee || employee.status !== 'Active') return res.status(404).json({ error: "Employee inactive/not found" });
+
+        // Leave is a request, not a self-declared attendance mark — route it
+        // through the same hub_forms approval queue as the Employee Portal /
+        // Team Hub chat submission (one Inbox, not two), instead of writing
+        // straight to attendance_logs. Not time-gated by the check-in window
+        // below — a leave request isn't "arriving at the office" today.
+        if (status === "LEAVE") {
+            if (!leave_details || !leave_details.from_date || !leave_details.to_date || !leave_details.reason) {
+                return res.status(400).json({ error: "Leave type, dates and reason are required." });
+            }
+            const userRow = await db.pgGet(
+                "SELECT id FROM users WHERE employee_id = $1 AND company_id = $2",
+                [employeeId, employee.company_id]
+            );
+            if (!userRow) {
+                return res.status(400).json({ error: "Your account isn't linked to a portal login yet — ask your admin to submit this leave request for you." });
+            }
+            const fromD = new Date(leave_details.from_date);
+            const toD = new Date(leave_details.to_date);
+            const totalDays = isNaN(fromD.getTime()) || isNaN(toD.getTime())
+                ? null
+                : Math.round((toD.getTime() - fromD.getTime()) / 86400000) + 1;
+            const formData = {
+                leave_type: leave_details.leave_type || "Casual",
+                from_date: leave_details.from_date,
+                to_date: leave_details.to_date,
+                total_days: totalDays,
+                reason: leave_details.reason,
+            };
+            const row = await db.pgGet(
+                `INSERT INTO hub_forms (company_id, form_type, submitted_by, submitted_by_employee_id, form_data, status)
+                 VALUES ($1, 'leave_request', $2, $3, $4, 'pending') RETURNING id`,
+                [employee.company_id, userRow.id, employeeId, JSON.stringify(formData)]
+            );
+            return res.json({
+                success: true,
+                message: `Leave request submitted for ${employee.name} — awaiting approval.`,
+                type: "LEAVE_REQUEST",
+                status: "PENDING",
+                employee_name: employee.name,
+                request_id: row.id,
+                form_data: formData,
+            });
+        }
 
         const existing = await db.pgGet(`SELECT * FROM attendance_logs WHERE employee_id = $1 AND date = $2`, [employeeId, today]);
 
