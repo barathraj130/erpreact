@@ -45,6 +45,7 @@ const Attendance: React.FC = () => {
   const [search, setSearch] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [fixingTimes, setFixingTimes] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -84,6 +85,33 @@ const Attendance: React.FC = () => {
   useEffect(() => {
     fetchAttendanceForDate(selectedDate);
   }, [selectedDate, fetchAttendanceForDate]);
+
+  const handleFixTimes = async () => {
+    if (!window.confirm(
+      `This corrects QR check-in/out times on ${selectedDate} that were stored ` +
+      `before a timezone bug was fixed — only rows that show a check-in before ` +
+      `10:00 AM (impossible under the current rules, so unambiguously wrong) get ` +
+      `shifted by +5:30. Proceed?`
+    )) return;
+    setFixingTimes(true);
+    try {
+      const res = await apiFetch("/hr/attendance/fix-utc-offset", {
+        method: "POST",
+        body: JSON.stringify({ date: selectedDate }),
+      });
+      const result = await res.json();
+      if (res.ok) {
+        alert(result.fixed > 0 ? `Fixed ${result.fixed} record(s).` : "No wrong-timezone records found for this date.");
+        fetchAttendanceForDate(selectedDate);
+      } else {
+        alert(result.error || "Failed to fix times.");
+      }
+    } catch (err) {
+      alert("An error occurred while fixing times.");
+    } finally {
+      setFixingTimes(false);
+    }
+  };
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -174,6 +202,15 @@ const Attendance: React.FC = () => {
             )}
             <FaSync className={autoRefresh ? "fa-spin" : ""} size={12} />
             {autoRefresh ? "Live Active" : "Go Live"}
+          </button>
+          <button
+            className="page-btn-round"
+            style={{ height: "42px" }}
+            disabled={fixingTimes}
+            onClick={handleFixTimes}
+            title="Correct any QR check-in times stored before the timezone bug was fixed"
+          >
+            {fixingTimes ? "Fixing…" : "Fix Wrong Times"}
           </button>
         </div>
         </div>

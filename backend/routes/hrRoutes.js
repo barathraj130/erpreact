@@ -450,6 +450,32 @@ router.post("/attendance/scan", authMiddleware, async (req, res) => {
     }
 });
 
+// One-time repair for rows written before the UTC→IST storage fix (istTodayAndNow):
+// QR_MOBILE check-ins before the 10:00 AM window open are physically impossible
+// under the enforced window, so any such row for the given date is unambiguously
+// a raw-UTC value that needs the missing +5:30 applied.
+router.post("/attendance/fix-utc-offset", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { date } = req.body || {};
+    if (!date) return res.status(400).json({ error: "date is required" });
+    try {
+        const result = await db.pgRun(
+            `UPDATE attendance_logs
+             SET check_in_time = to_char((to_timestamp(check_in_time, 'HH24:MI:SS') + interval '5 hours 30 minutes')::time, 'HH24:MI:SS'),
+                 check_out_time = CASE WHEN check_out_time IS NOT NULL
+                     THEN to_char((to_timestamp(check_out_time, 'HH24:MI:SS') + interval '5 hours 30 minutes')::time, 'HH24:MI:SS')
+                     ELSE NULL END
+             WHERE company_id = $1 AND date = $2 AND method = 'QR_MOBILE' AND check_in_time < '10:00:00'
+             RETURNING id, employee_id, check_in_time, check_out_time`,
+            [companyId, date]
+        );
+        res.json({ success: true, fixed: result.rowCount, rows: result.rows });
+    } catch (err) {
+        console.error("[attendance fix-utc-offset]", err);
+        res.status(500).json({ error: "Failed to fix times: " + err.message });
+    }
+});
+
 // ==========================================
 // 3. MOBILE ATTENDANCE (NO AUTH)
 // ==========================================
