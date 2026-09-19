@@ -892,7 +892,9 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
 
         // ── Surplus stock (is_surplus=true, description-based lines) ──────────
         let surplusWarning = null;
+        let surplusDebug = null;
         if (data.is_surplus) {
+            surplusDebug = { linesReceived: Array.isArray(data.surplus_lines) ? data.surplus_lines.length : 0, linesWithDescription: 0, lotsCreated: [] };
             await client.query(`SAVEPOINT sp_surplus`);
             try {
                 // Self-healing schema guard: schemaUpdates.js is supposed to add
@@ -918,17 +920,22 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 const totalFreshQty   = lines.reduce((s, l) => s + (parseFloat(l.fresh_qty)   || 0), 0);
                 const totalMistakeQty = lines.reduce((s, l) => s + (parseFloat(l.mistake_qty) || 0), 0);
                 const notesStr        = lines.map(l => l.description).filter(Boolean).join(' | ');
+                surplusDebug.totalFreshQty = totalFreshQty;
+                surplusDebug.totalMistakeQty = totalMistakeQty;
+                surplusDebug.lotNumber = lotNum || null;
 
-                await client.query(
-                    `UPDATE purchase_bills SET is_surplus=true, lot_number=$1, fresh_qty=$2, mistake_qty=$3, transport_cost=$4, notes=$5 WHERE id=$6`,
+                const billUpdateRes = await client.query(
+                    `UPDATE purchase_bills SET is_surplus=true, lot_number=$1, fresh_qty=$2, mistake_qty=$3, transport_cost=$4, notes=$5 WHERE id=$6 RETURNING is_surplus, fresh_qty, mistake_qty`,
                     [lotNum || null, totalFreshQty, totalMistakeQty, transport, notesStr || null, billId]
                 );
+                surplusDebug.billRowAfterUpdate = billUpdateRes.rows[0] || null;
 
                 const totalPcs = totalFreshQty + totalMistakeQty;
 
                 for (const line of lines) {
                     const desc       = (line.description || '').trim();
                     if (!desc) continue;
+                    surplusDebug.linesWithDescription++;
                     const freshQty   = parseFloat(line.fresh_qty)   || 0;
                     const freshRate  = parseFloat(line.fresh_rate)  || 0;
                     const mistakeQty = parseFloat(line.mistake_qty) || 0;
@@ -958,6 +965,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     `, [companyId, lotNum, safeSupplierId, freshQty, mistakeQty,
                         freshCost + mistakeCost + lineTransport, lineTransport]);
                     const lotId = lotRes.rows[0].id;
+                    surplusDebug.lotsCreated.push({ description: desc, freshQty, mistakeQty, lotId });
 
                     if (freshQty > 0) {
                         const freshTotal = freshCost + (lineTransport * freshQty / Math.max(linePcs, 1));
@@ -1039,6 +1047,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await client.query(`RELEASE SAVEPOINT sp_surplus`);
                 console.warn(`[purchase-bill] surplus inventory skipped: ${surplusErr.message}`);
                 surplusWarning = `Bill saved, but stock/inventory could not be posted: ${surplusErr.message}. Use "+ Add Items" on the bill to fix this.`;
+                surplusDebug.error = surplusErr.message;
             }
         }
 
@@ -1054,7 +1063,8 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             items_saved: processedItems.length,
             products_created: productsCreated,
             inventory_updated: inventoryUpdated,
-            ...(surplusWarning ? { warning: surplusWarning } : {})
+            ...(surplusWarning ? { warning: surplusWarning } : {}),
+            ...(surplusDebug ? { surplus_debug: surplusDebug } : {})
         });
 
         // ── Non-blocking post-commit notifications ─────────────────────────
