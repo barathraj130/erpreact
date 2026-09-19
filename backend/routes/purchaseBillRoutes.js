@@ -895,6 +895,20 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         if (data.is_surplus) {
             await client.query(`SAVEPOINT sp_surplus`);
             try {
+                // Self-healing schema guard: schemaUpdates.js is supposed to add
+                // these columns at server boot, but every statement there is
+                // wrapped in a silent .catch(() => {}) — if one of those failed
+                // for any reason, it fails forever with zero visibility. Ensure
+                // they exist right here, right before use, so this block can
+                // never be taken out by a boot-time migration that silently
+                // never landed.
+                await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_surplus BOOLEAN DEFAULT false`);
+                await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`);
+                await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_qty INTEGER DEFAULT 0`);
+                await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_qty INTEGER DEFAULT 0`);
+                await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS transport_cost NUMERIC(10,2) DEFAULT 0`);
+                await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS notes TEXT`);
+
                 const transport  = parseFloat(data.transport_cost) || 0;
                 const lotNum     = (data.lot_number || '').trim();
 
