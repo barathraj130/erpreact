@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from "react";
 import { FaPlus, FaUniversity, FaUserTie, FaBuilding, FaEllipsisV, FaTrash, FaEye, FaHandHoldingUsd, FaFileInvoiceDollar, FaChartLine } from "react-icons/fa";
-import { fetchLenders, createLender, deleteLender, Lender } from "../../api/lenderApi";
+import { fetchLenders, createLender, deleteLender, fetchLenderDetails, Lender } from "../../api/lenderApi";
 import { toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import "../PageShared.css";
@@ -11,6 +11,8 @@ const LenderManagement: React.FC = () => {
     const [lenders, setLenders] = useState<Lender[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [viewingLender, setViewingLender] = useState<any | null>(null);
+    const [viewLoading, setViewLoading] = useState(false);
     const [formData, setFormData] = useState({
         lender_name: "",
         lender_type: "Bank",
@@ -50,6 +52,25 @@ const LenderManagement: React.FC = () => {
             loadData();
         } catch (err) {
             toast.error("Failed to add lender");
+        }
+    };
+
+    const handleView = async (id: number) => {
+        setViewLoading(true);
+        setViewingLender({ id }); // opens the modal immediately with a loading state
+        try {
+            const data = await fetchLenderDetails(id);
+            if (data.error) {
+                toast.error(data.error);
+                setViewingLender(null);
+            } else {
+                setViewingLender(data);
+            }
+        } catch (err) {
+            toast.error("Failed to load lender details");
+            setViewingLender(null);
+        } finally {
+            setViewLoading(false);
         }
     };
 
@@ -173,7 +194,7 @@ const LenderManagement: React.FC = () => {
                                         </td>
                                         <td>
                                             <div className="l-actions">
-                                                <button className="l-action-btn view" title="View Details"><FaEye /></button>
+                                                <button className="l-action-btn view" title="View Details" onClick={() => handleView(l.id)}><FaEye /></button>
                                                 <button className="l-action-btn delete" title="Delete" onClick={() => handleDelete(l.id)}><FaTrash /></button>
                                             </div>
                                         </td>
@@ -245,6 +266,107 @@ const LenderManagement: React.FC = () => {
                                     <button type="submit" className="l-btn-primary">Create Lender</button>
                                 </div>
                             </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* View Lender Details Modal — the eye icon on each row had no
+                onClick at all before this; fetchLenderDetails() already
+                existed in lenderApi.ts (and the backend GET /lenders/:id
+                already returns the lender + their full loan history) but
+                was never wired to any UI. */}
+            <AnimatePresence>
+                {viewingLender && (
+                    <div className="l-modal-overlay" onClick={() => setViewingLender(null)}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="l-modal"
+                            style={{ maxHeight: "85vh", overflowY: "auto" }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="l-modal-header">
+                                <h2>{viewLoading ? "Loading…" : viewingLender.lender_name || "Lender Details"}</h2>
+                                <button className="l-close-btn" onClick={() => setViewingLender(null)}>&times;</button>
+                            </div>
+                            {viewLoading ? (
+                                <div style={{ padding: 40, textAlign: "center", color: "#64748b" }}>Loading lender details…</div>
+                            ) : (
+                                <div className="l-form" style={{ padding: "0 24px 24px" }}>
+                                    <div className="l-form-grid">
+                                        <div className="l-form-group">
+                                            <label>Type</label>
+                                            <div>{viewingLender.lender_type || "-"}</div>
+                                        </div>
+                                        <div className="l-form-group">
+                                            <label>Contact Person</label>
+                                            <div>{viewingLender.contact_person || "N/A"}</div>
+                                        </div>
+                                        <div className="l-form-group">
+                                            <label>Phone</label>
+                                            <div>{viewingLender.phone || "N/A"}</div>
+                                        </div>
+                                        <div className="l-form-group">
+                                            <label>Email</label>
+                                            <div>{viewingLender.email || "N/A"}</div>
+                                        </div>
+                                        <div className="l-form-group full">
+                                            <label>Address</label>
+                                            <div>{viewingLender.address || "N/A"}</div>
+                                        </div>
+                                        <div className="l-form-group">
+                                            <label>Opening Balance</label>
+                                            <div>₹{(Number(viewingLender.opening_balance) || 0).toLocaleString()}</div>
+                                        </div>
+                                        <div className="l-form-group">
+                                            <label>Current Balance</label>
+                                            <div>₹{(Number(viewingLender.current_balance) || 0).toLocaleString()}</div>
+                                        </div>
+                                        {viewingLender.notes && (
+                                            <div className="l-form-group full">
+                                                <label>Notes</label>
+                                                <div>{viewingLender.notes}</div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <h3 style={{ marginTop: 20, marginBottom: 10, fontSize: 14 }}>Loan History</h3>
+                                    {!viewingLender.loans || viewingLender.loans.length === 0 ? (
+                                        <div style={{ color: "#64748b", fontSize: 13, padding: "12px 0" }}>No loans recorded for this lender.</div>
+                                    ) : (
+                                        <div style={{ overflowX: "auto" }}>
+                                            <table className="l-table" style={{ width: "100%" }}>
+                                                <thead>
+                                                    <tr>
+                                                        <th>Direction</th>
+                                                        <th>Principal</th>
+                                                        <th>Interest</th>
+                                                        <th>Start Date</th>
+                                                        <th>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {viewingLender.loans.map((loan: any) => (
+                                                        <tr key={loan.id}>
+                                                            <td>{loan.loan_direction || "-"}</td>
+                                                            <td>₹{(Number(loan.principal_amount) || 0).toLocaleString()}</td>
+                                                            <td>{loan.interest_rate != null ? `${loan.interest_rate}% (${loan.interest_type || "-"})` : "-"}</td>
+                                                            <td>{loan.start_date ? new Date(loan.start_date).toLocaleDateString("en-IN") : "-"}</td>
+                                                            <td>{loan.status || "-"}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+
+                                    <div className="l-form-footer">
+                                        <button type="button" className="l-btn-secondary" onClick={() => setViewingLender(null)}>Close</button>
+                                    </div>
+                                </div>
+                            )}
                         </motion.div>
                     </div>
                 )}
