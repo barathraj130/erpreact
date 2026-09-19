@@ -11,6 +11,7 @@ interface Supplier {
   gstin?: string;
   address?: string;
   opening_balance?: number | string;
+  current_balance?: number | string;
 }
 
 interface AddSupplierModalProps {
@@ -36,6 +37,7 @@ const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ onClose, onSuccess,
     phone: supplier?.phone || "",
     email: supplier?.email || "",
     opening_balance: supplier?.opening_balance?.toString() || "",
+    current_balance: supplier?.current_balance?.toString() || "",
     gstin: supplier?.gstin || "",
     address: supplier?.address || "",
   });
@@ -46,6 +48,14 @@ const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ onClose, onSuccess,
     e.preventDefault();
     setErrMsg(null);
     if (!formData.name.trim()) { setErrMsg("Supplier name is required."); return; }
+    if (
+      isEdit &&
+      formData.current_balance !== (supplier?.current_balance?.toString() || "") &&
+      !window.confirm(
+        `You're manually overriding the outstanding balance from ₹${supplier?.current_balance || 0} to ₹${formData.current_balance || 0}. ` +
+        `This does NOT change any bill or payment record — it only overwrites the balance figure directly. Continue?`
+      )
+    ) return;
     setLoading(true);
     try {
       if (isEdit) {
@@ -131,6 +141,19 @@ const AddSupplierModal: React.FC<AddSupplierModalProps> = ({ onClose, onSuccess,
                 <input type="number" value={formData.opening_balance} onChange={e => setFormData({ ...formData, opening_balance: e.target.value })} style={inp} placeholder="0.00" />
               </div>
               <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "4px" }}>Amount you already owe to this supplier.</p>
+            </div>
+          )}
+
+          {isEdit && (
+            <div style={{ marginBottom: "20px" }}>
+              <label style={lbl}>Current Balance (Payable) — Manual Override</label>
+              <div style={{ position: "relative" }}>
+                <FaMoneyBillWave style={{ ...iconStyle, color: "#ef4444" }} />
+                <input type="number" value={formData.current_balance} onChange={e => setFormData({ ...formData, current_balance: e.target.value })} style={inp} placeholder="0.00" />
+              </div>
+              <p style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "4px" }}>
+                This is the live outstanding balance used everywhere in the app. It's normally kept up to date automatically by bills and payments — only change it here to correct a known mistake. It will not adjust any existing bill or ledger entry.
+              </p>
             </div>
           )}
 

@@ -173,17 +173,26 @@ router.get('/:id', authMiddleware, async (req, res) => {
  * ✏️ UPDATE SUPPLIER
  */
 router.put('/:id', authMiddleware, async (req, res) => {
-    const { name, phone, email, address, state, gstin } = req.body;
+    const { name, phone, email, address, state, gstin, current_balance } = req.body;
+    // current_balance is optional — only sent from the "Correct Balance" edit
+    // path, since it's a live figure normally maintained by bill/payment
+    // postings and shouldn't shift on an ordinary contact-details edit.
+    const hasBalanceOverride = current_balance !== undefined && current_balance !== null && current_balance !== "";
     try {
-        const sql = `
-            UPDATE suppliers
-            SET name=$1, phone=$2, email=$3, address=$4, state=$5, gstin=$6, updated_at=NOW()
-            WHERE id=$7 AND company_id=$8
-            RETURNING *`;
-        const updated = await db.pgGet(sql, [
-            name, phone, email, address, state, gstin || null,
-            req.params.id, req.user.active_company_id
-        ]);
+        const sql = hasBalanceOverride
+            ? `UPDATE suppliers
+               SET name=$1, phone=$2, email=$3, address=$4, state=$5, gstin=$6,
+                   current_balance=$7, updated_at=NOW()
+               WHERE id=$8 AND company_id=$9
+               RETURNING *`
+            : `UPDATE suppliers
+               SET name=$1, phone=$2, email=$3, address=$4, state=$5, gstin=$6, updated_at=NOW()
+               WHERE id=$7 AND company_id=$8
+               RETURNING *`;
+        const params = hasBalanceOverride
+            ? [name, phone, email, address, state, gstin || null, parseFloat(current_balance), req.params.id, req.user.active_company_id]
+            : [name, phone, email, address, state, gstin || null, req.params.id, req.user.active_company_id];
+        const updated = await db.pgGet(sql, params);
         if (!updated) return res.status(404).json({ error: 'Supplier not found' });
         res.json(updated);
     } catch (err) {
