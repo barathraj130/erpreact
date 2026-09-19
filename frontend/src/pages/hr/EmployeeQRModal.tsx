@@ -1,13 +1,16 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { FaMobileAlt, FaPrint, FaTimes, FaUser } from "react-icons/fa";
 import QRCode from "react-qr-code";
+import { fetchProfile } from "../../api/companyApi";
 
 interface Employee {
   id: number;
   name: string;
   designation?: string;
   status?: string;
+  phone?: string;
+  email?: string;
 }
 
 interface Props {
@@ -38,6 +41,20 @@ const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
   // which gets stripped by some hosting redirects.
   const attendanceUrl = `${baseUrl}/mark-attendance/${qrToken}`;
 
+  // The card used to hardcode "TITAN CORP" — a placeholder that was never
+  // replaced with the actual company's name — and showed nothing about the
+  // employee beyond name/designation/QR. Pulls the real company profile and
+  // shows the employee's own contact details, same as every other printed
+  // document in this app (Delivery Challan, Purchase Bill, etc.).
+  const [companyName, setCompanyName] = useState("Company Name");
+  useEffect(() => {
+    fetchProfile()
+      .then((p) => setCompanyName(p.company_name || "Company Name"))
+      .catch(() => {});
+  }, []);
+
+  const empCode = `EMP-${String(employee.id).padStart(4, "0")}`;
+
   const handlePrint = () => {
     const printWindow = window.open("", "", "width=500,height=800");
     if (!printWindow) return;
@@ -58,7 +75,7 @@ const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
                     }
                     .card {
                         width: 320px;
-                        height: 500px;
+                        height: 580px;
                         border-radius: 24px;
                         overflow: hidden;
                         background: white;
@@ -125,7 +142,29 @@ const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
                         border-radius: 20px;
                         display: inline-block;
                         border: 1px solid #f1f5f9;
-                        margin-bottom: 20px;
+                        margin-bottom: 16px;
+                    }
+                    .details {
+                        border-top: 1px solid #f1f5f9;
+                        padding-top: 14px;
+                        margin-bottom: 16px;
+                        text-align: left;
+                    }
+                    .detail-row {
+                        display: flex;
+                        justify-content: space-between;
+                        font-size: 11px;
+                        padding: 3px 0;
+                    }
+                    .detail-label {
+                        color: #94a3b8;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    .detail-value {
+                        color: #1e293b;
+                        font-weight: 600;
                     }
                     .footer {
                         position: absolute;
@@ -165,7 +204,7 @@ const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
             <body>
                 <div class="card">
                     <div class="accent-bar">
-                        <div class="company-logo">TITAN CORP</div>
+                        <div class="company-logo">${companyName}</div>
                     </div>
                     <div class="photo-container">
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -174,6 +213,11 @@ const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
                     <div class="body">
                         <div class="name">${employee.name}</div>
                         <div class="designation">${employee.designation || "Executive"}</div>
+                        <div class="details">
+                            <div class="detail-row"><span class="detail-label">Employee ID</span><span class="detail-value">${empCode}</span></div>
+                            ${employee.phone ? `<div class="detail-row"><span class="detail-label">Phone</span><span class="detail-value">${employee.phone}</span></div>` : ""}
+                            ${employee.email ? `<div class="detail-row"><span class="detail-label">Email</span><span class="detail-value">${employee.email}</span></div>` : ""}
+                        </div>
                         <div class="qr-wrapper">
                             ${document.getElementById("qr-code-container")?.innerHTML || ""}
                         </div>
@@ -224,19 +268,37 @@ const EmployeeQRModal: React.FC<Props> = ({ employee, onClose }) => {
         <div style={{ padding: "40px", textAlign: "center" }}>
           {/* Card Mockup */}
           <div style={{
-            width: "280px", height: "400px", background: "white", margin: "0 auto", borderRadius: "24px",
+            width: "280px", height: "460px", background: "white", margin: "0 auto", borderRadius: "24px",
             border: "1px solid #e2e8f0", boxShadow: "0 10px 30px rgba(0,0,0,0.1)", position: "relative",
             overflow: "hidden", textAlign: "center"
           }}>
             <div style={{ height: "100px", background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)", position: "relative" }}>
-               <div style={{ paddingTop: "20px", color: "white", fontSize: "11px", fontWeight: 800, letterSpacing: "2px" }}>TITAN CORP</div>
+               <div style={{ paddingTop: "20px", color: "white", fontSize: "11px", fontWeight: 800, letterSpacing: "2px" }}>{companyName}</div>
             </div>
             <div style={{ width: "80px", height: "80px", background: "#f1f5f9", borderRadius: "50%", border: "4px solid white", position: "absolute", top: "60px", left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", justifyContent: "center", color: "#cbd5e1" }}>
               <FaUser size={30} />
             </div>
             <div style={{ marginTop: "50px", padding: "20px" }}>
               <div style={{ fontSize: "18px", fontWeight: 800, color: "#1e293b", textTransform: "uppercase" }}>{employee.name}</div>
-              <div style={{ fontSize: "12px", color: "#2563eb", fontWeight: 700, marginBottom: "20px" }}>{employee.designation || "STAFF"}</div>
+              <div style={{ fontSize: "12px", color: "#2563eb", fontWeight: 700, marginBottom: "16px" }}>{employee.designation || "STAFF"}</div>
+              <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "12px", marginBottom: "14px", textAlign: "left" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", padding: "3px 0" }}>
+                  <span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Employee ID</span>
+                  <span style={{ color: "#1e293b", fontWeight: 600 }}>{empCode}</span>
+                </div>
+                {employee.phone && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", padding: "3px 0" }}>
+                    <span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Phone</span>
+                    <span style={{ color: "#1e293b", fontWeight: 600 }}>{employee.phone}</span>
+                  </div>
+                )}
+                {employee.email && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", padding: "3px 0" }}>
+                    <span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Email</span>
+                    <span style={{ color: "#1e293b", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "150px" }}>{employee.email}</span>
+                  </div>
+                )}
+              </div>
               <div id="qr-code-container" style={{ background: "#f8fafc", padding: "12px", borderRadius: "16px", display: "inline-block" }}>
                 <QRCode value={attendanceUrl} size={110} level="M" />
               </div>
