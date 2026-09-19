@@ -43,6 +43,22 @@ function effectiveCheckInStatus(requestedStatus) {
 }
 const CHECK_IN_TOO_EARLY_MESSAGE = `Attendance check-in opens at ${ATTENDANCE_WINDOW_OPEN_HOUR}:${String(ATTENDANCE_WINDOW_OPEN_MINUTE).padStart(2, "0")} AM. Please check in after 10:00 AM.`;
 
+// The actual check_in_time/check_out_time stored (and the "today" used to
+// find/create today's row) were computed with new Date().toISOString() /
+// toLocaleTimeString() with no timeZone — both read the server's own clock,
+// which on Railway is UTC. An employee checking in at 10:51 AM IST got
+// "05:21:47" written to check_in_time (UTC), shown on the admin dashboard
+// as if it were 5:21 AM — 5.5 hours off, and near midnight IST it could
+// even log the attendance under the wrong calendar day. Same Asia/Kolkata
+// fix as isLateCheckIn()/isBeforeCheckInWindow() above, applied to the
+// values actually written to the row, not just the late/early decision.
+function istTodayAndNow() {
+    const d = new Date();
+    const today = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
+    const now = d.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour12: false }); // HH:MM:SS
+    return { today, now };
+}
+
 // Posts a Salary & Wages (5300) expense against Cash/Bank/Proprietor's Capital
 // for a wage payment. Best-effort: wrapped in a SAVEPOINT by the caller's
 // transaction so a chart-of-accounts hiccup never blocks the actual wage
@@ -399,8 +415,7 @@ router.post("/attendance/scan", authMiddleware, async (req, res) => {
     const body = req.body || {};
     const { qr_token, status, work_assigned } = body;
     const companyId = req.user.active_company_id;
-    const today = new Date().toISOString().split('T')[0];
-    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const { today, now } = istTodayAndNow();
 
     try {
         const parts = qr_token.split('_');
@@ -441,8 +456,7 @@ router.post("/attendance/scan", authMiddleware, async (req, res) => {
 
 router.post("/attendance/mobile", async (req, res) => {
     const { qr_token, status, work_assigned, leave_details, latitude, longitude } = req.body;
-    const today = new Date().toISOString().split('T')[0];
-    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const { today, now } = istTodayAndNow();
 
     try {
         if (!qr_token || !qr_token.startsWith('EMP_')) return res.status(400).json({ error: "Invalid QR" });
