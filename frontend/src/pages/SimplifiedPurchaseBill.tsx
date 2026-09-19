@@ -515,7 +515,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
         const summary = result.items_saved > 0
           ? `Bill saved! ${result.items_saved} item(s) recorded, ${result.products_created} new product(s) created, inventory updated.`
           : "Purchase Bill Saved Successfully!";
-        alert(summary);
+        alert(result.warning ? `${summary}\n\n⚠️ ${result.warning}` : summary);
         if (print) {
             try {
               const billRes = await apiFetch(`/purchase-bills/${result.id}`);

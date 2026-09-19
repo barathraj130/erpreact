@@ -888,6 +888,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
         }
 
         // ── Surplus stock (is_surplus=true, description-based lines) ──────────
+        let surplusWarning = null;
         if (data.is_surplus) {
             await client.query(`SAVEPOINT sp_surplus`);
             try {
@@ -926,13 +927,16 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     const lotRes = await client.query(`
                         INSERT INTO stock_lots
                             (company_id, lot_number, supplier_id, product_id, purchase_date,
-                             total_fresh_qty, total_mistake_qty, total_cost, transport_cost, status)
-                        VALUES ($1,$2,$3,NULL,CURRENT_DATE,$4,$5,$6,$7,'received')
+                             fresh_qty_purchased, mistake_qty_purchased, total_purchase_cost,
+                             fresh_qty_current, mistake_qty_current, transport_cost, status)
+                        VALUES ($1,$2,$3,NULL,CURRENT_DATE,$4,$5,$6,$4,$5,$7,'received')
                         ON CONFLICT (lot_number, company_id) DO UPDATE SET
-                            total_fresh_qty   = stock_lots.total_fresh_qty   + $4,
-                            total_mistake_qty = stock_lots.total_mistake_qty + $5,
-                            total_cost        = stock_lots.total_cost        + $6,
-                            updated_at        = NOW()
+                            fresh_qty_purchased   = stock_lots.fresh_qty_purchased   + $4,
+                            mistake_qty_purchased = stock_lots.mistake_qty_purchased + $5,
+                            total_purchase_cost   = stock_lots.total_purchase_cost   + $6,
+                            fresh_qty_current     = stock_lots.fresh_qty_current     + $4,
+                            mistake_qty_current   = stock_lots.mistake_qty_current   + $5,
+                            updated_at            = NOW()
                         RETURNING id
                     `, [companyId, lotNum, safeSupplierId, freshQty, mistakeQty,
                         freshCost + mistakeCost + lineTransport, lineTransport]);
@@ -1017,6 +1021,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await client.query(`ROLLBACK TO SAVEPOINT sp_surplus`);
                 await client.query(`RELEASE SAVEPOINT sp_surplus`);
                 console.warn(`[purchase-bill] surplus inventory skipped: ${surplusErr.message}`);
+                surplusWarning = `Bill saved, but stock/inventory could not be posted: ${surplusErr.message}. Use "+ Add Items" on the bill to fix this.`;
             }
         }
 
@@ -1031,7 +1036,8 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
             status,
             items_saved: processedItems.length,
             products_created: productsCreated,
-            inventory_updated: inventoryUpdated
+            inventory_updated: inventoryUpdated,
+            ...(surplusWarning ? { warning: surplusWarning } : {})
         });
 
         // ── Non-blocking post-commit notifications ─────────────────────────

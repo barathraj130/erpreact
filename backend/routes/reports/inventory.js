@@ -330,8 +330,8 @@ router.get('/lot-profitability', authMiddleware, async (req, res) => {
         sl.id AS lot_id,
         sl.lot_number,
         sl.status,
-        COALESCE(sl.total_fresh_qty + sl.total_mistake_qty, 0) AS total_purchased,
-        COALESCE(sl.total_cost, 0) AS purchase_cost,
+        COALESCE(sl.fresh_qty_purchased + sl.mistake_qty_purchased, 0) AS total_purchased,
+        COALESCE(sl.total_purchase_cost, 0) AS purchase_cost,
         COALESCE(SUM(ili.quantity), 0) AS qty_sold,
         COALESCE(SUM(ili.line_total), 0) AS revenue,
         COALESCE(SUM(ili.total_profit), 0) AS gross_profit,
@@ -345,7 +345,7 @@ router.get('/lot-profitability', authMiddleware, async (req, res) => {
       LEFT JOIN invoice_line_items ili ON ili.lot_id = sl.id
       LEFT JOIN invoices inv ON ili.invoice_id = inv.id AND COALESCE(inv.is_deleted, false) = false
       WHERE sl.company_id = $1 AND COALESCE(sl.is_deleted, false) = false
-      GROUP BY sl.id, sl.lot_number, sl.status, sl.total_fresh_qty, sl.total_mistake_qty, sl.total_cost, sl.total_repair_cost
+      GROUP BY sl.id, sl.lot_number, sl.status, sl.fresh_qty_purchased, sl.mistake_qty_purchased, sl.total_purchase_cost, sl.total_repair_cost
       ORDER BY sl.created_at DESC
     `;
     const data = await db.pgAll(sql, [companyId]);
