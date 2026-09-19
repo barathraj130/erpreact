@@ -217,8 +217,9 @@ const PurchaseBills: React.FC = () => {
       setShowItemsForm(false);
       setRetroItems([emptyRetroItem()]);
       await handleViewBill(viewBill);
-    } catch {
-      alert("Failed to add items — check your connection and try again.");
+    } catch (err: any) {
+      console.error("Failed to save retroactive items:", err);
+      alert(`Failed to add items: ${err?.message || "check your connection and try again."}`);
     } finally {
       setItemsLoading(false);
     }

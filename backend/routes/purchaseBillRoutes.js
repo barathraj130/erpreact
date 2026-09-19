@@ -259,7 +259,10 @@ router.post("/:id/items", authMiddleware, async (req, res) => {
 
         const safeBranchId = bill.branch_id || branchId;
         const gstType = bill.gst_type || "INTRA_STATE";
-        const isTaxBill = bill.bill_type === "TAX";
+        // Old bills (from before the "TAX"/"NON_TAX" vocabulary) still carry
+        // bill_type "GST" — treat anything that isn't explicitly non-taxable
+        // as a tax bill, matching how the rest of the app classifies these.
+        const isTaxBill = bill.bill_type !== "NON_TAX" && bill.bill_type !== "NON_GST";
 
         for (let pItem of items) {
             const qty = parseFloat(pItem.quantity) || 0;
