@@ -958,6 +958,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS lot_id INTEGER`);
                 await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(10,2) DEFAULT 0`);
                 await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS total_cost NUMERIC(12,2) DEFAULT 0`);
+                // quantity (the per-lot/stock-type qty column already used by
+                // inventoryRoutes.js elsewhere) was never in schemaUpdates.js's
+                // ALTER list at all — same class of gap, different column.
+                await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS quantity NUMERIC(12,2) DEFAULT 0`);
                 await client.query(`ALTER TABLE inventory ALTER COLUMN product_id DROP NOT NULL`);
 
                 const transport  = parseFloat(data.transport_cost) || 0;
