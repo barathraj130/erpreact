@@ -911,6 +911,55 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                 await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS transport_cost NUMERIC(10,2) DEFAULT 0`);
                 await client.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS notes TEXT`);
 
+                // stock_lots itself was also never actually created in production
+                // (same silent .catch(() => {}) boot-migration problem) — the
+                // INSERT below needs both the table and, since it upserts via
+                // ON CONFLICT (lot_number, company_id), the matching unique index.
+                await client.query(`
+                    CREATE TABLE IF NOT EXISTS stock_lots (
+                        id                    SERIAL PRIMARY KEY,
+                        company_id            INTEGER,
+                        lot_number            VARCHAR(50) NOT NULL,
+                        supplier_id           INTEGER REFERENCES suppliers(id),
+                        product_id            INTEGER REFERENCES products(id),
+                        purchase_date         DATE DEFAULT CURRENT_DATE,
+                        fresh_qty_purchased   INTEGER DEFAULT 0,
+                        mistake_qty_purchased INTEGER DEFAULT 0,
+                        fresh_purchase_rate   NUMERIC(10,2) DEFAULT 0,
+                        mistake_purchase_rate NUMERIC(10,2) DEFAULT 0,
+                        fresh_purchase_cost   NUMERIC(12,2) DEFAULT 0,
+                        mistake_purchase_cost NUMERIC(12,2) DEFAULT 0,
+                        total_purchase_cost   NUMERIC(12,2) DEFAULT 0,
+                        transport_cost        NUMERIC(10,2) DEFAULT 0,
+                        fresh_qty_current     INTEGER DEFAULT 0,
+                        mistake_qty_current   INTEGER DEFAULT 0,
+                        repaired_qty          INTEGER DEFAULT 0,
+                        rejected_qty          INTEGER DEFAULT 0,
+                        sold_fresh_qty        INTEGER DEFAULT 0,
+                        sold_mistake_qty      INTEGER DEFAULT 0,
+                        total_repair_cost     NUMERIC(12,2) DEFAULT 0,
+                        status                VARCHAR(30) DEFAULT 'received',
+                        notes                 TEXT,
+                        is_deleted            BOOLEAN DEFAULT false,
+                        created_at            TIMESTAMP DEFAULT NOW(),
+                        updated_at            TIMESTAMP DEFAULT NOW()
+                    )
+                `);
+                await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS stock_lots_lot_number_company_idx ON stock_lots(lot_number, company_id)`);
+
+                // The real `inventory` table (schemaUpdates.js:204) predates the
+                // lot/stock_type model and was defined with product_id NOT NULL —
+                // stock_type/lot_id/avg_cost/total_cost were meant to be added by
+                // later ALTERs (also silently .catch'd, same failure class as
+                // above). The surplus insert stores description-only lines with
+                // product_id=NULL, which the original NOT NULL would reject even
+                // once the columns exist — so also relax that constraint here.
+                await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30) DEFAULT 'fresh'`);
+                await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS lot_id INTEGER`);
+                await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(10,2) DEFAULT 0`);
+                await client.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS total_cost NUMERIC(12,2) DEFAULT 0`);
+                await client.query(`ALTER TABLE inventory ALTER COLUMN product_id DROP NOT NULL`);
+
                 const transport  = parseFloat(data.transport_cost) || 0;
                 const lotNum     = (data.lot_number || '').trim();
 
@@ -970,17 +1019,17 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     if (freshQty > 0) {
                         const freshTotal = freshCost + (lineTransport * freshQty / Math.max(linePcs, 1));
                         await client.query(`
-                            INSERT INTO inventory (product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
-                            VALUES (NULL, $1, $2, 'fresh', $3, $4, $5, NOW())
-                        `, [safeBranchId, lotId, freshQty, freshQty > 0 ? freshTotal / freshQty : 0, freshTotal]);
+                            INSERT INTO inventory (company_id, product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
+                            VALUES ($1, NULL, $2, $3, 'fresh', $4, $5, $6, NOW())
+                        `, [companyId, safeBranchId, lotId, freshQty, freshQty > 0 ? freshTotal / freshQty : 0, freshTotal]);
                     }
 
                     if (mistakeQty > 0) {
                         const mistakeTotal = mistakeCost + (lineTransport * mistakeQty / Math.max(linePcs, 1));
                         await client.query(`
-                            INSERT INTO inventory (product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
-                            VALUES (NULL, $1, $2, 'mistake', $3, $4, $5, NOW())
-                        `, [safeBranchId, lotId, mistakeQty, mistakeQty > 0 ? mistakeTotal / mistakeQty : 0, mistakeTotal]);
+                            INSERT INTO inventory (company_id, product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
+                            VALUES ($1, NULL, $2, $3, 'mistake', $4, $5, $6, NOW())
+                        `, [companyId, safeBranchId, lotId, mistakeQty, mistakeQty > 0 ? mistakeTotal / mistakeQty : 0, mistakeTotal]);
                     }
 
                     // Ledger entries
