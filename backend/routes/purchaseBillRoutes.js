@@ -1454,11 +1454,30 @@ router.put("/:id", authMiddleware, async (req, res) => {
 // ARCHIVE BILL (SOFT DELETE)
 // ─────────────────────────────────────────────────────────
 router.patch("/:id/archive", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
     try {
+        const bill = await db.pgGet(
+            `SELECT supplier_id, balance_amount, is_deleted FROM purchase_bills WHERE id = $1 AND company_id = $2`,
+            [req.params.id, companyId]
+        );
+        if (!bill) return res.status(404).json({ error: "Bill not found" });
+
         await db.pgRun(
             `UPDATE purchase_bills SET is_deleted = true, deleted_at = NOW() WHERE id = $1 AND company_id = $2`,
-            [req.params.id, req.user.active_company_id]
+            [req.params.id, companyId]
         );
+
+        // Archiving previously left the supplier's running current_balance
+        // permanently inflated by this bill's unpaid amount forever, since
+        // nothing ever reversed the += done at creation. Only do this once —
+        // if the bill was already archived, its balance was already reversed.
+        if (!bill.is_deleted && bill.supplier_id && parseFloat(bill.balance_amount) > 0) {
+            await db.pgRun(
+                `UPDATE suppliers SET current_balance = GREATEST(0, COALESCE(current_balance,0) - $1) WHERE id = $2`,
+                [parseFloat(bill.balance_amount), bill.supplier_id]
+            ).catch((e) => console.warn("[purchase-bill archive] supplier balance reversal skipped:", e.message));
+        }
+
         res.json({ success: true, message: "Bill archived" });
     } catch (err) {
         res.status(500).json({ error: "Archive failed" });

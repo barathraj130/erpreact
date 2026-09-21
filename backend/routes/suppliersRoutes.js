@@ -29,7 +29,7 @@ router.get('/', authMiddleware, async (req, res) => {
                 s.*,
                 COALESCE(SUM(pb.total_amount - pb.paid_amount), 0) as pending_balance
             FROM suppliers s
-            LEFT JOIN purchase_bills pb ON s.id = pb.supplier_id AND pb.status != 'PAID'
+            LEFT JOIN purchase_bills pb ON s.id = pb.supplier_id AND pb.status != 'PAID' AND COALESCE(pb.is_deleted, false) = false
             ${whereClause}
             GROUP BY s.id
             ORDER BY s.name ASC

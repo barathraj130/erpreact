@@ -24,7 +24,7 @@ export async function getSupplierById(client, supplierId, companyId) {
 
 async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
   const params = [parseInt(companyId), parseInt(supplierId)];
-  const billConditions = ["pb.company_id = $1", "pb.supplier_id = $2"];
+  const billConditions = ["pb.company_id = $1", "pb.supplier_id = $2", "COALESCE(pb.is_deleted, false) = false"];
   const txConditions = [
     "t.company_id = $1",
     "(t.lender_id = $2 OR (t.reference_type ILIKE 'supplier' AND t.reference_id = $2))"
@@ -46,7 +46,7 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
   }
 
   // Build date filters for payment queries
-  const payBillConditions = ["pb.company_id = $1", "pb.supplier_id = $2", "pb.paid_amount > 0"];
+  const payBillConditions = ["pb.company_id = $1", "pb.supplier_id = $2", "pb.paid_amount > 0", "COALESCE(pb.is_deleted, false) = false"];
   if (filters.start_date) payBillConditions.push(`pb.bill_date >= $3`);
   if (filters.end_date) payBillConditions.push(`pb.bill_date <= $${filters.start_date ? 4 : 3}`);
 
