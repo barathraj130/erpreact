@@ -179,6 +179,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
     // postings and shouldn't shift on an ordinary contact-details edit.
     const hasBalanceOverride = current_balance !== undefined && current_balance !== null && current_balance !== "";
     try {
+        // suppliers.updated_at was referenced by this route but never actually
+        // existed in production (no migration for it anywhere) — same silent
+        // schema-drift problem as elsewhere in this app. Self-heal it here.
+        await db.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`);
         const sql = hasBalanceOverride
             ? `UPDATE suppliers
                SET name=$1, phone=$2, email=$3, address=$4, state=$5, gstin=$6,
