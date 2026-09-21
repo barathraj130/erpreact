@@ -20,23 +20,47 @@ export const createLoan = async (user, loanData) => {
         };
 
         // 0. Ensure Lender exists or create it
+        // Uses look-up-then-insert instead of ON CONFLICT (lender_name, company_id):
+        // that unique index was never actually created in production (its own
+        // migration silently failed), and can't simply be self-healed here since
+        // real duplicate lender names already exist in the data, which a UNIQUE
+        // index would reject outright. LIMIT 1 picks the first match when
+        // duplicates exist rather than erroring.
         let lenderId = sanitizeInt(loanData.lender_id);
         const lenderNameRaw = loanData.lender_name || loanData.party_name;
         if (!lenderId && lenderNameRaw) {
-            // Auto-create lender if name provided but no ID
-            const lRes = await client.query(
-                "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) ON CONFLICT (lender_name, company_id) DO UPDATE SET phone=EXCLUDED.phone RETURNING id",
-                [companyId, lenderNameRaw, loanData.type || 'Bank', loanData.phone || null]
+            const existing = await client.query(
+                "SELECT id FROM lenders WHERE company_id = $1 AND lender_name = $2 LIMIT 1",
+                [companyId, lenderNameRaw]
             );
-            lenderId = lRes.rows[0].id;
+            if (existing.rows.length > 0) {
+                lenderId = existing.rows[0].id;
+                if (loanData.phone) {
+                    await client.query("UPDATE lenders SET phone = $1 WHERE id = $2", [loanData.phone, lenderId]);
+                }
+            } else {
+                const lRes = await client.query(
+                    "INSERT INTO lenders (company_id, lender_name, type, phone) VALUES ($1, $2, $3, $4) RETURNING id",
+                    [companyId, lenderNameRaw, loanData.type || 'Bank', loanData.phone || null]
+                );
+                lenderId = lRes.rows[0].id;
+            }
         }
         // If still no lenderId, create a placeholder so the loan shows in the list
         if (!lenderId) {
-            const lRes = await client.query(
-                "INSERT INTO lenders (company_id, lender_name, type) VALUES ($1, $2, $3) ON CONFLICT (lender_name, company_id) DO UPDATE SET type=EXCLUDED.type RETURNING id",
-                [companyId, 'Unknown Lender', 'Private']
+            const existing = await client.query(
+                "SELECT id FROM lenders WHERE company_id = $1 AND lender_name = $2 LIMIT 1",
+                [companyId, 'Unknown Lender']
             );
-            lenderId = lRes.rows[0].id;
+            if (existing.rows.length > 0) {
+                lenderId = existing.rows[0].id;
+            } else {
+                const lRes = await client.query(
+                    "INSERT INTO lenders (company_id, lender_name, type) VALUES ($1, $2, $3) RETURNING id",
+                    [companyId, 'Unknown Lender', 'Private']
+                );
+                lenderId = lRes.rows[0].id;
+            }
         }
 
         // 1. Insert into loans table
