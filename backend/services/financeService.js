@@ -146,13 +146,27 @@ export const createLoan = async (user, loanData) => {
         if (!lenderLedgerId) {
             const creditorsGroup = await client.query("SELECT id FROM ledger_groups WHERE (company_id = $1 OR company_id = 1) AND name = 'Sundry Creditors'", [companyId]);
             const gId = creditorsGroup.rows[0]?.id || 1;
-            // Use ON CONFLICT so a second attempt (or race) doesn't violate unique constraint
-            const newLedger = await client.query(
-                `INSERT INTO ledgers (company_id, name, group_id) VALUES ($1, $2, $3)
-                 ON CONFLICT (company_id, name) DO UPDATE SET group_id = EXCLUDED.group_id
-                 RETURNING id`,
-                [companyId, lenderName + ' (Auto)', gId]
-            );
+            const ledgerName = lenderName + ' (Auto)';
+            // No ON CONFLICT here — same reason as the lenders lookup above,
+            // that unique index was never actually created in production.
+            // The SELECT above already confirmed no row exists; on the rare
+            // concurrent-request race, fall back to looking it up instead.
+            let newLedger;
+            try {
+                newLedger = await client.query(
+                    `INSERT INTO ledgers (company_id, name, group_id) VALUES ($1, $2, $3) RETURNING id`,
+                    [companyId, ledgerName, gId]
+                );
+            } catch (ledgerErr) {
+                if (ledgerErr.code === '23505') {
+                    newLedger = await client.query(
+                        `SELECT id FROM ledgers WHERE company_id = $1 AND name = $2 LIMIT 1`,
+                        [companyId, ledgerName]
+                    );
+                } else {
+                    throw ledgerErr;
+                }
+            }
             lenderLedgerId = newLedger.rows[0].id;
         }
 
