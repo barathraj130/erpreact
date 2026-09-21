@@ -19,7 +19,7 @@ export const runSchemaUpdates = async () => {
             created_at           TIMESTAMP DEFAULT NOW(),
             updated_at           TIMESTAMP DEFAULT NOW()
         )
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
 
     await db.query(`
         CREATE TABLE IF NOT EXISTS delivery_order_items (
@@ -35,7 +35,7 @@ export const runSchemaUpdates = async () => {
             confirmed_at         TIMESTAMP,
             created_at           TIMESTAMP DEFAULT NOW()
         )
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // Free-text customer name for delivery orders created by staff who can
     // suggest a customer but not create one outright — the order saves with
@@ -43,7 +43,7 @@ export const runSchemaUpdates = async () => {
     // Create Invoice so an admin can link/create the real customer at bill time.
     await db.query(`
         ALTER TABLE delivery_orders ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // ── Critical standalone migrations (each isolated — never blocks others) ──
     // customer_points table — required by pointsService / invoiceRoutes
@@ -59,11 +59,11 @@ export const runSchemaUpdates = async () => {
             expires_at       TIMESTAMP,
             created_at       TIMESTAMP DEFAULT NOW()
         )
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // invoice_id on cash/bank ledger — enables cleanup when an invoice is deleted
-    await db.query(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
-    await db.query(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(() => {});
+    await db.query(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS invoice_id INTEGER`).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // ── One-time cleanup: remove excess orphaned payment entries ──────────────
     // Problem: when an invoice is deleted its invoice_payments are removed but
@@ -97,7 +97,7 @@ export const runSchemaUpdates = async () => {
             ) ranked
             WHERE rn > active_count
         )
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
 
     await db.query(`
         DELETE FROM bank_ledger
@@ -124,27 +124,27 @@ export const runSchemaUpdates = async () => {
             ) ranked
             WHERE rn > active_count
         )
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // Invoice columns (points & series numbering)
-    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_earned    INTEGER        DEFAULT 0`).catch(() => {});
-    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_redeemed  INTEGER        DEFAULT 0`).catch(() => {});
-    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_discount  NUMERIC(10,2)  DEFAULT 0`).catch(() => {});
-    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix    VARCHAR(10)`).catch(() => {});
-    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_number    INTEGER        DEFAULT 0`).catch(() => {});
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_earned    INTEGER        DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_redeemed  INTEGER        DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS points_discount  NUMERIC(10,2)  DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_prefix    VARCHAR(10)`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series_number    INTEGER        DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // ── Drop ALL old unique constraints on invoice_number — runs on EVERY startup ──
     // Must live OUTSIDE the big try/catch so an earlier failure cannot skip these.
-    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(() => {});
-    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(() => {});
-    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(() => {});
-    await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
-    await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
+    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // ── salary_advances: payment method columns ───────────────────────────────
-    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'CASH'`).catch(() => {});
-    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100)`).catch(() => {});
-    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100)`).catch(() => {});
+    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'CASH'`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100)`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // ── attendance_logs: ensure all columns exist ────────────────────────────
     await db.query(`
@@ -162,18 +162,18 @@ export const runSchemaUpdates = async () => {
             longitude     NUMERIC(10,6),
             created_at    TIMESTAMP DEFAULT NOW()
         )
-    `).catch(() => {});
-    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS method VARCHAR(30) DEFAULT 'MANUAL'`).catch(() => {});
-    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,6)`).catch(() => {});
-    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,6)`).catch(() => {});
-    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS work_assigned TEXT`).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS method VARCHAR(30) DEFAULT 'MANUAL'`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,6)`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,6)`).catch(e => console.warn("[schemaUpdates]", e.message));
+    await db.query(`ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS work_assigned TEXT`).catch(e => console.warn("[schemaUpdates]", e.message));
 
     // ── invoice_number_series: ensure company_id column exists ────────────────
     // The original table was created without company_id. The DROP+recreate inside
     // the try block may have been skipped. Guarantee the column exists here.
-    await db.query(`ALTER TABLE invoice_number_series ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
+    await db.query(`ALTER TABLE invoice_number_series ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(e => console.warn("[schemaUpdates]", e.message));
     // Drop the old (bill_type, year, month) unique constraint — company_id must be included.
-    await db.query(`ALTER TABLE invoice_number_series DROP CONSTRAINT IF EXISTS invoice_number_series_bill_type_year_month_key`).catch(() => {});
+    await db.query(`ALTER TABLE invoice_number_series DROP CONSTRAINT IF EXISTS invoice_number_series_bill_type_year_month_key`).catch(e => console.warn("[schemaUpdates]", e.message));
     // Add the correct unique constraint if it doesn't exist yet.
     await db.query(`
         DO $$
@@ -187,7 +187,7 @@ export const runSchemaUpdates = async () => {
                 UNIQUE (company_id, bill_type, year, month);
             END IF;
         END $$;
-    `).catch(() => {});
+    `).catch(e => console.warn("[schemaUpdates]", e.message));
     // ─────────────────────────────────────────────────────────────────────────
 
     try {
@@ -647,7 +647,7 @@ export const runSchemaUpdates = async () => {
         await db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS principal_outstanding NUMERIC(15,2)`);
         await db.query(`ALTER TABLE loan_payments ADD COLUMN IF NOT EXISTS payment_type VARCHAR(20) DEFAULT 'emi'`);
         // Make duration_months nullable so PRIVATE loans can omit it
-        await db.query(`ALTER TABLE loans ALTER COLUMN duration_months DROP NOT NULL`).catch(() => {});
+        await db.query(`ALTER TABLE loans ALTER COLUMN duration_months DROP NOT NULL`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Loan receipts — tracks how loan was received (cash/bank/upi breakdown)
         await db.query(`
@@ -724,7 +724,7 @@ export const runSchemaUpdates = async () => {
               AND p.branch_id IS NOT NULL
               AND p.current_stock > 0
             ON CONFLICT (branch_id, product_id) DO NOTHING
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Personal Accounts (proprietor's GPay, PhonePe, bank, cash)
         await db.query(`
@@ -743,27 +743,27 @@ export const runSchemaUpdates = async () => {
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Extend proprietor_transactions for 4-type system
-        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(() => {});
-        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS party_name VARCHAR(200)`).catch(() => {});
-        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_id INTEGER`).catch(() => {});
-        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50)`).catch(() => {});
-        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS affects_ledger BOOLEAN DEFAULT true`).catch(() => {});
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS party_name VARCHAR(200)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_id INTEGER`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE proprietor_transactions ADD COLUMN IF NOT EXISTS affects_ledger BOOLEAN DEFAULT true`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Extend invoice_payments for personal-account payment mode
-        await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS is_personal_account BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS is_personal_account BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS personal_account_id INTEGER REFERENCES personal_accounts(id)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ═══════════════════════════════════════════════════════════
         // ENTERPRISE INVENTORY ENGINE — Schema + Data Integrity Fixes
         // ═══════════════════════════════════════════════════════════
 
         // 1. Add audit columns to inventory_movements (for full audit trail)
-        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS previous_qty NUMERIC(12,2)`).catch(() => {});
-        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS new_qty NUMERIC(12,2)`).catch(() => {});
-        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_type VARCHAR(50)`).catch(() => {});
+        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS previous_qty NUMERIC(12,2)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS new_qty NUMERIC(12,2)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_type VARCHAR(50)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // 2. Normalize movement type — old rows used type='SALE' or type='Opening Stock';
         //    new engine uses type='SALE_OUT' / 'PURCHASE_IN' etc. Keep old rows as-is.
@@ -797,13 +797,13 @@ export const runSchemaUpdates = async () => {
         `).catch((e) => { console.warn('[schemaUpdates] current_stock recompute skipped:', e.message); });
 
         // 5. Ensure last_updated column exists on branch_inventory (older DBs may lack it)
-        await db.query(`ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()`).catch(() => {});
+        await db.query(`ALTER TABLE branch_inventory ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT NOW()`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Invoice number series — clean rebuild ────────────────────────────
         // Format: PREFIX/YEAR/MM/NNN (e.g. TAX/2026/05/001)
         // Each (company, bill_type, year, month) = one row = independent counter.
         // Drop the old table entirely and recreate with the correct schema.
-        await db.query(`DROP TABLE IF EXISTS invoice_number_series`).catch(() => {});
+        await db.query(`DROP TABLE IF EXISTS invoice_number_series`).catch(e => console.warn("[schemaUpdates]", e.message));
         await db.query(`
             CREATE TABLE IF NOT EXISTS invoice_number_series (
                 id          SERIAL PRIMARY KEY,
@@ -820,11 +820,11 @@ export const runSchemaUpdates = async () => {
         // ── Drop ALL old unique constraints on invoice_number (any name) ─────────
         // These block creating invoice #1 if any other invoice ever had number "1".
         // Use DROP CONSTRAINT IF EXISTS (each in its own query so one failure doesn't block others).
-        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(() => {});
-        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(() => {});
-        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(() => {});
-        await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(() => {});
-        await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(() => {});
+        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_invoice_number_key`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_company_type_invoice_number_key`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`DROP INDEX IF EXISTS idx_invoices_company_number_active`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`DROP INDEX IF EXISTS idx_invoices_company_type_number`).catch(e => console.warn("[schemaUpdates]", e.message));
         // Unique index on series_number (not invoice_number).
         // series_number is only > 0 on invoices from the NEW auto-generate system.
         // Old invoices have series_number = 0/NULL → excluded → no conflicts with old data.
@@ -836,22 +836,22 @@ export const runSchemaUpdates = async () => {
         `).catch((e) => { console.warn('[schemaUpdates] series_number unique index skipped:', e.message); });
 
         // ── GST: state_code on users table (needed for IGST / CGST+SGST detection) ──
-        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS state_code VARCHAR(5) DEFAULT '33'`).catch(() => {});
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS state_code VARCHAR(5) DEFAULT '33'`).catch(e => console.warn("[schemaUpdates]", e.message));
         // Backfill state_code from GSTIN (first 2 digits) where not already set
         await db.query(`
             UPDATE users
             SET state_code = SUBSTRING(gstin, 1, 2)
             WHERE (state_code IS NULL OR state_code = '' OR state_code = '33')
               AND gstin IS NOT NULL AND LENGTH(TRIM(gstin)) >= 2
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Weekly / Daily salary columns on employees ────────────────────────
-        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type VARCHAR(20) DEFAULT 'monthly'`).catch(() => {});
-        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS daily_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS weekly_rate NUMERIC(12,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 6`).catch(() => {});
-        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_start_day VARCHAR(10) DEFAULT 'monday'`).catch(() => {});
-        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_end_day VARCHAR(10) DEFAULT 'saturday'`).catch(() => {});
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_type VARCHAR(20) DEFAULT 'monthly'`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS daily_rate NUMERIC(12,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS weekly_rate NUMERIC(12,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 6`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_start_day VARCHAR(10) DEFAULT 'monday'`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_end_day VARCHAR(10) DEFAULT 'saturday'`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── daily_attendance — per-employee per-date wage record ─────────────
         await db.query(`
@@ -870,7 +870,7 @@ export const runSchemaUpdates = async () => {
                 created_at       TIMESTAMP DEFAULT NOW(),
                 UNIQUE(employee_id, attendance_date)
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── weekly_salary — Saturday payout records ──────────────────────────
         await db.query(`
@@ -893,17 +893,17 @@ export const runSchemaUpdates = async () => {
                 notes            TEXT,
                 created_at       TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── employee_advances — weekly advance columns ────────────────────────
-        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS advance_week_start DATE`).catch(() => {});
-        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS advance_week_end DATE`).catch(() => {});
-        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS deduct_from_weekly BOOLEAN DEFAULT true`).catch(() => {});
+        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS advance_week_start DATE`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS advance_week_end DATE`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE employee_advances ADD COLUMN IF NOT EXISTS deduct_from_weekly BOOLEAN DEFAULT true`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── salary_advances: pending_amount column ────────────────────────────
-        await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS pending_amount NUMERIC(12,2) DEFAULT 0`).catch(() => {});
+        await db.query(`ALTER TABLE salary_advances ADD COLUMN IF NOT EXISTS pending_amount NUMERIC(12,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
         // Backfill: pending_amount = current_balance for old records
-        await db.query(`UPDATE salary_advances SET pending_amount = current_balance WHERE pending_amount IS NULL OR pending_amount = 0`).catch(() => {});
+        await db.query(`UPDATE salary_advances SET pending_amount = current_balance WHERE pending_amount IS NULL OR pending_amount = 0`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Stock Lots Module (JBS Knit Wear surplus T-shirt tracking) ─────────
         await db.query(`
@@ -935,9 +935,9 @@ export const runSchemaUpdates = async () => {
                 created_at            TIMESTAMP DEFAULT NOW(),
                 updated_at            TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
-        await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS stock_lots_lot_number_company_idx ON stock_lots(lot_number, company_id)`).catch(() => {});
+        await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS stock_lots_lot_number_company_idx ON stock_lots(lot_number, company_id)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS stock_lot_inspections (
@@ -954,7 +954,7 @@ export const runSchemaUpdates = async () => {
                 notes                 TEXT,
                 created_at            TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Sales-return inspection: a follow-up grading step (separate from return
         // creation) that splits a returned line's quantity into Good (resalable as
@@ -977,9 +977,9 @@ export const runSchemaUpdates = async () => {
                 created_by          INTEGER,
                 created_at          TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
-        await db.query(`CREATE INDEX IF NOT EXISTS sales_return_inspections_return_idx ON sales_return_inspections(return_id)`).catch(() => {});
-        await db.query(`CREATE INDEX IF NOT EXISTS sales_return_inspections_product_idx ON sales_return_inspections(product_id)`).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`CREATE INDEX IF NOT EXISTS sales_return_inspections_return_idx ON sales_return_inspections(return_id)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`CREATE INDEX IF NOT EXISTS sales_return_inspections_product_idx ON sales_return_inspections(product_id)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS stock_conversions (
@@ -996,7 +996,7 @@ export const runSchemaUpdates = async () => {
                 notes                TEXT,
                 created_at           TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS stock_inventory (
@@ -1010,7 +1010,7 @@ export const runSchemaUpdates = async () => {
                 last_updated TIMESTAMP DEFAULT NOW(),
                 UNIQUE(lot_id, stock_type)
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS stock_transactions (
@@ -1028,31 +1028,31 @@ export const runSchemaUpdates = async () => {
                 notes            TEXT,
                 created_at       TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Alter existing tables for lot integration
-        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_id    INTEGER REFERENCES stock_lots(id)`).catch(() => {});
-        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30)`).catch(() => {});
-        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS avg_cost   NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS profit_per_piece NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS total_profit NUMERIC(12,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_id        INTEGER REFERENCES stock_lots(id)`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_qty     INTEGER DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_qty   INTEGER DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_rate    NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_rate  NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS transport_cost NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(() => {});
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_id    INTEGER REFERENCES stock_lots(id)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS avg_cost   NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS profit_per_piece NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS total_profit NUMERIC(12,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_id        INTEGER REFERENCES stock_lots(id)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_qty     INTEGER DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_qty   INTEGER DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS fresh_rate    NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS mistake_rate  NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS transport_cost NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS company_id INTEGER`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Inventory stock-type integration ──────────────────────────────────
-        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30) DEFAULT 'fresh'`).catch(() => {});
-        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS lot_id INTEGER`).catch(() => {});
-        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS total_cost NUMERIC(12,2) DEFAULT 0`).catch(() => {});
-        await db.query(`UPDATE inventory SET stock_type = 'fresh' WHERE stock_type IS NULL`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`).catch(() => {});
-        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_surplus BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`).catch(() => {});
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS stock_type VARCHAR(30) DEFAULT 'fresh'`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS lot_id INTEGER`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS total_cost NUMERIC(12,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`UPDATE inventory SET stock_type = 'fresh' WHERE stock_type IS NULL`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_surplus BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS lot_number VARCHAR(50)`).catch(e => console.warn("[schemaUpdates]", e.message));
         // Drop old single-column unique, create multi-column one with stock_type
         await db.query(`
             DO $$ BEGIN
@@ -1060,11 +1060,11 @@ export const runSchemaUpdates = async () => {
                 ALTER TABLE inventory DROP CONSTRAINT inventory_product_id_branch_id_key;
               END IF;
             END $$
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
         await db.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS inventory_unique_idx
             ON inventory (product_id, COALESCE(branch_id,0), stock_type, COALESCE(lot_id,0))
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
         // The drop above named the wrong constraint — the actual blocker is the ORIGINAL
         // inline UNIQUE(product_id) from this table's very first CREATE TABLE, auto-named
         // inventory_product_id_key by Postgres. It prevents any product from having more
@@ -1077,7 +1077,7 @@ export const runSchemaUpdates = async () => {
                 ALTER TABLE inventory DROP CONSTRAINT inventory_product_id_key;
               END IF;
             END $$
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Transaction Categories ─────────────────────────────────────────────
         await db.query(`
@@ -1090,11 +1090,11 @@ export const runSchemaUpdates = async () => {
                 is_custom   BOOLEAN DEFAULT false,
                 created_at  TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
         await db.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS transaction_categories_uniq
             ON transaction_categories (company_id, LOWER(name))
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
         await db.query(`
             INSERT INTO transaction_categories (company_id, name, type, is_custom) VALUES
                 (0, 'Sales',           'income',  false),
@@ -1113,7 +1113,7 @@ export const runSchemaUpdates = async () => {
                 (0, 'Tax / GST',       'expense', false),
                 (0, 'General',         'both',    false)
             ON CONFLICT DO NOTHING
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS day_close_records (
@@ -1135,7 +1135,7 @@ export const runSchemaUpdates = async () => {
                 created_at   TIMESTAMP DEFAULT NOW(),
                 UNIQUE(company_id, branch_id, close_date)
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Granular Permission System ──────────────────────────────────────────
         await db.query(`
@@ -1146,7 +1146,7 @@ export const runSchemaUpdates = async () => {
                 category       VARCHAR(50),
                 display_order  INTEGER DEFAULT 0
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await seedPermissionModules(db).catch(e => {
             console.error("❌ permission_modules seed failed:", e.message);
@@ -1166,24 +1166,24 @@ export const runSchemaUpdates = async () => {
                 updated_at        TIMESTAMP DEFAULT NOW(),
                 UNIQUE(user_id, module_key)
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // The CREATE TABLE above is a no-op wherever user_permissions already
         // exists in the old permission_id-based shape (schemaDef.js's original
         // definition — true in every environment, including fresh installs,
         // since that definition was never updated). Migrate it forward here
         // instead of leaving the module_key/can_* columns permanently missing.
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS module_key VARCHAR(50) REFERENCES permission_modules(module_key)`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_view BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_create BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_edit BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_delete BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS branch_restricted BOOLEAN DEFAULT false`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS module_key VARCHAR(50) REFERENCES permission_modules(module_key)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_view BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_create BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_edit BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS can_delete BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS branch_restricted BOOLEAN DEFAULT false`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`).catch(e => console.warn("[schemaUpdates]", e.message));
         // Old schema's permission_id was NOT NULL — new module_key-based rows
         // don't supply it, so it must become optional.
-        await db.query(`ALTER TABLE user_permissions ALTER COLUMN permission_id DROP NOT NULL`).catch(() => {});
-        await db.query(`ALTER TABLE user_permissions ADD CONSTRAINT user_permissions_user_module_unique UNIQUE (user_id, module_key)`).catch(() => {});
+        await db.query(`ALTER TABLE user_permissions ALTER COLUMN permission_id DROP NOT NULL`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE user_permissions ADD CONSTRAINT user_permissions_user_module_unique UNIQUE (user_id, module_key)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS permission_templates (
@@ -1194,7 +1194,7 @@ export const runSchemaUpdates = async () => {
                 is_system      BOOLEAN DEFAULT false,
                 created_at     TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS permission_template_items (
@@ -1206,15 +1206,15 @@ export const runSchemaUpdates = async () => {
                 can_edit    BOOLEAN DEFAULT false,
                 can_delete  BOOLEAN DEFAULT false
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // System permission templates (idempotent — skip if names already exist)
         await seedPermissionTemplates(db).catch(e => {
             console.error("❌ permission_templates seed failed:", e.message);
         });
 
-        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permission_template_id INTEGER REFERENCES permission_templates(id)`).catch(() => {});
-        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(100)`).catch(() => {});
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permission_template_id INTEGER REFERENCES permission_templates(id)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(100)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Strict branch billing controls: round-off approval + ledger correction requests ──
         // customer_id references users(id) — this schema has no separate customers table,
@@ -1238,7 +1238,7 @@ export const runSchemaUpdates = async () => {
                 created_at              TIMESTAMP DEFAULT NOW(),
                 updated_at              TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS ledger_correction_requests (
@@ -1257,15 +1257,15 @@ export const runSchemaUpdates = async () => {
                 rejection_reason TEXT,
                 created_at       TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Tenant pricing & trial support ──────────────────────────────────
-        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS quarterly_price NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS yearly_price NUMERIC(10,2) DEFAULT 0`).catch(() => {});
-        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'monthly'`).catch(() => {});
-        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS max_invoices_per_month INTEGER DEFAULT 500`).catch(() => {});
-        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at DATE`).catch(() => {});
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS quarterly_price NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS yearly_price NUMERIC(10,2) DEFAULT 0`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'monthly'`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS max_invoices_per_month INTEGER DEFAULT 500`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at DATE`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Customer Debt Settlement module ──────────────────────────────────
         // Note: customer_id references users(id) — this schema has no separate
@@ -1299,9 +1299,9 @@ export const runSchemaUpdates = async () => {
                 created_at          TIMESTAMP DEFAULT NOW(),
                 updated_at          TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
-        await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_company ON debt_settlements(company_id, status)`).catch(() => {});
-        await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_customer ON debt_settlements(customer_id)`).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_company ON debt_settlements(company_id, status)`).catch(e => console.warn("[schemaUpdates]", e.message));
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_customer ON debt_settlements(customer_id)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS settlement_invoice_links (
@@ -1312,7 +1312,7 @@ export const runSchemaUpdates = async () => {
                 amount_allocated NUMERIC(12,2) NOT NULL,
                 created_at       TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS settlement_goods_items (
@@ -1331,7 +1331,7 @@ export const runSchemaUpdates = async () => {
                 notes          TEXT,
                 created_at     TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS settlement_assets_items (
@@ -1356,7 +1356,7 @@ export const runSchemaUpdates = async () => {
                 notes                  TEXT,
                 created_at             TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS settlement_cheque_items (
@@ -1374,7 +1374,7 @@ export const runSchemaUpdates = async () => {
                 bank_charges   NUMERIC(10,2) DEFAULT 0,
                 created_at     TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         await db.query(`
             CREATE TABLE IF NOT EXISTS settlement_history (
@@ -1386,13 +1386,13 @@ export const runSchemaUpdates = async () => {
                 notes         TEXT,
                 created_at    TIMESTAMP DEFAULT NOW()
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // Team Hub requests submitted from the Employee Portal login (a real
         // users row with employee_id set) carry the employee's id too, so an
         // approved advance_request/expense_claim can be resolved back to a
         // real employees(id) without guessing at the users<->employees link.
-        await db.query(`ALTER TABLE hub_forms ADD COLUMN IF NOT EXISTS submitted_by_employee_id INTEGER REFERENCES employees(id)`).catch(() => {});
+        await db.query(`ALTER TABLE hub_forms ADD COLUMN IF NOT EXISTS submitted_by_employee_id INTEGER REFERENCES employees(id)`).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // "Save Draft (Continue Later)" on long forms (Purchase Bill, etc.) was
         // storing the draft in browser localStorage — which is scoped to the
@@ -1411,7 +1411,7 @@ export const runSchemaUpdates = async () => {
                 created_at  TIMESTAMP DEFAULT NOW(),
                 UNIQUE(company_id, user_id, form_type)
             )
-        `).catch(() => {});
+        `).catch(e => console.warn("[schemaUpdates]", e.message));
 
         // ── Performance indexes ─────────────────────────────────────────────
         // Nearly every query in this codebase filters by company_id, but only
