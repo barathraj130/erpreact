@@ -396,6 +396,39 @@ router.get('/loans', authMiddleware, async (req, res) => {
       interest_repaid: parseFloat(r.interest_repaid) || 0,
     }));
 
+    // Loan repayments can also be recorded as a plain cash/bank expense
+    // (category "Loan Repayment") without ever going through the dedicated
+    // loan_payments table — the "All Transactions" tab shows those, this one
+    // didn't. Find LOAN_REPAYMENT ledger entries with no matching
+    // loan_payments row (same date+amount, the same heuristic the
+    // cash_ledger/loan_payments sync route itself uses) and fold them in as
+    // an "Unattributed" bucket so the two tabs' totals actually reconcile.
+    const unattributed = await db.pgGet(`
+      SELECT COUNT(*) AS payments_count, COALESCE(SUM(amt), 0) AS total_repaid
+      FROM (
+        SELECT amount AS amt, date FROM cash_ledger
+        WHERE company_id = $1 AND source = 'LOAN_REPAYMENT' AND date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
+        UNION ALL
+        SELECT amount AS amt, date FROM bank_ledger
+        WHERE company_id = $1 AND source = 'LOAN_REPAYMENT' AND date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
+      ) led
+      WHERE NOT EXISTS (
+        SELECT 1 FROM loan_payments lp
+        JOIN loans l ON l.id = lp.loan_id
+        WHERE l.company_id = $1 AND DATE(lp.payment_date) = led.date AND lp.total_amount = led.amt
+      )
+    `, params);
+    const unattributedTotal = parseFloat(unattributed?.total_repaid) || 0;
+    if (unattributedTotal > 0) {
+      data.push({
+        lender_name: 'Unattributed (recorded as a plain expense, not linked to a loan)',
+        payments_count: parseInt(unattributed.payments_count) || 0,
+        total_repaid: unattributedTotal,
+        principal_repaid: 0,
+        interest_repaid: 0,
+      });
+    }
+
     const summary = data.reduce((acc, r) => ({
       total_repaid: acc.total_repaid + r.total_repaid,
       total_principal: acc.total_principal + r.principal_repaid,
