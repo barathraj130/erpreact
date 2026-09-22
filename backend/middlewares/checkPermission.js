@@ -5,6 +5,20 @@
 // is fully restricted to only what's granted).
 import * as db from '../database/pg.js';
 
+// user_permissions only ever had four real columns: can_view/can_create/
+// can_edit/can_delete. Several routes call this with compound action names
+// like "view_invoices" or "access_settings" — building `can_${action}`
+// straight from those produces a column that has never existed (e.g.
+// can_view_invoices), throwing on every check and getting caught below as a
+// generic "Permission check failed" for any non-admin user. Normalize to the
+// real base verb before touching the database.
+const BASE_ACTION = {
+    view: 'view', create: 'create', edit: 'edit', delete: 'delete',
+    view_invoices: 'view', create_invoices: 'create', edit_invoices: 'edit', delete_invoices: 'delete',
+    access_settings: 'edit',
+};
+const resolveBaseAction = (action) => BASE_ACTION[action] || action.split('_')[0];
+
 const checkPermission = (moduleKey, action = 'view') => {
     return async (req, res, next) => {
         try {
@@ -24,7 +38,7 @@ const checkPermission = (moduleKey, action = 'view') => {
                 return res.status(403).json({ error: `You don't have permission to ${action} ${moduleKey}` });
             }
 
-            const actionColumn = `can_${action}`;
+            const actionColumn = `can_${resolveBaseAction(action)}`;
 
             const perm = await db.pgGet(
                 `SELECT ${actionColumn} AS allowed FROM user_permissions WHERE user_id = $1 AND module_key = $2`,
