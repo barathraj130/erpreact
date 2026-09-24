@@ -82,18 +82,18 @@ export async function printPurchaseBill(bill: BillForPrint, items: PrintItem[], 
 <title>Purchase Bill ${escapeHtml(bill.bill_number)}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Arial', sans-serif; background: white; color: #000; padding: 32px; max-width: 794px; margin: 0 auto; }
-  .header { border: 3px solid #000; padding: 16px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-  .company-name { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; }
+  body { font-family: 'Arial', sans-serif; background: white; color: #000; padding: 24px; max-width: 794px; margin: 0 auto; }
+  .header { border: 3px solid #000; padding: 12px 18px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .company-name { font-size: 19px; font-weight: 900; letter-spacing: -0.5px; }
   .company-sub { font-size: 10px; color: #333; margin-top: 2px; }
   .title-block { text-align: right; }
-  .title { font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+  .title { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
   .title-sub { font-size: 10px; color: #666; margin-top: 2px; }
-  .meta-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-  .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #333; margin-bottom: 4px; }
+  .meta-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #333; margin-bottom: 3px; }
   .meta-value { font-size: 13px; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-  th, td { border: 1px solid #000; padding: 8px 10px; font-size: 12px; text-align: left; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  th, td { border: 1px solid #000; padding: 5px 9px; font-size: 11.5px; text-align: left; }
   th { background: #f1f1f1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
   .text-center { text-align: center; }
   .text-right { text-align: right; }
@@ -101,13 +101,13 @@ export async function printPurchaseBill(bill: BillForPrint, items: PrintItem[], 
   .status-paid { color: #16a34a; }
   .status-partial { color: #b45309; }
   .status-pending { color: #b91c1c; }
-  .signature-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 48px; align-items: end; }
+  .signature-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 20px; align-items: end; page-break-inside: avoid; }
   .signature-block { text-align: center; }
-  .signature-line { border-top: 1.5px solid #000; margin-bottom: 6px; padding-top: 48px; }
+  .signature-line { border-top: 1.5px solid #000; margin-bottom: 6px; padding-top: 26px; }
   .signature-label { font-size: 11px; font-weight: 700; text-transform: uppercase; }
-  .seal-stamp { height: 84px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; transform: rotate(-7deg); }
-  .footer-note { margin-top: 24px; font-size: 9px; color: #666; text-align: center; }
-  @media print { body { padding: 20px; } .no-print { display: none; } @page { size: A4; margin: 15mm; } }
+  .seal-stamp { height: 64px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; transform: rotate(-7deg); }
+  .footer-note { margin-top: 14px; font-size: 9px; color: #666; text-align: center; }
+  @media print { body { padding: 16px; } .no-print { display: none; } @page { size: A4; margin: 12mm; } }
 </style>
 </head>
 <body>
@@ -167,7 +167,7 @@ export async function printPurchaseBill(bill: BillForPrint, items: PrintItem[], 
     <div class="signature-block"><div class="signature-line"></div><div class="signature-label">Received By</div></div>
     <div class="signature-block">
       <div class="seal-stamp">
-        <svg viewBox="0 0 120 120" width="92" height="92">
+        <svg viewBox="0 0 120 120" width="64" height="64">
           <defs>
             <path id="sealTopCurve" d="M 12,64 A 48,48 0 0 1 108,64" fill="none" />
             <path id="sealBottomCurve" d="M 22,72 A 38,38 0 0 0 98,72" fill="none" />
