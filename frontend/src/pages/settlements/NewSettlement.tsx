@@ -47,6 +47,7 @@ export default function NewSettlement() {
   const [customerId, setCustomerId] = useState<number | null>(preselected ? Number(preselected) : null);
   const [invoices, setInvoices] = useState<OutstandingInvoice[]>([]);
   const [allocations, setAllocations] = useState<Record<number, string>>({});
+  const [settleAmount, setSettleAmount] = useState("");
 
   // Step 2
   const [useCash, setUseCash] = useState(false);
@@ -69,11 +70,34 @@ export default function NewSettlement() {
     if (!customerId) { setInvoices([]); return; }
     apiFetch(`/settlements/customers/${customerId}/outstanding`)
       .then((r) => r.json())
-      .then((data) => { setInvoices(Array.isArray(data) ? data : []); setAllocations({}); })
+      .then((data) => { setInvoices(Array.isArray(data) ? data : []); setAllocations({}); setSettleAmount(""); })
       .catch(() => setInvoices([]));
   }, [customerId]);
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
+  const totalOutstanding = Number(selectedCustomer?.initial_balance) || 0;
+  const totalInvoiceBalance = invoices.reduce((s, inv) => s + (isSettleable(inv) ? Number(inv.balance_amount) : 0), 0);
+
+  // The customer's total outstanding balance (opening + everything billed and
+  // paid since) is settled as one lump sum, not picked invoice-by-invoice —
+  // but debt_settlements still records which invoices it actually cleared,
+  // so the lump sum is distributed oldest-invoice-first behind the scenes.
+  useEffect(() => {
+    const amount = parseFloat(settleAmount) || 0;
+    if (amount <= 0) { setAllocations({}); return; }
+    let remaining = amount;
+    const next: Record<number, string> = {};
+    for (const inv of invoices) {
+      if (remaining <= 0) break;
+      if (!isSettleable(inv)) continue;
+      const take = Math.min(remaining, Number(inv.balance_amount));
+      if (take > 0) {
+        next[inv.id] = String(Math.round(take * 100) / 100);
+        remaining -= take;
+      }
+    }
+    setAllocations(next);
+  }, [settleAmount, invoices]);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearch) return [];
@@ -214,57 +238,56 @@ export default function NewSettlement() {
 
             {customerId && (
               <>
-                <h3 style={{ margin: "20px 0 10px", fontSize: 14 }}>All Invoices</h3>
-                {invoices.length === 0 ? (
-                  <div className="page-empty">No invoices for this customer.</div>
-                ) : (
-                  <div className="page-table-wrapper">
-                    <table className="page-table">
-                      <thead>
-                        <tr><th></th><th>Invoice #</th><th>Date</th><th className="text-right">Balance</th><th className="text-right">Allocate</th></tr>
-                      </thead>
-                      <tbody>
-                        {invoices.map((inv) => {
-                          const settleable = isSettleable(inv);
-                          return (
-                            <tr key={inv.id} style={settleable ? undefined : { opacity: 0.55 }}>
-                              <td>
-                                <input
-                                  type="checkbox"
-                                  disabled={!settleable}
-                                  checked={allocations[inv.id] !== undefined}
-                                  onChange={(e) => {
-                                    setAllocations((prev) => {
-                                      const next = { ...prev };
-                                      if (e.target.checked) next[inv.id] = String(inv.balance_amount);
-                                      else delete next[inv.id];
-                                      return next;
-                                    });
-                                  }}
-                                />
-                              </td>
-                              <td className="font-mono">
-                                {inv.invoice_number}
-                                {!settleable && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase" }}>{inv.status === "PAID" ? "Paid" : "No balance"}</span>}
-                              </td>
+                <div style={{ ...sectionCard, background: "var(--surface-2)", marginTop: 20 }}>
+                  <label style={label}>Total Outstanding Balance</label>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#dc2626" }}>{fmt(totalOutstanding)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>
+                    Opening balance plus everything billed and received since — the customer's full running balance, not just one invoice.
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <label style={label}>Amount To Settle</label>
+                  <input
+                    type="number"
+                    style={{ ...input, maxWidth: 260, fontSize: 16, padding: "10px 12px" }}
+                    value={settleAmount}
+                    onChange={(e) => setSettleAmount(e.target.value)}
+                    placeholder="0"
+                    max={totalInvoiceBalance}
+                  />
+                  {invoices.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>No invoices for this customer — nothing to settle against yet.</div>
+                  ) : parseFloat(settleAmount) > totalInvoiceBalance ? (
+                    <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>
+                      Only {fmt(totalInvoiceBalance)} of the {fmt(totalOutstanding)} balance is tied to actual invoices, so that's the most this can settle.
+                    </div>
+                  ) : null}
+                </div>
+
+                {Object.keys(allocations).length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <label style={label}>Invoices This Will Clear (oldest first)</label>
+                    <div className="page-table-wrapper">
+                      <table className="page-table">
+                        <thead>
+                          <tr><th>Invoice #</th><th>Date</th><th className="text-right">Balance</th><th className="text-right">Applied</th></tr>
+                        </thead>
+                        <tbody>
+                          {invoices.filter((inv) => allocations[inv.id] !== undefined).map((inv) => (
+                            <tr key={inv.id}>
+                              <td className="font-mono">{inv.invoice_number}</td>
                               <td>{new Date(inv.invoice_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
                               <td className="text-right">{fmt(Number(inv.balance_amount))}</td>
-                              <td className="text-right" style={{ width: 130 }}>
-                                <input
-                                  type="number"
-                                  disabled={allocations[inv.id] === undefined}
-                                  value={allocations[inv.id] ?? ""}
-                                  onChange={(e) => setAllocations((prev) => ({ ...prev, [inv.id]: e.target.value }))}
-                                  style={{ ...input, textAlign: "right", padding: "5px 8px" }}
-                                />
-                              </td>
+                              <td className="text-right">{fmt(Number(allocations[inv.id]))}</td>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
+
                 <div style={{ textAlign: "right", marginTop: 12, fontSize: 14, fontWeight: 700 }}>
                   Total Allocated: <span style={{ color: "#4f46e5" }}>{fmt(totalAllocated)}</span>
                 </div>
