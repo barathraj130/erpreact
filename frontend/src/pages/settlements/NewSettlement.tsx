@@ -124,6 +124,13 @@ export default function NewSettlement() {
   const difference = Math.round((totalAllocated - totalValue) * 100) / 100;
   const hasLandOrProperty = useAssets && assetItems.some((a) => ["Land", "Property"].includes(a.asset_type) || a.needs_legal_transfer);
 
+  // The amount to settle is DERIVED from what's actually being given (Step 2),
+  // not typed in independently on Step 1 — settleAmount drives the
+  // oldest-invoice-first auto-allocation effect above.
+  useEffect(() => {
+    setSettleAmount(totalValue > 0 ? String(totalValue) : "");
+  }, [totalValue]);
+
   const settlementType = useMemo(() => {
     const parts: string[] = [];
     if (useCash) parts.push("cash");
@@ -135,7 +142,7 @@ export default function NewSettlement() {
     return parts[0] || "cash_partial";
   }, [useCash, useGoods, useAssets, useCheques]);
 
-  const canGoStep2 = !!customerId && totalAllocated > 0;
+  const canGoStep2 = !!customerId && invoices.length > 0;
   const canGoStep3 = totalValue > 0;
   const canSubmit = difference === 0 && totalValue > 0;
 
@@ -257,51 +264,10 @@ export default function NewSettlement() {
                     Opening balance plus everything billed and received since — the customer's full running balance, not just one invoice.
                   </div>
                 </div>
-
-                <div style={{ marginTop: 16 }}>
-                  <label style={label}>Amount To Settle</label>
-                  <input
-                    type="number"
-                    style={{ ...input, maxWidth: 260, fontSize: 16, padding: "10px 12px" }}
-                    value={settleAmount}
-                    onChange={(e) => setSettleAmount(e.target.value)}
-                    placeholder="0"
-                    max={totalInvoiceBalance}
-                  />
-                  {invoices.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6 }}>No invoices for this customer — nothing to settle against yet.</div>
-                  ) : parseFloat(settleAmount) > totalInvoiceBalance ? (
-                    <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>
-                      Only {fmt(totalInvoiceBalance)} of the {fmt(totalOutstanding)} balance is tied to actual invoices, so that's the most this can settle.
-                    </div>
-                  ) : null}
-                </div>
-
-                {Object.keys(allocations).length > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <label style={label}>Invoices This Will Clear (oldest first)</label>
-                    <div className="page-table-wrapper">
-                      <table className="page-table">
-                        <thead>
-                          <tr><th>Invoice #</th><th>Date</th><th className="text-right">Balance</th><th className="text-right">Applied</th></tr>
-                        </thead>
-                        <tbody>
-                          {invoices.filter((inv) => allocations[inv.id] !== undefined).map((inv) => (
-                            <tr key={inv.id}>
-                              <td className="font-mono">{inv.invoice_number}</td>
-                              <td>{new Date(inv.invoice_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
-                              <td className="text-right">{fmt(Number(inv.balance_amount))}</td>
-                              <td className="text-right">{fmt(Number(allocations[inv.id]))}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ textAlign: "right", marginTop: 12, fontSize: 14, fontWeight: 700 }}>
-                  Total Allocated: <span style={{ color: "#4f46e5" }}>{fmt(totalAllocated)}</span>
+                <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 12 }}>
+                  {invoices.length === 0
+                    ? "No invoices for this customer — nothing to settle against yet."
+                    : "Next, enter what the customer is actually giving — the amount to settle is set from that, not typed in here."}
                 </div>
               </>
             )}
@@ -465,9 +431,33 @@ export default function NewSettlement() {
             </div>
             {difference !== 0 && (
               <div style={{ marginTop: 10, fontSize: 12, color: "#dc2626", display: "flex", alignItems: "center", gap: 6 }}>
-                <FaExclamationTriangle /> The allocated total must exactly equal the settlement value before continuing.
+                <FaExclamationTriangle /> Only {fmt(totalInvoiceBalance)} of the {fmt(totalOutstanding)} outstanding balance is tied to actual invoices, so {fmt(totalValue)} can't be fully applied — reduce what's being given, or the excess won't be recorded against any invoice.
               </div>
             )}
+
+            {Object.keys(allocations).length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <label style={label}>Invoices This Will Clear (oldest first)</label>
+                <div className="page-table-wrapper">
+                  <table className="page-table">
+                    <thead>
+                      <tr><th>Invoice #</th><th>Date</th><th className="text-right">Balance</th><th className="text-right">Applied</th></tr>
+                    </thead>
+                    <tbody>
+                      {invoices.filter((inv) => allocations[inv.id] !== undefined).map((inv) => (
+                        <tr key={inv.id}>
+                          <td className="font-mono">{inv.invoice_number}</td>
+                          <td>{new Date(inv.invoice_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
+                          <td className="text-right">{fmt(Number(inv.balance_amount))}</td>
+                          <td className="text-right">{fmt(Number(allocations[inv.id]))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div style={{ marginTop: 16 }}>
               <label style={label}>Notes</label>
               <textarea style={{ ...input, minHeight: 70, resize: "vertical" }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any additional context…" />
