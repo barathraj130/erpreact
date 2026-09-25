@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { FaHandshake, FaArrowLeft, FaArrowRight, FaPlus, FaTrash, FaExclamationTriangle, FaCheck } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
-import { fetchCustomers, Customer } from "../../api/userApi";
+import { fetchCustomers, fetchCustomerLedger, Customer } from "../../api/userApi";
 import "../PageShared.css";
 
 interface OutstandingInvoice {
@@ -48,6 +48,12 @@ export default function NewSettlement() {
   const [invoices, setInvoices] = useState<OutstandingInvoice[]>([]);
   const [allocations, setAllocations] = useState<Record<number, string>>({});
   const [settleAmount, setSettleAmount] = useState("");
+  // customers[].initial_balance is a stored column that's only as fresh as
+  // the last thing that happened to recompute it — for a customer with no
+  // recent activity it can just be the raw opening balance, understating the
+  // real total by everything billed/paid since. /users/:id/ledger recomputes
+  // it live (the same endpoint the Account Ledger modal uses), so use that.
+  const [liveBalance, setLiveBalance] = useState<number | null>(null);
 
   // Step 2
   const [useCash, setUseCash] = useState(false);
@@ -67,15 +73,19 @@ export default function NewSettlement() {
   }, []);
 
   useEffect(() => {
-    if (!customerId) { setInvoices([]); return; }
+    if (!customerId) { setInvoices([]); setLiveBalance(null); return; }
     apiFetch(`/settlements/customers/${customerId}/outstanding`)
       .then((r) => r.json())
       .then((data) => { setInvoices(Array.isArray(data) ? data : []); setAllocations({}); setSettleAmount(""); })
       .catch(() => setInvoices([]));
+    setLiveBalance(null);
+    fetchCustomerLedger(customerId)
+      .then((ledger) => setLiveBalance(Number(ledger?.summary?.pending_amount) || 0))
+      .catch(() => setLiveBalance(null));
   }, [customerId]);
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
-  const totalOutstanding = Number(selectedCustomer?.initial_balance) || 0;
+  const totalOutstanding = liveBalance ?? (Number(selectedCustomer?.initial_balance) || 0);
   const totalInvoiceBalance = invoices.reduce((s, inv) => s + (isSettleable(inv) ? Number(inv.balance_amount) : 0), 0);
 
   // The customer's total outstanding balance (opening + everything billed and
@@ -240,7 +250,9 @@ export default function NewSettlement() {
               <>
                 <div style={{ ...sectionCard, background: "var(--surface-2)", marginTop: 20 }}>
                   <label style={label}>Total Outstanding Balance</label>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: "#dc2626" }}>{fmt(totalOutstanding)}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#dc2626" }}>
+                    {liveBalance === null ? "Loading…" : fmt(totalOutstanding)}
+                  </div>
                   <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>
                     Opening balance plus everything billed and received since — the customer's full running balance, not just one invoice.
                   </div>
