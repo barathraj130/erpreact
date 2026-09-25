@@ -144,7 +144,12 @@ export default function NewSettlement() {
 
   const canGoStep2 = !!customerId && invoices.length > 0;
   const canGoStep3 = totalValue > 0;
-  const canSubmit = difference === 0 && totalValue > 0;
+  // difference = allocated - value. Negative is fine now — value can exceed
+  // what's tied to invoices, with the excess applied to the customer's
+  // opening-balance component at approval time. Only positive (over-allocated
+  // beyond the settlement's own value) is an error, and shouldn't be
+  // reachable given the auto-allocation effect caps at totalValue.
+  const canSubmit = difference <= 0 && totalValue > 0;
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -425,13 +430,23 @@ export default function NewSettlement() {
                 <span>TOTAL</span><span>{fmt(totalValue)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>Allocated to Invoices</span><span>{fmt(totalAllocated)}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontWeight: 700, color: difference === 0 ? "#16a34a" : "#dc2626" }}>
-                <span>Difference</span><span>{fmt(difference)}</span>
+              {difference < 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}>
+                  <span>Applied to Opening Balance</span><span>{fmt(-difference)}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontWeight: 700, color: difference <= 0 ? "#16a34a" : "#dc2626" }}>
+                <span>{difference <= 0 ? "Fully Applied" : "Over-Allocated"}</span><span>{fmt(Math.abs(difference))}</span>
               </div>
             </div>
-            {difference !== 0 && (
+            {difference > 0 && (
               <div style={{ marginTop: 10, fontSize: 12, color: "#dc2626", display: "flex", alignItems: "center", gap: 6 }}>
-                <FaExclamationTriangle /> Only {fmt(totalInvoiceBalance)} of the {fmt(totalOutstanding)} outstanding balance is tied to actual invoices, so {fmt(totalValue)} can't be fully applied — reduce what's being given, or the excess won't be recorded against any invoice.
+                <FaExclamationTriangle /> More was allocated to invoices than the settlement is worth — this shouldn't happen; go back and check Step 2.
+              </div>
+            )}
+            {difference < 0 && (
+              <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-2)", display: "flex", alignItems: "center", gap: 6 }}>
+                {fmt(totalInvoiceBalance)} of the {fmt(totalOutstanding)} outstanding balance is tied to actual invoices — the remaining {fmt(-difference)} will be applied against the customer's opening balance instead.
               </div>
             )}
 

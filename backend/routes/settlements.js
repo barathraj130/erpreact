@@ -124,6 +124,31 @@ async function applySettlementPayments(client, settlement, companyId, userId) {
         );
     }
 
+    // Whatever the settlement covers beyond what could be tied to a real
+    // invoice comes out of the customer's opening-balance component — the
+    // only other thing recomputeCustomerBalance's formula adds in. Without
+    // this, a settlement bigger than the customer's invoice-linked debt would
+    // clear every invoice but leave the opening-balance portion untouched,
+    // silently failing to reduce it despite the settlement covering it.
+    const totalLinked = links.rows.reduce((s, l) => s + parseFloat(l.amount_allocated || 0), 0);
+    const openingReduction = Math.round((parseFloat(settlement.total_value || 0) - totalLinked) * 100) / 100;
+    if (openingReduction > 0) {
+        const custRes = await client.query(`SELECT initial_balance, meta FROM users WHERE id = $1 AND company_id = $2`, [settlement.customer_id, companyId]);
+        const meta = custRes.rows[0]?.meta || {};
+        if (meta.customer_opening_balance !== undefined && meta.customer_opening_balance !== null) {
+            const newOpening = Math.max(0, parseFloat(meta.customer_opening_balance) - openingReduction);
+            await client.query(
+                `UPDATE users SET meta = $1 WHERE id = $2`,
+                [JSON.stringify({ ...meta, customer_opening_balance: newOpening }), settlement.customer_id]
+            );
+        } else {
+            await client.query(
+                `UPDATE users SET initial_balance = GREATEST(0, COALESCE(initial_balance, 0) - $1) WHERE id = $2`,
+                [openingReduction, settlement.customer_id]
+            );
+        }
+    }
+
     await recomputeCustomerBalance(client, settlement.customer_id, companyId);
 
     if (parseFloat(settlement.cash_amount || 0) > 0) {
@@ -280,7 +305,6 @@ router.post("/", authMiddleware, async (req, res) => {
         } = req.body;
 
         if (!customer_id) return res.status(400).json({ success: false, error: "Customer required" });
-        if (!invoice_links || invoice_links.length === 0) return res.status(400).json({ success: false, error: "Select at least one invoice" });
 
         const customer = await db.pgGet(
             `SELECT id, COALESCE(nickname, username) AS name, initial_balance
@@ -297,11 +321,18 @@ router.post("/", authMiddleware, async (req, res) => {
 
         if (totalValue <= 0) return res.status(400).json({ success: false, error: "Total settlement value must be greater than zero" });
 
+        // A customer's pending balance is often bigger than what's tied to any
+        // real invoice (an opening balance carried forward has no invoice to
+        // attach to) — so the settlement value is allowed to exceed what's
+        // invoice-linked. The excess is applied against that opening-balance
+        // component at approval time (applySettlementPayments). Only reject
+        // when MORE was allocated to invoices than the settlement is actually
+        // worth, which would double-count.
         const totalAllocated = (invoice_links || []).reduce((s, l) => s + parseFloat(l.amount_allocated || 0), 0);
-        if (Math.round(totalAllocated * 100) !== Math.round(totalValue * 100)) {
+        if (Math.round(totalAllocated * 100) > Math.round(totalValue * 100)) {
             return res.status(400).json({
                 success: false,
-                error: `Invoice allocation (₹${totalAllocated.toFixed(2)}) must equal total value (₹${totalValue.toFixed(2)})`,
+                error: `Invoice allocation (₹${totalAllocated.toFixed(2)}) can't exceed the total settlement value (₹${totalValue.toFixed(2)})`,
             });
         }
 
