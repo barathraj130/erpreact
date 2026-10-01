@@ -570,21 +570,30 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
     }
 
     try {
-        // Compute computer balance up to and including the given date (exclude existing CASH_RECONCILIATION for that date to avoid double-count)
-        const INFLOW_SOURCES_SQL = `'OPENING_BALANCE','RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // Compute computer balance up to and including the given date (exclude existing
+        // CASH_RECONCILIATION for that date to avoid double-count). Must use the exact same
+        // branch filter and signed-OPENING_BALANCE handling as GET /cash's opening_balance —
+        // otherwise this can silently disagree with the "Computer Says" figure the admin is
+        // looking at (missing branch filter pulled in other branches' cash; treating
+        // OPENING_BALANCE as always-positive instead of signed mis-stated a back-calculated
+        // negative adjustment).
+        const { filter: branchFilter, branchId: filterBranchId } = getBranchFilter(req);
+        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const balRow = await db.pgGet(
             `SELECT COALESCE(SUM(CASE
+                WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
                 WHEN source IN (${INFLOW_SOURCES_SQL}) THEN ABS(amount)
                 WHEN direction = 'in' THEN amount
                 ELSE -amount
              END), 0) AS balance
              FROM cash_ledger
-             WHERE company_id = $1
-               AND date <= $2
-               AND source != 'CASH_RECONCILIATION'`,
+             WHERE company_id = $1 AND ${branchFilter}
+               AND source != 'CASH_RECONCILIATION'
+               AND (source = 'OPENING_BALANCE' OR date <= $2)`,
             [companyId, date]
         );
         const computerBalance = Number(balRow?.balance || 0);
+        const branchIdForInsert = typeof filterBranchId === 'number' ? filterBranchId : branchId;
         const variance = actualCash - computerBalance;   // positive = excess, negative = shortage
 
         if (variance === 0) {
@@ -603,7 +612,7 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
         await db.pgRun(
             `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
              VALUES ($1, $2, 'CASH_RECONCILIATION', $3, $4, $5)`,
-            [companyId, branchId, amount, direction, date]
+            [companyId, branchIdForInsert, amount, direction, date]
         );
 
         res.json({
