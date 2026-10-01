@@ -584,7 +584,7 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
         // OPENING_BALANCE as always-positive instead of signed mis-stated a back-calculated
         // negative adjustment).
         const { filter: branchFilter, branchId: filterBranchId } = getBranchFilter(req);
-        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const INFLOW_SOURCES_SQL = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         const balRow = await db.pgGet(
             `SELECT COALESCE(SUM(CASE
                 WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
