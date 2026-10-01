@@ -354,6 +354,22 @@ export default function SettlementDetail() {
         </div>
       )}
 
+      {s.status === "approved" && isAdmin && (
+        <div style={{ marginTop: 24 }}>
+          <button
+            className="page-btn-round-danger"
+            disabled={busy}
+            onClick={() => runAction(
+              `/settlements/${id}/void`,
+              undefined,
+              `Void this settlement? This fully reverses it — every linked invoice goes back to its pre-settlement paid amount, the opening-balance adjustment is undone, and the customer's outstanding balance is restored. This cannot be undone except by recreating the settlement.`
+            )}
+          >
+            Void Settlement (Undo)
+          </button>
+        </div>
+      )}
+
       {s.status === "rejected" && s.rejection_reason && (
         <div style={{ marginTop: 20, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "12px 14px", color: "#dc2626", fontSize: 13, display: "flex", gap: 8 }}>
           <FaExclamationTriangle style={{ flexShrink: 0, marginTop: 2 }} /> Rejected: {s.rejection_reason}

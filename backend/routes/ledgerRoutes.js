@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import * as supplierLedgerService from '../services/supplierLedgerService.js';
+import { buildCustomerLedgerStatement } from '../services/customerLedgerService.js';
 import { generateLedgerPdf } from '../utils/generateLedgerPDF.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -895,10 +896,43 @@ router.get('/party/:type/:id', authMiddleware, async (req, res) => {
     const companyId = parseInt(req.user?.active_company_id || req.user?.company_id);
     
     try {
+        // Customers have a real, authoritative ledger built directly from their
+        // invoices/payments/returns (buildCustomerLedgerStatement — same source
+        // GET /users/:id/ledger and the Account Ledger modal use). The generic
+        // chart-of-accounts lookup below only works if a matching COA row and
+        // ledger_entries exist, which most customers never get (double-entry
+        // postings are best-effort and routinely skipped) — it was showing
+        // "No transactions found" / all-zero for real, active accounts.
+        if (type === 'customer') {
+            const statement = await buildCustomerLedgerStatement(companyId, Number(id), req.query);
+            if (!statement) return res.status(404).json({ error: "Party not found" });
+            return res.json({
+                party_name: statement.customer.name,
+                account_name: statement.customer.name,
+                summary: {
+                    opening_balance: statement.summary.opening_balance,
+                    total_debit: statement.summary.total_billed,
+                    total_credit: statement.summary.total_paid + statement.summary.total_returns,
+                    balance: statement.summary.pending_amount,
+                },
+                transactions: statement.transactions.map((t) => ({
+                    id: t.id,
+                    entry_date: t.date,
+                    tx_desc: t.description,
+                    reference_type: t.type,
+                    reference_id: t.related_invoice_id,
+                    debit: t.debit,
+                    credit: t.credit,
+                    running_balance: t.running_balance,
+                    payment_method: t.payment_method,
+                })),
+            });
+        }
+
         // 1. Find the Account ID for this party
         // This is a simplified mapping. In a real system, you'd have a column in users/suppliers table for account_id.
         // For now, we'll search by name or a specific naming convention.
-        
+
         let partyName = "";
         if (type === 'supplier') {
             const s = await db.pgGet("SELECT name FROM suppliers WHERE id = $1 AND company_id = $2", [id, companyId]);

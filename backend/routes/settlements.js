@@ -696,6 +696,100 @@ router.post("/:id/reject", authMiddleware, async (req, res) => {
     }
 });
 
+// POST /api/settlements/:id/void
+// Fully reverses an already-approved (applied) settlement — the exact inverse of
+// applySettlementPayments(): un-marks every linked invoice's payment, deletes the
+// SETTLEMENT invoice_payments rows, restores the opening-balance component, deletes
+// any settlement-cash ledger entry, and recomputes the live customer balance.
+// Only for genuinely undoing a mistaken settlement — not a normal business action.
+router.post("/:id/void", authMiddleware, async (req, res) => {
+    let client;
+    try {
+        if (!isAdmin(req)) return res.status(403).json({ success: false, error: "Admin only" });
+        const companyId = req.user.active_company_id;
+
+        client = await db.getClient();
+        await client.query("BEGIN");
+
+        const sRes = await client.query(`SELECT * FROM debt_settlements WHERE id = $1 AND company_id = $2`, [req.params.id, companyId]);
+        const s = sRes.rows[0];
+        if (!s) throw new Error("Settlement not found");
+        if (s.status !== "approved") throw new Error(`Only an approved settlement can be voided (status is ${s.status})`);
+
+        const links = await client.query(`SELECT * FROM settlement_invoice_links WHERE settlement_id = $1`, [s.id]);
+
+        for (const link of links.rows) {
+            const invRes = await client.query(`SELECT paid_amount, total_amount FROM invoices WHERE id = $1 AND company_id = $2`, [link.invoice_id, companyId]);
+            const inv = invRes.rows[0];
+            if (!inv) continue;
+
+            const restoredPaid = Math.max(0, parseFloat(inv.paid_amount || 0) - parseFloat(link.amount_allocated || 0));
+            const total = parseFloat(inv.total_amount || 0);
+            const newStatus = restoredPaid >= total ? "PAID" : restoredPaid > 0 ? "PARTIAL" : "PENDING";
+
+            await client.query(
+                `UPDATE invoices SET paid_amount = $1, status = $2, updated_at = NOW() WHERE id = $3`,
+                [restoredPaid, newStatus, link.invoice_id]
+            );
+
+            await client.query(
+                `DELETE FROM invoice_payments WHERE invoice_id = $1 AND payment_method = 'SETTLEMENT' AND notes = $2`,
+                [link.invoice_id, `Debt settlement ${s.settlement_number}`]
+            );
+        }
+
+        // Reverse the opening-balance reduction applied at approval time (exact inverse)
+        const totalLinked = links.rows.reduce((sum, l) => sum + parseFloat(l.amount_allocated || 0), 0);
+        const openingReduction = Math.round((parseFloat(s.total_value || 0) - totalLinked) * 100) / 100;
+        if (openingReduction > 0) {
+            const custRes = await client.query(`SELECT initial_balance, meta FROM users WHERE id = $1 AND company_id = $2`, [s.customer_id, companyId]);
+            const meta = custRes.rows[0]?.meta || {};
+            if (meta.customer_opening_balance !== undefined && meta.customer_opening_balance !== null) {
+                const restoredOpening = parseFloat(meta.customer_opening_balance) + openingReduction;
+                await client.query(
+                    `UPDATE users SET meta = $1 WHERE id = $2`,
+                    [JSON.stringify({ ...meta, customer_opening_balance: restoredOpening }), s.customer_id]
+                );
+            } else {
+                await client.query(
+                    `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) + $1 WHERE id = $2`,
+                    [openingReduction, s.customer_id]
+                );
+            }
+        }
+
+        if (parseFloat(s.cash_amount || 0) > 0) {
+            await client.query(
+                `DELETE FROM cash_ledger WHERE company_id = $1 AND source = 'SETTLEMENT_CASH' AND notes = $2`,
+                [companyId, `Cash from settlement ${s.settlement_number}`]
+            );
+        }
+
+        await recomputeCustomerBalance(client, s.customer_id, companyId);
+
+        await client.query(
+            `UPDATE debt_settlements SET status = 'voided', updated_at = NOW() WHERE id = $1`,
+            [s.id]
+        );
+
+        const doneByName = await getUserName(client, req.user.id);
+        await client.query(
+            `INSERT INTO settlement_history (settlement_id, action, done_by, done_by_name, notes)
+             VALUES ($1,'voided',$2,$3,'Settlement voided — all applied payments and balance changes reversed')`,
+            [s.id, req.user.id, doneByName]
+        );
+
+        await client.query("COMMIT");
+        res.json({ success: true, message: "Settlement voided — customer balance restored" });
+    } catch (e) {
+        if (client) await client.query("ROLLBACK");
+        console.error("Void settlement error:", e.message);
+        res.status(500).json({ success: false, error: e.message });
+    } finally {
+        if (client) client.release();
+    }
+});
+
 // POST /api/settlements/:id/record-guideline-transfer
 // Records a payment made TO the customer (e.g. govt guideline value on a land settlement)
 // BEFORE the land settlement's legal transfer is confirmed. Must happen first so the
