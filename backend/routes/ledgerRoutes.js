@@ -341,6 +341,27 @@ const syncCashLedger = async (companyId) => {
           )
     `, [companyId]).catch(()=>{});
 
+    // A RECEIPT transaction's meta.payment_method tells us how it was actually
+    // collected. Only a CASH (or unset, defaulting to CASH) receipt belongs in
+    // cash_ledger — a BANK/UPI/CHEQUE/etc. receipt is already posted to
+    // bank_ledger separately (see paymentRoutes.js) and must NOT also land here,
+    // or the same payment double-counts across both ledgers.
+    const NON_CASH_METHODS = `'BANK','UPI','CHEQUE','NEFT','RTGS','IMPS','CREDIT','PROPRIETOR_AC'`;
+
+    // One-time cleanup: remove any RECEIPT rows previously mis-synced into
+    // cash_ledger for a payment that was actually collected via a non-cash method.
+    await db.pgRun(`
+        DELETE FROM cash_ledger
+        WHERE company_id = $1
+          AND source = 'RECEIPT'
+          AND reference_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM transactions t
+            WHERE t.id = cash_ledger.reference_id
+              AND UPPER(COALESCE(t.meta->>'payment_method', 'CASH')) IN (${NON_CASH_METHODS})
+          )
+    `, [companyId]).catch(()=>{});
+
     await db.pgRun(`
         INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_id)
         SELECT t.company_id, COALESCE(t.branch_id, 1), t.type, t.amount, 'in',
@@ -350,7 +371,7 @@ const syncCashLedger = async (companyId) => {
           AND t.type = 'RECEIPT'
           AND t.amount > 0
           AND COALESCE(t.bill_purpose, 'real') != 'excluded'
-          AND COALESCE(t.meta->>'payment_method', '') != 'PROPRIETOR_AC'
+          AND UPPER(COALESCE(t.meta->>'payment_method', 'CASH')) NOT IN (${NON_CASH_METHODS})
           AND NOT EXISTS (SELECT 1 FROM cash_ledger cl WHERE cl.reference_id = t.id AND cl.company_id = $1)
     `, [companyId]).catch(()=>{});
 
