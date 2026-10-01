@@ -255,34 +255,27 @@ async function applySettlementPayments(client, settlement, companyId, userId) {
         );
     }
 
-    // Whatever the settlement covers beyond what could be tied to a real
-    // invoice comes out of the customer's opening-balance component — the
-    // only other thing recomputeCustomerBalance's formula adds in. Without
-    // this, a settlement bigger than the customer's invoice-linked debt would
-    // clear every invoice but leave the opening-balance portion untouched,
-    // silently failing to reduce it despite the settlement covering it.
+    // Whatever the settlement covers beyond what could be tied to a real invoice
+    // still has to reduce what the customer owes — but the opening balance is a
+    // fixed historical figure (set once, e.g. when the customer was onboarded)
+    // and must never be silently rewritten by a settlement. Record the excess as
+    // a direct customer payment instead: the same bucket recomputeCustomerBalance
+    // already treats as reducing outstanding, except it shows up as its own
+    // visible ledger line instead of invisibly mutating the opening balance.
     const totalLinked = links.rows.reduce((s, l) => s + parseFloat(l.amount_allocated || 0), 0);
-    const openingReduction = Math.round((parseFloat(settlement.total_value || 0) - totalLinked) * 100) / 100;
-    if (openingReduction > 0) {
-        const custRes = await client.query(`SELECT initial_balance, meta FROM users WHERE id = $1 AND company_id = $2`, [settlement.customer_id, companyId]);
-        const meta = custRes.rows[0]?.meta || {};
-        // Not floored at 0 — a settlement can legitimately exceed what the
-        // customer actually owed (an overpayment), and this app already treats
-        // a negative pending_amount as a real, displayed "Advance Balance"
-        // (TransactionHistoryModal). Flooring here would silently discard the
-        // overpaid portion instead of crediting it.
-        if (meta.customer_opening_balance !== undefined && meta.customer_opening_balance !== null) {
-            const newOpening = parseFloat(meta.customer_opening_balance) - openingReduction;
-            await client.query(
-                `UPDATE users SET meta = $1 WHERE id = $2`,
-                [JSON.stringify({ ...meta, customer_opening_balance: newOpening }), settlement.customer_id]
-            );
-        } else {
-            await client.query(
-                `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) - $1 WHERE id = $2`,
-                [openingReduction, settlement.customer_id]
-            );
-        }
+    const excessBeyondInvoices = Math.round((parseFloat(settlement.total_value || 0) - totalLinked) * 100) / 100;
+    // Not floored at 0 — a settlement can legitimately exceed what the customer
+    // actually owed (an overpayment), and this app already treats a negative
+    // pending_amount as a real, displayed "Advance Balance" (TransactionHistoryModal).
+    if (excessBeyondInvoices > 0) {
+        await createCustomerLedgerEvent(client, {
+            companyId, branchId: settlement.branch_id || 1, customerId: settlement.customer_id,
+            type: "CUSTOMER_PAYMENT", category: "PAYMENT", amount: excessBeyondInvoices,
+            date: new Date().toISOString().split("T")[0],
+            description: `Debt settlement ${settlement.settlement_number} — balance beyond invoices`,
+            referenceType: "SETTLEMENT", referenceId: settlement.customer_id,
+            createdBy: userId,
+        });
     }
 
     await recomputeCustomerBalance(client, settlement.customer_id, companyId);
@@ -738,23 +731,35 @@ router.post("/:id/void", authMiddleware, async (req, res) => {
             );
         }
 
-        // Reverse the opening-balance reduction applied at approval time (exact inverse)
+        // Reverse whatever the excess-beyond-invoices portion did — settlements applied
+        // after this fix record it as a CUSTOMER_PAYMENT transaction (delete it); older
+        // settlements applied before the fix instead mutated the opening-balance
+        // component directly, so fall back to restoring that for those.
         const totalLinked = links.rows.reduce((sum, l) => sum + parseFloat(l.amount_allocated || 0), 0);
-        const openingReduction = Math.round((parseFloat(s.total_value || 0) - totalLinked) * 100) / 100;
-        if (openingReduction > 0) {
-            const custRes = await client.query(`SELECT initial_balance, meta FROM users WHERE id = $1 AND company_id = $2`, [s.customer_id, companyId]);
-            const meta = custRes.rows[0]?.meta || {};
-            if (meta.customer_opening_balance !== undefined && meta.customer_opening_balance !== null) {
-                const restoredOpening = parseFloat(meta.customer_opening_balance) + openingReduction;
-                await client.query(
-                    `UPDATE users SET meta = $1 WHERE id = $2`,
-                    [JSON.stringify({ ...meta, customer_opening_balance: restoredOpening }), s.customer_id]
-                );
-            } else {
-                await client.query(
-                    `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) + $1 WHERE id = $2`,
-                    [openingReduction, s.customer_id]
-                );
+        const excessBeyondInvoices = Math.round((parseFloat(s.total_value || 0) - totalLinked) * 100) / 100;
+        if (excessBeyondInvoices > 0) {
+            const excessTxRes = await client.query(
+                `DELETE FROM transactions
+                 WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'
+                   AND description = $3
+                 RETURNING id`,
+                [companyId, s.customer_id, `Debt settlement ${s.settlement_number} — balance beyond invoices`]
+            );
+            if (excessTxRes.rowCount === 0) {
+                const custRes = await client.query(`SELECT initial_balance, meta FROM users WHERE id = $1 AND company_id = $2`, [s.customer_id, companyId]);
+                const meta = custRes.rows[0]?.meta || {};
+                if (meta.customer_opening_balance !== undefined && meta.customer_opening_balance !== null) {
+                    const restoredOpening = parseFloat(meta.customer_opening_balance) + excessBeyondInvoices;
+                    await client.query(
+                        `UPDATE users SET meta = $1 WHERE id = $2`,
+                        [JSON.stringify({ ...meta, customer_opening_balance: restoredOpening }), s.customer_id]
+                    );
+                } else {
+                    await client.query(
+                        `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) + $1 WHERE id = $2`,
+                        [excessBeyondInvoices, s.customer_id]
+                    );
+                }
             }
         }
 
