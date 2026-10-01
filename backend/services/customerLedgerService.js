@@ -149,10 +149,22 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
     idx += 1;
   }
 
+  // Settlement-sourced invoice payments are excluded here — they're shown as one
+  // consolidated row per settlement (see the debt_settlements branch below)
+  // instead of one row per invoice it happened to touch.
+  paymentConditions.push(`UPPER(COALESCE(p.payment_method, '')) != 'SETTLEMENT'`);
+
   // Direct customer payments recorded via Transactions page
-  const txConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'CUSTOMER_PAYMENT'"];
+  const txConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'CUSTOMER_PAYMENT'", "COALESCE(t.reference_type, '') != 'SETTLEMENT'"];
   if (filters.start_date) txConditions.push(`t.transaction_date >= $3`);
   if (filters.end_date)   txConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
+
+  // Settlements: shown as one row per approved settlement — the excess-beyond-invoices
+  // CUSTOMER_PAYMENT transaction above is excluded from display (reference_type =
+  // 'SETTLEMENT') since this row already represents the settlement's full total_value.
+  const settlementConditions = ["ds.company_id = $1", "ds.customer_id = $2", "ds.status = 'approved'"];
+  if (filters.start_date) settlementConditions.push(`ds.settlement_date >= $3`);
+  if (filters.end_date)   settlementConditions.push(`ds.settlement_date <= $${filters.start_date ? 4 : 3}`);
 
   // Payments made TO the customer, recorded via Transactions page (general purpose —
   // refunds, advances, goodwill payments — not tied to a settlement)
@@ -324,6 +336,39 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          AND COALESCE(i.is_deleted, false) = false
          AND COALESCE(i.discount_amount, 0) > 0
          AND UPPER(COALESCE(i.invoice_type, '')) <> 'SALES_RETURN'
+
+       UNION ALL
+
+       SELECT
+         5000000000 + ds.id AS id,
+         ds.settlement_date AS date,
+         'SETTLEMENT' AS type,
+         'PAYMENT' AS category,
+         ds.total_value AS amount,
+         'Debt Settlement ' || ds.settlement_number || ' — ' || COALESCE(
+           (SELECT string_agg(item, ', ') FROM (
+             SELECT sa.asset_name || ' (' || sa.asset_type || ') ₹' || to_char(sa.agreed_value, 'FM999,999,999') AS item
+             FROM settlement_assets_items sa WHERE sa.settlement_id = ds.id
+             UNION ALL
+             SELECT sg.description || ' ₹' || to_char(sg.total_value, 'FM999,999,999')
+             FROM settlement_goods_items sg WHERE sg.settlement_id = ds.id
+             UNION ALL
+             SELECT 'Cheque #' || sc.cheque_number || ' ₹' || to_char(sc.amount, 'FM999,999,999')
+             FROM settlement_cheque_items sc WHERE sc.settlement_id = ds.id
+             UNION ALL
+             SELECT 'Cash ₹' || to_char(ds.cash_amount, 'FM999,999,999') WHERE ds.cash_amount > 0
+           ) items),
+           '₹' || to_char(ds.total_value, 'FM999,999,999')
+         ) AS description,
+         NULL::INTEGER AS related_invoice_id,
+         NULL::TEXT AS invoice_number,
+         'SETTLEMENT' AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         COALESCE(ds.approved_at, ds.created_at) AS sort_created_at
+       FROM debt_settlements ds
+       WHERE ${settlementConditions.join(" AND ")}
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
