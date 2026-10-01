@@ -570,6 +570,12 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
     }
 
     try {
+        // Run the SAME self-heal/sync pass GET /cash runs on every load, so this computes
+        // against the exact table state the admin is actually looking at on screen —
+        // otherwise unsynced rows (auto-linked receipts, direction fixes, purged duplicates)
+        // leave this reading a stale view that silently disagrees with "Computer Says".
+        await syncCashLedger(companyId);
+
         // Compute computer balance up to and including the given date (exclude existing
         // CASH_RECONCILIATION for that date to avoid double-count). Must use the exact same
         // branch filter and signed-OPENING_BALANCE handling as GET /cash's opening_balance —
