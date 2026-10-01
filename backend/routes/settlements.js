@@ -11,6 +11,137 @@ import { createTransactionInternal, getAccountByCode } from "../utils/accounting
 
 const router = express.Router();
 
+// Self-healing schema guard: schemaUpdates.js is supposed to create these six
+// tables at server boot, but every statement there is wrapped in a
+// console.warn-only catch — if one silently failed to land in production
+// (confirmed: settlement_assets_items didn't exist), there's no trace of it
+// anywhere until a request actually needs the table. Ensure they all exist
+// right before use, mirroring the exact definitions in schemaUpdates.js.
+// Idempotent (IF NOT EXISTS) and cheap enough to call on every write route.
+let settlementTablesEnsured = false;
+async function ensureSettlementTables() {
+    if (settlementTablesEnsured) return;
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS debt_settlements (
+            id                  SERIAL PRIMARY KEY,
+            company_id          INTEGER NOT NULL REFERENCES companies(id),
+            branch_id           INTEGER REFERENCES branches(id),
+            settlement_number   VARCHAR(30) UNIQUE NOT NULL,
+            customer_id         INTEGER REFERENCES users(id),
+            settlement_date     DATE NOT NULL DEFAULT CURRENT_DATE,
+            settlement_type     VARCHAR(20) NOT NULL
+                                CHECK (settlement_type IN ('goods','asset','cheque','mixed','cash_partial')),
+            total_value         NUMERIC(12,2) NOT NULL DEFAULT 0,
+            outstanding_before  NUMERIC(12,2) DEFAULT 0,
+            outstanding_after   NUMERIC(12,2) DEFAULT 0,
+            cash_amount         NUMERIC(12,2) DEFAULT 0,
+            goods_amount        NUMERIC(12,2) DEFAULT 0,
+            asset_amount        NUMERIC(12,2) DEFAULT 0,
+            cheque_amount       NUMERIC(12,2) DEFAULT 0,
+            status              VARCHAR(20) DEFAULT 'pending'
+                                CHECK (status IN ('pending','approved','rejected','voided')),
+            is_conditional      BOOLEAN DEFAULT false,
+            legal_transfer_done BOOLEAN DEFAULT false,
+            notes               TEXT,
+            rejection_reason    TEXT,
+            recorded_by         INTEGER REFERENCES users(id),
+            approved_by         INTEGER REFERENCES users(id),
+            approved_at         TIMESTAMP,
+            created_at          TIMESTAMP DEFAULT NOW(),
+            updated_at          TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(e => console.warn("[settlements] debt_settlements guard:", e.message));
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_company ON debt_settlements(company_id, status)`).catch(e => console.warn("[settlements]", e.message));
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_debt_settlements_customer ON debt_settlements(customer_id)`).catch(e => console.warn("[settlements]", e.message));
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS settlement_invoice_links (
+            id               SERIAL PRIMARY KEY,
+            settlement_id    INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+            invoice_id       INTEGER REFERENCES invoices(id),
+            invoice_number   VARCHAR(50),
+            amount_allocated NUMERIC(12,2) NOT NULL,
+            created_at       TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(e => console.warn("[settlements] settlement_invoice_links guard:", e.message));
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS settlement_goods_items (
+            id             SERIAL PRIMARY KEY,
+            settlement_id  INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+            description    VARCHAR(200) NOT NULL,
+            quantity       INTEGER DEFAULT 1,
+            unit           VARCHAR(20) DEFAULT 'pcs',
+            condition      VARCHAR(20) DEFAULT 'good'
+                           CHECK (condition IN ('new','good','fair','poor')),
+            rate           NUMERIC(10,2) DEFAULT 0,
+            total_value    NUMERIC(12,2) DEFAULT 0,
+            stock_type     VARCHAR(20) DEFAULT 'fresh'
+                           CHECK (stock_type IN ('fresh','mistake')),
+            added_to_stock BOOLEAN DEFAULT false,
+            notes          TEXT,
+            created_at     TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(e => console.warn("[settlements] settlement_goods_items guard:", e.message));
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS settlement_assets_items (
+            id                     SERIAL PRIMARY KEY,
+            settlement_id          INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+            asset_name             VARCHAR(200) NOT NULL,
+            asset_type             VARCHAR(50) NOT NULL,
+            condition              VARCHAR(20) DEFAULT 'good',
+            weight_grams           NUMERIC(10,3),
+            purity_percent         NUMERIC(5,2),
+            rate_per_gram          NUMERIC(10,2),
+            customer_claimed_value NUMERIC(12,2),
+            agreed_value           NUMERIC(12,2) NOT NULL,
+            serial_number          VARCHAR(100),
+            document_number        VARCHAR(100),
+            needs_legal_transfer   BOOLEAN DEFAULT false,
+            transfer_done          BOOLEAN DEFAULT false,
+            transfer_done_date     DATE,
+            disposal_status        VARCHAR(20) DEFAULT 'held'
+                                   CHECK (disposal_status IN ('held','sold','returned','written_off')),
+            disposal_value         NUMERIC(12,2),
+            notes                  TEXT,
+            created_at             TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(e => console.warn("[settlements] settlement_assets_items guard:", e.message));
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS settlement_cheque_items (
+            id             SERIAL PRIMARY KEY,
+            settlement_id  INTEGER REFERENCES debt_settlements(id) ON DELETE CASCADE,
+            bank_name      VARCHAR(100) NOT NULL,
+            account_holder VARCHAR(200),
+            cheque_number  VARCHAR(50) NOT NULL,
+            cheque_date    DATE NOT NULL,
+            amount         NUMERIC(12,2) NOT NULL,
+            status         VARCHAR(20) DEFAULT 'pending'
+                           CHECK (status IN ('pending','cleared','bounced','cancelled')),
+            cleared_date   DATE,
+            bounce_reason  TEXT,
+            bank_charges   NUMERIC(10,2) DEFAULT 0,
+            created_at     TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(e => console.warn("[settlements] settlement_cheque_items guard:", e.message));
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS settlement_history (
+            id            SERIAL PRIMARY KEY,
+            settlement_id INTEGER REFERENCES debt_settlements(id),
+            action        VARCHAR(50) NOT NULL,
+            done_by       INTEGER REFERENCES users(id),
+            done_by_name  VARCHAR(200),
+            notes         TEXT,
+            created_at    TIMESTAMP DEFAULT NOW()
+        )
+    `).catch(e => console.warn("[settlements] settlement_history guard:", e.message));
+
+    settlementTablesEnsured = true;
+}
+
 // Posts a customer-payment double-entry: Debit Cash/Bank, Credit Accounts
 // Receivable (1100) — the same pair invoiceRoutes.js posts for a normal
 // invoice payment. Best-effort: a chart-of-accounts hiccup must never block
@@ -135,15 +266,20 @@ async function applySettlementPayments(client, settlement, companyId, userId) {
     if (openingReduction > 0) {
         const custRes = await client.query(`SELECT initial_balance, meta FROM users WHERE id = $1 AND company_id = $2`, [settlement.customer_id, companyId]);
         const meta = custRes.rows[0]?.meta || {};
+        // Not floored at 0 — a settlement can legitimately exceed what the
+        // customer actually owed (an overpayment), and this app already treats
+        // a negative pending_amount as a real, displayed "Advance Balance"
+        // (TransactionHistoryModal). Flooring here would silently discard the
+        // overpaid portion instead of crediting it.
         if (meta.customer_opening_balance !== undefined && meta.customer_opening_balance !== null) {
-            const newOpening = Math.max(0, parseFloat(meta.customer_opening_balance) - openingReduction);
+            const newOpening = parseFloat(meta.customer_opening_balance) - openingReduction;
             await client.query(
                 `UPDATE users SET meta = $1 WHERE id = $2`,
                 [JSON.stringify({ ...meta, customer_opening_balance: newOpening }), settlement.customer_id]
             );
         } else {
             await client.query(
-                `UPDATE users SET initial_balance = GREATEST(0, COALESCE(initial_balance, 0) - $1) WHERE id = $2`,
+                `UPDATE users SET initial_balance = COALESCE(initial_balance, 0) - $1 WHERE id = $2`,
                 [openingReduction, settlement.customer_id]
             );
         }
@@ -257,6 +393,7 @@ router.get("/summary", authMiddleware, async (req, res) => {
 router.get("/:id", authMiddleware, async (req, res) => {
     try {
         await ensureGuidelineTransferColumns();
+        await ensureSettlementTables();
         const companyId = req.user.active_company_id;
         const settlement = await db.pgGet(
             `SELECT ds.*,
@@ -298,6 +435,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 router.post("/", authMiddleware, async (req, res) => {
     let client;
     try {
+        await ensureSettlementTables();
         const companyId = req.user.active_company_id;
         const {
             customer_id, settlement_date, settlement_type, notes,
@@ -450,6 +588,7 @@ router.post("/", authMiddleware, async (req, res) => {
 router.post("/:id/approve", authMiddleware, async (req, res) => {
     let client;
     try {
+        await ensureSettlementTables();
         if (!isAdmin(req)) return res.status(403).json({ success: false, error: "Admin only" });
         const companyId = req.user.active_company_id;
 
