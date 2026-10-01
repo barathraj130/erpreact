@@ -5,7 +5,7 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
-import { recomputeCustomerBalance, createCustomerLedgerEvent } from "../services/customerLedgerService.js";
+import { recomputeCustomerBalance, createCustomerLedgerEvent, buildCustomerLedgerStatement } from "../services/customerLedgerService.js";
 import { sendWhatsApp } from "../utils/whatsapp.js";
 import { createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 
@@ -495,7 +495,13 @@ router.post("/", authMiddleware, async (req, res) => {
         const countRes = await client.query(`SELECT COUNT(*) FROM debt_settlements WHERE company_id = $1`, [companyId]);
         const num = `STL/${new Date().getFullYear()}/${String(parseInt(countRes.rows[0].count) + 1).padStart(4, "0")}`;
 
-        const outstandingBefore = parseFloat(customer.initial_balance || 0);
+        // customer.initial_balance is a cache that only reflects reality right after
+        // recomputeCustomerBalance() last ran — it can lag behind real payments/invoices
+        // recorded since (same staleness the ledger modal and NewSettlement.tsx wizard
+        // already avoid). Use the live-computed pending amount instead, so the stored
+        // "before" snapshot matches what the customer's ledger actually shows right now.
+        const ledgerStatement = await buildCustomerLedgerStatement(companyId, customer_id);
+        const outstandingBefore = parseFloat(ledgerStatement?.summary?.pending_amount ?? customer.initial_balance ?? 0);
 
         const settlRes = await client.query(
             `INSERT INTO debt_settlements (
