@@ -34,6 +34,14 @@ const fmtDate = (d: string) => {
 const fmtMoney = (n: number) => `Rs. ${n.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
 export async function printPurchaseBill(bill: BillForPrint, items: PrintItem[], expenses: PrintExpense[]) {
+  // Open synchronously, before any await — once window.open() happens after an
+  // awaited fetch it falls outside the click's user-activation window and
+  // Chrome silently blocks it (no error, nothing visibly happens).
+  const printWindow = window.open("", "_blank", "width=794,height=1123");
+  if (printWindow) {
+    printWindow.document.write("<p style=\"font-family:sans-serif;padding:24px;color:#64748b;\">Preparing bill…</p>");
+  }
+
   let companyName = "Company Name";
   let addressLine = "";
   try {
@@ -193,8 +201,8 @@ export async function printPurchaseBill(bill: BillForPrint, items: PrintItem[], 
 </body>
 </html>`;
 
-  const printWindow = window.open("", "_blank", "width=794,height=1123");
   if (!printWindow) return;
+  printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
   setTimeout(() => printWindow.print(), 500);

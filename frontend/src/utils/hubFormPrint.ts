@@ -64,6 +64,14 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export async function printFilledHubForm(form: FilledForm) {
+  // Open synchronously, before any await — once window.open() happens after an
+  // awaited fetch it falls outside the click's user-activation window and
+  // Chrome silently blocks it (no error, nothing visibly happens).
+  const printWindow = window.open("", "_blank", "width=794,height=1123");
+  if (printWindow) {
+    printWindow.document.write("<p style=\"font-family:sans-serif;padding:24px;color:#64748b;\">Preparing form…</p>");
+  }
+
   let companyName = "Company Name";
   let addressLine = "";
   try {
@@ -193,8 +201,8 @@ export async function printFilledHubForm(form: FilledForm) {
 </body>
 </html>`;
 
-  const printWindow = window.open("", "_blank", "width=794,height=1123");
   if (!printWindow) return;
+  printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
   setTimeout(() => printWindow.print(), 500);

@@ -42,6 +42,17 @@ const fmtDate = (d: string) => {
 };
 
 export async function printDeliveryChallan(order: DOForPrint) {
+  // Open the window synchronously, before any await — Chrome only allows
+  // window.open() to bypass the popup blocker while it's still tied to the
+  // click's user-activation window. Opening it after an awaited fetchProfile()
+  // call below used to get silently blocked (printWindow === null, no error),
+  // so the whole challan just never appeared even though the vehicle-number
+  // prompt worked fine.
+  const printWindow = window.open("", "_blank", "width=794,height=1123");
+  if (printWindow) {
+    printWindow.document.write("<p style=\"font-family:sans-serif;padding:24px;color:#64748b;\">Preparing challan…</p>");
+  }
+
   // Not every delivery needs a vehicle recorded (e.g. hand delivery, courier)
   // — asking each time and letting it be left blank keeps the challan
   // useful for both cases without a separate settings toggle.
@@ -177,8 +188,8 @@ export async function printDeliveryChallan(order: DOForPrint) {
 </body>
 </html>`;
 
-  const printWindow = window.open("", "_blank", "width=794,height=1123");
   if (!printWindow) return;
+  printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
   setTimeout(() => printWindow.print(), 500);
