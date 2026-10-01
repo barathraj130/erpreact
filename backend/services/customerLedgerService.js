@@ -212,7 +212,10 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
          'RECEIPT' AS type,
          'PAYMENT' AS category,
          p.amount AS amount,
-         'Payment for Invoice #' || i.invoice_number AS description,
+         'Payment for Invoice #' || i.invoice_number ||
+           CASE WHEN UPPER(COALESCE(p.payment_method, '')) = 'SETTLEMENT' AND p.notes IS NOT NULL
+                THEN ' — ' || p.notes
+                ELSE '' END AS description,
          i.id AS related_invoice_id,
          i.invoice_number,
          UPPER(COALESCE(p.payment_method, '')) AS payment_method,

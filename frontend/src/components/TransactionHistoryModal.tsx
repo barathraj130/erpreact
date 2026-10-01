@@ -592,6 +592,7 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                                   color: row.type === 'ROUND_OFF' ? '#c2410c' : (row.type === 'BILL' || row.type === 'INVOICE') ? '#2563eb' : '#16a34a'
                                 }}>{row.type === 'ROUND_OFF' ? 'ROUND OFF' : row.type}</span>
                                 {row.category === 'ROUND_OFF' ? 'Discount/Write-off' : row.category}
+                                {row.payment_method && <span style={{ marginLeft: 6 }}>via {row.payment_method}</span>}
                               </div>
                             </td>
                             <td>{row.invoice_number || row.reference_number || "—"}</td>
