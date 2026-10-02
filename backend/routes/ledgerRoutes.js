@@ -602,22 +602,8 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
         const branchIdForInsert = typeof filterBranchId === 'number' ? filterBranchId : branchId;
         const variance = actualCash - computerBalance;   // positive = excess, negative = shortage
 
-        // TEMPORARY DIAGNOSTIC — remove once the reconciliation-vs-"Computer Says"
-        // mismatch is confirmed fixed. Shows exactly which rows this query summed.
-        const debugRows = await db.pgAll(
-            `SELECT id, source, amount, direction, date, branch_id
-             FROM cash_ledger
-             WHERE company_id = $1 AND ${branchFilter}
-               AND source != 'CASH_RECONCILIATION'
-               AND (source = 'OPENING_BALANCE' OR date <= $2)
-             ORDER BY date, id`,
-            [companyId, date]
-        );
-        console.log(`[cash-reconciliation DEBUG] branchFilter="${branchFilter}" date=${date} computerBalance=${computerBalance} rowCount=${debugRows.length}`);
-        debugRows.forEach(r => console.log(`  row#${r.id} source=${r.source} amount=${r.amount} direction=${r.direction} date=${r.date} branch_id=${r.branch_id}`));
-
         if (variance === 0) {
-            return res.json({ success: true, message: 'Balances match — no adjustment needed', computer_balance: computerBalance, actual_cash: actualCash, variance: 0, debug_rows: debugRows });
+            return res.json({ success: true, message: 'Balances match — no adjustment needed', computer_balance: computerBalance, actual_cash: actualCash, variance: 0 });
         }
 
         // Delete any existing reconciliation for the same date (re-reconcile is idempotent)
@@ -637,12 +623,10 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
 
         res.json({
             success: true,
-            message: (variance > 0 ? `Excess of ₹${amount.toFixed(2)} recorded` : `Shortage of ₹${amount.toFixed(2)} recorded`)
-                + ` [debug: computer_balance=₹${computerBalance.toFixed(2)}, rows=${debugRows.length}, branchFilter="${branchFilter}"]`,
+            message: variance > 0 ? `Excess of ₹${amount.toFixed(2)} recorded` : `Shortage of ₹${amount.toFixed(2)} recorded`,
             computer_balance: computerBalance,
             actual_cash:      actualCash,
             variance,
-            debug_rows: debugRows,
             direction,
         });
     } catch (err) {

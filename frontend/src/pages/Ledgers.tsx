@@ -534,7 +534,7 @@ const Ledgers: React.FC = () => {
                     min="0"
                     step="0.01"
                     value={reconcileActual}
-                    onChange={e => setReconcileActual(e.target.value)}
+                    onChange={e => { setReconcileActual(e.target.value); setReconcileMsg(null); }}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #c4b5fd", background: "white", fontSize: "14px", fontWeight: 600, color: "#1e293b", boxSizing: "border-box" }}
                     required
                   />
@@ -582,8 +582,8 @@ const Ledgers: React.FC = () => {
                 </div>
                 <button
                   type="submit"
-                  disabled={reconcileLoading}
-                  style={{ padding: "10px 24px", borderRadius: "12px", background: reconcileLoading ? "#c4b5fd" : "#7c3aed", color: "white", border: "none", fontWeight: 700, fontSize: "14px", cursor: reconcileLoading ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
+                  disabled={reconcileLoading || !reconcileActual || isNaN(Number(reconcileActual)) || Number(reconcileActual) < 0}
+                  style={{ padding: "10px 24px", borderRadius: "12px", background: (reconcileLoading || !reconcileActual) ? "#c4b5fd" : "#7c3aed", color: "white", border: "none", fontWeight: 700, fontSize: "14px", cursor: (reconcileLoading || !reconcileActual) ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
                 >
                   {reconcileLoading ? "Saving…" : "Save Reconciliation"}
                 </button>
