@@ -602,8 +602,42 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
         const branchIdForInsert = typeof filterBranchId === 'number' ? filterBranchId : branchId;
         const variance = actualCash - computerBalance;   // positive = excess, negative = shortage
 
+        // TEMPORARY DIAGNOSTIC round 2 — the INVOICE_PAYMENT fix alone didn't resolve the
+        // mismatch. Compute GET /cash's EXACT opening_balance formula (with its own
+        // no-startDate "OR 1=1" branch, matching an unfiltered ledger view) side-by-side
+        // with this route's own computerBalance, plus a per-source breakdown, so we can see
+        // exactly where the two queries diverge instead of guessing again.
+        const GETCASH_INFLOW_SQL = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        const getCashRow = await db.pgGet(
+            `SELECT COALESCE(SUM(CASE
+                WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
+                WHEN source IN (${GETCASH_INFLOW_SQL}) THEN ABS(amount)
+                WHEN direction = 'in' THEN amount
+                ELSE -amount
+             END), 0) AS balance
+             FROM cash_ledger
+             WHERE company_id = $1 AND ${branchFilter}
+               AND (source = 'OPENING_BALANCE' OR 1=1)`,
+            [companyId]
+        );
+        const getCashBalance = Number(getCashRow?.balance || 0);
+        const bySource = await db.pgAll(
+            `SELECT source, direction, COUNT(*) AS cnt, SUM(amount) AS total
+             FROM cash_ledger
+             WHERE company_id = $1 AND ${branchFilter}
+             GROUP BY source, direction
+             ORDER BY source, direction`,
+            [companyId]
+        );
+        console.log(`[cash-reconciliation DEBUG2] reconciliationBalance=${computerBalance} getCashBalance=${getCashBalance} diff=${getCashBalance - computerBalance} date=${date}`);
+        bySource.forEach(r => console.log(`  source=${r.source} direction=${r.direction} count=${r.cnt} total=${r.total}`));
+
         if (variance === 0) {
-            return res.json({ success: true, message: 'Balances match — no adjustment needed', computer_balance: computerBalance, actual_cash: actualCash, variance: 0 });
+            return res.json({
+                success: true, message: 'Balances match — no adjustment needed',
+                computer_balance: computerBalance, actual_cash: actualCash, variance: 0,
+                debug2: { getCashBalance, diff: getCashBalance - computerBalance, bySource },
+            });
         }
 
         // Delete any existing reconciliation for the same date (re-reconcile is idempotent)
@@ -621,13 +655,16 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
             [companyId, branchIdForInsert, amount, direction, date]
         );
 
+        const bySourceSummary = bySource.map(r => `${r.source}/${r.direction}:${r.cnt}x=₹${Number(r.total).toFixed(2)}`).join(' | ');
         res.json({
             success: true,
-            message: variance > 0 ? `Excess of ₹${amount.toFixed(2)} recorded` : `Shortage of ₹${amount.toFixed(2)} recorded`,
+            message: (variance > 0 ? `Excess of ₹${amount.toFixed(2)} recorded` : `Shortage of ₹${amount.toFixed(2)} recorded`)
+                + ` [debug2: reconcileBalance=₹${computerBalance.toFixed(2)}, getCashBalance=₹${getCashBalance.toFixed(2)}, diff=₹${(getCashBalance - computerBalance).toFixed(2)} || ${bySourceSummary}]`,
             computer_balance: computerBalance,
             actual_cash:      actualCash,
             variance,
             direction,
+            debug2: { getCashBalance, diff: getCashBalance - computerBalance, bySource },
         });
     } catch (err) {
         console.error('[cash-reconciliation]', err.message);
