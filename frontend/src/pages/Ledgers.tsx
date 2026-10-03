@@ -328,9 +328,18 @@ const Ledgers: React.FC = () => {
     setReconcileLoading(true);
     setReconcileMsg(null);
     try {
+      // Record exactly how the actual-cash total was counted, so it's visible later
+      // in the ledger row itself (📝 note) rather than only at the moment of entry.
+      const denomBreakdown = DENOMINATIONS
+        .filter(d => Number(denomCounts[d]) > 0)
+        .map(d => `₹${d}×${denomCounts[d]}`)
+        .join(", ");
+      const combinedNotes = [denomBreakdown ? `Denomination: ${denomBreakdown}` : "", reconcileNotes.trim()]
+        .filter(Boolean)
+        .join(" — ");
       const res = await apiFetch("/ledger/cash-reconciliation", {
         method: "POST",
-        body: { date: reconcileDate, actual_cash: Number(reconcileActual), notes: reconcileNotes.trim() },
+        body: { date: reconcileDate, actual_cash: Number(reconcileActual), notes: combinedNotes },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save reconciliation");

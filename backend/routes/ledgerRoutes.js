@@ -650,9 +650,9 @@ router.post('/cash-reconciliation', authMiddleware, async (req, res) => {
         const amount    = Math.abs(variance);
 
         await db.pgRun(
-            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-             VALUES ($1, $2, 'CASH_RECONCILIATION', $3, $4, $5)`,
-            [companyId, branchIdForInsert, amount, direction, date]
+            `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, notes)
+             VALUES ($1, $2, 'CASH_RECONCILIATION', $3, $4, $5, $6)`,
+            [companyId, branchIdForInsert, amount, direction, date, (notes || '').trim() || null]
         );
 
         const bySourceSummary = bySource.map(r => `${r.source}/${r.direction}:${r.cnt}x=₹${Number(r.total).toFixed(2)}`).join(' | ');
