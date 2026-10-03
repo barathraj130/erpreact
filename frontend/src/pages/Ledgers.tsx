@@ -68,6 +68,22 @@ const Ledgers: React.FC = () => {
   const [reconcileLoading, setReconcileLoading] = useState(false);
   const [reconcileMsg, setReconcileMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // ── Denomination counter — a per-note/coin counting helper that sums into
+  // Actual Cash Count, instead of typing one total. Scoped to whichever branch
+  // is currently selected in the top bar (Main Office or a branch), same as
+  // the rest of this page — no separate branch picker needed here.
+  const [showDenom, setShowDenom] = useState(false);
+  const [denomCounts, setDenomCounts] = useState<Record<number, string>>({});
+  const DENOMINATIONS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+  const denomTotal = DENOMINATIONS.reduce((sum, d) => sum + (Number(denomCounts[d]) || 0) * d, 0);
+  const updateDenomCount = (denom: number, value: string) => {
+    const next = { ...denomCounts, [denom]: value };
+    setDenomCounts(next);
+    const total = DENOMINATIONS.reduce((sum, d) => sum + (Number(next[d]) || 0) * d, 0);
+    setReconcileActual(total > 0 ? String(total) : "");
+    setReconcileMsg(null);
+  };
+
   // ── Opening Balance ──
   const [showObModal, setShowObModal] = useState(false);
   const [obLedgerType, setObLedgerType] = useState<"CASH" | "BANK">("CASH");
@@ -321,6 +337,8 @@ const Ledgers: React.FC = () => {
       setReconcileMsg({ type: "success", text: data.message });
       setReconcileActual("");
       setReconcileNotes("");
+      setDenomCounts({});
+      setShowDenom(false);
       // Reload the ledger to show the new entry
       await fetchData();
     } catch (err: any) {
@@ -527,7 +545,16 @@ const Ledgers: React.FC = () => {
                 </div>
                 {/* Actual cash input */}
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#6d28d9", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Actual Cash Count</label>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.05em" }}>Actual Cash Count</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowDenom(v => !v)}
+                      style={{ background: "none", border: "none", color: "#7c3aed", fontSize: "11px", fontWeight: 700, cursor: "pointer", padding: 0, textDecoration: "underline" }}
+                    >
+                      {showDenom ? "Hide" : "Count by Denomination"}
+                    </button>
+                  </div>
                   <input
                     type="number"
                     placeholder="e.g. 300"
@@ -540,6 +567,42 @@ const Ledgers: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Denomination counter */}
+              {showDenom && (
+                <div style={{ background: "white", border: "1.5px solid #c4b5fd", borderRadius: "12px", padding: "14px 16px", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+                    Count by Denomination
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: "10px" }}>
+                    {DENOMINATIONS.map(d => {
+                      const count = Number(denomCounts[d]) || 0;
+                      return (
+                        <div key={d} style={{ display: "flex", alignItems: "center", gap: "8px", background: "#faf5ff", borderRadius: "8px", padding: "8px 10px" }}>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: "#4c1d95", minWidth: "48px" }}>₹{d} ×</span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={denomCounts[d] || ""}
+                            onChange={e => updateDenomCount(d, e.target.value)}
+                            style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #ddd6fe", fontSize: "13px", fontWeight: 600, color: "#1e293b", boxSizing: "border-box" }}
+                          />
+                          <span style={{ fontSize: "11px", color: "#8b5cf6", whiteSpace: "nowrap", minWidth: "60px", textAlign: "right" }}>
+                            {count > 0 ? `₹${(count * d).toLocaleString("en-IN")}` : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "10px", borderTop: "1px solid #ede9fe" }}>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>Auto-filled into Actual Cash Count above</span>
+                    <span style={{ fontSize: "15px", fontWeight: 800, color: "#4c1d95" }}>
+                      Total: ₹{denomTotal.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Live variance preview */}
               {reconcileActual !== "" && !isNaN(Number(reconcileActual)) && (
