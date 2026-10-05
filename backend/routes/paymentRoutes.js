@@ -164,6 +164,13 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
     const companyId = req.user.active_company_id;
     const userId = req.user.id;
 
+    // Denomination breakdown is mandatory for a cash payment — enforced server-side
+    // (not just hidden by the UI) so it can't be bypassed by calling this endpoint
+    // directly. The frontend composes it into notes as "Denomination: ₹500×2, ...".
+    if (Number(amount) > 0 && (payment_method || 'CASH').toUpperCase() === 'CASH' && !(notes || '').includes('Denomination:')) {
+        return res.status(400).json({ error: `Cash payment of ₹${amount} is missing its denomination breakdown` });
+    }
+
     let client;
 
     try {

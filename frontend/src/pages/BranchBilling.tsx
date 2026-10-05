@@ -499,6 +499,13 @@ const BranchBilling: React.FC = () => {
   const [receiveAmount, setReceiveAmount]     = useState("");
   const [receiveMode, setReceiveMode]         = useState("cash");
   const [receivingSaving, setReceivingSaving] = useState(false);
+  const [receiveDenom, setReceiveDenom]       = useState<Record<number, string>>({});
+  const DENOMINATIONS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+  const receiveDenomTotal = DENOMINATIONS.reduce((sum, d) => sum + (Number(receiveDenom[d]) || 0) * d, 0);
+  const receiveDenomNotes = () => {
+    const parts = DENOMINATIONS.filter(d => Number(receiveDenom[d]) > 0).map(d => `₹${d}×${receiveDenom[d]}`);
+    return parts.length ? `Denomination: ${parts.join(", ")}` : "";
+  };
 
   /* return mode */
   const [returnSearch, setReturnSearch]     = useState("");
@@ -792,8 +799,16 @@ const BranchBilling: React.FC = () => {
   const handleReceivePayment = async () => {
     if (!payCustomer || !receiveAmount) return;
     if (!outstandingInvs.length) { setFlash("No outstanding invoices for this customer"); return; }
+    if (receiveMode === "cash") {
+      if (receiveDenomTotal === 0) { setFlash("Enter the denomination breakdown for this cash payment"); return; }
+      if (Math.round(receiveDenomTotal * 100) !== Math.round(parseFloat(receiveAmount) * 100)) {
+        setFlash(`Denomination breakdown (₹${receiveDenomTotal}) doesn't match the amount (₹${receiveAmount})`);
+        return;
+      }
+    }
     setReceivingSaving(true);
     let remaining = parseFloat(receiveAmount);
+    const cashNotes = receiveMode === "cash" ? receiveDenomNotes() : undefined;
     try {
       for (const inv of outstandingInvs) {
         if (remaining <= 0) break;
@@ -801,13 +816,14 @@ const BranchBilling: React.FC = () => {
         const paying = Math.min(remaining, invBal);
         const res = await apiFetch("/payments", {
           method: "POST",
-          body: JSON.stringify({ invoice_id: inv.id, amount: paying, payment_method: receiveMode.toUpperCase() }),
+          body: JSON.stringify({ invoice_id: inv.id, amount: paying, payment_method: receiveMode.toUpperCase(), notes: cashNotes }),
         });
         if (!res.ok) { const d = await res.json(); setFlash(d.error || "Payment failed"); setReceivingSaving(false); return; }
         remaining -= paying;
       }
       setFlash(`₹${inr(receiveAmount)} received from ${payCustomer.name}`);
       setPayCustomer(null); setPayCustomerSearch(""); setReceiveAmount(""); setOutstandingInvs([]);
+      setReceiveDenom({});
       fetchBalances();
     } catch {
       setFlash("Payment failed — check connection");
@@ -1516,8 +1532,30 @@ const BranchBilling: React.FC = () => {
                 </div>
               </div>
 
-              <button onClick={handleReceivePayment} disabled={receivingSaving || !receiveAmount}
-                style={{ ...BTN_PRIMARY, padding: "16px", fontSize: 16, background: "#10b981", width: "100%", opacity: !receiveAmount ? 0.5 : 1 }}>
+              {receiveMode === "cash" && (
+                <div style={{ background: "#1e293b", border: `1.5px solid ${Math.round(receiveDenomTotal * 100) === Math.round((parseFloat(receiveAmount) || 0) * 100) && receiveDenomTotal > 0 ? "#10b981" : "#f59e0b"}`, borderRadius: 10, padding: 14, marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", marginBottom: 8 }}>
+                    Denomination (required for cash)
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    {DENOMINATIONS.map(d => (
+                      <div key={d} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", minWidth: 36 }}>₹{d}×</span>
+                        <input type="number" min="0" placeholder="0" value={receiveDenom[d] || ""}
+                          onChange={e => setReceiveDenom({ ...receiveDenom, [d]: e.target.value })}
+                          style={{ width: "100%", padding: "5px 6px", borderRadius: 6, border: "1px solid #475569", background: "#0f172a", color: "#fff", fontSize: 12, fontWeight: 600 }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: Math.round(receiveDenomTotal * 100) === Math.round((parseFloat(receiveAmount) || 0) * 100) && receiveDenomTotal > 0 ? "#10b981" : "#fbbf24" }}>
+                    Counted: ₹{inr(receiveDenomTotal)} {receiveAmount ? `(needs ₹${inr(receiveAmount)})` : ""}
+                  </div>
+                </div>
+              )}
+
+              <button onClick={handleReceivePayment}
+                disabled={receivingSaving || !receiveAmount || (receiveMode === "cash" && Math.round(receiveDenomTotal * 100) !== Math.round((parseFloat(receiveAmount) || 0) * 100))}
+                style={{ ...BTN_PRIMARY, padding: "16px", fontSize: 16, background: "#10b981", width: "100%", opacity: (!receiveAmount || (receiveMode === "cash" && Math.round(receiveDenomTotal * 100) !== Math.round((parseFloat(receiveAmount) || 0) * 100))) ? 0.5 : 1 }}>
                 {receivingSaving ? "Processing…" : `Receive ₹${inr(receiveAmount)} from ${payCustomer.name}`}
               </button>
             </>

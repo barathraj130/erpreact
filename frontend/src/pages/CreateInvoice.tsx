@@ -237,7 +237,14 @@ const CreateInvoice: React.FC = () => {
   });
   const [invoiceType, setInvoiceType] = useState<BillTypeValue>("TAX_INVOICE");
   const [retailGST, setRetailGST] = useState<boolean | null>(null); // null = not yet asked
-  const [paymentsList, setPaymentsList] = useState<{ amount: number; method: string; reference?: string }[]>([{ amount: 0, method: "CASH", reference: "" }]);
+  const [paymentsList, setPaymentsList] = useState<{ amount: number; method: string; reference?: string; denom?: Record<number, string> }[]>([{ amount: 0, method: "CASH", reference: "" }]);
+  const DENOMINATIONS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+  const denomTotalFor = (denom?: Record<number, string>) =>
+    DENOMINATIONS.reduce((sum, d) => sum + (Number(denom?.[d]) || 0) * d, 0);
+  const denomNotesFor = (denom?: Record<number, string>) => {
+    const parts = DENOMINATIONS.filter(d => Number(denom?.[d]) > 0).map(d => `₹${d}×${denom?.[d]}`);
+    return parts.length ? `Denomination: ${parts.join(", ")}` : "";
+  };
   const amountPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [paymentsList]);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [activePaymentIndex, setActivePaymentIndex] = useState<number | null>(null);
@@ -574,6 +581,20 @@ const CreateInvoice: React.FC = () => {
         // Actually, usually we don't want overpayment on a single invoice unless it creates a credit.
     }
 
+    if (invoiceType !== 'NOMINAL_TAX_INVOICE') {
+      for (const p of paymentsList) {
+        if (p.amount > 0 && p.method === "CASH") {
+          const counted = denomTotalFor(p.denom);
+          if (counted === 0) {
+            return alert(`Enter the denomination breakdown for the ₹${p.amount} cash payment before saving.`);
+          }
+          if (Math.round(counted * 100) !== Math.round(p.amount * 100)) {
+            return alert(`Denomination breakdown (₹${counted}) doesn't match the cash payment amount (₹${p.amount}).`);
+          }
+        }
+      }
+    }
+
     setIsSaving(true);
     try {
       const body = {
@@ -608,7 +629,8 @@ const CreateInvoice: React.FC = () => {
             amount: p.amount,
             payment_method: p.method,
             payment_date: meta.invoiceDate,
-            reference: p.reference || ""
+            reference: p.reference || "",
+            notes: p.method === "CASH" ? denomNotesFor(p.denom) : undefined,
         })),
         tax_details: gstState,
         transport_details: {
@@ -1616,8 +1638,42 @@ const CreateInvoice: React.FC = () => {
                   </div>
                 </div>
 
+                {payment.method === "CASH" && payment.amount > 0 && (() => {
+                  const counted = denomTotalFor(payment.denom);
+                  const matches = Math.round(counted * 100) === Math.round(payment.amount * 100);
+                  return (
+                    <div style={{ marginTop: "10px", background: "#fffbeb", border: `1.5px solid ${matches ? "#86efac" : "#fde68a"}`, borderRadius: "8px", padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
+                        Denomination (required for cash)
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+                        {DENOMINATIONS.map(d => (
+                          <div key={d} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <span style={{ fontSize: "11px", fontWeight: 700, color: "#92400e", minWidth: "36px" }}>₹{d}×</span>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="0"
+                              value={payment.denom?.[d] || ""}
+                              onChange={(e) => {
+                                const newArr = [...paymentsList];
+                                newArr[index].denom = { ...newArr[index].denom, [d]: e.target.value };
+                                setPaymentsList(newArr);
+                              }}
+                              style={{ width: "100%", padding: "4px 6px", borderRadius: "5px", border: "1px solid #fde68a", fontSize: "12px", fontWeight: 600 }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ marginTop: "8px", fontSize: "11px", fontWeight: 700, color: matches ? "#15803d" : "#b45309" }}>
+                        Counted: ₹{counted.toLocaleString("en-IN")} {matches ? "✓ matches" : `(needs ₹${payment.amount})`}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div style={{ marginTop: "12px" }}>
-                    <button 
+                    <button
                       onClick={() => { setActivePaymentIndex(index); setShowPaymentPopup(true); }}
                       style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "2px dashed #4f46e5", background: "#f5f3ff", color: "#4f46e5", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontSize: "0.8rem" }}
                     >

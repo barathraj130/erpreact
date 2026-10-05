@@ -376,6 +376,20 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
     const companyId = req.user.active_company_id;
     let client;
 
+    // Denomination breakdown is mandatory for every cash payment line — enforced
+    // server-side (not just hidden by the UI) so it can't be bypassed by calling
+    // this endpoint directly. The frontend composes it into each payment's own
+    // notes as "Denomination: ₹500×2, ..." before sending.
+    if (Array.isArray(payments)) {
+        for (const p of payments) {
+            const pAmt = Number(p.amount) || 0;
+            const pMethod = (p.payment_method || 'CASH').toUpperCase();
+            if (pAmt > 0 && pMethod === 'CASH' && !(p.notes || '').includes('Denomination:')) {
+                return res.status(400).json({ error: `Cash payment of ₹${pAmt} is missing its denomination breakdown` });
+            }
+        }
+    }
+
     try {
         client = await db.getClient();
         await ensureNSBSchema(client);
@@ -887,9 +901,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                     totalPaidFromPayments += pAmt;
                     const pDate = p.payment_date || new Date();
                     const paymentRecord = await client.query(
-                        `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no)
-                         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                        [invoiceId, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null]
+                        `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no, notes)
+                         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+                        [invoiceId, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null, p.notes || null]
                     );
 
                     if (customer_id) {
@@ -1844,6 +1858,18 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
     } = req.body;
     const companyId = req.user.active_company_id;
 
+    // Denomination breakdown is mandatory for every cash payment line — see the
+    // matching guard in POST "/" for why this is enforced server-side.
+    if (Array.isArray(payments)) {
+        for (const p of payments) {
+            const pAmt = Number(p.amount) || 0;
+            const pMethod = (p.payment_method || 'CASH').toUpperCase();
+            if (pAmt > 0 && pMethod === 'CASH' && !(p.notes || '').includes('Denomination:')) {
+                return res.status(400).json({ error: `Cash payment of ₹${pAmt} is missing its denomination breakdown` });
+            }
+        }
+    }
+
     let client;
     try {
         client = await db.getClient();
@@ -2026,9 +2052,9 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                     
                     // Insert Payment Record
                     const paymentResult = await client.query(
-                        `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no)
-                         VALUES ($1, $2, $3, $4, $5)`,
-                        [id, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null]
+                        `INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, reference_no, notes)
+                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [id, pAmt, p.payment_method || 'CASH', pDate, p.reference_no || null, p.notes || null]
                     );
 
                     if (effectiveCustomerId) {
