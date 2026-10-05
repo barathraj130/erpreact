@@ -2,6 +2,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { notifyAttendanceMarked } from '../utils/notifyAttendance.js';
 
 const router = express.Router();
 
@@ -61,6 +62,20 @@ router.post('/', authMiddleware, async (req, res) => {
         `;
         const entry = await db.pgGet(sql, [companyId, employee_id, date, status, od_location || null]);
         res.json(entry);
+
+        // Post-response, non-blocking — never let a notification delay the actual save
+        Promise.all([
+            db.pgGet(`SELECT name FROM employees WHERE id = $1`, [employee_id]),
+            db.pgGet(`SELECT username FROM users WHERE id = $1`, [req.user.id]),
+        ])
+            .then(([emp, marker]) => notifyAttendanceMarked(companyId, {
+                branchId: req.user.branch_id,
+                markedByName: marker?.username,
+                subject: emp?.name || `Employee #${employee_id}`,
+                status,
+                date,
+            }))
+            .catch(() => {});
     } catch (err) {
         res.status(500).json({ error: "Failed to mark attendance" });
     }

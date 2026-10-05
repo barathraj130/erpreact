@@ -13,6 +13,8 @@ import {
   FaUserShield,
   FaSync,
   FaPlus,
+  FaBell,
+  FaTrash,
 } from "react-icons/fa";
 import { apiFetch } from "../utils/api";
 import { useTenant } from "../context/TenantContext";
@@ -51,7 +53,7 @@ const AdminSetup: React.FC = () => {
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeItem, setActiveItem] = useState<"PROFILE" | "BRANCHES" | "BILLING" | "SECURITY" | null>(null);
+  const [activeItem, setActiveItem] = useState<"PROFILE" | "BRANCHES" | "BILLING" | "SECURITY" | "NOTIFICATIONS" | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
   // Security Matrix State
@@ -76,6 +78,13 @@ const AdminSetup: React.FC = () => {
     branch_code: "",
     is_active: true
   });
+
+  // SMS Notification Recipients State
+  const [smsRecipients, setSmsRecipients] = useState<any[]>([]);
+  const [smsRecipientsLoading, setSmsRecipientsLoading] = useState(false);
+  const [newRecipientName, setNewRecipientName] = useState("");
+  const [newRecipientPhone, setNewRecipientPhone] = useState("");
+  const [savingRecipient, setSavingRecipient] = useState(false);
 
   // Bank State
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
@@ -117,6 +126,66 @@ const AdminSetup: React.FC = () => {
       fetchUserOverrides(selectedUserId);
     }
   }, [selectedUserId]);
+
+  useEffect(() => {
+    if (activeItem === "NOTIFICATIONS") {
+      fetchSmsRecipients();
+    }
+  }, [activeItem]);
+
+  const fetchSmsRecipients = async () => {
+    try {
+      setSmsRecipientsLoading(true);
+      const res = await apiFetch("/settings/sms-recipients");
+      const data = await res.json();
+      setSmsRecipients(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch SMS recipients", err);
+    } finally {
+      setSmsRecipientsLoading(false);
+    }
+  };
+
+  const addSmsRecipient = async () => {
+    if (!newRecipientName.trim() || !newRecipientPhone.trim()) {
+      alert("Enter both a name and a phone number");
+      return;
+    }
+    setSavingRecipient(true);
+    try {
+      const res = await apiFetch("/settings/sms-recipients", {
+        method: "POST",
+        body: { name: newRecipientName.trim(), phone_number: newRecipientPhone.trim() },
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to add"); }
+      setNewRecipientName("");
+      setNewRecipientPhone("");
+      await fetchSmsRecipients();
+    } catch (err: any) {
+      alert(err.message || "Failed to add recipient");
+    } finally {
+      setSavingRecipient(false);
+    }
+  };
+
+  const toggleSmsRecipient = async (id: number, isActive: boolean) => {
+    setSmsRecipients(smsRecipients.map(r => r.id === id ? { ...r, is_active: isActive } : r));
+    try {
+      await apiFetch(`/settings/sms-recipients/${id}`, { method: "PATCH", body: { is_active: isActive } });
+    } catch {
+      fetchSmsRecipients();
+    }
+  };
+
+  const deleteSmsRecipient = async (id: number) => {
+    if (!window.confirm("Remove this SMS recipient?")) return;
+    try {
+      await apiFetch(`/settings/sms-recipients/${id}`, { method: "DELETE" });
+      setSmsRecipients(smsRecipients.filter(r => r.id !== id));
+    } catch {
+      alert("Failed to delete recipient");
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -370,6 +439,7 @@ const AdminSetup: React.FC = () => {
     { id: "BRANCHES", label: "Regional Branches", desc: "Physical Locations", icon: <FaProjectDiagram />, color: "var(--green)" },
     { id: "BILLING", label: "Finance & Banking", desc: "Payouts, P&L config", icon: <FaUniversity />, color: "#8b5cf6" },
     { id: "SECURITY", label: "Roles & Safety", desc: "Access Control, Logs", icon: <FaUserShield />, color: "var(--red)" },
+    { id: "NOTIFICATIONS", label: "SMS Notifications", desc: "Who gets texted, and when", icon: <FaBell />, color: "#f59e0b" },
   ];
 
   if (loading && !profile) return (
@@ -819,6 +889,96 @@ const AdminSetup: React.FC = () => {
                         </button>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {activeItem === "NOTIFICATIONS" && (
+                  <div>
+                    <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: "16px", fontWeight: 600 }}>SMS Notifications</div>
+                      <div style={{ fontSize: "12.5px", color: "var(--text-3)", marginTop: "2px" }}>
+                        Everyone listed here gets texted on events like attendance being marked — from Main Office or any branch.
+                      </div>
+                    </div>
+
+                    <div style={{ padding: "24px 32px", borderBottom: "1px solid var(--border)" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr auto", gap: "12px", alignItems: "end" }}>
+                        <div>
+                          <div style={{ fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", marginBottom: "6px" }}>Name</div>
+                          <input
+                            type="text"
+                            value={newRecipientName}
+                            onChange={e => setNewRecipientName(e.target.value)}
+                            placeholder="e.g. Owner"
+                            style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-1)", fontSize: "13px", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", marginBottom: "6px" }}>Phone Number</div>
+                          <input
+                            type="tel"
+                            value={newRecipientPhone}
+                            onChange={e => setNewRecipientPhone(e.target.value)}
+                            placeholder="e.g. +91 98765 43210"
+                            style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-1)", fontSize: "13px", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <button
+                          className="page-btn-round page-btn-round-primary"
+                          onClick={addSmsRecipient}
+                          disabled={savingRecipient}
+                          style={{ whiteSpace: "nowrap" }}
+                        >
+                          <FaPlus size={11} /> {savingRecipient ? "Adding…" : "Add Recipient"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {smsRecipientsLoading ? (
+                      <div style={{ padding: "32px", textAlign: "center", color: "var(--text-3)" }}>Loading…</div>
+                    ) : smsRecipients.length === 0 ? (
+                      <div style={{ padding: "32px", textAlign: "center", color: "var(--text-3)", fontSize: "13px" }}>
+                        No recipients yet — add someone above to start receiving SMS alerts.
+                      </div>
+                    ) : (
+                      <table className="page-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Phone Number</th>
+                            <th>Status</th>
+                            <th className="text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {smsRecipients.map(r => (
+                            <tr key={r.id}>
+                              <td style={{ fontWeight: 600 }}>{r.name}</td>
+                              <td style={{ fontFamily: "Geist Mono, monospace" }}>{r.phone_number}</td>
+                              <td>
+                                <button
+                                  onClick={() => toggleSmsRecipient(r.id, !r.is_active)}
+                                  className={`type-badge ${r.is_active ? "type-badge-green" : "type-badge-slate"}`}
+                                  style={{ border: "none", cursor: "pointer" }}
+                                >
+                                  {r.is_active ? "Active" : "Paused"}
+                                </button>
+                              </td>
+                              <td className="text-right">
+                                <button
+                                  onClick={() => deleteSmsRecipient(r.id)}
+                                  className="page-btn-round-danger"
+                                  style={{ padding: "6px 10px" }}
+                                  title="Remove recipient"
+                                >
+                                  <FaTrash size={11} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 )}
               </div>

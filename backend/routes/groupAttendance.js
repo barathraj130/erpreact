@@ -12,6 +12,7 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { notifyAttendanceMarked } from "../utils/notifyAttendance.js";
 
 const router = express.Router();
 
@@ -147,6 +148,15 @@ router.post("/mark", authMiddleware, async (req, res) => {
             members_count: members.rows.length,
             message: `Attendance marked as ${status.toUpperCase()} for ${members.rows.length} member${members.rows.length === 1 ? "" : "s"} of ${groupRes?.name || "group"}`,
         });
+
+        // Post-response, non-blocking
+        notifyAttendanceMarked(companyId, {
+            branchId: req.user.branch_id,
+            markedByName: markerRes?.username,
+            subject: `${groupRes?.name || "Group"} (${members.rows.length} member${members.rows.length === 1 ? "" : "s"})`,
+            status,
+            date: attendanceDate,
+        }).catch(() => {});
     } catch (e) {
         await client.query("ROLLBACK").catch(() => {});
         res.json({ success: false, error: e.message });
