@@ -85,6 +85,11 @@ const AdminSetup: React.FC = () => {
   const [newRecipientName, setNewRecipientName] = useState("");
   const [newRecipientPhone, setNewRecipientPhone] = useState("");
   const [savingRecipient, setSavingRecipient] = useState(false);
+  const [smsPrefs, setSmsPrefs] = useState<any>(null);
+  const [smsHistory, setSmsHistory] = useState<any[]>([]);
+  const [smsHistoryLoading, setSmsHistoryLoading] = useState(false);
+  const [testSmsSending, setTestSmsSending] = useState(false);
+  const [testSmsMsg, setTestSmsMsg] = useState<string | null>(null);
 
   // Bank State
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
@@ -130,8 +135,58 @@ const AdminSetup: React.FC = () => {
   useEffect(() => {
     if (activeItem === "NOTIFICATIONS") {
       fetchSmsRecipients();
+      fetchSmsPreferences();
+      fetchSmsHistory();
     }
   }, [activeItem]);
+
+  const fetchSmsPreferences = async () => {
+    try {
+      const res = await apiFetch("/settings/sms-preferences");
+      setSmsPrefs(await res.json());
+    } catch (err) {
+      console.error("Failed to fetch SMS preferences", err);
+    }
+  };
+
+  const updateSmsPref = async (field: string, value: boolean) => {
+    setSmsPrefs((prev: any) => ({ ...prev, [field]: value }));
+    try {
+      const res = await apiFetch("/settings/sms-preferences", { method: "PATCH", body: { [field]: value } });
+      setSmsPrefs(await res.json());
+    } catch {
+      fetchSmsPreferences();
+    }
+  };
+
+  const fetchSmsHistory = async () => {
+    try {
+      setSmsHistoryLoading(true);
+      const res = await apiFetch("/settings/sms-history");
+      const data = await res.json();
+      setSmsHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch SMS history", err);
+    } finally {
+      setSmsHistoryLoading(false);
+    }
+  };
+
+  const sendTestSms = async () => {
+    setTestSmsSending(true);
+    setTestSmsMsg(null);
+    try {
+      const res = await apiFetch("/settings/sms-test", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send test SMS");
+      setTestSmsMsg("✅ Test SMS queued — check your phone shortly.");
+      fetchSmsHistory();
+    } catch (err: any) {
+      setTestSmsMsg(`❌ ${err.message || "Failed to send"}`);
+    } finally {
+      setTestSmsSending(false);
+    }
+  };
 
   const fetchSmsRecipients = async () => {
     try {
@@ -979,6 +1034,92 @@ const AdminSetup: React.FC = () => {
                         </tbody>
                       </table>
                     )}
+
+                    {/* Master toggle + categories */}
+                    {smsPrefs && (
+                      <div style={{ padding: "24px 32px", borderTop: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                          <div style={{ fontSize: "14px", fontWeight: 600 }}>What triggers an SMS</div>
+                          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                            <span style={{ fontSize: "12px", fontWeight: 700, color: smsPrefs.sms_enabled ? "#16a34a" : "var(--text-3)" }}>
+                              {smsPrefs.sms_enabled ? "SMS Enabled" : "SMS Disabled"}
+                            </span>
+                            <input type="checkbox" checked={!!smsPrefs.sms_enabled} onChange={e => updateSmsPref("sms_enabled", e.target.checked)} />
+                          </label>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: "10px", opacity: smsPrefs.sms_enabled ? 1 : 0.45, pointerEvents: smsPrefs.sms_enabled ? "auto" : "none" }}>
+                          {[
+                            { key: "notify_attendance", label: "Attendance" },
+                            { key: "notify_purchases", label: "Purchases" },
+                            { key: "notify_products", label: "Products" },
+                            { key: "notify_inventory", label: "Inventory" },
+                            { key: "notify_sales", label: "Sales" },
+                            { key: "notify_customer_payments", label: "Customer Payments" },
+                            { key: "notify_supplier_payments", label: "Supplier Payments" },
+                            { key: "notify_day_closing", label: "Day Closing" },
+                            { key: "notify_ledger", label: "Ledger Alerts" },
+                            { key: "notify_security", label: "Security Alerts" },
+                          ].map(cat => (
+                            <label key={cat.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", borderRadius: "8px", background: "var(--bg)", border: "1px solid var(--border)", fontSize: "12.5px", fontWeight: 600, cursor: "pointer" }}>
+                              <input type="checkbox" checked={!!smsPrefs[cat.key]} onChange={e => updateSmsPref(cat.key, e.target.checked)} />
+                              {cat.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Test SMS */}
+                    <div style={{ padding: "24px 32px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+                      <button
+                        className="page-btn-round page-btn-round-primary"
+                        onClick={sendTestSms}
+                        disabled={testSmsSending || smsRecipients.length === 0}
+                      >
+                        {testSmsSending ? "Sending…" : "Send Test SMS"}
+                      </button>
+                      {testSmsMsg && <span style={{ fontSize: "12.5px", fontWeight: 600 }}>{testSmsMsg}</span>}
+                      {smsRecipients.length === 0 && <span style={{ fontSize: "12px", color: "var(--text-3)" }}>Add a recipient above first.</span>}
+                    </div>
+
+                    {/* History */}
+                    <div style={{ padding: "24px 32px", borderTop: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "12px" }}>Recent SMS Activity</div>
+                      {smsHistoryLoading ? (
+                        <div style={{ textAlign: "center", color: "var(--text-3)", padding: "20px" }}>Loading…</div>
+                      ) : smsHistory.length === 0 ? (
+                        <div style={{ textAlign: "center", color: "var(--text-3)", fontSize: "13px", padding: "20px" }}>No SMS activity yet.</div>
+                      ) : (
+                        <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+                          <table className="page-table">
+                            <thead>
+                              <tr>
+                                <th>When</th>
+                                <th>Event</th>
+                                <th>Message</th>
+                                <th>Recipients</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {smsHistory.map((h: any) => (
+                                <tr key={h.id}>
+                                  <td style={{ fontSize: "12px", whiteSpace: "nowrap" }}>{new Date(h.created_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                                  <td style={{ fontSize: "12px" }}>{h.event_type}</td>
+                                  <td style={{ fontSize: "12px", maxWidth: "280px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={h.message}>{h.message}</td>
+                                  <td style={{ fontSize: "12px" }}>{h.sent_count}/{h.recipient_count} sent{Number(h.failed_count) > 0 ? `, ${h.failed_count} failed` : ""}</td>
+                                  <td>
+                                    <span className={`type-badge ${h.status === "SENT" || h.status === "QUEUED" ? "type-badge-green" : h.status === "FAILED" ? "type-badge-red" : "type-badge-slate"}`}>
+                                      {h.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

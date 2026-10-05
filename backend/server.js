@@ -13,6 +13,7 @@ import aiQueryRoutes from "./routes/aiQueryRoutes.js";
 
 // --- ROUTE IMPORTS ---
 import { runSchemaUpdates } from "./database/schemaUpdates.js";
+import { startQueueWorker as startSmsQueueWorker } from "./services/notificationService.js";
 import { apiLimiter } from "./middlewares/rateLimitMiddleware.js";
 import accountingRoutes from "./routes/accountingRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
@@ -298,6 +299,9 @@ runSchemaUpdates()
             console.log(`  ✓ HR & Payroll`);
             console.log(`  ✓ Reports & Analytics`);
             console.log(`  ✓ Backup & Recovery\n`);
+
+            startSmsQueueWorker();
+            console.log(`  ✓ SMS Notification Queue (sweep every 30s)\n`);
         });
     })
     .catch(err => {

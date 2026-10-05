@@ -2,6 +2,7 @@ import express from "express";
 import * as db from "../database/pg.js";
 import checkPermission from "../middlewares/checkPermission.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { getPreferences, updatePreferences, getNotificationHistory, createNotification } from "../services/notificationService.js";
 
 const router = express.Router();
 
@@ -174,6 +175,64 @@ router.delete("/sms-recipients/:id", authMiddleware, checkPermission("Settings",
     } catch (err) {
         console.error("SMS recipient delete error:", err);
         res.status(500).json({ error: "Failed to delete SMS recipient" });
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SMS notification preferences — master on/off + per-category toggles — and
+// history, backed by the centralized notificationService.
+// ══════════════════════════════════════════════════════════════════════════════
+router.get("/sms-preferences", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    try {
+        const prefs = await getPreferences(req.user.active_company_id);
+        res.json(prefs);
+    } catch (err) {
+        console.error("SMS preferences fetch error:", err);
+        res.status(500).json({ error: "Failed to fetch SMS preferences" });
+    }
+});
+
+router.patch("/sms-preferences", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    try {
+        const prefs = await updatePreferences(req.user.active_company_id, req.body || {});
+        res.json(prefs);
+    } catch (err) {
+        console.error("SMS preferences update error:", err);
+        res.status(500).json({ error: "Failed to update SMS preferences" });
+    }
+});
+
+router.get("/sms-history", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    try {
+        const { status, event_type } = req.query;
+        const rows = await getNotificationHistory(req.user.active_company_id, { status, eventType: event_type, limit: 200 });
+        res.json(rows);
+    } catch (err) {
+        console.error("SMS history fetch error:", err);
+        res.status(500).json({ error: "Failed to fetch SMS history" });
+    }
+});
+
+router.post("/sms-test", authMiddleware, checkPermission("Settings", "access_settings"), async (req, res) => {
+    try {
+        const companyId = req.user.active_company_id;
+        const recipients = await db.pgAll(
+            `SELECT phone_number FROM sms_notification_recipients WHERE company_id = $1 AND is_active = true`,
+            [companyId]
+        );
+        if (!recipients.length) {
+            return res.status(400).json({ error: "No active recipients — add one first" });
+        }
+        const notification = await createNotification(companyId, {
+            eventType: "SECURITY_ALERT",
+            title: "Test SMS",
+            message: `Test SMS from your ERP — sent by ${req.user.username || "admin"} at ${new Date().toLocaleString("en-IN")}.`,
+            priority: "HIGH",
+        });
+        res.json({ success: true, notification });
+    } catch (err) {
+        console.error("SMS test send error:", err);
+        res.status(500).json({ error: "Failed to send test SMS" });
     }
 });
 
