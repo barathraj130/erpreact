@@ -567,7 +567,36 @@ router.get('/finance/cash-bank-statement', authMiddleware, async (req, res) => {
         const totalIn = combined.filter(r => r.direction === 'in').reduce((s, r) => s + Number(r.amount), 0);
         const totalOut = combined.filter(r => r.direction === 'out').reduce((s, r) => s + Number(r.amount), 0);
 
-        res.json({ entries: combined, total_in: totalIn, total_out: totalOut, net: totalIn - totalOut });
+        // Opening balance — everything strictly before startDate, same formula GET
+        // /cash and GET /bank already use for their own "Balance b/d" figure.
+        const openingBalanceFor = async (table) => {
+            if (!startDate) return 0;
+            const params = [companyId, startDate];
+            let branchClause = '';
+            if (branchId && branchId !== 'all') { branchClause = `AND branch_id = $3`; params.push(branchId); }
+            const row = await db.pgGet(
+                `SELECT COALESCE(SUM(CASE
+                    WHEN source = 'OPENING_BALANCE' THEN (CASE WHEN direction = 'in' THEN amount ELSE -amount END)
+                    WHEN source IN (${[...INFLOW_SOURCES].map(s => `'${s}'`).join(',')}) THEN ABS(amount)
+                    WHEN direction = 'in' THEN amount
+                    ELSE -amount
+                 END), 0) AS balance
+                 FROM ${table}
+                 WHERE company_id = $1 ${branchClause}
+                   AND (source = 'OPENING_BALANCE' OR date < $2)`,
+                params
+            );
+            return Number(row?.balance || 0);
+        };
+        const [openingCash, openingBank] = await Promise.all([
+            openingBalanceFor('cash_ledger'),
+            openingBalanceFor('bank_ledger'),
+        ]);
+
+        res.json({
+            entries: combined, total_in: totalIn, total_out: totalOut, net: totalIn - totalOut,
+            opening_cash: openingCash, opening_bank: openingBank, opening_total: openingCash + openingBank,
+        });
     } catch (err) {
         console.error('Cash & Bank statement error:', err);
         res.status(500).json({ error: 'Failed to build statement', entries: [], total_in: 0, total_out: 0, net: 0 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { FaMoneyBillWave, FaFilter } from "react-icons/fa";
+import { FaMoneyBillWave, FaFilter, FaPrint } from "react-icons/fa";
 import { apiFetch } from "../../utils/api";
+import { printMonthlyStatement } from "../../utils/monthlyStatementPrint";
 import "../PageShared.css";
 
 interface StatementEntry {
@@ -35,6 +36,8 @@ const MonthlyStatement: React.FC = () => {
   const [entries, setEntries] = useState<StatementEntry[]>([]);
   const [totalIn, setTotalIn] = useState(0);
   const [totalOut, setTotalOut] = useState(0);
+  const [openingCash, setOpeningCash] = useState(0);
+  const [openingBank, setOpeningBank] = useState(0);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<"ALL" | "CASH" | "BANK">("ALL");
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,10 +50,14 @@ const MonthlyStatement: React.FC = () => {
       setEntries(data.entries || []);
       setTotalIn(data.total_in || 0);
       setTotalOut(data.total_out || 0);
+      setOpeningCash(data.opening_cash || 0);
+      setOpeningBank(data.opening_bank || 0);
     } catch {
       setEntries([]);
       setTotalIn(0);
       setTotalOut(0);
+      setOpeningCash(0);
+      setOpeningBank(0);
     } finally {
       setLoading(false);
     }
@@ -64,6 +71,11 @@ const MonthlyStatement: React.FC = () => {
     return true;
   });
 
+  const openingBalance = typeFilter === "CASH" ? openingCash : typeFilter === "BANK" ? openingBank : openingCash + openingBank;
+  const visibleIn = visible.filter(e => e.direction === "in").reduce((s, e) => s + Number(e.amount), 0);
+  const visibleOut = visible.filter(e => e.direction === "out").reduce((s, e) => s + Number(e.amount), 0);
+  const closingBalance = openingBalance + visibleIn - visibleOut;
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -71,9 +83,22 @@ const MonthlyStatement: React.FC = () => {
           <h1>Monthly Statement</h1>
           <p>Every cash and bank movement for the period, with who it was from/to.</p>
         </div>
+        <button
+          className="page-btn-round page-btn-round-primary"
+          onClick={() => {
+            printMonthlyStatement(visible, { startDate, endDate, totalIn: visibleIn, totalOut: visibleOut, openingBalance });
+          }}
+          disabled={loading || visible.length === 0}
+        >
+          <FaPrint size={11} /> Print
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+        <div className="page-table-wrapper" style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase" }}>Opening Balance</div>
+          <div style={{ fontSize: "22px", fontWeight: 800, color: openingBalance >= 0 ? "#1e293b" : "#dc2626", marginTop: "4px" }}>{fmt(openingBalance)}</div>
+        </div>
         <div className="page-table-wrapper" style={{ padding: "18px 20px" }}>
           <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase" }}>Total In</div>
           <div style={{ fontSize: "22px", fontWeight: 800, color: "#16a34a", marginTop: "4px" }}>{fmt(totalIn)}</div>
@@ -83,8 +108,8 @@ const MonthlyStatement: React.FC = () => {
           <div style={{ fontSize: "22px", fontWeight: 800, color: "#dc2626", marginTop: "4px" }}>{fmt(totalOut)}</div>
         </div>
         <div className="page-table-wrapper" style={{ padding: "18px 20px" }}>
-          <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase" }}>Net</div>
-          <div style={{ fontSize: "22px", fontWeight: 800, color: (totalIn - totalOut) >= 0 ? "#16a34a" : "#dc2626", marginTop: "4px" }}>{fmt(totalIn - totalOut)}</div>
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase" }}>Closing Balance</div>
+          <div style={{ fontSize: "22px", fontWeight: 800, color: closingBalance >= 0 ? "#16a34a" : "#dc2626", marginTop: "4px" }}>{fmt(closingBalance)}</div>
         </div>
       </div>
 
@@ -136,6 +161,13 @@ const MonthlyStatement: React.FC = () => {
               </tr>
             </thead>
             <tbody>
+              <tr style={{ background: "var(--bg)" }}>
+                <td colSpan={6} style={{ fontWeight: 700, color: "var(--text-2)" }}>
+                  Opening Balance (as of {new Date(startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })})
+                  <span style={{ float: "right", fontWeight: 800, color: openingBalance >= 0 ? "#1e293b" : "#dc2626" }}>{fmt(openingBalance)}</span>
+                </td>
+                <td></td>
+              </tr>
               {visible.map(e => (
                 <tr key={`${e.ledger_type}-${e.id}`}>
                   <td style={{ whiteSpace: "nowrap" }}>{new Date(e.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
