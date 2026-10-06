@@ -1251,12 +1251,13 @@ router.post("/salary/weekly/calculate", authMiddleware, async (req, res) => {
     try {
         await ensureWeeklyTables();
 
-        // Include both weekly AND daily employees — both get Saturday payout
+        // Weekly-salary employees only — daily-wage employees have their own
+        // dedicated Daily Wage page and must not also show up here.
         const employees = await db.pgAll(`
             SELECT * FROM employees
             WHERE company_id = $1
               AND COALESCE(status, 'Active') = 'Active'
-              AND LOWER(COALESCE(salary_type,'monthly')) IN ('weekly','daily')
+              AND LOWER(COALESCE(salary_type,'monthly')) = 'weekly'
         `, [companyId]);
 
         const results = [];
