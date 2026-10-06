@@ -19,8 +19,9 @@ router.get('/', authMiddleware, async (req, res) => {
                 COALESCE((SELECT SUM(lp.total_amount) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_paid_computed,
                 COALESCE((SELECT SUM(lp.interest_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0) AS total_interest_computed
             FROM loans l
+            WHERE l.company_id = $1
             ORDER BY l.id DESC
-        `);
+        `, [req.user.active_company_id]);
         console.log(`GET /loans → ${loans.length} rows`);
 
         // Attach lender_name from lenders table (separate safe query)
@@ -140,6 +141,63 @@ router.post('/', authMiddleware, async (req, res) => {
         const loan = await financeService.createLoan(req.user, req.body);
         res.status(201).json(loan);
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Edit the loan's own terms (not a repayment — see POST /repayment for that).
+// Principal/outstanding figures elsewhere are always recomputed live from
+// loan_payments, so changing principal_amount here is safe — it just moves
+// the baseline that remaining_principal is computed against.
+router.put('/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { id } = req.params;
+    const { party_name, principal_amount, interest_rate, interest_type, start_date, repayment_cycle, notes, status } = req.body;
+    try {
+        const existing = await db.pgGet(`SELECT id FROM loans WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        if (!existing) return res.status(404).json({ error: 'Loan not found' });
+
+        const loan = await db.pgGet(
+            `UPDATE loans SET
+                party_name      = COALESCE($1, party_name),
+                principal_amount = COALESCE($2, principal_amount),
+                interest_rate   = COALESCE($3, interest_rate),
+                interest_type   = COALESCE($4, interest_type),
+                start_date      = COALESCE($5, start_date),
+                repayment_cycle = COALESCE($6, repayment_cycle),
+                notes           = COALESCE($7, notes),
+                status          = COALESCE($8, status)
+             WHERE id = $9 AND company_id = $10
+             RETURNING *`,
+            [party_name || null, principal_amount ?? null, interest_rate ?? null, interest_type || null,
+             start_date || null, repayment_cycle || null, notes ?? null, status || null, id, companyId]
+        );
+        res.json(loan);
+    } catch (err) {
+        console.error('PUT /loans/:id error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Only allows deleting a loan with no repayment history — one with payments
+// already recorded against it needs those reversed/reviewed first, not a
+// silent delete that would orphan real financial records.
+router.delete('/:id', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { id } = req.params;
+    try {
+        const existing = await db.pgGet(`SELECT id FROM loans WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        if (!existing) return res.status(404).json({ error: 'Loan not found' });
+
+        const paymentCount = await db.pgGet(`SELECT COUNT(*)::int AS n FROM loan_payments WHERE loan_id = $1`, [id]);
+        if (paymentCount?.n > 0) {
+            return res.status(400).json({ error: `Can't delete — ${paymentCount.n} repayment(s) already recorded against this loan. Review those first.` });
+        }
+
+        await db.pgRun(`DELETE FROM loans WHERE id = $1 AND company_id = $2`, [id, companyId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('DELETE /loans/:id error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });

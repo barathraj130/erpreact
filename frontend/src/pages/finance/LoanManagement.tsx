@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { financeApi } from "./financeApi";
 import { apiFetch } from "../../utils/api";
-import { FaPlus, FaHandHoldingUsd, FaPercentage, FaExclamationCircle, FaSearch, FaSync, FaHistory, FaTimes, FaListAlt } from "react-icons/fa";
+import { FaPlus, FaHandHoldingUsd, FaPercentage, FaExclamationCircle, FaSearch, FaSync, FaHistory, FaTimes, FaListAlt, FaEdit, FaTrash } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import "../PageShared.css";
 import LoanRepaymentIdeas from "./LoanRepaymentIdeas";
@@ -82,6 +82,60 @@ const LoanManagement: React.FC = () => {
   const [splitPayment, setSplitPayment] = useState(false);
   const [showBackdateModal, setShowBackdateModal] = useState(false);
   const [pendingRepayPayload, setPendingRepayPayload] = useState<any>(null);
+
+  // Edit / Delete loan
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editLoanId, setEditLoanId] = useState<number | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    party_name: "", principal_amount: 0, interest_rate: 0,
+    start_date: "", repayment_cycle: "MONTHLY", notes: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingLoanId, setDeletingLoanId] = useState<number | null>(null);
+
+  const openEditModal = (loan: any) => {
+    setEditLoanId(loan.id);
+    setEditFormData({
+      party_name: loan.lender_name || loan.party_name || "",
+      principal_amount: Number(loan.principal_amount) || 0,
+      interest_rate: Number(loan.interest_rate) || 0,
+      start_date: loan.start_date ? String(loan.start_date).split("T")[0] : "",
+      repayment_cycle: loan.repayment_cycle || "MONTHLY",
+      notes: loan.notes || "",
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editLoanId) return;
+    setSavingEdit(true);
+    try {
+      const res = await apiFetch(`/loans/${editLoanId}`, { method: "PUT", body: editFormData });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to update loan"); }
+      setShowEditModal(false);
+      await fetchLoans();
+    } catch (err: any) {
+      alert(err.message || "Failed to update loan");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteLoan = async (loan: any) => {
+    if (!window.confirm(`Delete the loan from ${loan.lender_name || loan.party_name}? This cannot be undone.`)) return;
+    setDeletingLoanId(loan.id);
+    try {
+      const res = await apiFetch(`/loans/${loan.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed to delete loan"); return; }
+      await fetchLoans();
+    } catch {
+      alert("Failed to delete loan — check connection");
+    } finally {
+      setDeletingLoanId(null);
+    }
+  };
 
   const calcMonthlyInterest = (loan: any): number => {
     if (!loan) return 0;
@@ -521,6 +575,23 @@ const LoanManagement: React.FC = () => {
                           style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}
                         >
                           <FaListAlt size={10} />
+                        </button>
+                        <button
+                          className="page-btn-round-sm"
+                          onClick={() => openEditModal(loan)}
+                          title="Edit Loan"
+                          style={{ background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe" }}
+                        >
+                          <FaEdit size={10} />
+                        </button>
+                        <button
+                          className="page-btn-round-sm"
+                          onClick={() => handleDeleteLoan(loan)}
+                          disabled={deletingLoanId === loan.id}
+                          title="Delete Loan"
+                          style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}
+                        >
+                          <FaTrash size={10} />
                         </button>
                       </div>
                     );
@@ -1218,6 +1289,75 @@ const LoanManagement: React.FC = () => {
                 ✕ Cancel — don't record this repayment
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#fff", borderRadius: "14px", width: "420px", maxWidth: "92vw", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: 800, fontSize: "1.05rem" }}>Edit Loan</div>
+              <button onClick={() => setShowEditModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}><FaTimes /></button>
+            </div>
+            <form onSubmit={handleEditSubmit}>
+              <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Lender Name</label>
+                  <input type="text" required value={editFormData.party_name}
+                    onChange={e => setEditFormData({ ...editFormData, party_name: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #e5e7eb", fontSize: "14px", marginTop: "4px", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Principal (₹)</label>
+                    <input type="number" required min={0} value={editFormData.principal_amount}
+                      onChange={e => setEditFormData({ ...editFormData, principal_amount: Number(e.target.value) })}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #e5e7eb", fontSize: "14px", marginTop: "4px", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Interest Rate (%)</label>
+                    <input type="number" required min={0} step="0.1" value={editFormData.interest_rate}
+                      onChange={e => setEditFormData({ ...editFormData, interest_rate: Number(e.target.value) })}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #e5e7eb", fontSize: "14px", marginTop: "4px", boxSizing: "border-box" }} />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Start Date</label>
+                    <input type="date" required value={editFormData.start_date}
+                      onChange={e => setEditFormData({ ...editFormData, start_date: e.target.value })}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #e5e7eb", fontSize: "14px", marginTop: "4px", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Repayment Cycle</label>
+                    <select value={editFormData.repayment_cycle}
+                      onChange={e => setEditFormData({ ...editFormData, repayment_cycle: e.target.value })}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #e5e7eb", fontSize: "14px", marginTop: "4px", boxSizing: "border-box", background: "#fff" }}>
+                      <option value="MONTHLY">Monthly</option>
+                      <option value="INDEFINITE">No Fixed Cycle</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Notes</label>
+                  <textarea value={editFormData.notes}
+                    onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })}
+                    rows={2}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #e5e7eb", fontSize: "14px", marginTop: "4px", boxSizing: "border-box", resize: "vertical" }} />
+                </div>
+              </div>
+              <div style={{ padding: "14px 24px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button type="button" onClick={() => setShowEditModal(false)}
+                  style={{ padding: "9px 18px", borderRadius: "8px", border: "1.5px solid #e5e7eb", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={savingEdit}
+                  style={{ padding: "9px 20px", borderRadius: "8px", border: "none", background: savingEdit ? "#94a3b8" : "#6366f1", color: "#fff", fontWeight: 700, fontSize: "13px", cursor: savingEdit ? "not-allowed" : "pointer" }}>
+                  {savingEdit ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
