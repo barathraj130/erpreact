@@ -2,6 +2,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { syncCashLedger, syncBankLedger } from './ledgerRoutes.js';
 
 const router = express.Router();
 
@@ -501,6 +502,75 @@ router.get('/finance/day-book', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error("Day book error:", err);
         res.json([]);
+    }
+});
+
+/**
+ * 💰 CASH & BANK STATEMENT — every real money movement (cash_ledger + bank_ledger
+ * combined, chronological, with the party name resolved per entry) for a date
+ * range, typically a month. Built on the same authoritative tables the Ledgers
+ * page itself uses — not the best-effort double-entry system behind Day Book,
+ * which can silently miss entries when its postings fail (a confirmed, repeated
+ * issue elsewhere in this codebase). This is the one place to see where money
+ * actually came from and went, with names, for a given month.
+ */
+router.get('/finance/cash-bank-statement', authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    const { startDate, endDate, branchId } = req.query;
+    try {
+        await Promise.all([syncCashLedger(companyId), syncBankLedger(companyId)]);
+
+        const buildQuery = (table, alias, extraPartyCases) => {
+            const params = [companyId];
+            let sql = `
+                SELECT ${alias}.id, '${table === 'cash_ledger' ? 'CASH' : 'BANK'}' AS ledger_type,
+                    ${alias}.date, ${alias}.source, ${alias}.amount, ${alias}.direction, ${alias}.notes,
+                    CASE
+                      WHEN ${alias}.invoice_id IS NOT NULL THEN
+                        (SELECT u.username FROM invoices i JOIN users u ON u.id = i.customer_id WHERE i.id = ${alias}.invoice_id LIMIT 1)
+                      ${extraPartyCases}
+                      WHEN ${alias}.source = 'PROPRIETOR' THEN 'Proprietor'
+                      WHEN ${alias}.source = 'CASH_TRANSFER' AND ${alias}.direction = 'in' THEN 'From ${table === 'cash_ledger' ? 'Bank' : 'Cash'}'
+                      WHEN ${alias}.source = 'CASH_TRANSFER' AND ${alias}.direction = 'out' THEN 'To ${table === 'cash_ledger' ? 'Bank' : 'Cash'}'
+                      WHEN ${alias}.source IN ('EXPENSE','SALARY','WAGES','PURCHASE') AND ${alias}.reference_id IS NOT NULL THEN
+                        (SELECT COALESCE(t.description, t.type) FROM transactions t WHERE t.id = ${alias}.reference_id LIMIT 1)
+                      ELSE NULL
+                    END AS party_name
+                FROM ${table} ${alias}
+                WHERE ${alias}.company_id = $1 AND ${alias}.source != 'OPENING_BALANCE' AND ${alias}.source != 'CASH_RECONCILIATION'`;
+            let pIndex = 2;
+            if (startDate) { sql += ` AND ${alias}.date >= $${pIndex++}`; params.push(startDate); }
+            if (endDate)   { sql += ` AND ${alias}.date <= $${pIndex++}`; params.push(endDate); }
+            if (branchId && branchId !== 'all') { sql += ` AND ${alias}.branch_id = $${pIndex++}`; params.push(branchId); }
+            return { sql, params };
+        };
+
+        const cashQ = buildQuery('cash_ledger', 'cl',
+            `WHEN cl.reference_id IS NOT NULL AND cl.source = 'RECEIPT' THEN
+                (SELECT u.username FROM transactions t JOIN users u ON u.id = t.user_id WHERE t.id = cl.reference_id LIMIT 1)`);
+        const bankQ = buildQuery('bank_ledger', 'bl',
+            `WHEN bl.source = 'CUSTOMER_PAYMENT' AND bl.reference_id IS NOT NULL THEN
+                (SELECT u.username FROM transactions t JOIN users u ON u.id = t.user_id WHERE t.id = bl.reference_id LIMIT 1)
+             WHEN bl.source = 'PURCHASE_RETURN' AND bl.reference_id IS NOT NULL THEN
+                (SELECT pr.supplier_name FROM purchase_returns pr WHERE pr.id = bl.reference_id LIMIT 1)`);
+
+        const [cashRows, bankRows] = await Promise.all([
+            db.pgAll(cashQ.sql, cashQ.params),
+            db.pgAll(bankQ.sql, bankQ.params),
+        ]);
+
+        const INFLOW_SOURCES = new Set(['RECEIPT', 'GIFT_CONTRIBUTION', 'LOAN_RECEIVED', 'LOAN_DISBURSEMENT', 'INVOICE', 'Payment', 'payment', 'INVOICE_PAYMENT']);
+        const combined = [...cashRows, ...bankRows]
+            .map(r => ({ ...r, direction: INFLOW_SOURCES.has(r.source) ? 'in' : r.direction }))
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.id - b.id);
+
+        const totalIn = combined.filter(r => r.direction === 'in').reduce((s, r) => s + Number(r.amount), 0);
+        const totalOut = combined.filter(r => r.direction === 'out').reduce((s, r) => s + Number(r.amount), 0);
+
+        res.json({ entries: combined, total_in: totalIn, total_out: totalOut, net: totalIn - totalOut });
+    } catch (err) {
+        console.error('Cash & Bank statement error:', err);
+        res.status(500).json({ error: 'Failed to build statement', entries: [], total_in: 0, total_out: 0, net: 0 });
     }
 });
 

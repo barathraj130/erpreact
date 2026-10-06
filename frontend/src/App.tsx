@@ -125,6 +125,7 @@ import CashReceipts from "./pages/finance/CashReceipts";
 import FinanceDashboard from "./pages/finance/FinanceDashboard";
 import FinancialReports from "./pages/finance/FinancialReports";
 import LoanManagement from "./pages/finance/LoanManagement";
+import MonthlyStatement from "./pages/finance/MonthlyStatement";
 import ChitManagement from "./pages/finance/ChitManagement";
 import BrokerManagement from "./pages/brokers/BrokerManagement";
 import BrokerLedger from "./pages/brokers/BrokerLedger";
@@ -487,6 +488,7 @@ const App: React.FC = () => {
 
             <Route path="/finance/dashboard" element={<FinanceDashboard />} />
             <Route path="/finance/loans" element={<LoanManagement />} />
+            <Route path="/finance/statement" element={<MonthlyStatement />} />
             <Route path="/finance/lenders" element={<LenderManagement />} />
             <Route path="/finance/receipts" element={<CashReceipts />} />
             <Route path="/finance/reports" element={<FinancialReports />} />

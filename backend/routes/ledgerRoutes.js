@@ -254,7 +254,7 @@ const getBranchFilter = (req) => {
  * the POST's calculation and the following GET silently shifts the displayed
  * balance away from what was just set.
  */
-const syncCashLedger = async (companyId) => {
+export const syncCashLedger = async (companyId) => {
     await Promise.all([
         db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
         db.pgRun(`ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),
@@ -397,7 +397,7 @@ const syncCashLedger = async (companyId) => {
 };
 
 /** Same idea as syncCashLedger, for bank_ledger — see GET /bank for the original inline version. */
-const syncBankLedger = async (companyId) => {
+export const syncBankLedger = async (companyId) => {
     await Promise.all([
         db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS notes TEXT`).catch(() => {}),
         db.pgRun(`ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(100)`).catch(() => {}),

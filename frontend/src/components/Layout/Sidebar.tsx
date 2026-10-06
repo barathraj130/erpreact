@@ -158,6 +158,7 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
               { name: "Personal Accounts", path: "/settings/personal-accounts" },
               { name: "Cash Transfers", path: "/finance/cash-transfers" },
               { name: "Ledgers", path: "/ledgers" },
+              { name: "Monthly Statement", path: "/finance/statement" },
               { name: "Expense List", path: "/expenses" },
               { name: "Transactions", path: "/transactions" }
           ] 
