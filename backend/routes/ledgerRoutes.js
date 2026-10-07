@@ -1028,6 +1028,10 @@ router.get('/supplier/:id', authMiddleware, async (req, res) => {
     try {
         const companyId = parseInt(req.user?.active_company_id || req.user?.company_id);
         const supplierId = parseInt(req.params.id);
+        // Self-heal suppliers.current_balance on every view, same pattern as
+        // syncCashLedger/syncBankLedger — corrects any drift from a missed
+        // incremental update elsewhere (e.g. a deleted SUPPLIER_PAYMENT).
+        await supplierLedgerService.recomputeSupplierBalance(companyId, supplierId).catch(() => {});
         const statement = await supplierLedgerService.buildSupplierLedgerStatement(companyId, supplierId, req.query);
         if (!statement) return res.status(404).json({ error: "Supplier not found" });
         res.json(statement);

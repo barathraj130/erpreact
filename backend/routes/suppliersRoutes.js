@@ -3,6 +3,7 @@ import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
 import { getAccountByCode } from '../utils/accountingEngine.js';
+import { recomputeSupplierBalance } from '../services/supplierLedgerService.js';
 
 const router = express.Router();
 
@@ -16,6 +17,12 @@ router.get('/', authMiddleware, async (req, res) => {
     const offset = (page - 1) * limit;
 
     try {
+        // Self-heal current_balance for every supplier before listing — corrects
+        // drift from any missed incremental update elsewhere (e.g. a deleted
+        // SUPPLIER_PAYMENT transaction), same self-heal pattern as cash/bank ledgers.
+        const supplierIds = await db.pgAll(`SELECT id FROM suppliers WHERE company_id = $1`, [companyId]);
+        await Promise.all(supplierIds.map(s => recomputeSupplierBalance(companyId, s.id).catch(() => {})));
+
         let whereClause = "WHERE s.company_id = $1";
         let params = [companyId];
 

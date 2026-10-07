@@ -2,6 +2,7 @@
 import express from 'express';
 import * as db from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { recomputeSupplierBalance } from '../services/supplierLedgerService.js';
 
 const router = express.Router();
 
@@ -630,11 +631,25 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         await db.pgRun(`DELETE FROM ${table} WHERE id = $1 AND company_id = $2`, [ledgerId, companyId]);
 
         if (refId) {
+            // Look up what this transaction was before excluding it, so a
+            // SUPPLIER_PAYMENT's effect on suppliers.current_balance can be undone.
+            const txRow = await db.pgGet(
+                `SELECT type, reference_id FROM transactions WHERE id = $1 AND company_id = $2`,
+                [refId, companyId]
+            ).catch(() => null);
+
             // Mark transaction excluded so self-heal never re-inserts
             await db.pgRun(
                 `UPDATE transactions SET bill_purpose = 'excluded' WHERE id = $1 AND company_id = $2`,
                 [refId, companyId]
             ).catch(() => {});
+
+            // suppliers.current_balance is recomputed from scratch (opening + bills -
+            // still-valid payments) rather than trusted as an incremental running total —
+            // recomputing here picks up this exclusion automatically, no manual +/- needed.
+            if (txRow && txRow.type === 'SUPPLIER_PAYMENT' && txRow.reference_id) {
+                await recomputeSupplierBalance(companyId, txRow.reference_id).catch(() => {});
+            }
 
             // Clean ledger_entries for this transaction
             await db.pgRun(

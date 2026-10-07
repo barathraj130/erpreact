@@ -112,6 +112,39 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
   );
 }
 
+/**
+ * Recompute suppliers.current_balance from scratch (opening balance + all
+ * bills - all still-valid payments) and persist it, instead of trusting the
+ * incremental +/- mutations scattered across purchaseBillRoutes.js and
+ * transactionService.js — any one of those missing its reversal (e.g. a
+ * deleted SUPPLIER_PAYMENT transaction) leaves current_balance permanently
+ * wrong otherwise. Call this after anything that changes a supplier's bills
+ * or payments, and on every ledger view so it self-heals like the cash/bank
+ * ledgers already do.
+ */
+export async function recomputeSupplierBalance(companyId, supplierId) {
+  const cId = parseInt(companyId);
+  const sId = parseInt(supplierId);
+  const supplier = await db.pgGet(
+    `SELECT opening_balance FROM suppliers WHERE id = $1 AND company_id = $2`,
+    [sId, cId],
+  );
+  if (!supplier) return null;
+
+  const rows = await getSupplierDerivedRows(cId, sId, {});
+  let balance = toNumber(supplier.opening_balance);
+  for (const row of rows) {
+    const amount = toNumber(row.amount);
+    balance += row.type === "BILL" ? amount : -amount;
+  }
+
+  await db.pgRun(
+    `UPDATE suppliers SET current_balance = $1 WHERE id = $2 AND company_id = $3`,
+    [balance, sId, cId],
+  );
+  return balance;
+}
+
 export async function buildSupplierLedgerStatement(companyId, supplierId, filters = {}) {
   const cId = parseInt(companyId);
   const sId = parseInt(supplierId);
