@@ -1146,9 +1146,14 @@ router.post('/set-opening-balance', authMiddleware, async (req, res) => {
         const netOthers = parseFloat(othersRow?.net || 0);
         const needed = desired - netOthers;
 
-        // Remove existing OPENING_BALANCE entries for this company+branch
+        // Remove existing OPENING_BALANCE entries for this company+branch only —
+        // scoped identically to netOthers above. Previously had no branch filter
+        // at all despite this comment, so adjusting while viewing one branch wiped
+        // out every other branch's compensating entry, and the replacement (inserted
+        // under the current branch) could end up invisible to a view scoped to a
+        // different branch — either way producing a balance nowhere near "desired".
         await db.pgRun(
-            `DELETE FROM ${tbl} WHERE company_id = $1 AND source = 'OPENING_BALANCE'`,
+            `DELETE FROM ${tbl} WHERE company_id = $1 AND ${branchFilter} AND source = 'OPENING_BALANCE'`,
             [companyId]
         );
 
