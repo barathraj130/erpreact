@@ -77,7 +77,12 @@ router.get('/balance/current', authMiddleware, async (req, res) => {
         // Self-heal: fix inflow sources stored with wrong direction='out'
         // NOTE: OPENING_BALANCE excluded — direction='out' is intentional when back-calculation
         // produces a negative needed value. Flipping it would destroy the balance correction.
-        const INFLOW_SET = `'RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
+        // Must match every other copy of this list in this file (GET /cash, GET /bank,
+        // POST /cash-reconciliation, POST /set-opening-balance) exactly — this is the
+        // balance the backdated-transaction "Add & adjust opening balance" flow reads
+        // as "balance before" (Transactions.tsx), so a missing source here silently
+        // breaks that cancellation for any company with an affected row.
+        const INFLOW_SET = `'RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT'`;
         await Promise.all([
             db.pgRun(`UPDATE cash_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
             db.pgRun(`UPDATE bank_ledger SET direction='in' WHERE company_id=$1 AND source IN (${INFLOW_SET}) AND direction='out' AND amount>0`, [companyId]).catch(()=>{}),
@@ -272,7 +277,7 @@ export const syncCashLedger = async (companyId) => {
     await db.pgRun(
         `UPDATE cash_ledger SET direction='in'
          WHERE company_id=$1
-           AND source IN ('RECEIPT','INVOICE','Payment','payment','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
+           AND source IN ('RECEIPT','INVOICE','Payment','payment','INVOICE_PAYMENT','GIFT_CONTRIBUTION','LOAN_RECEIVED','LOAN_DISBURSEMENT')
            AND direction='out' AND amount>0`,
         [companyId]
     ).catch(()=>{});
