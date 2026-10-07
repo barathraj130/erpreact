@@ -155,7 +155,10 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   paymentConditions.push(`UPPER(COALESCE(p.payment_method, '')) != 'SETTLEMENT'`);
 
   // Direct customer payments recorded via Transactions page
-  const txConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'CUSTOMER_PAYMENT'", "COALESCE(t.reference_type, '') != 'SETTLEMENT'"];
+  // bill_purpose != 'excluded' — DELETE /transactions/:id marks the source row
+  // excluded instead of removing it, so a deleted payment must stay excluded
+  // here too or it keeps showing in this party's ledger after deletion.
+  const txConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'CUSTOMER_PAYMENT'", "COALESCE(t.reference_type, '') != 'SETTLEMENT'", "COALESCE(t.bill_purpose, 'real') != 'excluded'"];
   if (filters.start_date) txConditions.push(`t.transaction_date >= $3`);
   if (filters.end_date)   txConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
 
@@ -168,17 +171,17 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
 
   // Payments made TO the customer, recorded via Transactions page (general purpose —
   // refunds, advances, goodwill payments — not tied to a settlement)
-  const p2cConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'PAYMENT_TO_CUSTOMER'"];
+  const p2cConditions = ["t.company_id = $1", "t.reference_id = $2", "t.type = 'PAYMENT_TO_CUSTOMER'", "COALESCE(t.bill_purpose, 'real') != 'excluded'"];
   if (filters.start_date) p2cConditions.push(`t.transaction_date >= $3`);
   if (filters.end_date)   p2cConditions.push(`t.transaction_date <= $${filters.start_date ? 4 : 3}`);
 
   // Round-off / discount adjustments (stored as type='ROUND_OFF' with user_id = customerId)
-  const roConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'ROUND_OFF'"];
+  const roConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'ROUND_OFF'", "COALESCE(t.bill_purpose, 'real') != 'excluded'"];
   if (filters.start_date) roConditions.push(`COALESCE(t.transaction_date, t.date) >= $3`);
   if (filters.end_date)   roConditions.push(`COALESCE(t.transaction_date, t.date) <= $${filters.start_date ? 4 : 3}`);
 
   // Payments made TO the customer (e.g. land-settlement guideline value transfers)
-  const gtConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'GUIDELINE_TRANSFER'"];
+  const gtConditions = ["t.company_id = $1", "t.user_id = $2", "t.type = 'GUIDELINE_TRANSFER'", "COALESCE(t.bill_purpose, 'real') != 'excluded'"];
   if (filters.start_date) gtConditions.push(`COALESCE(t.transaction_date, t.date) >= $3`);
   if (filters.end_date)   gtConditions.push(`COALESCE(t.transaction_date, t.date) <= $${filters.start_date ? 4 : 3}`);
 
@@ -420,10 +423,15 @@ async function getCustomerTotals(companyId, customerId) {
     [companyId, customerId],
   );
 
+  // bill_purpose != 'excluded' on all four queries below — DELETE /transactions/:id
+  // marks a deleted transaction excluded instead of removing it, so leaving this
+  // filter out means a deleted payment/round-off/transfer keeps counting toward
+  // the customer's stored balance forever.
   const directPaymentTotals = await db.pgGet(
     `SELECT COALESCE(SUM(amount), 0) AS total_direct
      FROM transactions
-     WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
+     WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'
+       AND COALESCE(bill_purpose, 'real') != 'excluded'`,
     [companyId, customerId],
   );
 
@@ -432,7 +440,8 @@ async function getCustomerTotals(companyId, customerId) {
   const paymentToCustomerTotals = await db.pgGet(
     `SELECT COALESCE(SUM(amount), 0) AS total_p2c
      FROM transactions
-     WHERE company_id = $1 AND reference_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'`,
+     WHERE company_id = $1 AND reference_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'
+       AND COALESCE(bill_purpose, 'real') != 'excluded'`,
     [companyId, customerId],
   );
 
@@ -452,7 +461,8 @@ async function getCustomerTotals(companyId, customerId) {
     const roTotals = await db.pgGet(
       `SELECT COALESCE(SUM(amount), 0) AS total_round_off
        FROM transactions
-       WHERE company_id = $1 AND user_id = $2 AND type = 'ROUND_OFF'`,
+       WHERE company_id = $1 AND user_id = $2 AND type = 'ROUND_OFF'
+         AND COALESCE(bill_purpose, 'real') != 'excluded'`,
       [companyId, customerId],
     );
     roundOffTotal = toNumber(roTotals?.total_round_off);
@@ -465,7 +475,8 @@ async function getCustomerTotals(companyId, customerId) {
     const gtTotals = await db.pgGet(
       `SELECT COALESCE(SUM(amount), 0) AS total_guideline
        FROM transactions
-       WHERE company_id = $1 AND user_id = $2 AND type = 'GUIDELINE_TRANSFER'`,
+       WHERE company_id = $1 AND user_id = $2 AND type = 'GUIDELINE_TRANSFER'
+         AND COALESCE(bill_purpose, 'real') != 'excluded'`,
       [companyId, customerId],
     );
     guidelineTransferTotal = toNumber(gtTotals?.total_guideline);
@@ -538,7 +549,8 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     const roTotals = await client.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_round_off
        FROM transactions
-       WHERE company_id = $1 AND user_id = $2 AND type = 'ROUND_OFF'`,
+       WHERE company_id = $1 AND user_id = $2 AND type = 'ROUND_OFF'
+         AND COALESCE(bill_purpose, 'real') != 'excluded'`,
       [companyId, customerId],
     );
     roundOff = toNumber(roTotals.rows[0]?.total_round_off);
@@ -551,7 +563,8 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     const gtTotals = await client.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_guideline
        FROM transactions
-       WHERE company_id = $1 AND user_id = $2 AND type = 'GUIDELINE_TRANSFER'`,
+       WHERE company_id = $1 AND user_id = $2 AND type = 'GUIDELINE_TRANSFER'
+         AND COALESCE(bill_purpose, 'real') != 'excluded'`,
       [companyId, customerId],
     );
     guidelineTransfer = toNumber(gtTotals.rows[0]?.total_guideline);
@@ -564,7 +577,8 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     const directTotals = await client.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_direct
        FROM transactions
-       WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'`,
+       WHERE company_id = $1 AND reference_id = $2 AND type = 'CUSTOMER_PAYMENT'
+         AND COALESCE(bill_purpose, 'real') != 'excluded'`,
       [companyId, customerId],
     );
     directPaid = toNumber(directTotals.rows[0]?.total_direct);
@@ -578,7 +592,8 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     const p2cTotals = await client.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_p2c
        FROM transactions
-       WHERE company_id = $1 AND reference_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'`,
+       WHERE company_id = $1 AND reference_id = $2 AND type = 'PAYMENT_TO_CUSTOMER'
+         AND COALESCE(bill_purpose, 'real') != 'excluded'`,
       [companyId, customerId],
     );
     paidToCustomer = toNumber(p2cTotals.rows[0]?.total_p2c);

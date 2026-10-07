@@ -105,6 +105,7 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
        WHERE t.company_id = $1
          AND t.reference_type IN ('SUPPLIER_PAYMENT', 'supplier')
          AND t.reference_id::text = $2::text
+         AND COALESCE(t.bill_purpose, 'real') != 'excluded'
      ) ledger_rows
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
