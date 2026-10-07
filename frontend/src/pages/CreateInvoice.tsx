@@ -241,9 +241,13 @@ const CreateInvoice: React.FC = () => {
   const DENOMINATIONS = [500, 200, 100, 50, 20, 10, 5, 2, 1];
   const denomTotalFor = (denom?: Record<number, string>) =>
     DENOMINATIONS.reduce((sum, d) => sum + (Number(denom?.[d]) || 0) * d, 0);
-  const denomNotesFor = (denom?: Record<number, string>) => {
+  const denomNotesFor = (denom?: Record<number, string>, amount?: number) => {
     const parts = DENOMINATIONS.filter(d => Number(denom?.[d]) > 0).map(d => `₹${d}×${denom?.[d]}`);
-    return parts.length ? `Denomination: ${parts.join(", ")}` : "";
+    if (!parts.length) return "";
+    const counted = denomTotalFor(denom);
+    const change = amount != null ? Math.round((counted - amount) * 100) / 100 : 0;
+    const changeNote = change > 0 ? ` (Received ₹${counted}, change given ₹${change})` : "";
+    return `Denomination: ${parts.join(", ")}${changeNote}`;
   };
   const amountPaid = useMemo(() => paymentsList.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [paymentsList]);
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
@@ -588,8 +592,8 @@ const CreateInvoice: React.FC = () => {
           if (counted === 0) {
             return alert(`Enter the denomination breakdown for the ₹${p.amount} cash payment before saving.`);
           }
-          if (Math.round(counted * 100) !== Math.round(p.amount * 100)) {
-            return alert(`Denomination breakdown (₹${counted}) doesn't match the cash payment amount (₹${p.amount}).`);
+          if (Math.round(counted * 100) < Math.round(p.amount * 100)) {
+            return alert(`Denomination breakdown (₹${counted}) is less than the cash payment amount (₹${p.amount}).`);
           }
         }
       }
@@ -630,7 +634,7 @@ const CreateInvoice: React.FC = () => {
             payment_method: p.method,
             payment_date: meta.invoiceDate,
             reference: p.reference || "",
-            notes: p.method === "CASH" ? denomNotesFor(p.denom) : undefined,
+            notes: p.method === "CASH" ? denomNotesFor(p.denom, p.amount) : undefined,
         })),
         tax_details: gstState,
         transport_details: {
@@ -1640,9 +1644,11 @@ const CreateInvoice: React.FC = () => {
 
                 {payment.method === "CASH" && payment.amount > 0 && (() => {
                   const counted = denomTotalFor(payment.denom);
-                  const matches = Math.round(counted * 100) === Math.round(payment.amount * 100);
+                  const diff = Math.round((counted - payment.amount) * 100) / 100;
+                  const matches = diff === 0;
+                  const changeDue = diff > 0;
                   return (
-                    <div style={{ marginTop: "10px", background: "#fffbeb", border: `1.5px solid ${matches ? "#86efac" : "#fde68a"}`, borderRadius: "8px", padding: "10px 12px" }}>
+                    <div style={{ marginTop: "10px", background: "#fffbeb", border: `1.5px solid ${matches ? "#86efac" : changeDue ? "#93c5fd" : "#fde68a"}`, borderRadius: "8px", padding: "10px 12px" }}>
                       <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
                         Denomination (required for cash)
                       </div>
@@ -1665,9 +1671,14 @@ const CreateInvoice: React.FC = () => {
                           </div>
                         ))}
                       </div>
-                      <div style={{ marginTop: "8px", fontSize: "11px", fontWeight: 700, color: matches ? "#15803d" : "#b45309" }}>
-                        Counted: ₹{counted.toLocaleString("en-IN")} {matches ? "✓ matches" : `(needs ₹${payment.amount})`}
+                      <div style={{ marginTop: "8px", fontSize: "11px", fontWeight: 700, color: matches ? "#15803d" : changeDue ? "#1d4ed8" : "#b45309" }}>
+                        Counted: ₹{counted.toLocaleString("en-IN")} {matches ? "✓ matches" : changeDue ? "" : `(needs ₹${payment.amount})`}
                       </div>
+                      {changeDue && (
+                        <div style={{ marginTop: "6px", background: "#dbeafe", border: "1.5px solid #93c5fd", borderRadius: "6px", padding: "8px 10px", fontSize: "13px", fontWeight: 800, color: "#1d4ed8" }}>
+                          💰 Give change back: ₹{diff.toLocaleString("en-IN")}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

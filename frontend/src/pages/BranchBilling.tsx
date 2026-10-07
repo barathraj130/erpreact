@@ -504,7 +504,10 @@ const BranchBilling: React.FC = () => {
   const receiveDenomTotal = DENOMINATIONS.reduce((sum, d) => sum + (Number(receiveDenom[d]) || 0) * d, 0);
   const receiveDenomNotes = () => {
     const parts = DENOMINATIONS.filter(d => Number(receiveDenom[d]) > 0).map(d => `₹${d}×${receiveDenom[d]}`);
-    return parts.length ? `Denomination: ${parts.join(", ")}` : "";
+    if (!parts.length) return "";
+    const change = Math.round((receiveDenomTotal - (parseFloat(receiveAmount) || 0)) * 100) / 100;
+    const changeNote = change > 0 ? ` (Received ₹${receiveDenomTotal}, change given ₹${change})` : "";
+    return `Denomination: ${parts.join(", ")}${changeNote}`;
   };
 
   /* return mode */
@@ -801,8 +804,8 @@ const BranchBilling: React.FC = () => {
     if (!outstandingInvs.length) { setFlash("No outstanding invoices for this customer"); return; }
     if (receiveMode === "cash") {
       if (receiveDenomTotal === 0) { setFlash("Enter the denomination breakdown for this cash payment"); return; }
-      if (Math.round(receiveDenomTotal * 100) !== Math.round(parseFloat(receiveAmount) * 100)) {
-        setFlash(`Denomination breakdown (₹${receiveDenomTotal}) doesn't match the amount (₹${receiveAmount})`);
+      if (Math.round(receiveDenomTotal * 100) < Math.round(parseFloat(receiveAmount) * 100)) {
+        setFlash(`Denomination breakdown (₹${receiveDenomTotal}) is less than the amount (₹${receiveAmount})`);
         return;
       }
     }
@@ -1532,8 +1535,13 @@ const BranchBilling: React.FC = () => {
                 </div>
               </div>
 
-              {receiveMode === "cash" && (
-                <div style={{ background: "#1e293b", border: `1.5px solid ${Math.round(receiveDenomTotal * 100) === Math.round((parseFloat(receiveAmount) || 0) * 100) && receiveDenomTotal > 0 ? "#10b981" : "#f59e0b"}`, borderRadius: 10, padding: 14, marginBottom: 20 }}>
+              {receiveMode === "cash" && (() => {
+                const needed = parseFloat(receiveAmount) || 0;
+                const diff = Math.round((receiveDenomTotal - needed) * 100) / 100;
+                const matches = diff === 0 && receiveDenomTotal > 0;
+                const changeDue = diff > 0;
+                return (
+                <div style={{ background: "#1e293b", border: `1.5px solid ${matches ? "#10b981" : changeDue ? "#60a5fa" : "#f59e0b"}`, borderRadius: 10, padding: 14, marginBottom: 20 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", marginBottom: 8 }}>
                     Denomination (required for cash)
                   </div>
@@ -1547,15 +1555,21 @@ const BranchBilling: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: Math.round(receiveDenomTotal * 100) === Math.round((parseFloat(receiveAmount) || 0) * 100) && receiveDenomTotal > 0 ? "#10b981" : "#fbbf24" }}>
-                    Counted: ₹{inr(receiveDenomTotal)} {receiveAmount ? `(needs ₹${inr(receiveAmount)})` : ""}
+                  <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: matches ? "#10b981" : changeDue ? "#60a5fa" : "#fbbf24" }}>
+                    Counted: ₹{inr(receiveDenomTotal)} {!matches && !changeDue && receiveAmount ? `(needs ₹${inr(receiveAmount)})` : ""}
                   </div>
+                  {changeDue && (
+                    <div style={{ marginTop: 6, background: "#1e3a8a", border: "1.5px solid #60a5fa", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: 800, color: "#bfdbfe" }}>
+                      💰 Give change back: ₹{inr(diff)}
+                    </div>
+                  )}
                 </div>
-              )}
+                );
+              })()}
 
               <button onClick={handleReceivePayment}
-                disabled={receivingSaving || !receiveAmount || (receiveMode === "cash" && Math.round(receiveDenomTotal * 100) !== Math.round((parseFloat(receiveAmount) || 0) * 100))}
-                style={{ ...BTN_PRIMARY, padding: "16px", fontSize: 16, background: "#10b981", width: "100%", opacity: (!receiveAmount || (receiveMode === "cash" && Math.round(receiveDenomTotal * 100) !== Math.round((parseFloat(receiveAmount) || 0) * 100))) ? 0.5 : 1 }}>
+                disabled={receivingSaving || !receiveAmount || (receiveMode === "cash" && Math.round(receiveDenomTotal * 100) < Math.round((parseFloat(receiveAmount) || 0) * 100))}
+                style={{ ...BTN_PRIMARY, padding: "16px", fontSize: 16, background: "#10b981", width: "100%", opacity: (!receiveAmount || (receiveMode === "cash" && Math.round(receiveDenomTotal * 100) < Math.round((parseFloat(receiveAmount) || 0) * 100))) ? 0.5 : 1 }}>
                 {receivingSaving ? "Processing…" : `Receive ₹${inr(receiveAmount)} from ${payCustomer.name}`}
               </button>
             </>
