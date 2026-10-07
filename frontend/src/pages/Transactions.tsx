@@ -251,11 +251,16 @@ const Transactions: React.FC = () => {
         return;
       }
 
-      // If user wants to keep current balance same → re-set opening balance to pre-tx value
+      // If user wants to keep current balance same → re-set opening balance to pre-tx value.
+      // Must back-calculate as of TODAY, not a fixed past date — set-opening-balance computes
+      // needed = desired - (everything dated before this date), so the date here has to be
+      // "now" for the math to actually net out the backdated transaction we just posted.
+      // A hardcoded old date (e.g. "2024-04-01") sums the wrong window entirely and doesn't
+      // cancel anything, which is why this option looked like it was doing nothing.
       if (adjustOpeningBalance && balanceBefore !== 0) {
         await apiFetch("/ledger/set-opening-balance", {
           method: "POST",
-          body: { ledger_type: ledgerType, amount: balanceBefore, date: "2024-04-01" },
+          body: { ledger_type: ledgerType, amount: balanceBefore, date: new Date().toISOString().split("T")[0] },
         });
       }
 
