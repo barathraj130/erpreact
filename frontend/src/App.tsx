@@ -170,6 +170,8 @@ import EmployeeChitManagement from "./pages/admin/hrforms/ChitManagement";
 import BillFormatSettings from "./pages/BillFormatSettings";
 import PaymentMethodsAdmin from "./pages/PaymentMethodsAdmin";
 import SystemTester from "./pages/SystemTester";
+import BackdatedTransactions from "./pages/accounts/BackdatedTransactions";
+import BackdatedEntry from "./pages/accounts/BackdatedEntry";
 import DeliveryOrders from "./pages/DeliveryOrders";
 import CreateDeliveryOrder from "./pages/CreateDeliveryOrder";
 import DeliveryOrderDetail from "./pages/DeliveryOrderDetail";
@@ -401,6 +403,8 @@ const App: React.FC = () => {
             <Route path="/admin/bill-format" element={<BillFormatSettings />} />
             <Route path="/admin/payment-methods" element={<PaymentMethodsAdmin />} />
             <Route path="/admin/system-test" element={<SystemTester />} />
+            <Route path="/accounts/backdated" element={<BackdatedTransactions />} />
+            <Route path="/accounts/backdated/new" element={<BackdatedEntry />} />
             <Route path="/admin/reset" element={<ERPReset />} />
             <Route path="/admin/reports" element={<Reports />} />
             <Route path="/admin/employees" element={<Employees />} />

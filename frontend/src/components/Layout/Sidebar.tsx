@@ -160,8 +160,9 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
               { name: "Ledgers", path: "/ledgers" },
               { name: "Monthly Statement", path: "/finance/statement" },
               { name: "Expense List", path: "/expenses" },
-              { name: "Transactions", path: "/transactions" }
-          ] 
+              { name: "Transactions", path: "/transactions" },
+              ...(["admin", "superadmin"].includes((user?.role || "").toLowerCase()) ? [{ name: "Backdated Entries", path: "/accounts/backdated" }] : [])
+          ]
       });
   }
 
