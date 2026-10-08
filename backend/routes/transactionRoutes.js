@@ -51,7 +51,7 @@ const getBranchFilter = (req) => {
     if (headerBranch && headerBranch !== 'all' && headerBranch !== 'null' && !isNaN(Number(headerBranch))) {
         return 't.branch_id = ' + Number(headerBranch);
     }
-    if (role === 'admin' && (!headerBranch || headerBranch === 'all')) {
+    if (['admin', 'superadmin'].includes(role) && (!headerBranch || headerBranch === 'all')) {
         return '1=1';
     }
     if (userBranch) {
