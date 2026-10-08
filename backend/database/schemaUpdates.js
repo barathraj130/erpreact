@@ -1441,6 +1441,74 @@ export const runSchemaUpdates = async () => {
             await db.query(idx).catch((e) => console.warn('[schemaUpdates] index skipped:', e.message));
         }
 
+        // ── Backdated transactions — promoted here from lazy per-route creation
+        // (backdatedRoutes.js) because customer/supplier ledger queries and the
+        // customer list query now read this table too; those must never fail on
+        // a fresh company that hasn't visited the Backdated Entries page yet.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS backdated_transactions (
+                id                   SERIAL PRIMARY KEY,
+                company_id           INTEGER NOT NULL,
+                branch_id            INTEGER REFERENCES branches(id),
+                transaction_type     VARCHAR(30) NOT NULL
+                    CHECK (transaction_type IN (
+                        'cash_in','cash_out','bank_in','bank_out','sale','purchase',
+                        'expense','payment_received','payment_made','opening_balance',
+                        'adjustment','other'
+                    )),
+                transaction_date     DATE NOT NULL,
+                amount               NUMERIC(14,2) NOT NULL,
+                description          TEXT NOT NULL,
+                reference_number     VARCHAR(100),
+                party_name           VARCHAR(200),
+                party_type           VARCHAR(20)
+                    CHECK (party_type IN ('customer','supplier','employee','other') OR party_type IS NULL),
+                party_id             INTEGER,
+                account_type         VARCHAR(20) DEFAULT 'cash'
+                    CHECK (account_type IN ('cash','bank')),
+                bank_account_name    VARCHAR(100),
+                payment_mode         VARCHAR(30) DEFAULT 'cash',
+                category             VARCHAR(100),
+                affects_reports      BOOLEAN DEFAULT true,
+                affects_balance      BOOLEAN DEFAULT false,
+                backdated_reason     TEXT NOT NULL,
+                backdated_by         INTEGER REFERENCES users(id),
+                backdated_at         TIMESTAMP DEFAULT NOW(),
+                approved_by          INTEGER REFERENCES users(id),
+                approved_at          TIMESTAMP,
+                approval_status      VARCHAR(20) DEFAULT 'approved'
+                    CHECK (approval_status IN ('pending','approved','rejected')),
+                is_reversed          BOOLEAN DEFAULT false,
+                reversed_by          INTEGER REFERENCES users(id),
+                reversed_at          TIMESTAMP,
+                reversal_reason      TEXT,
+                original_transaction_id INTEGER,
+                notes                TEXT,
+                created_at           TIMESTAMP DEFAULT NOW(),
+                updated_at           TIMESTAMP DEFAULT NOW()
+            )
+        `).catch((e) => console.warn('[schemaUpdates] backdated_transactions skipped:', e.message));
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS backdated_audit (
+                id                        SERIAL PRIMARY KEY,
+                company_id                INTEGER NOT NULL,
+                backdated_transaction_id  INTEGER REFERENCES backdated_transactions(id),
+                action                    VARCHAR(50) NOT NULL,
+                done_by                   INTEGER REFERENCES users(id),
+                done_by_name              VARCHAR(200),
+                previous_data             JSONB,
+                new_data                  JSONB,
+                ip_address                VARCHAR(50),
+                notes                     TEXT,
+                created_at                TIMESTAMP DEFAULT NOW()
+            )
+        `).catch((e) => console.warn('[schemaUpdates] backdated_audit skipped:', e.message));
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_company_date ON backdated_transactions(company_id, transaction_date)`).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_type ON backdated_transactions(transaction_type, company_id)`).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_party ON backdated_transactions(party_id, party_type)`).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_branch ON backdated_transactions(branch_id, transaction_date)`).catch(() => {});
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_audit ON backdated_audit(backdated_transaction_id)`).catch(() => {});
+
         console.log("✅ Schema Updates Completed.");
     } catch (err) {
         console.error("❌ Schema Update Error:", err);

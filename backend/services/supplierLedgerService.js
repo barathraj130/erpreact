@@ -53,7 +53,37 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
   // Fetch Bills from purchase_bills and Payments from two sources:
   // (a) purchase_bills.paid_amount (covers creation + PATCH /pay payments)
   // (b) transactions with reference_type = 'SUPPLIER_PAYMENT' (manual payments)
-  return db.pgAll(
+  // 4. Backdated entries linked to this supplier that represent a real bill
+  //    or a real payment (not cash/bank balance, which backdated entries never
+  //    touch — but what's owed to a SPECIFIC supplier is a running total of
+  //    real bills and real payments, and a backdated payment is a real
+  //    payment regardless of when it was entered). Only 'purchase' and the
+  //    payment-shaped types are unambiguous enough to fold into the balance;
+  //    other types (opening_balance, adjustment, other, …) stay reference-only
+  //    (see the backdated_entries side list built in buildSupplierLedgerStatement).
+  let backdatedRows = [];
+  try {
+    backdatedRows = await db.pgAll(
+      `SELECT
+         3000000000 + bt.id AS id,
+         bt.transaction_date AS date,
+         CASE WHEN bt.transaction_type = 'purchase' THEN 'BILL' ELSE 'PAYMENT' END AS type,
+         'BACKDATED' AS category,
+         bt.amount AS amount,
+         bt.description AS description,
+         bt.id AS related_id,
+         NULL::TEXT AS reference_number,
+         NULL::TEXT AS payment_method,
+         bt.created_at AS sort_created_at
+       FROM backdated_transactions bt
+       WHERE bt.company_id = $1 AND bt.party_type = 'supplier' AND bt.party_id = $2
+         AND bt.is_reversed = false
+         AND bt.transaction_type IN ('purchase', 'payment_made', 'cash_out', 'bank_out', 'expense')`,
+      [parseInt(companyId), parseInt(supplierId)],
+    );
+  } catch (e) { /* table may not exist yet */ }
+
+  const rows = await db.pgAll(
     `SELECT * FROM (
        -- 1. Purchase Bills (credit — increases what we owe)
        SELECT
@@ -110,6 +140,9 @@ async function getSupplierDerivedRows(companyId, supplierId, filters = {}) {
      ORDER BY date ASC, sort_created_at ASC, id ASC`,
     params,
   );
+
+  return [...rows, ...backdatedRows.map(r => ({ ...r, is_backdated: true }))]
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || new Date(a.sort_created_at).getTime() - new Date(b.sort_created_at).getTime());
 }
 
 /**
@@ -188,16 +221,18 @@ export async function buildSupplierLedgerStatement(companyId, supplierId, filter
   const totalBilled = statement.filter(r => r.type === 'BILL').reduce((sum, r) => sum + r.amount, 0);
   const totalPaid = statement.filter(r => r.type !== 'BILL').reduce((sum, r) => sum + r.amount, 0);
 
-  // Backdated entries for this supplier — shown as a clearly separate, badged
-  // section only. Never folded into the rows/totals/running_balance above:
-  // backdated entries never affect the live balance by design (see
-  // backdatedRoutes.js), so they must never influence pending_amount either.
+  // Backdated entries for this supplier that AREN'T one of the bill/payment
+  // types already folded into rows/totals/running_balance above (those are
+  // shown inline in the main table with an is_backdated badge instead).
+  // These remaining ones (opening_balance, adjustment, other, …) are too
+  // ambiguous to safely count toward what's owed, so they stay reference-only.
   let backdatedEntries = [];
   try {
     backdatedEntries = await db.pgAll(
       `SELECT id, transaction_date, transaction_type, amount, description, backdated_reason
        FROM backdated_transactions
        WHERE company_id = $1 AND party_type = 'supplier' AND party_id = $2 AND is_reversed = false
+         AND transaction_type NOT IN ('purchase', 'payment_made', 'cash_out', 'bank_out', 'expense')
        ORDER BY transaction_date DESC`,
       [cId, sId],
     );

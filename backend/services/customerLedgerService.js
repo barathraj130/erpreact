@@ -380,8 +380,45 @@ async function getCustomerDerivedRows(companyId, customerId, filters = {}) {
   // Also fetch from sales_returns table (may not exist on older DBs)
   const srRows = await getSalesReturnRows(companyId, customerId);
 
+  // Backdated entries linked to this customer that represent a real sale or a
+  // real payment. What a specific customer owes is a running total of real
+  // invoices and real payments, and a backdated payment/sale is real
+  // regardless of when it was entered — unlike overall cash/bank balance,
+  // which backdated entries never touch. Only unambiguous types are folded
+  // in; the rest stay reference-only (see backdated_entries in
+  // buildCustomerLedgerStatement).
+  let backdatedRows = [];
+  try {
+    const bd = await db.pgAll(
+      `SELECT
+         4000000000 + bt.id AS id,
+         bt.transaction_date AS date,
+         CASE
+           WHEN bt.transaction_type = 'sale' THEN 'INVOICE'
+           WHEN bt.transaction_type = 'payment_made' THEN 'PAYMENT_TO_CUSTOMER'
+           ELSE 'RECEIPT'
+         END AS type,
+         'BACKDATED' AS category,
+         bt.amount AS amount,
+         bt.description AS description,
+         NULL::INTEGER AS related_invoice_id,
+         NULL::TEXT AS invoice_number,
+         NULL::TEXT AS payment_method,
+         NULL::TEXT AS bank_name,
+         NULL::TEXT AS bank_transaction_id,
+         NULL::TIMESTAMP AS bank_timestamp,
+         bt.created_at AS sort_created_at
+       FROM backdated_transactions bt
+       WHERE bt.company_id = $1 AND bt.party_type = 'customer' AND bt.party_id = $2
+         AND bt.is_reversed = false
+         AND bt.transaction_type IN ('sale', 'payment_made', 'cash_in', 'bank_in', 'payment_received')`,
+      [companyId, customerId],
+    );
+    backdatedRows = bd.map(r => ({ ...r, is_backdated: true }));
+  } catch (e) { /* table may not exist yet */ }
+
   // Merge and sort by date
-  const all = [...rows, ...srRows].sort((a, b) => {
+  const all = [...rows, ...srRows, ...backdatedRows].sort((a, b) => {
     const da = new Date(a.date), db2 = new Date(b.date);
     if (da - db2 !== 0) return da - db2;
     return (new Date(a.sort_created_at) - new Date(b.sort_created_at));
@@ -482,13 +519,32 @@ async function getCustomerTotals(companyId, customerId) {
     guidelineTransferTotal = toNumber(gtTotals?.total_guideline);
   } catch (e) { /* ignore */ }
 
+  // Backdated sale/payment entries linked to this customer — a real sale or
+  // real payment regardless of when it was entered, so it belongs in what
+  // this customer owes right now (unlike overall cash/bank balance, which
+  // backdated entries never touch). Only unambiguous types count here.
+  let backdatedBilled = 0;
+  let backdatedPaid = 0;
+  try {
+    const bd = await db.pgGet(
+      `SELECT
+         COALESCE(SUM(CASE WHEN transaction_type IN ('sale', 'payment_made') THEN amount ELSE 0 END), 0) AS billed,
+         COALESCE(SUM(CASE WHEN transaction_type IN ('cash_in', 'bank_in', 'payment_received') THEN amount ELSE 0 END), 0) AS paid
+       FROM backdated_transactions
+       WHERE company_id = $1 AND party_type = 'customer' AND party_id = $2 AND is_reversed = false`,
+      [companyId, customerId],
+    );
+    backdatedBilled = toNumber(bd?.billed);
+    backdatedPaid = toNumber(bd?.paid);
+  } catch (e) { /* table may not exist yet */ }
+
   return {
     // Payment to Customer is money advanced to them — it's an amount they now owe
     // back, same direction as a bill, so it adds to total_billed (not a credit).
-    total_billed: toNumber(invoiceTotals?.total_billed) + toNumber(paymentToCustomerTotals?.total_p2c),
+    total_billed: toNumber(invoiceTotals?.total_billed) + toNumber(paymentToCustomerTotals?.total_p2c) + backdatedBilled,
     total_returns: toNumber(invoiceTotals?.total_returns) + srReturnsTotal,
     // Discount/waiver reduces what the customer owes — treated as a credit alongside payments
-    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal,
+    total_paid: toNumber(paymentTotals?.total_paid) + toNumber(directPaymentTotals?.total_direct) + roundOffTotal + toNumber(invoiceTotals?.total_discount) + guidelineTransferTotal + backdatedPaid,
   };
 }
 
@@ -599,8 +655,26 @@ export async function recomputeCustomerBalance(client, customerId, companyId) {
     paidToCustomer = toNumber(p2cTotals.rows[0]?.total_p2c);
   } catch (e) { /* none yet */ }
 
+  // Backdated sale/payment entries linked to this customer — real regardless
+  // of when entered, so they belong in the persisted balance too (unlike
+  // overall cash/bank balance, which backdated entries never touch).
+  let backdatedBilled = 0;
+  let backdatedPaid = 0;
+  try {
+    const bdTotals = await client.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN transaction_type IN ('sale', 'payment_made') THEN amount ELSE 0 END), 0) AS billed,
+         COALESCE(SUM(CASE WHEN transaction_type IN ('cash_in', 'bank_in', 'payment_received') THEN amount ELSE 0 END), 0) AS paid
+       FROM backdated_transactions
+       WHERE company_id = $1 AND party_type = 'customer' AND party_id = $2 AND is_reversed = false`,
+      [companyId, customerId],
+    );
+    backdatedBilled = toNumber(bdTotals.rows[0]?.billed);
+    backdatedPaid = toNumber(bdTotals.rows[0]?.paid);
+  } catch (e) { /* table may not exist yet */ }
+
   // Discount/waiver from invoices.discount_amount reduces outstanding balance
-  const outstanding = openingBalance + billed + paidToCustomer - paid - returned - roundOff - discount - guidelineTransfer - directPaid;
+  const outstanding = openingBalance + billed + paidToCustomer + backdatedBilled - paid - returned - roundOff - discount - guidelineTransfer - directPaid - backdatedPaid;
 
   await client.query(`UPDATE users SET initial_balance = $1 WHERE id = $2`, [outstanding, customerId]);
 
@@ -758,16 +832,18 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
     };
   });
 
-  // Backdated entries for this customer — shown as a clearly separate, badged
-  // section only. Never folded into statement/totals/running_balance above:
-  // backdated entries never affect the live balance by design (see
-  // backdatedRoutes.js), so they must never influence pending_amount either.
+  // Backdated entries for this customer that AREN'T one of the sale/payment
+  // types already folded into statement/totals/running_balance above (those
+  // are shown inline in the main table with an is_backdated badge instead).
+  // These remaining ones (opening_balance, adjustment, other, …) are too
+  // ambiguous to safely count toward what's owed, so they stay reference-only.
   let backdatedEntries = [];
   try {
     backdatedEntries = await db.pgAll(
       `SELECT id, transaction_date, transaction_type, amount, description, backdated_reason
        FROM backdated_transactions
        WHERE company_id = $1 AND party_type = 'customer' AND party_id = $2 AND is_reversed = false
+         AND transaction_type NOT IN ('sale', 'payment_made', 'cash_in', 'bank_in', 'payment_received')
        ORDER BY transaction_date DESC`,
       [companyId, customerId],
     );

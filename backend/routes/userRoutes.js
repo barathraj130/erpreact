@@ -385,6 +385,18 @@ router.get("/", authMiddleware, checkPermission("Sales", "view_invoices"), async
                     WHERE customer_id = u.id AND company_id = $1
                       AND COALESCE(is_deleted, false) = false
                       AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'
+                ), 0)
+                -- Backdated sale/payment entries linked to this customer — real
+                -- regardless of when entered, so they belong in what's owed.
+                + COALESCE((
+                    SELECT SUM(amount) FROM backdated_transactions
+                    WHERE party_type = 'customer' AND party_id = u.id AND company_id = $1
+                      AND is_reversed = false AND transaction_type IN ('sale', 'payment_made')
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(amount) FROM backdated_transactions
+                    WHERE party_type = 'customer' AND party_id = u.id AND company_id = $1
+                      AND is_reversed = false AND transaction_type IN ('cash_in', 'bank_in', 'payment_received')
                 ), 0) as remaining_balance
             FROM users u
             LEFT JOIN branches b ON b.id = u.branch_id
