@@ -171,6 +171,107 @@ router.post("/quick", authMiddleware, async (req, res) => {
     }
 });
 
+// ─────────────────────────────────────────────────────────────
+// POST /products/merge-duplicate — admin only
+// Folds a duplicate product record (e.g. created by mistyping a name
+// into the quick-add combobox, which matches by exact name only) into
+// the canonical product everything else actually references. Moves
+// branch_inventory stock (summed, not overwritten), re-points every
+// other table with a product_id column at the canonical id, recomputes
+// the canonical product's stock cache, and soft-deletes + renames the
+// duplicate so it can never be picked again and its own history
+// (purchase bills, movements) stays intact for audit purposes.
+// ─────────────────────────────────────────────────────────────
+router.post("/merge-duplicate", authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Admin only.' });
+    }
+    const companyId = req.user.active_company_id;
+    const fromId = parseInt(req.body.from_product_id);
+    const intoId = parseInt(req.body.into_product_id);
+    if (!fromId || !intoId) return res.status(400).json({ error: 'from_product_id and into_product_id are required' });
+    if (fromId === intoId) return res.status(400).json({ error: 'Cannot merge a product into itself' });
+
+    const client = await pgModule.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const fromRes = await client.query(`SELECT id, name, branch_id FROM products WHERE id = $1 AND company_id = $2 FOR UPDATE`, [fromId, companyId]);
+        const intoRes = await client.query(`SELECT id, name FROM products WHERE id = $1 AND company_id = $2 FOR UPDATE`, [intoId, companyId]);
+        const fromProduct = fromRes.rows[0];
+        const intoProduct = intoRes.rows[0];
+        if (!fromProduct) return res.status(404).json({ error: 'Product to merge from was not found' });
+        if (!intoProduct) return res.status(404).json({ error: 'Target product was not found' });
+
+        // 1. Move branch_inventory stock — summed into whatever the target
+        // already has per branch, never overwritten (ON CONFLICT ... +).
+        const fromStock = await client.query(`SELECT branch_id, current_stock FROM branch_inventory WHERE product_id = $1`, [fromId]);
+        for (const row of fromStock.rows) {
+            if (Number(row.current_stock) === 0) continue;
+            await client.query(`
+                INSERT INTO branch_inventory (company_id, branch_id, product_id, current_stock, last_updated)
+                VALUES ($1, $2, $3, $4, NOW())
+                ON CONFLICT (branch_id, product_id)
+                DO UPDATE SET current_stock = branch_inventory.current_stock + EXCLUDED.current_stock, last_updated = NOW()
+            `, [companyId, row.branch_id, intoId, row.current_stock]);
+        }
+        await client.query(`DELETE FROM branch_inventory WHERE product_id = $1`, [fromId]);
+
+        // 2. Re-point every other table that references product_id, so past
+        // purchase bills, invoice lines and movement history correctly show
+        // under the canonical product from here on. branch_inventory and
+        // products themselves are handled separately above/below.
+        const tableRows = await client.query(`
+            SELECT DISTINCT table_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND column_name = 'product_id'
+              AND table_name NOT IN ('branch_inventory', 'products')
+        `);
+        const repointed = [];
+        for (const { table_name } of tableRows.rows) {
+            try {
+                const r = await client.query(`UPDATE ${table_name} SET product_id = $1 WHERE product_id = $2`, [intoId, fromId]);
+                if (r.rowCount > 0) repointed.push(`${table_name} (${r.rowCount})`);
+            } catch (e) {
+                console.warn(`[merge-duplicate] skipped ${table_name}: ${e.message}`);
+            }
+        }
+
+        // 3. Recompute the canonical product's stock cache from scratch.
+        await client.query(`
+            UPDATE products SET current_stock = (SELECT COALESCE(SUM(current_stock), 0) FROM branch_inventory WHERE product_id = $1)
+            WHERE id = $1
+        `, [intoId]);
+
+        // 4. Soft-delete + rename the duplicate — never hard-deleted, so any
+        // row that couldn't be re-pointed above still resolves to a real
+        // (if clearly marked) product rather than a dangling foreign key.
+        await client.query(`
+            UPDATE products SET is_deleted = true, is_active = false,
+                name = name || ' [merged into #' || $1 || ']'
+            WHERE id = $2
+        `, [intoId, fromId]);
+
+        // 5. Audit trail — a zero-quantity movement note, not a real stock change.
+        await client.query(`
+            INSERT INTO inventory_movements (company_id, branch_id, product_id, type, qty_in, reference_type, reference_id, note)
+            VALUES ($1, $2, $3, 'ADJUSTMENT', 0, 'PRODUCT_MERGE', $4, $5)
+        `, [companyId, fromProduct.branch_id || null, intoId, fromId, `Merged duplicate "${fromProduct.name}" (#${fromId}) into this product`]).catch(() => {});
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            message: `Merged "${fromProduct.name}" into "${intoProduct.name}"`,
+            repointed_tables: repointed,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('[merge-duplicate]', err.message);
+        res.status(500).json({ error: err.message || 'Merge failed' });
+    } finally {
+        client.release();
+    }
+});
+
 router.get("/breakdown", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {

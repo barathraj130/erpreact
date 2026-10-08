@@ -183,6 +183,36 @@ const Inventory: React.FC = () => {
     }
   };
 
+  // Merge a duplicate product (e.g. accidentally created with a slightly
+  // different name via the quick-add combobox, which matches by exact name
+  // only) into the real/canonical one — moves its stock across and re-points
+  // its purchase/invoice/movement history, instead of leaving stock stranded
+  // under a product nothing else ever sells from.
+  const [mergeFromProduct, setMergeFromProduct] = useState<any>(null);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [merging, setMerging] = useState(false);
+
+  const handleMerge = async () => {
+    if (!mergeFromProduct || !mergeTargetId) return;
+    setMerging(true);
+    try {
+      const res = await apiFetch("/products/merge-duplicate", {
+        method: "POST",
+        body: { from_product_id: mergeFromProduct.id, into_product_id: Number(mergeTargetId) },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) { alert(data.error || "Merge failed"); return; }
+      alert(data.message);
+      setMergeFromProduct(null);
+      setMergeTargetId("");
+      refresh();
+    } catch {
+      alert("Merge failed");
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const handleEdit = (product: any) => { setSelectedProduct(product); setIsModalOpen(true); };
   const handleAdd  = () => { setSelectedProduct(null); setIsModalOpen(true); };
 
@@ -479,6 +509,7 @@ const Inventory: React.FC = () => {
                   </div>
                   <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
                     <button className="btn btn-secondary" onClick={() => handleEdit(p)} style={{ flex: 1 }}><FaEdit /> Edit</button>
+                    <button className="btn btn-secondary" onClick={() => setMergeFromProduct(p)} title="Merge into another product (duplicate cleanup)"><FaExchangeAlt /></button>
                     <button className="btn btn-secondary" onClick={() => handleDelete(p.id)} style={{ color: "var(--erp-error)", borderColor: "rgba(244,63,94,0.2)" }}><FaTrash /></button>
                   </div>
                 </motion.div>
@@ -555,6 +586,7 @@ const Inventory: React.FC = () => {
                       <td style={{ textAlign: "center", paddingRight: "24px" }}>
                         <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
                           <button className="btn btn-secondary" onClick={() => handleEdit(p)} style={{ padding: "6px" }} title="Edit"><FaEdit size={14} /></button>
+                          <button className="btn btn-secondary" onClick={() => setMergeFromProduct(p)} style={{ padding: "6px" }} title="Merge into another product (duplicate cleanup)"><FaExchangeAlt size={14} /></button>
                           <button className="btn btn-secondary" onClick={() => handleDelete(p.id)} style={{ padding: "6px", color: "var(--erp-error)" }} title="Delete"><FaTrash size={14} /></button>
                         </div>
                       </td>
@@ -592,6 +624,46 @@ const Inventory: React.FC = () => {
           </table>
         )}
       </div>
+
+      {/* Merge Duplicate Product Modal */}
+      <AnimatePresence>
+        {mergeFromProduct && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) { setMergeFromProduct(null); setMergeTargetId(""); } }}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "460px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Merge Duplicate Product</h2>
+              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
+                Moves <strong>"{mergeFromProduct.name}"</strong>'s stock and purchase/invoice history into the
+                product you pick below, then marks "{mergeFromProduct.name}" as merged so it can't be sold from again.
+                This cannot be undone.
+              </p>
+              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                Merge into
+              </label>
+              <CustomSelect value={mergeTargetId} onChange={(e: any) => setMergeTargetId(e.target.value)} placeholder="Search products…">
+                {(products || [])
+                  .filter((p: any) => p.id !== mergeFromProduct.id)
+                  .map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </CustomSelect>
+              <div style={{ display: "flex", gap: "10px", marginTop: "22px" }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setMergeFromProduct(null); setMergeTargetId(""); }}>Cancel</button>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1, opacity: (!mergeTargetId || merging) ? 0.5 : 1 }}
+                  disabled={!mergeTargetId || merging}
+                  onClick={handleMerge}
+                >
+                  {merging ? "Merging…" : "Merge"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
