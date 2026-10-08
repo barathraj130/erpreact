@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../utils/api";
 import { useAuthUser } from "../../hooks/useAuthUser";
+import CustomSelect from "../../components/CustomSelect";
 import "../PageShared.css";
 
 const TYPES: { value: string; label: string; emoji: string }[] = [
@@ -51,6 +52,7 @@ const BackdatedEntry: React.FC = () => {
     reference_number: "",
     party_name: "",
     party_type: "",
+    party_id: "",
     account_type: "cash",
     payment_mode: "cash",
     category: "",
@@ -64,9 +66,38 @@ const BackdatedEntry: React.FC = () => {
   const [successId, setSuccessId] = useState<number | null>(null);
   const [branches, setBranches] = useState<{ id: number; branch_name: string }[]>([]);
 
+  // Real party list for whichever party_type is selected — so this entry can
+  // actually be linked (party_id) to a real customer/supplier/employee and
+  // show up in their own ledger, instead of just a free-text label nothing
+  // else can match against.
+  const [parties, setParties] = useState<{ id: number; label: string }[]>([]);
+  const [partiesLoading, setPartiesLoading] = useState(false);
+
   useEffect(() => {
     apiFetch("/branches").then(r => r.json()).then(d => setBranches(Array.isArray(d) ? d : (d.branches || []))).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setParties([]);
+    setForm(f => ({ ...f, party_id: "", party_name: "" }));
+    if (form.party_type === "customer") {
+      setPartiesLoading(true);
+      apiFetch("/users?scope=all").then(r => r.json())
+        .then(d => setParties((Array.isArray(d) ? d : []).map((c: any) => ({ id: c.id, label: c.nickname || c.username }))))
+        .catch(() => {}).finally(() => setPartiesLoading(false));
+    } else if (form.party_type === "supplier") {
+      setPartiesLoading(true);
+      apiFetch("/suppliers").then(r => r.json())
+        .then(d => setParties((Array.isArray(d) ? d : []).map((s: any) => ({ id: s.id, label: s.name }))))
+        .catch(() => {}).finally(() => setPartiesLoading(false));
+    } else if (form.party_type === "employee") {
+      setPartiesLoading(true);
+      apiFetch("/employees").then(r => r.json())
+        .then(d => setParties((Array.isArray(d) ? d : (d.employees || [])).map((e: any) => ({ id: e.id, label: e.name }))))
+        .catch(() => {}).finally(() => setPartiesLoading(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.party_type]);
 
   const today = new Date().toISOString().split("T")[0];
   const dateError = form.transaction_date && form.transaction_date >= today
@@ -95,6 +126,7 @@ const BackdatedEntry: React.FC = () => {
           amount: Number(form.amount),
           branch_id: form.branch_id || undefined,
           party_type: form.party_type || undefined,
+          party_id: form.party_id ? Number(form.party_id) : undefined,
         },
       });
       const data = await res.json();
@@ -110,7 +142,7 @@ const BackdatedEntry: React.FC = () => {
   const resetForm = () => {
     setForm({
       transaction_date: "", transaction_type: "", amount: "", description: "",
-      reference_number: "", party_name: "", party_type: "", account_type: "cash",
+      reference_number: "", party_name: "", party_type: "", party_id: "", account_type: "cash",
       payment_mode: "cash", category: "", branch_id: "", notes: "", backdated_reason: "",
     });
     setConfirm1(false);
@@ -215,10 +247,6 @@ const BackdatedEntry: React.FC = () => {
               <input type="text" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="What was this for?" style={{ width: "100%", padding: "9px 10px", borderRadius: "8px", border: "1px solid var(--border)", boxSizing: "border-box" }} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "var(--text-3)", marginBottom: "4px" }}>Party Name</label>
-              <input type="text" value={form.party_name} onChange={e => setForm({ ...form, party_name: e.target.value })} style={{ width: "100%", padding: "9px 10px", borderRadius: "8px", border: "1px solid var(--border)", boxSizing: "border-box" }} />
-            </div>
-            <div>
               <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "var(--text-3)", marginBottom: "4px" }}>Party Type</label>
               <select value={form.party_type} onChange={e => setForm({ ...form, party_type: e.target.value })} style={{ width: "100%", padding: "9px 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)" }}>
                 <option value="">—</option>
@@ -227,6 +255,29 @@ const BackdatedEntry: React.FC = () => {
                 <option value="employee">Employee</option>
                 <option value="other">Other</option>
               </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "var(--text-3)", marginBottom: "4px" }}>
+                {form.party_type === "customer" ? "Customer" : form.party_type === "supplier" ? "Supplier" : form.party_type === "employee" ? "Employee" : "Party Name"}
+                {["customer", "supplier", "employee"].includes(form.party_type) && (
+                  <span style={{ fontWeight: 500, color: "var(--text-3)", textTransform: "none" }}> — pick from your existing list so this links to their ledger</span>
+                )}
+              </label>
+              {["customer", "supplier", "employee"].includes(form.party_type) ? (
+                <CustomSelect
+                  value={form.party_id}
+                  onChange={(e: any) => {
+                    const id = e.target.value;
+                    const picked = parties.find(p => String(p.id) === String(id));
+                    setForm(f => ({ ...f, party_id: id, party_name: picked?.label || "" }));
+                  }}
+                  placeholder={partiesLoading ? "Loading…" : `Search ${form.party_type}s…`}
+                >
+                  {parties.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </CustomSelect>
+              ) : (
+                <input type="text" value={form.party_name} onChange={e => setForm({ ...form, party_name: e.target.value })} placeholder="Name (optional)" style={{ width: "100%", padding: "9px 10px", borderRadius: "8px", border: "1px solid var(--border)", boxSizing: "border-box" }} />
+              )}
             </div>
             <div>
               <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "var(--text-3)", marginBottom: "4px" }}>Account</label>

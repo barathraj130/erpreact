@@ -758,6 +758,21 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
     };
   });
 
+  // Backdated entries for this customer — shown as a clearly separate, badged
+  // section only. Never folded into statement/totals/running_balance above:
+  // backdated entries never affect the live balance by design (see
+  // backdatedRoutes.js), so they must never influence pending_amount either.
+  let backdatedEntries = [];
+  try {
+    backdatedEntries = await db.pgAll(
+      `SELECT id, transaction_date, transaction_type, amount, description, backdated_reason
+       FROM backdated_transactions
+       WHERE company_id = $1 AND party_type = 'customer' AND party_id = $2 AND is_reversed = false
+       ORDER BY transaction_date DESC`,
+      [companyId, customerId],
+    );
+  } catch (e) { /* table may not exist yet */ }
+
   return {
     customer: {
       id: customer.id,
@@ -774,5 +789,6 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
       pending_amount: openingBalance + totals.total_billed - totals.total_paid - totals.total_returns,
     },
     transactions: statement,
+    backdated_entries: backdatedEntries,
   };
 }

@@ -184,6 +184,9 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   const supplierTransactions = supplierLedger?.transactions || [];
   const customerRows = customerLedger?.transactions || [];
   const customerSummary = customerLedger?.summary;
+  // Informational only — never affects the summary cards or running balance
+  // above (backdated entries never touch the live balance by design).
+  const backdatedEntries = (entityType === "customer" ? customerLedger?.backdated_entries : supplierLedger?.backdated_entries) || [];
   const initials = entityName ? entityName.charAt(0).toUpperCase() : "?";
   const hasFilters = filters.start_date || filters.end_date || filters.payment_method;
 
@@ -733,6 +736,25 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
                   {roundOffMsg.type === "success" ? "✓ " : "✗ "}{roundOffMsg.text}
                 </div>
               )}
+            </div>
+          )}
+
+          {backdatedEntries.length > 0 && (
+            <div style={{ margin: "0 0 16px 0", border: "1px solid #fde68a", borderRadius: 10, background: "#fffbeb", padding: "14px 16px" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+                📅 Backdated Entries — for reference only, not included in the balance above
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {backdatedEntries.map((e) => (
+                  <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, background: "#fff", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
+                    <div>
+                      <span style={{ fontWeight: 700, color: "#92400e" }}>{new Date(e.transaction_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                      <span style={{ marginLeft: 8, color: "#374151" }}>{e.description}</span>
+                    </div>
+                    <div style={{ fontWeight: 800, color: "#92400e" }}>₹{Number(e.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

@@ -188,6 +188,21 @@ export async function buildSupplierLedgerStatement(companyId, supplierId, filter
   const totalBilled = statement.filter(r => r.type === 'BILL').reduce((sum, r) => sum + r.amount, 0);
   const totalPaid = statement.filter(r => r.type !== 'BILL').reduce((sum, r) => sum + r.amount, 0);
 
+  // Backdated entries for this supplier — shown as a clearly separate, badged
+  // section only. Never folded into the rows/totals/running_balance above:
+  // backdated entries never affect the live balance by design (see
+  // backdatedRoutes.js), so they must never influence pending_amount either.
+  let backdatedEntries = [];
+  try {
+    backdatedEntries = await db.pgAll(
+      `SELECT id, transaction_date, transaction_type, amount, description, backdated_reason
+       FROM backdated_transactions
+       WHERE company_id = $1 AND party_type = 'supplier' AND party_id = $2 AND is_reversed = false
+       ORDER BY transaction_date DESC`,
+      [cId, sId],
+    );
+  } catch (e) { /* table may not exist yet */ }
+
   return {
     supplier: {
       id: supplier.id,
@@ -203,5 +218,6 @@ export async function buildSupplierLedgerStatement(companyId, supplierId, filter
       pending_amount: runningBalance,
     },
     transactions: statement,
+    backdated_entries: backdatedEntries,
   };
 }

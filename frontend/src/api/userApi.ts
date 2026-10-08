@@ -66,6 +66,17 @@ export interface CustomerLedgerResponse {
     pending_amount: number;
   };
   transactions: CustomerLedgerEntry[];
+  // Backdated entries for this customer — informational only, never folded
+  // into summary/transactions/running balance above (backdated entries never
+  // affect the live balance by design).
+  backdated_entries?: {
+    id: number;
+    transaction_date: string;
+    transaction_type: string;
+    amount: number;
+    description: string;
+    backdated_reason: string;
+  }[];
 }
 
 // --- API Functions (CRUD) ---
