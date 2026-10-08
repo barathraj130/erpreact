@@ -401,7 +401,17 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         };
 
         const headerBranchId = req.headers['x-branch-id'] !== 'all' ? req.headers['x-branch-id'] : null;
-        const rawBranchId = req.body.branch_id || req.user.branch_id || headerBranchId;
+        // For branch-scoped staff, their own JWT branch_id is a real constraint
+        // (strict branch billing — they may only sell from their own branch) and
+        // must win as a fallback. For admin/superadmin, req.user.branch_id is
+        // just an unrelated default (often 1) with no bearing on where this sale
+        // should come from — forcing it here overrides resolveStockBranch's own
+        // smarter fallback (the product's actual branch, then the main hub)
+        // whenever the admin is viewing "All Branches" and sends branch_id: null,
+        // producing a false "insufficient stock" for a product that's only ever
+        // been stocked in a different branch.
+        const isBranchScopedStaff = !['admin', 'superadmin'].includes((req.user.role || '').toLowerCase());
+        const rawBranchId = req.body.branch_id || (isBranchScopedStaff ? req.user.branch_id : null) || headerBranchId;
         const branchId = sanitizeInt(rawBranchId);
         const safeCustomerId = sanitizeInt(customer_id);
         const safeBrokerId = sanitizeInt(broker_id);
@@ -682,12 +692,16 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         // isNameOnly already set above from bill_purpose / invoice_type
 
-        // ── Resolve invoice-level branch via centralized engine ──
-        // Priority: body.branch_id → JWT branch → x-branch-id header → product's branch → main hub
-        const invoiceLevelBranchId = await resolveStockBranch(client, {
-            companyId,
-            requestedBranchId: branchId || null
-        });
+        // Deliberately NOT resolved via resolveStockBranch here (that would force
+        // a concrete fallback — e.g. the main hub — before any item is known,
+        // which then wins over each item's own product-branch fallback below
+        // since an explicit requestedBranchId always takes priority). Left null
+        // when nothing explicit was chosen, so each line item's own call to
+        // resolveStockBranch (which does pass productId) can fall through to
+        // that specific product's actual branch instead of a one-size-fits-all
+        // default — otherwise a multi-branch company gets false "insufficient
+        // stock" for any product not stocked in whichever branch won here.
+        const invoiceLevelBranchId = branchId || null;
 
         console.log(`[invoice-create] invoiceLevelBranchId=${invoiceLevelBranchId} isNameOnly=${isNameOnly}`);
         const allItems = [...processedItems, ...processedReturnItems];
