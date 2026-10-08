@@ -86,6 +86,9 @@ const Transactions: React.FC = () => {
   // Backdated confirmation modal
   const [showBackdateModal, setShowBackdateModal] = useState(false);
   const [pendingTxData, setPendingTxData] = useState<FormData | null>(null);
+  // Backdated delete confirmation — same choice as adding, but for removal
+  const [showBackdateDeleteModal, setShowBackdateDeleteModal] = useState(false);
+  const [pendingDeleteTx, setPendingDeleteTx] = useState<Transaction | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -361,12 +364,51 @@ const Transactions: React.FC = () => {
   };
 
   const handleDeleteTransaction = async (tx: Transaction) => {
+    const today = new Date().toISOString().split('T')[0];
+    const txDateStr = new Date(tx.date).toISOString().split('T')[0];
+    const isBackdated = txDateStr < today;
+
+    if (isBackdated) {
+      // Same ambiguity as adding one: removing an old entry can either be left
+      // to shift today's balance (it genuinely never happened, so today's
+      // number was wrong) or compensated so today's balance stays put (the
+      // entry was just corrected/duplicated and today's figure was already
+      // right). Ask, same as the add flow does.
+      setPendingDeleteTx(tx);
+      setShowBackdateDeleteModal(true);
+      return;
+    }
     const label = tx.display_party || tx.description || String(tx.id);
     if (!window.confirm(`Delete "${label}" (₹${Number(tx.amount).toLocaleString('en-IN')})? This cannot be undone.`)) return;
+    await deleteTransaction(tx, false);
+  };
+
+  const deleteTransaction = async (tx: Transaction, adjustOpeningBalance: boolean) => {
     try {
+      const ledgerType: "CASH" | "BANK" = tx.mode === "BANK" ? "BANK" : "CASH";
+      let balanceBefore = 0;
+      if (adjustOpeningBalance) {
+        const balRes = await apiFetch("/ledger/balance/current");
+        const balData = await balRes.json();
+        balanceBefore = ledgerType === "BANK" ? Number(balData.bank || 0) : Number(balData.cash || 0);
+      }
+
       const res = await apiFetch(`/transactions/${tx.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!res.ok) { alert(json.error || 'Failed to delete'); return; }
+
+      // Removing this old entry shifted today's balance by its amount — restore
+      // it to what it was right before the deletion, same back-calculation the
+      // add flow uses, just run in the opposite direction.
+      if (adjustOpeningBalance && balanceBefore !== 0) {
+        await apiFetch("/ledger/set-opening-balance", {
+          method: "POST",
+          body: { ledger_type: ledgerType, amount: balanceBefore, date: new Date().toISOString().split("T")[0] },
+        });
+      }
+
+      setShowBackdateDeleteModal(false);
+      setPendingDeleteTx(null);
       fetchData();
     } catch {
       alert('Failed to delete transaction');
@@ -845,6 +887,46 @@ const Transactions: React.FC = () => {
               <button onClick={() => { setShowBackdateModal(false); setPendingTxData(null); }}
                 style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid #ef4444", background: "#fff", color: "#ef4444", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                 ✕ Cancel — don't add this transaction
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Backdated Transaction Delete Confirmation Modal ── */}
+      {showBackdateDeleteModal && pendingDeleteTx && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "#fff", borderRadius: "18px", width: "100%", maxWidth: "460px", boxShadow: "0 24px 60px rgba(0,0,0,0.2)", overflow: "hidden" }}>
+            <div style={{ padding: "24px 28px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+                <div style={{ width: "42px", height: "42px", borderRadius: "12px", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>📅</div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b" }}>Deleting a Backdated Transaction</div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748b" }}>Date: {new Date(pendingDeleteTx.date).toISOString().split('T')[0]} · ₹{Number(pendingDeleteTx.amount).toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+              <p style={{ fontSize: "0.9rem", color: "#374151", lineHeight: 1.6, marginBottom: "8px" }}>
+                This transaction is dated <strong>before today</strong>. Should removing it adjust the opening balance so your <strong>current balance stays the same</strong>?
+              </p>
+              <div style={{ display: "grid", gap: "10px", marginBottom: "20px" }}>
+                <button
+                  onClick={() => deleteTransaction(pendingDeleteTx, true)}
+                  style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #6366f1", background: "#eef2ff", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, color: "#4338ca", fontSize: "0.92rem" }}>✅ Remove &amp; adjust opening balance</div>
+                  <div style={{ fontSize: "0.78rem", color: "#6366f1", marginTop: "3px" }}>Transaction removed — current balance stays the same</div>
+                </button>
+                <button
+                  onClick={() => deleteTransaction(pendingDeleteTx, false)}
+                  style={{ padding: "14px 18px", borderRadius: "12px", border: "2px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "0.92rem" }}>🗑️ Remove normally</div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "3px" }}>Transaction removed — current balance will change accordingly</div>
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: "14px 28px", borderTop: "1px solid #f1f5f9", background: "#fafafa", display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowBackdateDeleteModal(false); setPendingDeleteTx(null); }}
+                style={{ padding: "8px 20px", borderRadius: "8px", border: "2px solid #ef4444", background: "#fff", color: "#ef4444", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                ✕ Cancel — don't delete this transaction
               </button>
             </div>
           </div>
