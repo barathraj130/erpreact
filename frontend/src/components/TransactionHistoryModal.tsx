@@ -186,7 +186,8 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
   const customerSummary = customerLedger?.summary;
   // Informational only — never affects the summary cards or running balance
   // above (backdated entries never touch the live balance by design).
-  const backdatedEntries = (entityType === "customer" ? customerLedger?.backdated_entries : supplierLedger?.backdated_entries) || [];
+  const backdatedEntries: { id: number; transaction_date: string; amount: number; description: string; backdated_reason: string }[] =
+    (entityType === "customer" ? customerLedger?.backdated_entries : supplierLedger?.backdated_entries) || [];
   const initials = entityName ? entityName.charAt(0).toUpperCase() : "?";
   const hasFilters = filters.start_date || filters.end_date || filters.payment_method;
 
@@ -746,12 +747,19 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 {backdatedEntries.map((e) => (
-                  <div key={e.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, background: "#fff", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
-                    <div>
-                      <span style={{ fontWeight: 700, color: "#92400e" }}>{new Date(e.transaction_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
-                      <span style={{ marginLeft: 8, color: "#374151" }}>{e.description}</span>
+                  <div key={e.id} style={{ fontSize: 12, background: "#fff", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <span style={{ fontWeight: 700, color: "#92400e" }}>{new Date(e.transaction_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                        <span style={{ marginLeft: 8, color: "#374151" }}>{e.description}</span>
+                      </div>
+                      <div style={{ fontWeight: 800, color: "#92400e" }}>₹{Number(e.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
                     </div>
-                    <div style={{ fontWeight: 800, color: "#92400e" }}>₹{Number(e.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+                    {e.backdated_reason && (
+                      <div style={{ marginTop: 4, color: "#a16207", fontSize: 11, fontStyle: "italic" }}>
+                        Why not entered: {e.backdated_reason}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
