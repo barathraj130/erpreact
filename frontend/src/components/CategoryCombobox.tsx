@@ -54,7 +54,7 @@ const CategoryCombobox: React.FC<CategoryComboboxProps> = ({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    apiFetch("/api/transaction-categories")
+    apiFetch("/transaction-categories")
       .then((r) => r.json())
       .then((data) => setCategories(Array.isArray(data) ? data : []))
       .catch(() => {});
@@ -95,7 +95,7 @@ const CategoryCombobox: React.FC<CategoryComboboxProps> = ({
   );
 
   const saveUsage = (name: string, type: "income" | "expense" | "both") => {
-    apiFetch("/api/transaction-categories", {
+    apiFetch("/transaction-categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, type }),

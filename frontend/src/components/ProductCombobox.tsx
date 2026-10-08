@@ -82,7 +82,7 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
       setSaving(true);
       try {
         const res = await apiFetch(
-          "/api/products/quick",
+          "/products/quick",
           { method: "POST", body: JSON.stringify({ name: name.trim() }) },
           true
         );
