@@ -101,9 +101,17 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
   const { from, to } = req.query;
   const { from: startDate, to: endDate } = getDateRange(from, to);
 
+  // Backdated transactions deliberately never touch cash_ledger/bank_ledger
+  // (affects_balance stays false by design — entering an old payment today
+  // can't corrupt today's live cash-in-hand), but affects_reports has always
+  // defaulted true so period reports like this one should still count them.
+  // Matched on category first (what the backdated entry form actually
+  // labels it), falling back to transaction_type, against the same source
+  // list cash_ledger/bank_ledger already filter on.
   const cashBankSum = (sources) =>
     `COALESCE((SELECT SUM(amount) FROM cash_ledger WHERE company_id=$1 AND LOWER(source) IN (${sources}) AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0)
-   + COALESCE((SELECT SUM(amount) FROM bank_ledger WHERE company_id=$1 AND LOWER(source) IN (${sources}) AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0)`;
+   + COALESCE((SELECT SUM(amount) FROM bank_ledger WHERE company_id=$1 AND LOWER(source) IN (${sources}) AND direction='out' AND COALESCE(date,created_at::date) BETWEEN $2::date AND $3::date),0)
+   + COALESCE((SELECT SUM(amount) FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','expense') AND LOWER(COALESCE(NULLIF(category,''), transaction_type)) IN (${sources}) AND transaction_date BETWEEN $2::date AND $3::date),0)`;
 
   const propPersonal = (refTypes) =>
     `SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND UPPER(reference_type) IN (${refTypes}) AND transaction_date BETWEEN $2::date AND $3::date`;
@@ -409,18 +417,21 @@ router.get('/income-expense-trend', authMiddleware, async (req, res) => {
     });
 
     const rows = await Promise.all(months.map(async ({ month, label, start, end }) => {
-      const [inv, prop_rec, cash_out, bank_out, prop_cap, prop_draw] = await Promise.all([
+      const [inv, prop_rec, cash_out, bank_out, prop_cap, prop_draw, backdated_out] = await Promise.all([
         db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS v FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, start, end]),
         db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, start, end]).catch(() => ({ v: 0 })),
         db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM cash_ledger WHERE company_id=$1 AND direction='out' AND date BETWEEN $2::date AND $3::date`, [companyId, start, end]),
         db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM bank_ledger WHERE company_id=$1 AND direction='out' AND date BETWEEN $2::date AND $3::date`, [companyId, start, end]),
         db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, start, end]).catch(() => ({ v: 0 })),
         db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='DRAWINGS' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, start, end]).catch(() => ({ v: 0 })),
+        // Backdated expense-type entries for this month — see note at the top
+        // of finance.js's /profit-loss for why (affects_reports, not balance).
+        db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','expense','purchase') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, start, end]).catch(() => ({ v: 0 })),
       ]);
       return {
         month: label,
         total_income:   parseFloat(inv?.v||0) + parseFloat(prop_rec?.v||0),
-        total_expense:  parseFloat(cash_out?.v||0) + parseFloat(bank_out?.v||0) + parseFloat(prop_cap?.v||0),
+        total_expense:  parseFloat(cash_out?.v||0) + parseFloat(bank_out?.v||0) + parseFloat(prop_cap?.v||0) + parseFloat(backdated_out?.v||0),
         capital_intro:  parseFloat(prop_cap?.v||0),
         drawings:       parseFloat(prop_draw?.v||0),
       };
@@ -449,6 +460,7 @@ router.get('/true-performance', authMiddleware, async (req, res) => {
       chitCash, chitBank, chitProp,
       loanRepay, drawings,
       cashBal, bankBal, receivables,
+      backdatedPurchase, backdatedSalary, backdatedChit,
     ] = await Promise.all([
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS v FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
@@ -467,11 +479,18 @@ router.get('/true-performance', authMiddleware, async (req, res) => {
       db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS v FROM cash_ledger WHERE company_id=$1`, [companyId]),
       db.pgGet(`SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) AS v FROM bank_ledger WHERE company_id=$1`, [companyId]),
       db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS v FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]),
+      // Backdated purchase/salary/chit payments for the period — not combined
+      // with cashBal/bankBal below (those stay real-ledger-only, all-time,
+      // untouched), only with the period outflow totals.
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('payment_made','purchase') AND party_type='supplier' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','expense') AND LOWER(COALESCE(NULLIF(category,''), transaction_type)) IN ('salary_payment','daily_wage','weekly_salary','advance_payment') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','expense') AND LOWER(COALESCE(NULLIF(category,''), transaction_type)) IN ('chit_payment','chit') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
     ]);
 
     const p = (x) => parseFloat(x?.v || 0);
     const totalInflow = p(invoiceRev) + p(propReceipts) + p(capIntro) + p(loanIn);
-    const totalOutflow = p(purchaseCash) + p(purchaseBank) + p(purchaseProp) + p(salaryCashBk) + p(salaryProp) + p(chitCash) + p(chitBank) + p(chitProp) + p(loanRepay) + p(drawings);
+    const totalOutflow = p(purchaseCash) + p(purchaseBank) + p(purchaseProp) + p(salaryCashBk) + p(salaryProp) + p(chitCash) + p(chitBank) + p(chitProp) + p(loanRepay) + p(drawings)
+      + p(backdatedPurchase) + p(backdatedSalary) + p(backdatedChit);
     const netPosition = totalInflow - totalOutflow;
     const cashBankBal = p(cashBal) + p(bankBal);
     const totalValue  = cashBankBal + p(receivables);
@@ -485,11 +504,11 @@ router.get('/true-performance', authMiddleware, async (req, res) => {
           { label: 'Loans Received', amount: p(loanIn) },
         ],
         outflows: [
-          { label: 'Purchases Paid (Cash/Bank)', amount: p(purchaseCash) + p(purchaseBank) },
+          { label: 'Purchases Paid (Cash/Bank)', amount: p(purchaseCash) + p(purchaseBank) + p(backdatedPurchase) },
           { label: 'Purchases Paid (Personal)', amount: p(purchaseProp) },
-          { label: 'Salaries Paid (Cash/Bank)', amount: p(salaryCashBk) },
+          { label: 'Salaries Paid (Cash/Bank)', amount: p(salaryCashBk) + p(backdatedSalary) },
           { label: 'Salaries Paid (Personal)', amount: p(salaryProp) },
-          { label: 'Chits Paid (Cash/Bank)', amount: p(chitCash) + p(chitBank) },
+          { label: 'Chits Paid (Cash/Bank)', amount: p(chitCash) + p(chitBank) + p(backdatedChit) },
           { label: 'Chits Paid (Personal)', amount: p(chitProp) },
           { label: 'Loan Repayments', amount: p(loanRepay) },
           { label: 'Drawings by Proprietor', amount: p(drawings) },
