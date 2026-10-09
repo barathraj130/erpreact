@@ -287,7 +287,40 @@ router.post("/merge-duplicate", authMiddleware, async (req, res) => {
 // product, not a near-duplicate of an existing one. If it IS a duplicate,
 // use /merge-duplicate instead — that already clears it too (the merged
 // row is soft-deleted, so it never shows up in the review queue again).
+// Optional `name`: lets the admin correct/standardize the name in the same
+// step instead of a separate trip to Edit Product first.
 router.post("/:id/confirm", authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Admin only.' });
+    }
+    const companyId = req.user.active_company_id;
+    const id = parseInt(req.params.id);
+    const newName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    try {
+        const product = newName
+            ? await pgModule.pgGet(
+                `UPDATE products SET pending_review = false, name = $3 WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
+                [id, companyId, newName]
+            )
+            : await pgModule.pgGet(
+                `UPDATE products SET pending_review = false WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
+                [id, companyId]
+            );
+        if (!product) return res.status(404).json({ error: 'Product not found' });
+        return res.json({ success: true, product });
+    } catch (err) {
+        console.error("Confirm Pending Product Error:", err);
+        return res.status(500).json({ error: "Failed to confirm product: " + err.message });
+    }
+});
+
+// POST /products/:id/flag-for-review — admin only
+// Pulls a pre-existing product into the same Pending Review queue used for
+// new purchase-quick-adds, for products that predate that feature (and so
+// were never flagged) but turn out to have the same naming/duplicate issue.
+// Does not touch stock, cost, or name — only the pending_review flag, so
+// nothing changes until the admin actually acts on it in the queue.
+router.post("/:id/flag-for-review", authMiddleware, async (req, res) => {
     if (!['admin', 'superadmin'].includes(req.user.role)) {
         return res.status(403).json({ error: 'Admin only.' });
     }
@@ -295,14 +328,14 @@ router.post("/:id/confirm", authMiddleware, async (req, res) => {
     const id = parseInt(req.params.id);
     try {
         const product = await pgModule.pgGet(
-            `UPDATE products SET pending_review = false WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
+            `UPDATE products SET pending_review = true WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
             [id, companyId]
         );
         if (!product) return res.status(404).json({ error: 'Product not found' });
         return res.json({ success: true, product });
     } catch (err) {
-        console.error("Confirm Pending Product Error:", err);
-        return res.status(500).json({ error: "Failed to confirm product: " + err.message });
+        console.error("Flag Product For Review Error:", err);
+        return res.status(500).json({ error: "Failed to flag product for review: " + err.message });
     }
 });
 

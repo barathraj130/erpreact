@@ -13,7 +13,7 @@ import {
   FaTools,
   FaTrash,
 } from "react-icons/fa";
-import { confirmPendingProduct, createSet, deleteProduct } from "../api/productApi";
+import { confirmPendingProduct, createSet, deleteProduct, flagProductForReview } from "../api/productApi";
 import { useProducts } from "../hooks/useProducts";
 import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
@@ -279,17 +279,43 @@ const Inventory: React.FC = () => {
   const pendingProducts = products.filter((p: any) => p.pending_review);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  // Per-row draft rename text in the Pending Review modal — lets the admin
+  // correct the name in the same step as confirming, instead of a separate
+  // Edit Product trip. Keyed by product id; falls back to the product's
+  // current name until the admin types something else.
+  const [renameDrafts, setRenameDrafts] = useState<Record<number, string>>({});
+  const [flaggingId, setFlaggingId] = useState<number | null>(null);
 
-  const handleConfirmPending = async (productId: number) => {
+  const handleConfirmPending = async (productId: number, currentName: string) => {
     setConfirmingId(productId);
     try {
-      const data = await confirmPendingProduct(productId);
+      const draft = (renameDrafts[productId] ?? "").trim();
+      const nameToSave = draft && draft !== currentName ? draft : undefined;
+      const data = await confirmPendingProduct(productId, nameToSave);
       if (!data.success) { alert(data.error || "Confirm failed"); return; }
+      setRenameDrafts(prev => { const next = { ...prev }; delete next[productId]; return next; });
       refresh();
     } catch (e: any) {
       alert(e.message || "Confirm failed");
     } finally {
       setConfirmingId(null);
+    }
+  };
+
+  // Pulls a pre-existing product (created before Pending Review existed) into
+  // the same review queue — e.g. a legacy duplicate spotted later. Doesn't
+  // touch stock/name, only the flag, so nothing changes until confirmed/merged.
+  const handleFlagForReview = async (productId: number) => {
+    if (!window.confirm("Flag this product for review? It'll be hidden from Sales until confirmed or merged.")) return;
+    setFlaggingId(productId);
+    try {
+      const data = await flagProductForReview(productId);
+      if (!data.success) { alert(data.error || "Flag failed"); return; }
+      refresh();
+    } catch (e: any) {
+      alert(e.message || "Flag failed");
+    } finally {
+      setFlaggingId(null);
     }
   };
 
@@ -615,6 +641,9 @@ const Inventory: React.FC = () => {
                   <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
                     <button className="btn btn-secondary" onClick={() => handleEdit(p)} style={{ flex: 1 }}><FaEdit /> Edit</button>
                     <button className="btn btn-secondary" onClick={() => setMergeFromProduct(p)} title="Merge into another product (duplicate cleanup)"><FaExchangeAlt /></button>
+                    {!p.pending_review && (
+                      <button className="btn btn-secondary" onClick={() => handleFlagForReview(p.id)} disabled={flaggingId === p.id} style={{ color: "#b45309", opacity: flaggingId === p.id ? 0.6 : 1 }} title="Pull into Pending Review (legacy duplicate spotted later)"><FaExclamationTriangle /></button>
+                    )}
                     <button className="btn btn-secondary" onClick={() => handleDelete(p.id)} style={{ color: "var(--erp-error)", borderColor: "rgba(244,63,94,0.2)" }}><FaTrash /></button>
                   </div>
                 </motion.div>
@@ -695,6 +724,9 @@ const Inventory: React.FC = () => {
                         <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
                           <button className="btn btn-secondary" onClick={() => handleEdit(p)} style={{ padding: "6px" }} title="Edit"><FaEdit size={14} /></button>
                           <button className="btn btn-secondary" onClick={() => setMergeFromProduct(p)} style={{ padding: "6px" }} title="Merge into another product (duplicate cleanup)"><FaExchangeAlt size={14} /></button>
+                          {!p.pending_review && (
+                            <button className="btn btn-secondary" onClick={() => handleFlagForReview(p.id)} disabled={flaggingId === p.id} style={{ padding: "6px", color: "#b45309", opacity: flaggingId === p.id ? 0.6 : 1 }} title="Pull into Pending Review (legacy duplicate spotted later)"><FaExclamationTriangle size={14} /></button>
+                          )}
                           <button className="btn btn-secondary" onClick={() => handleDelete(p.id)} style={{ padding: "6px", color: "var(--erp-error)" }} title="Delete"><FaTrash size={14} /></button>
                         </div>
                       </td>
@@ -849,15 +881,27 @@ const Inventory: React.FC = () => {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                   {pendingProducts.map((p: any) => (
-                    <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                      <div>
-                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
-                          {p.name}
-                          {p.supplier_name && <span style={{ marginLeft: 6, fontSize: "0.72rem", color: "#92400e", fontWeight: 600 }}>· {p.supplier_name}</span>}
+                    <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                        <div>
+                          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
+                            {p.name}
+                            {p.supplier_name && <span style={{ marginLeft: 6, fontSize: "0.72rem", color: "#92400e", fontWeight: 600 }}>· {p.supplier_name}</span>}
+                          </div>
+                          <div style={{ fontSize: "0.75rem", color: "#92400e" }}>Stock: {p.current_stock ?? 0} {p.unit || ""}</div>
                         </div>
-                        <div style={{ fontSize: "0.75rem", color: "#92400e" }}>Stock: {p.current_stock ?? 0} {p.unit || ""}</div>
                       </div>
-                      <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                      <div>
+                        <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#92400e", textTransform: "uppercase", display: "block", marginBottom: "4px" }}>
+                          Rename before confirming (optional)
+                        </label>
+                        <input
+                          value={renameDrafts[p.id] ?? p.name}
+                          onChange={e => setRenameDrafts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1px solid #fde68a", background: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexShrink: 0, justifyContent: "flex-end" }}>
                         <button
                           className="btn btn-secondary"
                           style={{ padding: "6px 10px", fontSize: "0.78rem" }}
@@ -870,8 +914,8 @@ const Inventory: React.FC = () => {
                           className="btn btn-primary"
                           style={{ padding: "6px 10px", fontSize: "0.78rem", opacity: confirmingId === p.id ? 0.6 : 1 }}
                           disabled={confirmingId === p.id}
-                          title="Confirm this is genuinely a new product"
-                          onClick={() => handleConfirmPending(p.id)}
+                          title="Confirm this is genuinely a new product (saves the rename above if changed)"
+                          onClick={() => handleConfirmPending(p.id, p.name)}
                         >
                           <FaCheckCircle size={12} /> {confirmingId === p.id ? "Confirming…" : "Confirm New"}
                         </button>

@@ -90,12 +90,32 @@ export const fetchProducts = async (opts?: { includePending?: boolean }): Promis
   return res.json();
 };
 
-/** Confirms a pending-review product as genuinely new (clears pending_review). */
-export const confirmPendingProduct = async (id: number): Promise<ApiResponse> => {
-  const res = await apiFetch(`/products/${id}/confirm`, { method: "POST" });
+/**
+ * Confirms a pending-review product as genuinely new (clears pending_review).
+ * Pass `name` to rename it in the same step instead of a separate Edit trip.
+ */
+export const confirmPendingProduct = async (id: number, name?: string): Promise<ApiResponse> => {
+  const res = await apiFetch(`/products/${id}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(name ? { name } : {}),
+  });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(body?.error || `Failed to confirm product (${res.status})`);
+  }
+  return body;
+};
+
+/**
+ * Pulls a pre-existing product (created before the Pending Review feature
+ * existed) into the same review queue, without touching its stock/name.
+ */
+export const flagProductForReview = async (id: number): Promise<ApiResponse> => {
+  const res = await apiFetch(`/products/${id}/flag-for-review`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to flag product for review (${res.status})`);
   }
   return body;
 };
