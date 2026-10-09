@@ -274,6 +274,85 @@ export async function addStock(client, {
 }
 
 // ─────────────────────────────────────────────────────────────
+// SET-AWARE SALE WRAPPERS  (Virtual Sets — no stock of their own)
+// ─────────────────────────────────────────────────────────────
+//
+// A "Set" product (products.is_set = true) is a sales-side grouping of 2+
+// real products (product_set_components: set_product_id, component_product_id,
+// qty_per_set) — it never holds stock itself. Selling N units of a Set must
+// deduct N * qty_per_set from each REAL component instead. These wrappers sit
+// in front of deductStock/addStock: ordinary (non-Set) products pass straight
+// through unchanged; a Set product fans out into one call per component,
+// tagged with the SAME referenceType/referenceId/SALE_OUT type as a normal
+// sale, so restoreStockForInvoice (which just queries inventory_movements by
+// those columns) reverses every component correctly on cancel with no changes
+// needed there.
+
+/**
+ * Deduct stock for one sold line item — transparently fans out to each
+ * component if productId is a Set. Same signature/throws as deductStock.
+ */
+export async function deductStockForSale(client, {
+    companyId, branchId, productId, qty,
+    referenceType, referenceId, note = ''
+}) {
+    const productRes = await client.query('SELECT is_set FROM products WHERE id = $1', [productId]);
+    if (!productRes.rows[0]?.is_set) {
+        return deductStock(client, { companyId, branchId, productId, qty, referenceType, referenceId, note });
+    }
+
+    const components = await client.query(
+        `SELECT component_product_id, qty_per_set FROM product_set_components WHERE set_product_id = $1`,
+        [productId]
+    );
+    if (components.rows.length === 0) {
+        throw new Error(`Set product #${productId} has no components defined — cannot sell it.`);
+    }
+
+    const results = [];
+    for (const c of components.rows) {
+        const componentQty = Number(c.qty_per_set) * qty;
+        const result = await deductStock(client, {
+            companyId, branchId, productId: c.component_product_id, qty: componentQty,
+            referenceType, referenceId,
+            note: note ? `${note} (set component)` : 'Set component sale',
+        });
+        results.push(result);
+    }
+    return { success: true, isSet: true, components: results };
+}
+
+/**
+ * Add stock back for one returned line item — Set counterpart of addStock,
+ * same component fan-out as deductStockForSale.
+ */
+export async function addStockForSaleReturn(client, {
+    companyId, branchId, productId, qty,
+    movementType = 'SALE_RETURN', referenceType, referenceId, note = ''
+}) {
+    const productRes = await client.query('SELECT is_set FROM products WHERE id = $1', [productId]);
+    if (!productRes.rows[0]?.is_set) {
+        return addStock(client, { companyId, branchId, productId, qty, movementType, referenceType, referenceId, note });
+    }
+
+    const components = await client.query(
+        `SELECT component_product_id, qty_per_set FROM product_set_components WHERE set_product_id = $1`,
+        [productId]
+    );
+    const results = [];
+    for (const c of components.rows) {
+        const componentQty = Number(c.qty_per_set) * qty;
+        const result = await addStock(client, {
+            companyId, branchId, productId: c.component_product_id, qty: componentQty,
+            movementType, referenceType, referenceId,
+            note: note ? `${note} (set component)` : 'Set component return',
+        });
+        results.push(result);
+    }
+    return { success: true, isSet: true, components: results };
+}
+
+// ─────────────────────────────────────────────────────────────
 // RESTORE STOCK  (Invoice delete / cancel)
 // ─────────────────────────────────────────────────────────────
 

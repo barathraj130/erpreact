@@ -80,32 +80,26 @@ const Inventory: React.FC = () => {
   const [showAddStockModal, setShowAddStockModal] = useState(false);
   const [addStockForm, setAddStockForm] = useState<{ product_id: number; stock_type: "fresh" | "mistake"; qty: number; notes: string }>({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" });
   const [addingStock, setAddingStock] = useState(false);
-  const [branches, setBranches] = useState<any[]>([]);
 
-  // Create Set: bundles loose component stock into a Set product (e.g.
-  // 1000 tops + 800 pants → 700 sets, leaving 300 tops + 100 pants as
-  // surplus). Standalone action, not tied to the purchase-confirmation flow.
+  // Create Set: defines a Set's recipe (which real products + how many of
+  // each make up one Set). A Set has no stock of its own — selling it
+  // deducts each component's stock directly at the moment of sale. This
+  // modal only saves the recipe, nothing is pre-assembled or deducted here.
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
   const [creatingSet, setCreatingSet] = useState(false);
   const [setForm, setSetForm] = useState<{
     mode: "new" | "existing";
     set_product_id: string;
     set_name: string;
-    branch_id: string;
-    sets_qty: string;
     components: { product_id: string; qty_per_set: string }[];
-  }>({ mode: "new", set_product_id: "", set_name: "", branch_id: "", sets_qty: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
+  }>({ mode: "new", set_product_id: "", set_name: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
 
-  const resetSetForm = () => setSetForm({ mode: "new", set_product_id: "", set_name: "", branch_id: "", sets_qty: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
+  const resetSetForm = () => setSetForm({ mode: "new", set_product_id: "", set_name: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
 
   const handleCreateSet = async () => {
-    const branchId = Number(setForm.branch_id);
-    const setsQty = Number(setForm.sets_qty);
     const components = setForm.components
       .filter(c => c.product_id && Number(c.qty_per_set) > 0)
       .map(c => ({ product_id: Number(c.product_id), qty_per_set: Number(c.qty_per_set) }));
-    if (!branchId) return alert("Select a branch.");
-    if (!(setsQty > 0)) return alert("Enter how many sets to assemble.");
     if (components.length === 0) return alert("Add at least one component with a quantity.");
     if (setForm.mode === "existing" && !setForm.set_product_id) return alert("Select the existing set product.");
     if (setForm.mode === "new" && !setForm.set_name.trim()) return alert("Enter a name for the new set product.");
@@ -115,20 +109,15 @@ const Inventory: React.FC = () => {
       const data = await createSet({
         set_product_id: setForm.mode === "existing" ? Number(setForm.set_product_id) : null,
         set_name: setForm.mode === "new" ? setForm.set_name.trim() : undefined,
-        branch_id: branchId,
-        sets_qty: setsQty,
         components,
       });
-      if (!data.success) { alert(data.error || "Set assembly failed"); return; }
-      const leftoverText = (data.components_leftover || [])
-        .map(c => `${c.name}: ${c.current_stock} left`)
-        .join(", ");
-      alert(`${data.message}${leftoverText ? `\n\n${leftoverText}` : ""}`);
+      if (!data.success) { alert(data.error || "Save failed"); return; }
+      alert(data.message || "Set saved");
       setShowCreateSetModal(false);
       resetSetForm();
       refresh();
     } catch (e: any) {
-      alert(e.message || "Set assembly failed");
+      alert(e.message || "Save failed");
     } finally {
       setCreatingSet(false);
     }
@@ -144,10 +133,6 @@ const Inventory: React.FC = () => {
     apiFetch("/inventory/stock-summary").then(r => r.ok ? r.json() : null).then(d => {
       if (d) setStockSummary(d);
     }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    apiFetch("/branches").then(r => r.ok ? r.json() : []).then(d => setBranches(Array.isArray(d) ? d : (d.branches || []))).catch(() => {});
   }, []);
 
   const loadBreakdown = async (productId: number) => {
@@ -510,7 +495,7 @@ const Inventory: React.FC = () => {
           </button>
           <button
             className="btn btn-secondary"
-            title="Bundle loose component stock into a Set product (e.g. tops + pants → sets)"
+            title="Define a Set — a sales-side grouping of 2+ products with no stock of its own (e.g. top + pant sold as one line)"
             onClick={() => { resetSetForm(); setShowCreateSetModal(true); }}
             style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#7c3aed", borderColor: "#7c3aed" }}
           >
@@ -765,8 +750,8 @@ const Inventory: React.FC = () => {
         )}
       </div>
 
-      {/* Create Set Modal — bundles loose component stock (e.g. tops + pants)
-          into a Set product. Standalone action, usable any time. */}
+      {/* Create Set Modal — defines a Set's recipe. No stock of its own;
+          selling a Set deducts each component's stock at sale time. */}
       <AnimatePresence>
         {showCreateSetModal && (
           <motion.div
@@ -778,7 +763,8 @@ const Inventory: React.FC = () => {
               style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "540px", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
               <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Create Set</h2>
               <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
-                e.g. 1000 tops + 800 pants, 700 sets assembled → 300 tops and 100 pants stay as surplus loose stock.
+                A Set has no stock of its own — it's a sales-side grouping. Define which products (and how many of
+                each) make up one Set here; selling a Set deducts straight from each component's real stock.
               </p>
 
               <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
@@ -788,7 +774,7 @@ const Inventory: React.FC = () => {
                 </button>
                 <button type="button" onClick={() => setSetForm(f => ({ ...f, mode: "existing" }))}
                   style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: setForm.mode === "existing" ? "2px solid #7c3aed" : "1.5px solid #e2e8f0", background: setForm.mode === "existing" ? "#f5f3ff" : "#fff", color: setForm.mode === "existing" ? "#7c3aed" : "#64748b" }}>
-                  Top Up Existing Set
+                  Edit Existing Set
                 </button>
               </div>
 
@@ -806,22 +792,6 @@ const Inventory: React.FC = () => {
                   </CustomSelect>
                 </div>
               )}
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
-                <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Branch *</label>
-                  <CustomSelect value={setForm.branch_id} onChange={(e: any) => setSetForm(f => ({ ...f, branch_id: e.target.value }))} disableSearch>
-                    <option value="">Select Branch</option>
-                    {branches.map((b: any) => <option key={b.id} value={b.id}>{b.branch_name || b.name}</option>)}
-                  </CustomSelect>
-                </div>
-                <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Sets to Assemble *</label>
-                  <input type="number" min="1" value={setForm.sets_qty}
-                    onChange={e => setSetForm(f => ({ ...f, sets_qty: e.target.value }))}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                </div>
-              </div>
 
               <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Components (qty needed per 1 set)</label>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "10px" }}>
@@ -851,7 +821,7 @@ const Inventory: React.FC = () => {
               <div style={{ display: "flex", gap: "10px" }}>
                 <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCreateSetModal(false)}>Cancel</button>
                 <button className="btn btn-primary" style={{ flex: 1, opacity: creatingSet ? 0.6 : 1 }} disabled={creatingSet} onClick={handleCreateSet}>
-                  {creatingSet ? "Assembling…" : "Assemble Set"}
+                  {creatingSet ? "Saving…" : "Save Set"}
                 </button>
               </div>
             </motion.div>

@@ -123,8 +123,6 @@ export const flagProductForReview = async (id: number): Promise<ApiResponse> => 
 export interface CreateSetPayload {
   set_product_id?: number | null;
   set_name?: string;
-  branch_id: number;
-  sets_qty: number;
   components: { product_id: number; qty_per_set: number }[];
 }
 
@@ -133,13 +131,12 @@ export interface CreateSetResponse {
   message?: string;
   error?: string;
   set_product_id?: number;
-  set_stock?: number;
-  components_leftover?: { product_id: number; name: string; current_stock: number }[];
 }
 
 /**
- * Assembles N units of a "Set" product out of loose component stock
- * (e.g. 1000 tops + 800 pants → 700 sets, leaving 300 tops + 100 pants).
+ * Defines (or updates) a Set's recipe — which real products it's made of and
+ * how many of each. A Set has no stock of its own: selling it deducts each
+ * component's stock directly at the moment of sale, not here.
  */
 export const createSet = async (payload: CreateSetPayload): Promise<CreateSetResponse> => {
   const res = await apiFetch(`/products/create-set`, {

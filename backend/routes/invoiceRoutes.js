@@ -10,7 +10,7 @@ import {
     recomputeCustomerBalance,
 } from "../services/customerLedgerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
-import { deductStock, addStock, resolveStockBranch, restoreStockForInvoice } from "../utils/inventoryEngine.js";
+import { deductStock, addStock, deductStockForSale, addStockForSaleReturn, resolveStockBranch, restoreStockForInvoice } from "../utils/inventoryEngine.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
 import * as brokerService from "../services/brokerService.js";
 import * as pointsService from "../services/pointsService.js";
@@ -223,13 +223,23 @@ router.post("/repair-stock", authMiddleware, async (req, res) => {
         for (const inv of invoices.rows) {
             if (inv.bill_purpose === 'name_only') continue;
 
-            // Find line items that have a product_id but no SALE_OUT movement
+            // Find line items that have a product_id but no SALE_OUT movement.
+            // Excludes Set products: a Set's component deductions are logged
+            // under each COMPONENT's product_id, not the Set's own, so this
+            // exists-check can never see them — it would think every Set sale
+            // needs repairing and double-deduct components on every re-run.
+            // Sets are virtual-stock-only and fan out via deductStockForSale
+            // at actual sale time, which already handles idempotency per
+            // component; this maintenance tool just stays out of their way.
             const items = await client.query(
                 `SELECT li.product_id, li.quantity
                  FROM invoice_line_items li
                  WHERE li.invoice_id = $1
                    AND li.product_id IS NOT NULL
                    AND COALESCE(li.is_return, false) = false
+                   AND NOT EXISTS (
+                       SELECT 1 FROM products p WHERE p.id = li.product_id AND p.is_set = true
+                   )
                    AND NOT EXISTS (
                        SELECT 1 FROM inventory_movements im
                        WHERE im.reference_type = 'INVOICE'
@@ -252,7 +262,7 @@ router.post("/repair-stock", authMiddleware, async (req, res) => {
                 if (!branchId) continue;
 
                 try {
-                    const result = await deductStock(client, {
+                    const result = await deductStockForSale(client, {
                         companyId,
                         branchId,
                         productId: item.product_id,
@@ -770,8 +780,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
                 if (item.is_return) {
                     // Stock return: add back to branch (skip for name_only bills)
+                    // Set-aware: a Set product has no stock of its own, so this
+                    // transparently adds back to each component instead.
                     if (!isNameOnly) {
-                        await addStock(client, {
+                        await addStockForSaleReturn(client, {
                             companyId,
                             branchId: itemBranchId,
                             productId: item.product_id,
@@ -783,8 +795,10 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                         });
                     }
                 } else if (!isNameOnly) {
-                    // Stock sale: deduct via centralized engine (includes idempotency + negative-stock guard)
-                    await deductStock(client, {
+                    // Stock sale: deduct via centralized engine (includes idempotency +
+                    // negative-stock guard). Set-aware: a Set product has no stock of
+                    // its own, so this transparently deducts each component instead.
+                    await deductStockForSale(client, {
                         companyId,
                         branchId: itemBranchId,
                         productId: item.product_id,
