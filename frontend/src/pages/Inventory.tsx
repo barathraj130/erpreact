@@ -13,7 +13,7 @@ import {
   FaTools,
   FaTrash,
 } from "react-icons/fa";
-import { confirmPendingProduct, createSet, deleteProduct, flagProductForReview } from "../api/productApi";
+import { confirmPendingProduct, createSet, deleteProduct, flagProductForReview, updateProduct } from "../api/productApi";
 import { useProducts } from "../hooks/useProducts";
 import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
@@ -304,6 +304,35 @@ const Inventory: React.FC = () => {
     }
   };
 
+  // Needs Cost Review: products auto-created from a SALES invoice line typed
+  // by name instead of picked from the catalog (is_auto_created=true,
+  // cost_price_pending=true, zero stock — see invoiceRoutes.js). This is the
+  // sales-side twin of Pending Review's purchase-side problem: a different
+  // flag, so it never showed up in that queue. Admin either sets the real
+  // cost (clears the flag, same as editing the product normally would) or
+  // merges it into the real product if it's actually a duplicate.
+  const costReviewProducts = products.filter((p: any) => p.is_auto_created && p.cost_price_pending);
+  const [showCostReviewModal, setShowCostReviewModal] = useState(false);
+  const [costDrafts, setCostDrafts] = useState<Record<number, string>>({});
+  const [savingCostId, setSavingCostId] = useState<number | null>(null);
+
+  const handleSaveCost = async (productId: number) => {
+    const draft = (costDrafts[productId] ?? "").trim();
+    const cost = Number(draft);
+    if (!draft || isNaN(cost) || cost < 0) return alert("Enter a valid cost price (0 or more).");
+    setSavingCostId(productId);
+    try {
+      const data = await updateProduct(productId, { cost_price: cost });
+      if ((data as any).error) { alert((data as any).error); return; }
+      setCostDrafts(prev => { const next = { ...prev }; delete next[productId]; return next; });
+      refresh();
+    } catch (e: any) {
+      alert(e.message || "Failed to save cost");
+    } finally {
+      setSavingCostId(null);
+    }
+  };
+
   const handleEdit = (product: any) => { setSelectedProduct(product); setIsModalOpen(true); };
   const handleAdd  = () => { setSelectedProduct(null); setIsModalOpen(true); };
 
@@ -461,6 +490,16 @@ const Inventory: React.FC = () => {
               title="Products created during a purchase that still need review"
             >
               <FaExclamationTriangle size={13} /> Pending Review ({pendingProducts.length})
+            </button>
+          )}
+          {costReviewProducts.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowCostReviewModal(true)}
+              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#0e7490", borderColor: "#06b6d4", background: "#ecfeff", position: "relative" }}
+              title="Products auto-created from a typed sale line — cost was never entered"
+            >
+              <FaExclamationTriangle size={13} /> Needs Cost Review ({costReviewProducts.length})
             </button>
           )}
           <button
@@ -896,6 +935,70 @@ const Inventory: React.FC = () => {
               )}
               <div style={{ display: "flex", marginTop: "20px" }}>
                 <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPendingModal(false)}>Close</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Needs Cost Review Modal — products auto-created from a typed sales
+          invoice line (is_auto_created + cost_price_pending), the sales-side
+          twin of Pending Review's purchase-side problem. */}
+      <AnimatePresence>
+        {showCostReviewModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) setShowCostReviewModal(false); }}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "560px", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Needs Cost Review</h2>
+              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
+                These were created automatically because a sales invoice billed them by typed name instead of
+                picking from the product list — no cost was ever recorded. Enter the real cost to confirm them,
+                or merge into the real product if this is actually a duplicate.
+              </p>
+              {costReviewProducts.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px 0" }}>Nothing pending.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {costReviewProducts.map((p: any) => (
+                    <div key={p.id} style={{ border: "1.5px solid #a5f3fc", background: "#ecfeff", borderRadius: "12px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>{p.name}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#0e7490" }}>Current selling price: ₹{Number(p.selling_price || 0).toLocaleString("en-IN")}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <input
+                          type="number" min="0" step="0.01" placeholder="Enter real cost price (₹)"
+                          value={costDrafts[p.id] ?? ""}
+                          onChange={e => setCostDrafts(prev => ({ ...prev, [p.id]: e.target.value }))}
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: "8px", border: "1px solid #a5f3fc", background: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
+                        />
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: "6px 10px", fontSize: "0.78rem" }}
+                          title="Merge into another product (it's a duplicate)"
+                          onClick={() => { setShowCostReviewModal(false); setMergeFromProduct(p); }}
+                        >
+                          <FaExchangeAlt size={12} /> Merge
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          style={{ padding: "6px 14px", fontSize: "0.78rem", opacity: savingCostId === p.id ? 0.6 : 1 }}
+                          disabled={savingCostId === p.id}
+                          onClick={() => handleSaveCost(p.id)}
+                        >
+                          {savingCostId === p.id ? "Saving…" : "Save Cost"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", marginTop: "20px" }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCostReviewModal(false)}>Close</button>
               </div>
             </motion.div>
           </motion.div>
