@@ -106,7 +106,7 @@ async function recomputeProductStock(client, productId) {
  */
 export async function deductStock(client, {
     companyId, branchId, productId, qty,
-    referenceType, referenceId, note = ''
+    referenceType, referenceId, note = '', movementType = 'SALE_OUT'
 }) {
     if (!branchId) {
         throw new Error(
@@ -117,20 +117,20 @@ export async function deductStock(client, {
     if (!(qty > 0)) return { skipped: true, reason: 'zero_qty' };
 
     // ── Idempotency guard ──────────────────────────────────────
-    // Block if a SALE_OUT movement for this exact invoice+product already exists.
+    // Block if a movement of this exact type for this invoice/reference+product already exists.
     const dup = await client.query(`
         SELECT id FROM inventory_movements
         WHERE branch_id     = $1
           AND product_id    = $2
-          AND type          = 'SALE_OUT'
+          AND type          = $5
           AND reference_type = $3
           AND reference_id  = $4
         LIMIT 1
-    `, [branchId, productId, referenceType, referenceId]);
+    `, [branchId, productId, referenceType, referenceId, movementType]);
 
     if (dup.rows.length > 0) {
         console.warn(
-            `[inventoryEngine] DUPLICATE BLOCKED: SALE_OUT product#${productId} ` +
+            `[inventoryEngine] DUPLICATE BLOCKED: ${movementType} product#${productId} ` +
             `${referenceType}#${referenceId} branch#${branchId}`
         );
         return { skipped: true, reason: 'duplicate' };
@@ -180,8 +180,8 @@ export async function deductStock(client, {
             INSERT INTO inventory_movements
                 (company_id, branch_id, product_id, type, qty_out,
                  previous_qty, new_qty, reference_type, reference_id, note)
-            VALUES ($1, $2, $3, 'SALE_OUT', $4, $5, $6, $7, $8, $9)
-        `, [companyId, branchId, productId, qty, prevQty, newQty, referenceType, referenceId, note]);
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [companyId, branchId, productId, movementType, qty, prevQty, newQty, referenceType, referenceId, note]);
         await client.query('RELEASE SAVEPOINT sp_inv_log');
     } catch (logErr) {
         await client.query('ROLLBACK TO SAVEPOINT sp_inv_log');
@@ -190,13 +190,13 @@ export async function deductStock(client, {
         await client.query(`
             INSERT INTO inventory_movements
                 (company_id, branch_id, product_id, type, qty_out, reference_type, reference_id, note)
-            VALUES ($1, $2, $3, 'SALE_OUT', $4, $5, $6, $7)
-        `, [companyId, branchId, productId, qty, referenceType, referenceId, note]).catch(() => {});
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [companyId, branchId, productId, movementType, qty, referenceType, referenceId, note]).catch(() => {});
         console.warn('[inventoryEngine] Movement log used fallback (missing audit columns):', logErr.message);
     }
 
     console.log(
-        `[inventoryEngine] ✓ SALE_OUT product#${productId} (${productName}) ` +
+        `[inventoryEngine] ✓ ${movementType} product#${productId} (${productName}) ` +
         `branch#${branchId}: ${prevQty} → ${newQty} (−${qty})`
     );
 

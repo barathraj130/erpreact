@@ -29,6 +29,9 @@ export interface Product {
   auto_created_from_invoice_id?: number | null;
   cost_price_pending?: boolean;
   cost_price_updated_at?: string | null;
+  pending_review?: boolean;
+  is_set?: boolean;
+  branch_id?: number | null;
 }
 
 
@@ -72,13 +75,61 @@ interface ApiResponse {
 /**
  * Fetches all products for the active company.
  */
-export const fetchProducts = async (): Promise<Product[]> => {
-  const res = await apiFetch("/products");
+export const fetchProducts = async (opts?: { includePending?: boolean }): Promise<Product[]> => {
+  // includePending: see products still awaiting admin confirmation (created via
+  // quick-add with no exact name match) — only the admin Inventory page and the
+  // Purchase Bill product picker should pass this; every Sales/customer-facing
+  // caller leaves it out so an unreviewed duplicate never shows up for sale.
+  const res = await apiFetch(`/products${opts?.includePending ? "?include_pending=true" : ""}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.error || `Failed to load products (${res.status})`);
   }
   return res.json();
+};
+
+/** Confirms a pending-review product as genuinely new (clears pending_review). */
+export const confirmPendingProduct = async (id: number): Promise<ApiResponse> => {
+  const res = await apiFetch(`/products/${id}/confirm`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to confirm product (${res.status})`);
+  }
+  return body;
+};
+
+export interface CreateSetPayload {
+  set_product_id?: number | null;
+  set_name?: string;
+  branch_id: number;
+  sets_qty: number;
+  components: { product_id: number; qty_per_set: number }[];
+}
+
+export interface CreateSetResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  set_product_id?: number;
+  set_stock?: number;
+  components_leftover?: { product_id: number; name: string; current_stock: number }[];
+}
+
+/**
+ * Assembles N units of a "Set" product out of loose component stock
+ * (e.g. 1000 tops + 800 pants → 700 sets, leaving 300 tops + 100 pants).
+ */
+export const createSet = async (payload: CreateSetPayload): Promise<CreateSetResponse> => {
+  const res = await apiFetch(`/products/create-set`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body?.error || `Failed to create set (${res.status})`);
+  }
+  return body;
 };
 
 export const createProduct = async (data: any): Promise<ApiResponse> => {

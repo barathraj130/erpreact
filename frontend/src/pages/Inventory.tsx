@@ -3,15 +3,17 @@ import React, { useEffect, useState } from "react";
 import {
   FaBox,
   FaBoxOpen,
+  FaCheckCircle,
   FaEdit,
   FaExchangeAlt,
+  FaExclamationTriangle,
   FaPlus,
   FaSearch,
   FaSync,
   FaTools,
   FaTrash,
 } from "react-icons/fa";
-import { deleteProduct } from "../api/productApi";
+import { confirmPendingProduct, createSet, deleteProduct } from "../api/productApi";
 import { useProducts } from "../hooks/useProducts";
 import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
@@ -78,6 +80,59 @@ const Inventory: React.FC = () => {
   const [showAddStockModal, setShowAddStockModal] = useState(false);
   const [addStockForm, setAddStockForm] = useState<{ product_id: number; stock_type: "fresh" | "mistake"; qty: number; notes: string }>({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" });
   const [addingStock, setAddingStock] = useState(false);
+  const [branches, setBranches] = useState<any[]>([]);
+
+  // Create Set: bundles loose component stock into a Set product (e.g.
+  // 1000 tops + 800 pants → 700 sets, leaving 300 tops + 100 pants as
+  // surplus). Standalone action, not tied to the purchase-confirmation flow.
+  const [showCreateSetModal, setShowCreateSetModal] = useState(false);
+  const [creatingSet, setCreatingSet] = useState(false);
+  const [setForm, setSetForm] = useState<{
+    mode: "new" | "existing";
+    set_product_id: string;
+    set_name: string;
+    branch_id: string;
+    sets_qty: string;
+    components: { product_id: string; qty_per_set: string }[];
+  }>({ mode: "new", set_product_id: "", set_name: "", branch_id: "", sets_qty: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
+
+  const resetSetForm = () => setSetForm({ mode: "new", set_product_id: "", set_name: "", branch_id: "", sets_qty: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
+
+  const handleCreateSet = async () => {
+    const branchId = Number(setForm.branch_id);
+    const setsQty = Number(setForm.sets_qty);
+    const components = setForm.components
+      .filter(c => c.product_id && Number(c.qty_per_set) > 0)
+      .map(c => ({ product_id: Number(c.product_id), qty_per_set: Number(c.qty_per_set) }));
+    if (!branchId) return alert("Select a branch.");
+    if (!(setsQty > 0)) return alert("Enter how many sets to assemble.");
+    if (components.length === 0) return alert("Add at least one component with a quantity.");
+    if (setForm.mode === "existing" && !setForm.set_product_id) return alert("Select the existing set product.");
+    if (setForm.mode === "new" && !setForm.set_name.trim()) return alert("Enter a name for the new set product.");
+
+    setCreatingSet(true);
+    try {
+      const data = await createSet({
+        set_product_id: setForm.mode === "existing" ? Number(setForm.set_product_id) : null,
+        set_name: setForm.mode === "new" ? setForm.set_name.trim() : undefined,
+        branch_id: branchId,
+        sets_qty: setsQty,
+        components,
+      });
+      if (!data.success) { alert(data.error || "Set assembly failed"); return; }
+      const leftoverText = (data.components_leftover || [])
+        .map(c => `${c.name}: ${c.current_stock} left`)
+        .join(", ");
+      alert(`${data.message}${leftoverText ? `\n\n${leftoverText}` : ""}`);
+      setShowCreateSetModal(false);
+      resetSetForm();
+      refresh();
+    } catch (e: any) {
+      alert(e.message || "Set assembly failed");
+    } finally {
+      setCreatingSet(false);
+    }
+  };
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -89,6 +144,10 @@ const Inventory: React.FC = () => {
     apiFetch("/inventory/stock-summary").then(r => r.ok ? r.json() : null).then(d => {
       if (d) setStockSummary(d);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/branches").then(r => r.ok ? r.json() : []).then(d => setBranches(Array.isArray(d) ? d : (d.branches || []))).catch(() => {});
   }, []);
 
   const loadBreakdown = async (productId: number) => {
@@ -210,6 +269,27 @@ const Inventory: React.FC = () => {
       alert("Merge failed");
     } finally {
       setMerging(false);
+    }
+  };
+
+  // Products created via quick-add during a purchase with no exact-name match
+  // land here as pending_review=true (see productRoutes.js /quick) so they
+  // never show up for sale until an admin confirms them. useProducts() already
+  // loads them (includePending: true), so we just filter the same list.
+  const pendingProducts = products.filter((p: any) => p.pending_review);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+
+  const handleConfirmPending = async (productId: number) => {
+    setConfirmingId(productId);
+    try {
+      const data = await confirmPendingProduct(productId);
+      if (!data.success) { alert((data as any).error || "Confirm failed"); return; }
+      refresh();
+    } catch (e: any) {
+      alert(e.message || "Confirm failed");
+    } finally {
+      setConfirmingId(null);
     }
   };
 
@@ -358,6 +438,16 @@ const Inventory: React.FC = () => {
           <button className="btn btn-secondary" onClick={() => refresh()} style={{ width: "42px", height: "42px", padding: 0 }} title="Refresh">
             <FaSync className={loading ? "fa-spin" : ""} />
           </button>
+          {pendingProducts.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowPendingModal(true)}
+              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#b45309", borderColor: "#f59e0b", background: "#fffbeb", position: "relative" }}
+              title="Products created during a purchase that still need review"
+            >
+              <FaExclamationTriangle size={13} /> Pending Review ({pendingProducts.length})
+            </button>
+          )}
           <button
             className="btn btn-secondary"
             title="Repair stock: re-run deductions for invoices missing stock movements"
@@ -387,6 +477,14 @@ const Inventory: React.FC = () => {
             style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#16a34a", borderColor: "#16a34a" }}
           >
             <FaBoxOpen size={13} /> Add Stock
+          </button>
+          <button
+            className="btn btn-secondary"
+            title="Bundle loose component stock into a Set product (e.g. tops + pants → sets)"
+            onClick={() => { resetSetForm(); setShowCreateSetModal(true); }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#7c3aed", borderColor: "#7c3aed" }}
+          >
+            <FaBox size={13} /> Create Set
           </button>
           <button className="btn btn-primary" onClick={handleAdd} style={{ height: "42px", padding: "0 24px" }}>
             <FaPlus /> Add New Product
@@ -624,6 +722,158 @@ const Inventory: React.FC = () => {
           </table>
         )}
       </div>
+
+      {/* Create Set Modal — bundles loose component stock (e.g. tops + pants)
+          into a Set product. Standalone action, usable any time. */}
+      <AnimatePresence>
+        {showCreateSetModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) setShowCreateSetModal(false); }}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "540px", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Create Set</h2>
+              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
+                e.g. 1000 tops + 800 pants, 700 sets assembled → 300 tops and 100 pants stay as surplus loose stock.
+              </p>
+
+              <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
+                <button type="button" onClick={() => setSetForm(f => ({ ...f, mode: "new" }))}
+                  style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: setForm.mode === "new" ? "2px solid #7c3aed" : "1.5px solid #e2e8f0", background: setForm.mode === "new" ? "#f5f3ff" : "#fff", color: setForm.mode === "new" ? "#7c3aed" : "#64748b" }}>
+                  New Set Product
+                </button>
+                <button type="button" onClick={() => setSetForm(f => ({ ...f, mode: "existing" }))}
+                  style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: setForm.mode === "existing" ? "2px solid #7c3aed" : "1.5px solid #e2e8f0", background: setForm.mode === "existing" ? "#f5f3ff" : "#fff", color: setForm.mode === "existing" ? "#7c3aed" : "#64748b" }}>
+                  Top Up Existing Set
+                </button>
+              </div>
+
+              {setForm.mode === "new" ? (
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Set Name *</label>
+                  <input value={setForm.set_name} onChange={e => setSetForm(f => ({ ...f, set_name: e.target.value }))}
+                    placeholder="e.g. Men's Top + Pant Set" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
+                </div>
+              ) : (
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Existing Set Product *</label>
+                  <CustomSelect value={setForm.set_product_id} onChange={(e: any) => setSetForm(f => ({ ...f, set_product_id: e.target.value }))} placeholder="Search products…">
+                    {(products || []).filter((p: any) => p.is_set).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </CustomSelect>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Branch *</label>
+                  <CustomSelect value={setForm.branch_id} onChange={(e: any) => setSetForm(f => ({ ...f, branch_id: e.target.value }))} disableSearch>
+                    <option value="">Select Branch</option>
+                    {branches.map((b: any) => <option key={b.id} value={b.id}>{b.branch_name || b.name}</option>)}
+                  </CustomSelect>
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Sets to Assemble *</label>
+                  <input type="number" min="1" value={setForm.sets_qty}
+                    onChange={e => setSetForm(f => ({ ...f, sets_qty: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
+                </div>
+              </div>
+
+              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Components (qty needed per 1 set)</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "10px" }}>
+                {setForm.components.map((c, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <div style={{ flex: 1 }}>
+                      <CustomSelect value={c.product_id} onChange={(e: any) => setSetForm(f => ({ ...f, components: f.components.map((row, i) => i === idx ? { ...row, product_id: e.target.value } : row) }))} placeholder="Search products…">
+                        {(products || []).filter((p: any) => !p.is_set).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </CustomSelect>
+                    </div>
+                    <input type="number" min="0.01" step="0.01" placeholder="Qty/set" value={c.qty_per_set}
+                      onChange={e => setSetForm(f => ({ ...f, components: f.components.map((row, i) => i === idx ? { ...row, qty_per_set: e.target.value } : row) }))}
+                      style={{ width: "90px", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
+                    <button type="button" className="btn btn-secondary" style={{ padding: "8px 10px" }}
+                      onClick={() => setSetForm(f => ({ ...f, components: f.components.filter((_, i) => i !== idx) }))}
+                      disabled={setForm.components.length <= 1}>
+                      <FaTrash size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="btn btn-secondary" style={{ fontSize: "0.8rem", marginBottom: "20px" }}
+                onClick={() => setSetForm(f => ({ ...f, components: [...f.components, { product_id: "", qty_per_set: "" }] }))}>
+                <FaPlus size={11} /> Add Component
+              </button>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCreateSetModal(false)}>Cancel</button>
+                <button className="btn btn-primary" style={{ flex: 1, opacity: creatingSet ? 0.6 : 1 }} disabled={creatingSet} onClick={handleCreateSet}>
+                  {creatingSet ? "Assembling…" : "Assemble Set"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Pending Review Modal — products created via purchase quick-add with no
+          exact name match; admin must confirm each as new or merge it. */}
+      <AnimatePresence>
+        {showPendingModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) setShowPendingModal(false); }}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "560px", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Pending Review</h2>
+              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
+                These were created during a purchase because no product matched that exact name.
+                Confirm as new if it genuinely is, or merge it into an existing product if it's a duplicate.
+                Until confirmed, they won't show up for sale.
+              </p>
+              {pendingProducts.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px 0" }}>Nothing pending.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {pendingProducts.map((p: any) => (
+                    <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>{p.name}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#92400e" }}>Stock: {p.current_stock ?? 0} {p.unit || ""}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: "6px 10px", fontSize: "0.78rem" }}
+                          title="Merge into another product (it's a duplicate)"
+                          onClick={() => { setShowPendingModal(false); setMergeFromProduct(p); }}
+                        >
+                          <FaExchangeAlt size={12} /> Merge
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          style={{ padding: "6px 10px", fontSize: "0.78rem", opacity: confirmingId === p.id ? 0.6 : 1 }}
+                          disabled={confirmingId === p.id}
+                          title="Confirm this is genuinely a new product"
+                          onClick={() => handleConfirmPending(p.id)}
+                        >
+                          <FaCheckCircle size={12} /> {confirmingId === p.id ? "Confirming…" : "Confirm New"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", marginTop: "20px" }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPendingModal(false)}>Close</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Merge Duplicate Product Modal */}
       <AnimatePresence>

@@ -19,7 +19,9 @@ export const useProducts = (): UseProductsState => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchProducts();
+      // Only consumer is the admin Inventory Management page — it must see
+      // products still pending review, since that's where they get confirmed.
+      const data = await fetchProducts({ includePending: true });
       const safeData = Array.isArray(data) ? data : [];
       // is_active may be boolean (true) or integer (1) depending on DB driver — use truthy check
       setProducts(safeData.filter((p) => p.is_active !== false && p.is_active !== 0));

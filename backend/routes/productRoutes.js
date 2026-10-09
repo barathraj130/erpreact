@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import * as pgModule from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
-import { addStock } from "../utils/inventoryEngine.js";
+import { addStock, deductStock, resolveStockBranch } from "../utils/inventoryEngine.js";
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -159,12 +159,18 @@ router.post("/quick", authMiddleware, async (req, res) => {
         if (existing) return res.json({ success: true, product: existing, created: false });
 
         const sku = `PROD-${Date.now().toString().slice(-6)}`;
+        // pending_review = true: this name didn't exactly match anything existing,
+        // which is exactly how "LEE MEN'S R/N" got created as a duplicate of
+        // "MEN'S TOP LEE R/N" — stranding real purchased stock on a product
+        // nothing else ever sells from. Flagging it keeps it out of every
+        // Sales-facing product list until an admin either merges it into the
+        // real product or explicitly confirms it as genuinely new.
         const product = await pgModule.pgGet(
-            `INSERT INTO products (company_id, name, unit, gst_percent, sku, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted)
-             VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, 'Other', 1, false) RETURNING id, name`,
+            `INSERT INTO products (company_id, name, unit, gst_percent, sku, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review)
+             VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, 'Other', 1, false, true) RETURNING id, name, pending_review`,
             [companyId, name.trim(), unit, parseFloat(gst_percent) || 0, sku]
         );
-        return res.status(201).json({ success: true, product, created: true });
+        return res.status(201).json({ success: true, product, created: true, pending_review: true });
     } catch (err) {
         console.error("Quick create product error:", err);
         return res.status(500).json({ error: "Failed to create product" });
@@ -272,6 +278,154 @@ router.post("/merge-duplicate", authMiddleware, async (req, res) => {
     }
 });
 
+// POST /products/:id/confirm — admin only
+// Clears pending_review once the admin has checked this is genuinely a new
+// product, not a near-duplicate of an existing one. If it IS a duplicate,
+// use /merge-duplicate instead — that already clears it too (the merged
+// row is soft-deleted, so it never shows up in the review queue again).
+router.post("/:id/confirm", authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Admin only.' });
+    }
+    const companyId = req.user.active_company_id;
+    const id = parseInt(req.params.id);
+    try {
+        const product = await pgModule.pgGet(
+            `UPDATE products SET pending_review = false WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
+            [id, companyId]
+        );
+        if (!product) return res.status(404).json({ error: 'Product not found' });
+        return res.json({ success: true, product });
+    } catch (err) {
+        console.error("Confirm Pending Product Error:", err);
+        return res.status(500).json({ error: "Failed to confirm product: " + err.message });
+    }
+});
+
+// POST /products/create-set — admin only
+// Assembles N "sets" out of loose component stock (e.g. 1000 tops + 800 pants
+// → 700 sets, leaving 300 tops + 100 pants as surplus loose stock). Deducts
+// qty_per_set * sets_qty from each component in the given branch, credits
+// sets_qty to the set product in that same branch, and remembers the recipe
+// (product_set_components) so a later top-up of the same set reuses it.
+// Deliberately a standalone action, decoupled from the purchase-confirmation
+// screen — a set can be assembled whenever, not only right after a purchase.
+router.post("/create-set", authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Admin only.' });
+    }
+    const companyId = req.user.active_company_id;
+    const branchId = parseInt(req.body.branch_id);
+    const setsQty = parseFloat(req.body.sets_qty);
+    const components = Array.isArray(req.body.components) ? req.body.components : [];
+    let setProductId = req.body.set_product_id ? parseInt(req.body.set_product_id) : null;
+    const setName = (req.body.set_name || '').trim();
+
+    if (!branchId) return res.status(400).json({ error: 'branch_id is required' });
+    if (!(setsQty > 0)) return res.status(400).json({ error: 'sets_qty must be greater than 0' });
+    if (components.length === 0) return res.status(400).json({ error: 'At least one component is required' });
+    for (const c of components) {
+        if (!c.product_id || !(Number(c.qty_per_set) > 0)) {
+            return res.status(400).json({ error: 'Each component needs a product_id and a qty_per_set greater than 0' });
+        }
+    }
+    if (!setProductId && !setName) {
+        return res.status(400).json({ error: 'set_product_id or set_name is required' });
+    }
+
+    const client = await pgModule.getClient();
+    try {
+        await client.query('BEGIN');
+
+        if (setProductId) {
+            const existing = await client.query(`SELECT id, name FROM products WHERE id = $1 AND company_id = $2 FOR UPDATE`, [setProductId, companyId]);
+            if (!existing.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Set product not found' });
+            }
+        } else {
+            const created = await client.query(`
+                INSERT INTO products (company_id, name, unit, gst_percent, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review, is_set)
+                VALUES ($1, $2, 'PCS', 0, 0, 0, 0, 0, 'Set', true, false, false, true)
+                RETURNING id, name
+            `, [companyId, setName]);
+            setProductId = created.rows[0].id;
+        }
+
+        // Validate every component belongs to this company before touching stock.
+        for (const c of components) {
+            const compRes = await client.query(`SELECT id, name FROM products WHERE id = $1 AND company_id = $2 FOR UPDATE`, [c.product_id, companyId]);
+            if (!compRes.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: `Component product #${c.product_id} not found` });
+            }
+            if (Number(c.product_id) === Number(setProductId)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'A set product cannot be a component of itself' });
+            }
+        }
+
+        const setProductRow = await client.query(`SELECT name FROM products WHERE id = $1`, [setProductId]);
+        const setProductName = setProductRow.rows[0]?.name || `Product #${setProductId}`;
+
+        // Deduct each component's share — deductStock throws on insufficient
+        // stock, which aborts the whole transaction (nothing partially consumed).
+        for (const c of components) {
+            const needed = Number(c.qty_per_set) * setsQty;
+            await deductStock(client, {
+                companyId, branchId, productId: c.product_id, qty: needed,
+                movementType: 'SET_COMPONENT_OUT',
+                referenceType: 'SET_ASSEMBLY', referenceId: setProductId,
+                note: `Consumed for ${setsQty} unit(s) of set "${setProductName}"`,
+            });
+        }
+
+        // Credit the set product with the assembled quantity.
+        await addStock(client, {
+            companyId, branchId, productId: setProductId, qty: setsQty,
+            movementType: 'SET_ASSEMBLY_IN',
+            referenceType: 'SET_ASSEMBLY', referenceId: setProductId,
+            note: `Assembled from ${components.length} component(s)`,
+        });
+
+        // Remember the recipe so a later top-up of the same set can reuse it.
+        for (const c of components) {
+            await client.query(`
+                INSERT INTO product_set_components (company_id, set_product_id, component_product_id, qty_per_set)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (set_product_id, component_product_id)
+                DO UPDATE SET qty_per_set = EXCLUDED.qty_per_set
+            `, [companyId, setProductId, c.product_id, c.qty_per_set]);
+        }
+
+        await client.query(`UPDATE products SET is_set = true WHERE id = $1`, [setProductId]);
+
+        // Leftover stock per component + the set's new stock, for the
+        // "700 sets made, 300 top + 100 pant left over" confirmation screen.
+        const leftovers = await client.query(`
+            SELECT p.id as product_id, p.name, bi.current_stock
+            FROM branch_inventory bi JOIN products p ON p.id = bi.product_id
+            WHERE bi.branch_id = $1 AND bi.product_id = ANY($2::int[])
+        `, [branchId, components.map(c => c.product_id)]);
+        const setStock = await client.query(`SELECT current_stock FROM branch_inventory WHERE branch_id = $1 AND product_id = $2`, [branchId, setProductId]);
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            message: `Assembled ${setsQty} unit(s) of "${setProductName}"`,
+            set_product_id: setProductId,
+            set_stock: Number(setStock.rows[0]?.current_stock ?? 0),
+            components_leftover: leftovers.rows,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('[create-set]', err.message);
+        res.status(400).json({ error: err.message || 'Set assembly failed' });
+    } finally {
+        client.release();
+    }
+});
+
 router.get("/breakdown", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {
@@ -317,6 +471,15 @@ router.get("/breakdown", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
     const companyId = req.user?.active_company_id;
     try {
+        // Products created via quick-add during a purchase (which matches by exact
+        // name only — see /quick below) are pending_review by default, and excluded
+        // here UNLESS the caller explicitly opts in (?include_pending=true — the
+        // admin Inventory page and the Purchase Bill product picker, which both
+        // need to see them so a duplicate can be found and merged/confirmed).
+        // Every Sales-facing or customer-facing product list goes through this
+        // same endpoint with no param, so it's safe by default rather than
+        // requiring every one of those call sites to remember to exclude them.
+        const includePending = req.query.include_pending === 'true';
         // current_stock = SUM of branch_inventory for all branches (the single source of truth).
         // Falls back to products.current_stock if no branch_inventory rows exist yet.
         const sql = `
@@ -330,6 +493,7 @@ router.get("/", authMiddleware, async (req, res) => {
                 GROUP BY product_id
             ) bi_sum ON bi_sum.product_id = p.id
             WHERE p.company_id = $1 AND p.is_deleted = false
+              ${includePending ? '' : "AND COALESCE(p.pending_review, false) = false"}
             ORDER BY p.id DESC
         `;
         const list = await pgModule.pgAll(sql, [companyId]);

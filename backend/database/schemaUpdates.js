@@ -336,6 +336,8 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE products ADD COLUMN IF NOT EXISTS auto_created_from_invoice_id INTEGER;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price_pending BOOLEAN DEFAULT false;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price_updated_at TIMESTAMP;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS pending_review BOOLEAN DEFAULT false;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS is_set BOOLEAN DEFAULT false;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS meta JSONB;
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS bill_category VARCHAR(50);
             ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
@@ -1508,6 +1510,22 @@ export const runSchemaUpdates = async () => {
         await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_party ON backdated_transactions(party_id, party_type)`).catch(() => {});
         await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_branch ON backdated_transactions(branch_id, transaction_date)`).catch(() => {});
         await db.query(`CREATE INDEX IF NOT EXISTS idx_bd_audit ON backdated_audit(backdated_transaction_id)`).catch(() => {});
+
+        // Set/bundle products: tracks which component products (and how many units of
+        // each) were consumed to build one unit of a Set product, so stock movements
+        // can be reversed/audited later.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS product_set_components (
+                id                SERIAL PRIMARY KEY,
+                company_id        INTEGER NOT NULL,
+                set_product_id    INTEGER NOT NULL REFERENCES products(id),
+                component_product_id INTEGER NOT NULL REFERENCES products(id),
+                qty_per_set       NUMERIC(10,2) NOT NULL DEFAULT 1,
+                created_at        TIMESTAMP DEFAULT NOW(),
+                UNIQUE(set_product_id, component_product_id)
+            )
+        `).catch((e) => console.warn('[schemaUpdates] product_set_components skipped:', e.message));
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_psc_set ON product_set_components(set_product_id)`).catch(() => {});
 
         console.log("✅ Schema Updates Completed.");
     } catch (err) {

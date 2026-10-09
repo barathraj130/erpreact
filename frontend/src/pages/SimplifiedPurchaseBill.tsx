@@ -259,7 +259,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
     const fetchData = async () => {
       const [supRes, prodRes, brokerRes, branchRes] = await Promise.all([
         apiFetch("/suppliers"),
-        apiFetch("/products"),
+        // include_pending: a product still awaiting admin confirmation must stay
+        // selectable here, so adding more stock to it doesn't create yet another
+        // duplicate — only Sales-facing product lists exclude pending ones.
+        apiFetch("/products?include_pending=true"),
         apiFetch("/brokers"),
         apiFetch("/branches/current")
       ]);
