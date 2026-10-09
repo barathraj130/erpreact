@@ -216,6 +216,10 @@ const Inventory: React.FC = () => {
     const minStock = Number(p.min_stock || 5);
     if (stockFilter === "low") matchesStock = currentStock <= minStock && currentStock > 0;
     if (stockFilter === "out") matchesStock = currentStock === 0;
+    // "Has real stock" cuts through the typed-sale/typed-purchase junk (always
+    // 0 stock — see Needs Cost Review / Pending Review) to show only products
+    // that actually have physical inventory right now.
+    if (stockFilter === "has_stock") matchesStock = currentStock > 0;
 
     return matchesSearch && matchesStock;
   });
@@ -600,6 +604,7 @@ const Inventory: React.FC = () => {
         <div style={{ width: isMobile ? "100%" : "220px" }}>
           <CustomSelect value={stockFilter} onChange={(e) => setStockFilter(e.target.value)} style={{ height: "42px" }} disableSearch>
             <option value="all">View All Products</option>
+            <option value="has_stock">Has Real Stock</option>
             <option value="low">Low Stock Alerts</option>
             <option value="out">Out of Stock</option>
           </CustomSelect>
