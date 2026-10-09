@@ -21,12 +21,81 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
-import { createJourneyForPurchase, updateJourneyTotals } from "../utils/productJourneyEngine.js";
+import { createJourneyForPurchase, updateJourneyTotals, recordSaleForJourney } from "../utils/productJourneyEngine.js";
 
 const router = express.Router();
 const isAdmin = (req) => req.user.role === "admin" || req.user.role === "superadmin";
 
 // ── POST /api/journey/create — start a journey for a purchase batch ────────
+// ── POST /api/journey/backfill-sales — admin only, safe to re-run ──────────
+// Sales made before recordSaleForJourney existed (invoiceRoutes.js) never
+// touched product_journeys, so their journeys still show the full purchased
+// amount as "Fresh Left" despite real stock having been sold. Per product,
+// compares the TRUE net-sold quantity (inventory_movements: SALE_OUT minus
+// SALE_RETURN — this already nets out cancelled/returned invoices correctly,
+// since those add a reversing movement rather than deleting the original)
+// against what's already recorded across that product's journeys. Any
+// positive gap is the unrecorded historical backfill, allocated FIFO via the
+// same recordSaleForJourney() the live sale path now uses. Re-running is
+// safe: once a gap is recorded, the next run's comparison sees it already
+// counted and finds zero gap, so nothing is ever double-counted.
+router.post("/backfill-sales", authMiddleware, async (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Admin only." });
+    const companyId = req.user.active_company_id;
+    const client = await db.getClient();
+    try {
+        await client.query("BEGIN");
+
+        const netSold = await client.query(`
+            SELECT product_id,
+                COALESCE(SUM(CASE WHEN type = 'SALE_OUT' THEN qty_out ELSE 0 END), 0)
+                - COALESCE(SUM(CASE WHEN type = 'SALE_RETURN' THEN qty_in ELSE 0 END), 0) AS net_sold
+            FROM inventory_movements
+            WHERE company_id = $1 AND product_id IS NOT NULL
+            GROUP BY product_id
+            HAVING COALESCE(SUM(CASE WHEN type = 'SALE_OUT' THEN qty_out ELSE 0 END), 0)
+                 - COALESCE(SUM(CASE WHEN type = 'SALE_RETURN' THEN qty_in ELSE 0 END), 0) > 0
+        `, [companyId]);
+
+        const results = [];
+        for (const row of netSold.rows) {
+            const productId = row.product_id;
+            const trueNetSold = Number(row.net_sold);
+
+            const journeyNet = await client.query(`
+                SELECT COALESCE(SUM(fresh_sold), 0) - COALESCE(SUM(fresh_returned), 0) AS recorded
+                FROM product_journeys WHERE company_id = $1 AND product_id = $2
+            `, [companyId, productId]);
+            const alreadyRecorded = Number(journeyNet.rows[0]?.recorded || 0);
+
+            const gap = trueNetSold - alreadyRecorded;
+            if (gap <= 0) continue;
+
+            const productRes = await client.query(`SELECT name, selling_price FROM products WHERE id = $1`, [productId]);
+            const product = productRes.rows[0];
+            if (!product) continue;
+
+            const { allocated, unallocated } = await recordSaleForJourney(client, {
+                companyId, productId, qty: gap,
+                rate: Number(product.selling_price) || 0,
+                referenceType: 'historical_backfill', referenceId: null,
+                note: `Historical sale backfill — ${gap} pcs sold before journey tracking existed`,
+            });
+
+            results.push({ product_id: productId, product_name: product.name, gap, allocated, unallocated });
+        }
+
+        await client.query("COMMIT");
+        res.json({ success: true, processed: results.length, results });
+    } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        console.error("[journey/backfill-sales]", err.message);
+        res.status(500).json({ error: err.message || "Backfill failed" });
+    } finally {
+        client.release();
+    }
+});
+
 router.post("/create", authMiddleware, async (req, res) => {
   const client = await db.getClient();
   try {

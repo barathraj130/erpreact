@@ -541,6 +541,23 @@ const Inventory: React.FC = () => {
           </button>
           <button
             className="btn btn-secondary"
+            title="Backfill Product Journey with sales made before it tracked sales at all (Fresh Left/Total Sold/Revenue stayed frozen at the purchased amount). Run Recover Surplus Stock first for best accuracy. Safe to run more than once."
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#7c3aed", borderColor: "#7c3aed" }}
+            onClick={async () => {
+              if (!window.confirm("This will backfill Product Journey with sales made before it tracked sales (so Fresh Left/Total Sold/Revenue reflect reality). Safe to run more than once. Proceed?")) return;
+              try {
+                const res = await apiFetch("/journey/backfill-sales", { method: "POST" });
+                const data = await res.json();
+                if (!data.success) { alert(data.error || "Backfill failed"); return; }
+                alert(`Backfilled ${data.processed} product(s) of historical sales into Product Journey.`);
+                refresh();
+              } catch (e: any) { alert("Backfill failed: " + (e.message || "Unknown error")); }
+            }}
+          >
+            <FaExclamationTriangle size={13} /> Backfill Journey Sales
+          </button>
+          <button
+            className="btn btn-secondary"
             onClick={() => { setConvertForm({ product_id: 0, product_name: "", lot_id: "", mistake_qty: 0, repair_cost_per_piece: 0, notes: "" }); setShowConvertModal(true); }}
             style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#3b82f6", borderColor: "#3b82f6" }}
           >
