@@ -12,6 +12,7 @@ router.get('/', authMiddleware, async (req, res) => {
       SELECT
         dord.id, dord.order_number, dord.order_date, dord.status,
         dord.converted_invoice_id, dord.created_at,
+        dord.customer_id,
         COALESCE(u.username, dord.customer_name) AS customer_name,
         dord.customer_id IS NULL AS is_suggested_customer,
         COUNT(doi.id) AS item_count,
@@ -22,7 +23,7 @@ router.get('/', authMiddleware, async (req, res) => {
       LEFT JOIN delivery_order_items doi ON doi.delivery_order_id = dord.id
       LEFT JOIN invoices inv ON inv.id = dord.converted_invoice_id
       WHERE dord.company_id = $1
-      GROUP BY dord.id, u.username, dord.customer_name, inv.invoice_number
+      GROUP BY dord.id, dord.customer_id, u.username, dord.customer_name, inv.invoice_number
       ORDER BY dord.created_at DESC
     `, [companyId]);
     res.json({ success: true, orders: rows });

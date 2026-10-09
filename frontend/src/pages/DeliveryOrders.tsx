@@ -9,6 +9,7 @@ interface DeliveryOrder {
   id: number;
   order_number: string;
   order_date: string;
+  customer_id: number | null;
   customer_name: string;
   is_suggested_customer?: boolean;
   item_count: number;
@@ -31,6 +32,29 @@ const DeliveryOrders: React.FC = () => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [printingId, setPrintingId] = useState<number | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  // Merge: pick 2+ not-yet-invoiced orders for the same customer to combine
+  // into one bill. Selection only makes sense for orders that can still be
+  // billed, so invoiced ones aren't selectable.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedOrders = orders.filter(o => selectedIds.has(o.id));
+
+  const handleMergeClick = () => {
+    const distinctCustomers = new Set(selectedOrders.map(o => o.customer_id ?? `name:${o.customer_name}`));
+    if (distinctCustomers.size > 1) {
+      alert("Selected delivery orders belong to different customers — merging only works within the same customer.");
+      return;
+    }
+    navigate(`/delivery-orders/merge?ids=${Array.from(selectedIds).join(",")}`);
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -164,6 +188,15 @@ const DeliveryOrders: React.FC = () => {
           <button className="page-btn-round-sm" onClick={load} aria-label="Refresh">
             <FaSync className={loading ? "fa-spin" : ""} size={14} />
           </button>
+          {selectedIds.size >= 2 && (
+            <button
+              className="page-btn-round page-btn-round-primary"
+              onClick={handleMergeClick}
+              style={{ background: "#7c3aed" }}
+            >
+              <FaFileInvoice size={11} /> Merge & Bill ({selectedIds.size})
+            </button>
+          )}
           <button
             className="page-btn-round page-btn-round-primary"
             onClick={() => navigate("/delivery-orders/new")}
@@ -194,13 +227,24 @@ const DeliveryOrders: React.FC = () => {
               borderRadius: 14, padding: "16px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
-                    <FaBox size={11} style={{ opacity: 0.4 }} />
-                    {o.order_number}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
-                    {o.order_date ? new Date(o.order_date).toLocaleDateString("en-IN") : "---"}
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  {o.status !== "invoiced" && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(o.id)}
+                      onChange={() => toggleSelect(o.id)}
+                      title="Select for merge"
+                      style={{ marginTop: 4 }}
+                    />
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+                      <FaBox size={11} style={{ opacity: 0.4 }} />
+                      {o.order_number}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                      {o.order_date ? new Date(o.order_date).toLocaleDateString("en-IN") : "---"}
+                    </div>
                   </div>
                 </div>
                 {badge(o.status)}
@@ -242,6 +286,7 @@ const DeliveryOrders: React.FC = () => {
           <table className="page-table">
             <thead>
               <tr>
+                <th style={{ width: 36 }}></th>
                 <th>Order No</th>
                 <th>Date</th>
                 <th>Customer</th>
@@ -254,6 +299,16 @@ const DeliveryOrders: React.FC = () => {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id}>
+                  <td>
+                    {o.status !== "invoiced" && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(o.id)}
+                        onChange={() => toggleSelect(o.id)}
+                        title="Select for merge"
+                      />
+                    )}
+                  </td>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <FaBox style={{ color: "var(--text-3)", opacity: 0.5 }} size={12} />

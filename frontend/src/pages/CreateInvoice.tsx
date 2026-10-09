@@ -287,6 +287,10 @@ const CreateInvoice: React.FC = () => {
 
   // Delivery order pre-fill state
   const [fromDeliveryOrderId, setFromDeliveryOrderId] = useState<number | null>(null);
+  // Set only when billing 2+ merged delivery orders at once (see
+  // MergeDeliveryOrders.tsx) — submitted as delivery_order_ids instead of
+  // the singular field, marking every source order as invoiced.
+  const [fromDeliveryOrderIds, setFromDeliveryOrderIds] = useState<number[] | null>(null);
   const [deliveryOrderNumber, setDeliveryOrderNumber] = useState<string>("");
   const [deliveryOrderBanner, setDeliveryOrderBanner] = useState(false);
   const [doItemBundleSummary, setDoItemBundleSummary] = useState<Record<number, string>>({});
@@ -394,6 +398,34 @@ const CreateInvoice: React.FC = () => {
     fetchDO();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, customers.length]);
+
+  // Pre-fill from 2+ MERGED delivery orders (see MergeDeliveryOrders.tsx) —
+  // items/customer arrive ready-built via navigation state instead of being
+  // fetched here, since the merge screen already did the grouping/splitting.
+  useEffect(() => {
+    const merged = (location.state as any)?.mergedDeliveryOrders;
+    if (!merged) return;
+
+    setFromDeliveryOrderIds(merged.ids);
+    setDeliveryOrderNumber(merged.orderNumbers.join(", "));
+    setDeliveryOrderBanner(true);
+    setSuggestedCustomerName(null);
+
+    setCustomerId(merged.customerId);
+    const c = customers.find((x: Customer) => x.id === merged.customerId);
+    if (c) {
+      setCustomerInfo({
+        name: c.username.toUpperCase(),
+        address: `${c.address_line1 || ""}, ${c.city_pincode || ""}`.toUpperCase(),
+        gstin: c.gstin || "---",
+        state: c.state?.toUpperCase() || "---",
+        code: resolveCode(c.state, c.state_code) || "---",
+      });
+    }
+
+    if (merged.items.length > 0) setItems(merged.items);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, customers.length]);
 
   // Fetch the preview of the next auto-generated invoice number whenever bill type changes
   useEffect(() => {
@@ -573,7 +605,7 @@ const CreateInvoice: React.FC = () => {
     }
 
     // Delivery order: every item must have a rate > 0
-    if (fromDeliveryOrderId) {
+    if (fromDeliveryOrderId || fromDeliveryOrderIds) {
       const missingRates = items.filter(i => i.desc && i.qty > 0 && !(i.rate > 0));
       if (missingRates.length > 0) {
         return alert(`Enter rate for: ${missingRates.map(i => i.desc).join(", ")}`);
@@ -647,6 +679,7 @@ const CreateInvoice: React.FC = () => {
         broker_commission_rate: brokerCommRate || null,
         branch_id: (activeBranch && (activeBranch as any).id !== 'all') ? (activeBranch as any).id : null,
         ...(fromDeliveryOrderId ? { delivery_order_id: fromDeliveryOrderId } : {}),
+        ...(fromDeliveryOrderIds ? { delivery_order_ids: fromDeliveryOrderIds } : {}),
         // IDs of pending credit notes to auto-settle in the ledger (no return line items)
         credit_note_ids: pendingCredits.map((cr: any) => cr.id),
       };
@@ -727,25 +760,29 @@ const CreateInvoice: React.FC = () => {
                 }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>
-                      Pre-filled from Delivery Order {deliveryOrderNumber}
+                      {fromDeliveryOrderIds
+                        ? `Pre-filled from ${fromDeliveryOrderIds.length} merged Delivery Orders: ${deliveryOrderNumber}`
+                        : `Pre-filled from Delivery Order ${deliveryOrderNumber}`}
                     </div>
                     <div style={{ fontSize: 12, color: "#3b82f6", marginTop: 2 }}>
                       Quantities confirmed — enter rate for each product to complete the invoice.
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      const doId = new URLSearchParams(location.search).get("delivery_order_id");
-                      if (doId) navigate(`/delivery-orders/${doId}`);
-                    }}
-                    style={{
-                      padding: "6px 14px", borderRadius: 8, border: "1px solid #93c5fd",
-                      background: "#dbeafe", color: "#1e40af", fontWeight: 600,
-                      fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
-                    }}
-                  >
-                    ← Back to Delivery Order
-                  </button>
+                  {!fromDeliveryOrderIds && (
+                    <button
+                      onClick={() => {
+                        const doId = new URLSearchParams(location.search).get("delivery_order_id");
+                        if (doId) navigate(`/delivery-orders/${doId}`);
+                      }}
+                      style={{
+                        padding: "6px 14px", borderRadius: 8, border: "1px solid #93c5fd",
+                        background: "#dbeafe", color: "#1e40af", fontWeight: 600,
+                        fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+                      }}
+                    >
+                      ← Back to Delivery Order
+                    </button>
+                  )}
                 </div>
               )}
               {suggestedCustomerName && (

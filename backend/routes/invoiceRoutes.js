@@ -378,6 +378,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         points_to_redeem, // Points to redeem on this invoice
         tax_details,      // { cgst, sgst, igst, totalRate } — invoice-level GST from frontend
         delivery_order_id, // Links back to the delivery order that spawned this invoice
+        delivery_order_ids, // Plural form — when 2+ delivery orders are merged into one bill
         walk_in_name,     // Retail walk-in customer name (no account required)
         credit_note_ids,  // Pending sales-return IDs to auto-settle in ledger (no line items needed)
     } = req.body;
@@ -1214,14 +1215,20 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
 
         await client.query("COMMIT");
 
-        // Mark the source delivery order as invoiced (non-blocking)
-        if (delivery_order_id) {
+        // Mark the source delivery order(s) as invoiced (non-blocking). Both the
+        // original single-id field and the plural (merged) form are honored —
+        // a merge sends delivery_order_ids with 2+ ids, everything else keeps
+        // sending the singular field exactly as before.
+        const sourceDeliveryOrderIds = Array.isArray(delivery_order_ids) && delivery_order_ids.length > 0
+            ? delivery_order_ids
+            : (delivery_order_id ? [delivery_order_id] : []);
+        if (sourceDeliveryOrderIds.length > 0) {
             db.pgRun(`
                 UPDATE delivery_orders
                 SET status = 'invoiced', converted_invoice_id = $1, converted_at = NOW(), updated_at = NOW()
-                WHERE id = $2 AND company_id = $3 AND status != 'invoiced'
-            `, [invoiceId, delivery_order_id, companyId]).catch(e =>
-                console.error('Failed to mark delivery order as invoiced:', e.message)
+                WHERE id = ANY($2::int[]) AND company_id = $3 AND status != 'invoiced'
+            `, [invoiceId, sourceDeliveryOrderIds, companyId]).catch(e =>
+                console.error('Failed to mark delivery order(s) as invoiced:', e.message)
             );
         }
 
