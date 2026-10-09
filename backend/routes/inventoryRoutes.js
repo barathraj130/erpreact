@@ -2,6 +2,7 @@
 import express from 'express';
 import * as pgModule from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { createJourneyForPurchase } from '../utils/productJourneyEngine.js';
 
 const router = express.Router();
 
@@ -223,6 +224,31 @@ router.post('/add-stock', authMiddleware, async (req, res) => {
              VALUES ($1,$2,$3,'Manual Stock Add',$4,0,'manual_add',$5)`,
             [companyId, resolvedBranchId, product_id, amount, notes || `Added ${amount} ${type} pcs`]
         ).catch(() => {});
+
+        // Product Journey batch — same best-effort logic the purchase-bill flow
+        // uses, so stock added manually (e.g. a purchase whose bill never saved)
+        // still shows up there instead of only in Inventory. Never blocks the
+        // actual stock add if journey creation fails for any reason.
+        await client.query('SAVEPOINT sp_journey');
+        try {
+            await createJourneyForPurchase(client, {
+                companyId, userId: parseInt(req.user?.id) || null,
+                product_id, product_name: p.name,
+                purchase_rate: p.cost_price || 0,
+                total_purchased: amount,
+                fresh_purchased: type === 'fresh' ? amount : 0,
+                mistake_purchased: type === 'mistake' ? amount : 0,
+                branch_id: resolvedBranchId,
+                notes: notes || `Manual stock add (${type})`,
+                event_type: 'purchased',
+                reference_type: 'manual_add',
+            });
+            await client.query('RELEASE SAVEPOINT sp_journey');
+        } catch (journeyErr) {
+            await client.query('ROLLBACK TO SAVEPOINT sp_journey');
+            await client.query('RELEASE SAVEPOINT sp_journey');
+            console.warn('[add-stock] journey creation skipped:', journeyErr.message);
+        }
 
         await client.query('COMMIT');
         res.json({ success: true, added: amount, stock_type: type, branch_id: resolvedBranchId });
