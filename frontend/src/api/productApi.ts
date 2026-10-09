@@ -68,6 +68,8 @@ interface ApiResponse {
   message: string;
   product?: Product;
   id?: number;
+  success?: boolean;
+  error?: string;
 }
 
 // --- Product CRUD Operations (/api/products) ---

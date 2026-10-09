@@ -148,12 +148,12 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
 // Quick-create a product by name (JSON, no image upload)
 router.post("/quick", authMiddleware, async (req, res) => {
     const companyId = parseInt(req.user?.active_company_id);
-    const { name, unit = "pcs", gst_percent = 0 } = req.body;
+    const { name, unit = "pcs", gst_percent = 0, supplier_name } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: "Product name required" });
 
     try {
         const existing = await pgModule.pgGet(
-            `SELECT id, name FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
+            `SELECT id, name, supplier_name FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
             [companyId, name.trim()]
         );
         if (existing) return res.json({ success: true, product: existing, created: false });
@@ -165,10 +165,14 @@ router.post("/quick", authMiddleware, async (req, res) => {
         // nothing else ever sells from. Flagging it keeps it out of every
         // Sales-facing product list until an admin either merges it into the
         // real product or explicitly confirms it as genuinely new.
+        // supplier_name is stamped from whichever supplier is selected on the
+        // bill this was quick-added from, so two genuinely separate products
+        // that happen to share a name (e.g. "MEN'S TOP" bought from two
+        // different suppliers) can be told apart instead of looking identical.
         const product = await pgModule.pgGet(
-            `INSERT INTO products (company_id, name, unit, gst_percent, sku, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review)
-             VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, 'Other', 1, false, true) RETURNING id, name, pending_review`,
-            [companyId, name.trim(), unit, parseFloat(gst_percent) || 0, sku]
+            `INSERT INTO products (company_id, name, unit, gst_percent, sku, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review, supplier_name)
+             VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, 'Other', 1, false, true, $6) RETURNING id, name, pending_review, supplier_name`,
+            [companyId, name.trim(), unit, parseFloat(gst_percent) || 0, sku, supplier_name?.trim() || null]
         );
         return res.status(201).json({ success: true, product, created: true, pending_review: true });
     } catch (err) {

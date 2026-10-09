@@ -106,6 +106,11 @@ const ProductInput: React.FC<ProductInputProps> = ({ value, products, onChange }
               onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
             >
               {p.name}
+              {p.supplier_name && (
+                <span style={{ marginLeft: 6, fontSize: 11, color: "var(--text-3)", fontWeight: 500 }}>
+                  · {p.supplier_name}
+                </span>
+              )}
             </div>
           ))}
         </div>

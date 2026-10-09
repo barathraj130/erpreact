@@ -341,6 +341,12 @@ const SimplifiedPurchaseBill: React.FC = () => {
     return "INTRA_STATE";
   }, [selectedSupplierId, suppliers, branchInfo]);
 
+  // Stamped onto any product quick-created from this bill, so "MEN'S TOP"
+  // bought from two different suppliers doesn't look like the same product.
+  const selectedSupplierName = useMemo(() => {
+    return suppliers.find(s => String(s.id) === selectedSupplierId)?.name || "";
+  }, [selectedSupplierId, suppliers]);
+
   // Calculations
   const totals = useMemo(() => {
     let subTotal = 0;
@@ -785,6 +791,7 @@ const SimplifiedPurchaseBill: React.FC = () => {
                               }}
                               style={{ padding: "9px 10px", borderRadius: "8px", fontSize: "0.88rem" }}
                               placeholder="Type or select product..."
+                              supplierName={selectedSupplierName}
                             />
                           </td>
                           <td style={{ padding: "8px 6px" }}>

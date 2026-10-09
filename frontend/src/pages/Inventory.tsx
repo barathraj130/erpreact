@@ -284,7 +284,7 @@ const Inventory: React.FC = () => {
     setConfirmingId(productId);
     try {
       const data = await confirmPendingProduct(productId);
-      if (!data.success) { alert((data as any).error || "Confirm failed"); return; }
+      if (!data.success) { alert(data.error || "Confirm failed"); return; }
       refresh();
     } catch (e: any) {
       alert(e.message || "Confirm failed");
@@ -297,6 +297,10 @@ const Inventory: React.FC = () => {
   const handleAdd  = () => { setSelectedProduct(null); setIsModalOpen(true); };
 
   const fmt = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
+  // Plain-text label for <option> elements (styled spans don't render inside
+  // native <option>s) — appends the supplier so "MEN'S TOP" bought from two
+  // different suppliers doesn't look like the same product in a picker.
+  const withSupplier = (p: any) => p.name + (p.supplier_name ? ` — ${p.supplier_name}` : "");
 
   return (
     <div className="finance-container neo-page-skin">
@@ -327,7 +331,7 @@ const Inventory: React.FC = () => {
                     setConvertForm(f => ({ ...f, product_id: Number(e.target.value), product_name: p?.name || "" }));
                   }}>
                     <option value="">Select Product</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {products.map(p => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
                   </CustomSelect>
                 </div>
                 <div>
@@ -389,7 +393,7 @@ const Inventory: React.FC = () => {
                     setAddStockForm(f => ({ ...f, product_id: Number(e.target.value) }));
                   }}>
                     <option value="">Select Product</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {products.map(p => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
                   </CustomSelect>
                 </div>
                 <div>
@@ -591,6 +595,9 @@ const Inventory: React.FC = () => {
                     <div style={{ flex: 1 }}>
                       <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700 }}>{p.name}</h3>
                       <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--erp-text-muted)" }}>SKU: {p.sku || `#${p.id}`}</p>
+                      {p.supplier_name && (
+                        <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#7c3aed", fontWeight: 600 }}>{p.supplier_name}</p>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f1f5f9" }}>
@@ -650,6 +657,9 @@ const Inventory: React.FC = () => {
                               <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#5B4BFF", background: "#eef2ff", padding: "1px 6px", borderRadius: "100px" }}>#{p.id}</span>
                             </div>
                             <div style={{ fontSize: "0.75rem", color: "var(--erp-text-muted)" }}>{p.description || "N/A"}</div>
+                            {p.supplier_name && (
+                              <div style={{ fontSize: "0.72rem", color: "#7c3aed", fontWeight: 600 }}>{p.supplier_name}</div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -760,7 +770,7 @@ const Inventory: React.FC = () => {
                 <div style={{ marginBottom: "14px" }}>
                   <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Existing Set Product *</label>
                   <CustomSelect value={setForm.set_product_id} onChange={(e: any) => setSetForm(f => ({ ...f, set_product_id: e.target.value }))} placeholder="Search products…">
-                    {(products || []).filter((p: any) => p.is_set).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {(products || []).filter((p: any) => p.is_set).map((p: any) => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
                   </CustomSelect>
                 </div>
               )}
@@ -787,7 +797,7 @@ const Inventory: React.FC = () => {
                   <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     <div style={{ flex: 1 }}>
                       <CustomSelect value={c.product_id} onChange={(e: any) => setSetForm(f => ({ ...f, components: f.components.map((row, i) => i === idx ? { ...row, product_id: e.target.value } : row) }))} placeholder="Search products…">
-                        {(products || []).filter((p: any) => !p.is_set).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        {(products || []).filter((p: any) => !p.is_set).map((p: any) => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
                       </CustomSelect>
                     </div>
                     <input type="number" min="0.01" step="0.01" placeholder="Qty/set" value={c.qty_per_set}
@@ -841,7 +851,10 @@ const Inventory: React.FC = () => {
                   {pendingProducts.map((p: any) => (
                     <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
                       <div>
-                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>{p.name}</div>
+                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
+                          {p.name}
+                          {p.supplier_name && <span style={{ marginLeft: 6, fontSize: "0.72rem", color: "#92400e", fontWeight: 600 }}>· {p.supplier_name}</span>}
+                        </div>
                         <div style={{ fontSize: "0.75rem", color: "#92400e" }}>Stock: {p.current_stock ?? 0} {p.unit || ""}</div>
                       </div>
                       <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
@@ -897,7 +910,7 @@ const Inventory: React.FC = () => {
               <CustomSelect value={mergeTargetId} onChange={(e: any) => setMergeTargetId(e.target.value)} placeholder="Search products…">
                 {(products || [])
                   .filter((p: any) => p.id !== mergeFromProduct.id)
-                  .map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  .map((p: any) => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
               </CustomSelect>
               <div style={{ display: "flex", gap: "10px", marginTop: "22px" }}>
                 <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setMergeFromProduct(null); setMergeTargetId(""); }}>Cancel</button>

@@ -9,6 +9,7 @@ interface Product {
   unit?: string;
   hsn_code?: string;
   image_url?: string;
+  supplier_name?: string | null;
 }
 
 interface ProductComboboxProps {
@@ -20,6 +21,10 @@ interface ProductComboboxProps {
   onNameChange?: (name: string) => void;
   style?: React.CSSProperties;
   placeholder?: string;
+  // Name of the supplier currently selected on the bill, if any — stamped onto
+  // a newly quick-created product so "MEN'S TOP" from two different suppliers
+  // can be told apart instead of looking like the same product.
+  supplierName?: string;
 }
 
 const ProductCombobox: React.FC<ProductComboboxProps> = ({
@@ -31,6 +36,7 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
   onNameChange,
   style,
   placeholder = "Type product name",
+  supplierName,
 }) => {
   const [query, setQuery] = useState(productName || "");
   const [open, setOpen] = useState(false);
@@ -83,7 +89,7 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
       try {
         const res = await apiFetch(
           "/products/quick",
-          { method: "POST", body: JSON.stringify({ name: name.trim() }) },
+          { method: "POST", body: JSON.stringify({ name: name.trim(), supplier_name: supplierName || undefined }) },
           true
         );
         const data = await res.json();
@@ -102,7 +108,7 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
         setSaving(false);
       }
     },
-    [products, onSelect, onProductCreated, saving]
+    [products, onSelect, onProductCreated, saving, supplierName]
   );
 
   const handleSelect = (product: Product) => {
@@ -246,7 +252,14 @@ const ProductCombobox: React.FC<ProductComboboxProps> = ({
               }
             >
               <span style={{ fontSize: 10, color: "#10b981" }}>✓</span>
-              {p.name}
+              <span>
+                {p.name}
+                {p.supplier_name && (
+                  <span style={{ marginLeft: 6, fontSize: "0.72rem", color: "#94a3b8", fontWeight: 500 }}>
+                    · {p.supplier_name}
+                  </span>
+                )}
+              </span>
             </div>
           ))}
           {query.trim() && !exactMatch && (
