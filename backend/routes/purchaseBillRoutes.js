@@ -10,6 +10,7 @@ import { triggerN8N } from "../utils/triggerN8N.js";
 import { recordProprietorCapital } from "../utils/proprietorLedger.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
 import { createJourneyForPurchase } from "../utils/productJourneyEngine.js";
+import { addStock } from "../utils/inventoryEngine.js";
 
 const router = express.Router();
 
@@ -1000,6 +1001,34 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     const linePcs       = freshQty + mistakeQty;
                     const lineTransport = totalPcs > 0 ? transport * (linePcs / totalPcs) : 0;
 
+                    // Resolve or create a real catalog product for this line. Surplus
+                    // lines used to stay product_id=NULL forever — invisible on the
+                    // Product List and undeductible from an Invoice, since both only
+                    // ever read products/branch_inventory, never this lot system.
+                    // Exact-name match reuses an existing product; no match creates
+                    // one flagged pending_review=true, same as the regular purchase
+                    // quick-add path, so it still goes through admin review.
+                    let lineProductId = null;
+                    try {
+                        const existingProduct = await client.query(
+                            `SELECT id FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
+                            [companyId, desc]
+                        );
+                        if (existingProduct.rows[0]) {
+                            lineProductId = existingProduct.rows[0].id;
+                            await client.query(`UPDATE products SET cost_price = $1 WHERE id = $2`, [freshRate || mistakeRate || 0, lineProductId]);
+                        } else {
+                            const createdProduct = await client.query(`
+                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review, supplier_name)
+                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, 'Other', 1, false, true, $4)
+                                RETURNING id
+                            `, [companyId, desc, freshRate || mistakeRate || 0, supplierRes.rows[0]?.name || supplier_name || null]);
+                            lineProductId = createdProduct.rows[0].id;
+                        }
+                    } catch (linkErr) {
+                        console.warn(`[surplus-product-link] failed for "${desc}": ${linkErr.message}`);
+                    }
+
                     // Upsert lot in stock_lots with NULL product_id (description-only)
                     const lotRes = await client.query(`
                         INSERT INTO stock_lots
@@ -1024,16 +1053,37 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         const freshTotal = freshCost + (lineTransport * freshQty / Math.max(linePcs, 1));
                         await client.query(`
                             INSERT INTO inventory (company_id, product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
-                            VALUES ($1, NULL, $2, $3, 'fresh', $4, $5, $6, NOW())
-                        `, [companyId, safeBranchId, lotId, freshQty, freshQty > 0 ? freshTotal / freshQty : 0, freshTotal]);
+                            VALUES ($1, $2, $3, $4, 'fresh', $5, $6, $7, NOW())
+                        `, [companyId, lineProductId, safeBranchId, lotId, freshQty, freshQty > 0 ? freshTotal / freshQty : 0, freshTotal]);
                     }
 
                     if (mistakeQty > 0) {
                         const mistakeTotal = mistakeCost + (lineTransport * mistakeQty / Math.max(linePcs, 1));
                         await client.query(`
                             INSERT INTO inventory (company_id, product_id, branch_id, lot_id, stock_type, quantity, avg_cost, total_cost, last_updated)
-                            VALUES ($1, NULL, $2, $3, 'mistake', $4, $5, $6, NOW())
-                        `, [companyId, safeBranchId, lotId, mistakeQty, mistakeQty > 0 ? mistakeTotal / mistakeQty : 0, mistakeTotal]);
+                            VALUES ($1, $2, $3, $4, 'mistake', $5, $6, $7, NOW())
+                        `, [companyId, lineProductId, safeBranchId, lotId, mistakeQty, mistakeQty > 0 ? mistakeTotal / mistakeQty : 0, mistakeTotal]);
+                    }
+
+                    // Credit the REAL stock cache — branch_inventory/products.current_stock
+                    // combine fresh+mistake into one sellable total, same convention the
+                    // Add Stock modal already uses. This is what makes the purchase
+                    // actually show on the Product List and be deductible from a sale.
+                    if (lineProductId && linePcs > 0) {
+                        await client.query(`SAVEPOINT sp_surplus_stock`);
+                        try {
+                            await addStock(client, {
+                                companyId, branchId: safeBranchId, productId: lineProductId, qty: linePcs,
+                                movementType: 'PURCHASE_IN',
+                                referenceType: 'purchase_bill', referenceId: billId,
+                                note: `Surplus purchase — lot ${lotNum || 'N/A'}: ${freshQty} fresh + ${mistakeQty} mistake`,
+                            });
+                            await client.query(`RELEASE SAVEPOINT sp_surplus_stock`);
+                        } catch (stockErr) {
+                            await client.query(`ROLLBACK TO SAVEPOINT sp_surplus_stock`);
+                            await client.query(`RELEASE SAVEPOINT sp_surplus_stock`);
+                            console.warn(`[surplus-stock] failed to credit branch_inventory for "${desc}": ${stockErr.message}`);
+                        }
                     }
 
                     // Ledger entries
@@ -1077,7 +1127,7 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         const blendedRate = linePcs > 0 ? (freshCost + mistakeCost) / linePcs : 0;
                         await createJourneyForPurchase(client, {
                             companyId, userId: safeUserId,
-                            product_id: null, product_name: desc,
+                            product_id: lineProductId, product_name: desc,
                             purchase_bill_id: billId,
                             supplier_id: safeSupplierId, supplier_name: supplierRes.rows[0]?.name || supplier_name || null,
                             purchase_date: bill_date || new Date().toISOString().split("T")[0],

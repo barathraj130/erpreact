@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import * as pgModule from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
-import { addStock } from "../utils/inventoryEngine.js";
+import { addStock, resolveStockBranch } from "../utils/inventoryEngine.js";
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -347,6 +347,86 @@ router.post("/:id/flag-for-review", authMiddleware, async (req, res) => {
 // deductStockForSale) — nothing is pre-assembled or deducted here. This only
 // ever writes product_set_components rows (+ creates the Set product itself
 // if new); branch_inventory is never touched by this endpoint.
+// POST /products/backfill-surplus-stock — admin only, re-runnable
+// Recovers stock stuck in the old Surplus/Lot purchase path (purchaseBillRoutes.js's
+// is_surplus=true flow used to store product_id=NULL forever — never linked to a
+// real product, never credited to branch_inventory, invisible on the Product List
+// and undeductible from a sale). That flow is now fixed going forward; this is a
+// one-time (but safe-to-repeat) recovery for everything purchased before the fix.
+// Source of truth: product_journeys rows with product_id IS NULL — those are
+// exactly the orphaned surplus lines, and already carry the typed product name,
+// quantities, rate, branch and supplier. Resolves/creates a real product by exact
+// name match (same dedupe pattern as the regular quick-add path, flagged
+// pending_review=true when newly created) and credits branch_inventory. Safe to
+// re-run: each journey is linked (product_id set) once processed, so a repeat run
+// only picks up genuinely new orphans.
+router.post("/backfill-surplus-stock", authMiddleware, async (req, res) => {
+    if (!['admin', 'superadmin'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Admin only.' });
+    }
+    const companyId = req.user.active_company_id;
+    const client = await pgModule.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const orphanJourneys = await client.query(`
+            SELECT id, product_name, fresh_purchased, mistake_purchased, branch_id, purchase_rate, supplier_name
+            FROM product_journeys
+            WHERE company_id = $1 AND product_id IS NULL
+            ORDER BY id ASC
+        `, [companyId]);
+
+        const results = [];
+        for (const j of orphanJourneys.rows) {
+            const name = (j.product_name || '').trim();
+            const totalQty = Number(j.fresh_purchased || 0) + Number(j.mistake_purchased || 0);
+            if (!name || totalQty <= 0) continue;
+
+            let productId;
+            const existing = await client.query(
+                `SELECT id FROM products WHERE company_id = $1 AND LOWER(name) = LOWER($2) AND is_deleted = false LIMIT 1`,
+                [companyId, name]
+            );
+            if (existing.rows[0]) {
+                productId = existing.rows[0].id;
+            } else {
+                const created = await client.query(`
+                    INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review, supplier_name)
+                    VALUES ($1, $2, 'pcs', 0, $3, 0, 0, 'Other', 1, false, true, $4)
+                    RETURNING id
+                `, [companyId, name, j.purchase_rate || 0, j.supplier_name || null]);
+                productId = created.rows[0].id;
+            }
+
+            const branchId = j.branch_id || await resolveStockBranch(client, { companyId, productId });
+            if (!branchId) {
+                results.push({ journey_id: j.id, product_name: name, skipped: true, reason: 'no branch resolved' });
+                continue;
+            }
+
+            await addStock(client, {
+                companyId, branchId, productId, qty: totalQty,
+                movementType: 'PURCHASE_IN',
+                referenceType: 'surplus_backfill', referenceId: j.id,
+                note: `Backfilled from orphaned surplus purchase journey #${j.id}`,
+            });
+
+            await client.query(`UPDATE product_journeys SET product_id = $1 WHERE id = $2`, [productId, j.id]);
+
+            results.push({ journey_id: j.id, product_name: name, product_id: productId, qty_credited: totalQty });
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, processed: results.length, results });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('[backfill-surplus-stock]', err.message);
+        res.status(500).json({ error: err.message || 'Backfill failed' });
+    } finally {
+        client.release();
+    }
+});
+
 router.post("/create-set", authMiddleware, async (req, res) => {
     if (!['admin', 'superadmin'].includes(req.user.role)) {
         return res.status(403).json({ error: 'Admin only.' });

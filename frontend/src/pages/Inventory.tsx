@@ -524,6 +524,23 @@ const Inventory: React.FC = () => {
           </button>
           <button
             className="btn btn-secondary"
+            title="Recover stock stuck in the old Surplus/Lot purchase system (product_id was never linked, so it never reached the Product List or became sellable). Safe to run more than once."
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#dc2626", borderColor: "#dc2626" }}
+            onClick={async () => {
+              if (!window.confirm("This will find stock stuck in old Surplus purchases (never linked to a real product) and credit it to the matching product. Safe to run more than once. Proceed?")) return;
+              try {
+                const res = await apiFetch("/products/backfill-surplus-stock", { method: "POST" });
+                const data = await res.json();
+                if (!data.success) { alert(data.error || "Recovery failed"); return; }
+                alert(`Recovered ${data.processed} item(s) of surplus stock.`);
+                refresh();
+              } catch (e: any) { alert("Recovery failed: " + (e.message || "Unknown error")); }
+            }}
+          >
+            <FaExclamationTriangle size={13} /> Recover Surplus Stock
+          </button>
+          <button
+            className="btn btn-secondary"
             onClick={() => { setConvertForm({ product_id: 0, product_name: "", lot_id: "", mistake_qty: 0, repair_cost_per_piece: 0, notes: "" }); setShowConvertModal(true); }}
             style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#3b82f6", borderColor: "#3b82f6" }}
           >
