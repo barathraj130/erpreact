@@ -11,6 +11,7 @@ import {
 } from "../services/customerLedgerService.js";
 import { createTransaction, createTransactionInternal, getAccountByCode } from "../utils/accountingEngine.js";
 import { deductStock, addStock, deductStockForSale, addStockForSaleReturn, resolveStockBranch, restoreStockForInvoice } from "../utils/inventoryEngine.js";
+import { recordSaleForJourney } from "../utils/productJourneyEngine.js";
 import { checkSufficientBalance } from "../utils/balanceCheck.js";
 import * as brokerService from "../services/brokerService.js";
 import * as pointsService from "../services/pointsService.js";
@@ -808,6 +809,30 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                         referenceId: invoiceId,
                         note: `Sale on invoice #${invoiceId}`
                     });
+
+                    // Product Journey never recorded sales at all before this —
+                    // only purchases — so "Fresh Left"/"Total Sold"/"Revenue"
+                    // stayed frozen forever regardless of actual sales. Best-effort:
+                    // a journey bookkeeping failure must never block the real sale,
+                    // which already succeeded above. Returns are not yet recorded
+                    // against a journey (would need to track which batch a return's
+                    // original sale came from) — known gap, not covered here.
+                    await client.query('SAVEPOINT sp_journey_sale');
+                    try {
+                        await recordSaleForJourney(client, {
+                            companyId, productId: item.product_id, qty: item.qty,
+                            rate: item.rate || item.price || 0,
+                            referenceType: 'INVOICE', referenceId: invoiceId,
+                            branchId: itemBranchId,
+                            customerId: safeCustomerId || null,
+                            customerName: walk_in_name || null,
+                        });
+                        await client.query('RELEASE SAVEPOINT sp_journey_sale');
+                    } catch (journeySaleErr) {
+                        await client.query('ROLLBACK TO SAVEPOINT sp_journey_sale');
+                        await client.query('RELEASE SAVEPOINT sp_journey_sale');
+                        console.warn(`[invoice-create] journey sale recording skipped for product#${item.product_id}:`, journeySaleErr.message);
+                    }
                 }
             }
 

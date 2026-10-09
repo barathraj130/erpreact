@@ -21,79 +21,10 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
-import { createJourneyForPurchase } from "../utils/productJourneyEngine.js";
+import { createJourneyForPurchase, updateJourneyTotals } from "../utils/productJourneyEngine.js";
 
 const router = express.Router();
 const isAdmin = (req) => req.user.role === "admin" || req.user.role === "superadmin";
-
-/**
- * Recomputes a journey's running totals (sold/returned/converted/revenue/
- * profit/remaining/status) from its full event history. Called after every
- * event is recorded, so product_journeys always reflects the truth of
- * product_journey_events rather than being incrementally (and fallibly)
- * patched event-by-event.
- */
-const updateJourneyTotals = async (client, journeyDbId) => {
-  const events = await client.query(
-    `SELECT event_type, SUM(quantity) AS qty, SUM(total_value) AS val
-     FROM product_journey_events WHERE journey_id = $1 GROUP BY event_type`,
-    [journeyDbId]
-  );
-
-  const t = {
-    fresh_sold: 0, mistake_sold: 0,
-    fresh_returned: 0, mistake_returned: 0,
-    fresh_revenue: 0, mistake_revenue: 0,
-    converted_to_fresh: 0, conversion_cost: 0,
-  };
-  for (const e of events.rows) {
-    const qty = parseInt(e.qty || 0);
-    const val = parseFloat(e.val || 0);
-    if (e.event_type === "fresh_sold" || e.event_type === "fresh_resold") {
-      t.fresh_sold += qty; t.fresh_revenue += val;
-    }
-    if (e.event_type === "mistake_sold" || e.event_type === "mistake_resold") {
-      t.mistake_sold += qty; t.mistake_revenue += val;
-    }
-    if (e.event_type === "customer_return_fresh") t.fresh_returned += qty;
-    if (e.event_type === "customer_return_mistake") t.mistake_returned += qty;
-    if (e.event_type === "mistake_to_fresh") { t.converted_to_fresh += qty; t.conversion_cost += val; }
-  }
-
-  const jRes = await client.query(`SELECT * FROM product_journeys WHERE id = $1`, [journeyDbId]);
-  const j = jRes.rows[0];
-  if (!j) return;
-
-  const freshRemaining = Number(j.fresh_purchased) + t.converted_to_fresh + t.fresh_returned - t.fresh_sold;
-  const mistakeRemaining = Number(j.mistake_purchased) - t.converted_to_fresh + t.mistake_returned - t.mistake_sold;
-  const totalRevenue = t.fresh_revenue + t.mistake_revenue;
-  const grossProfit = totalRevenue - parseFloat(j.total_purchase_cost || 0) - t.conversion_cost;
-  const status =
-    (freshRemaining <= 0 && mistakeRemaining <= 0) ? "exhausted"
-    : (t.fresh_sold > 0 || t.mistake_sold > 0) ? "partial"
-    : "active";
-
-  await client.query(
-    `UPDATE product_journeys SET
-       fresh_remaining = $1, mistake_remaining = $2,
-       fresh_sold = $3, mistake_sold = $4, total_sold = $3 + $4,
-       fresh_returned = $5, mistake_returned = $6, total_returned = $5 + $6,
-       total_converted_to_fresh = $7,
-       fresh_revenue = $8, mistake_revenue = $9, total_revenue = $10,
-       total_conversion_cost = $11, gross_profit = $12,
-       status = $13, updated_at = NOW()
-     WHERE id = $14`,
-    [
-      Math.max(0, freshRemaining), Math.max(0, mistakeRemaining),
-      t.fresh_sold, t.mistake_sold,
-      t.fresh_returned, t.mistake_returned,
-      t.converted_to_fresh,
-      t.fresh_revenue, t.mistake_revenue, totalRevenue,
-      t.conversion_cost, grossProfit, status,
-      journeyDbId,
-    ]
-  );
-};
 
 // ── POST /api/journey/create — start a journey for a purchase batch ────────
 router.post("/create", authMiddleware, async (req, res) => {
