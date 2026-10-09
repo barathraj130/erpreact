@@ -95,42 +95,80 @@ router.get('/summary', authMiddleware, async (req, res) => {
         AND ${dateClause}
         ${branchClause}
     `;
+    // Backdated transactions deliberately never touch cash_ledger/bank_ledger
+    // (affects_balance stays false, by design, so entering an old payment
+    // today can't corrupt today's live cash-in-hand reconciliation) — but
+    // affects_reports defaults true specifically so they're NOT invisible to
+    // reporting, a column that's existed since the feature was built but
+    // nothing ever actually read. This is what wires it up: same source/
+    // amount/date shape as the ledger rows, UNIONed into every query below.
+    const backdatedOutSql = (dateClause = 'transaction_date BETWEEN $2 AND $3') => `
+      SELECT
+        CASE
+          WHEN transaction_type = 'payment_made' AND party_type = 'supplier' THEN 'PURCHASE_PAYMENT'
+          WHEN category IS NOT NULL AND category != '' THEN UPPER(category)
+          ELSE UPPER(transaction_type)
+        END AS source,
+        amount, transaction_date AS date
+      FROM backdated_transactions
+      WHERE company_id = $1 AND affects_reports = true
+        AND transaction_type IN ('cash_out','bank_out','payment_made','expense','purchase')
+        AND ${dateClause}
+        ${branchId ? 'AND branch_id = $4' : ''}
+    `;
     const prevDateClause = "date BETWEEN ($2::date - ($3::date - $2::date) - interval '1 day') AND ($2::date - interval '1 day')";
+    const prevBackdatedDateClause = "transaction_date BETWEEN ($2::date - ($3::date - $2::date) - interval '1 day') AND ($2::date - interval '1 day')";
 
     const [totalRes, categoryRes, dailyRes, prevRes, cashRes, bankRes] = await Promise.all([
       db.pgGet(`
         SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt FROM (
-          ${ledgerOutSql('cash_ledger')} UNION ALL ${ledgerOutSql('bank_ledger')}
+          ${ledgerOutSql('cash_ledger')} UNION ALL ${ledgerOutSql('bank_ledger')} UNION ALL ${backdatedOutSql()}
         ) t
       `, unionParams),
 
       db.pgAll(`
         SELECT source, COUNT(*) AS transaction_count, COALESCE(SUM(amount),0) AS total_amount,
                COALESCE(AVG(amount),0) AS avg_amount, MIN(amount) AS min_amount, MAX(amount) AS max_amount
-        FROM (${ledgerOutSql('cash_ledger')} UNION ALL ${ledgerOutSql('bank_ledger')}) t
+        FROM (${ledgerOutSql('cash_ledger')} UNION ALL ${ledgerOutSql('bank_ledger')} UNION ALL ${backdatedOutSql()}) t
         GROUP BY source
         ORDER BY total_amount DESC
       `, unionParams),
 
       db.pgAll(`
         SELECT date, source, COALESCE(SUM(amount),0) AS amount
-        FROM (${ledgerOutSql('cash_ledger')} UNION ALL ${ledgerOutSql('bank_ledger')}) t
+        FROM (${ledgerOutSql('cash_ledger')} UNION ALL ${ledgerOutSql('bank_ledger')} UNION ALL ${backdatedOutSql()}) t
         GROUP BY date, source
         ORDER BY date ASC
       `, unionParams),
 
       db.pgGet(`
         SELECT COALESCE(SUM(amount), 0) AS total FROM (
-          ${ledgerOutSql('cash_ledger', prevDateClause)} UNION ALL ${ledgerOutSql('bank_ledger', prevDateClause)}
+          ${ledgerOutSql('cash_ledger', prevDateClause)} UNION ALL ${ledgerOutSql('bank_ledger', prevDateClause)} UNION ALL ${backdatedOutSql(prevBackdatedDateClause)}
         ) t
       `, unionParams),
 
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM cash_ledger
-                 WHERE company_id = $1 AND direction='out'
-                   AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}`, unionParams),
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM bank_ledger
-                 WHERE company_id = $1 AND direction='out'
-                   AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}`, unionParams),
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM (
+          SELECT amount FROM cash_ledger
+            WHERE company_id = $1 AND direction = 'out' AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}
+          UNION ALL
+          SELECT amount FROM backdated_transactions
+            WHERE company_id = $1 AND affects_reports = true AND account_type = 'cash'
+              AND transaction_type IN ('cash_out','bank_out','payment_made','expense','purchase')
+              AND transaction_date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
+        ) t
+      `, unionParams),
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM (
+          SELECT amount FROM bank_ledger
+            WHERE company_id = $1 AND direction = 'out' AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}
+          UNION ALL
+          SELECT amount FROM backdated_transactions
+            WHERE company_id = $1 AND affects_reports = true AND account_type = 'bank'
+              AND transaction_type IN ('cash_out','bank_out','payment_made','expense','purchase')
+              AND transaction_date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
+        ) t
+      `, unionParams),
     ]);
 
     const totalOut = parseFloat(totalRes?.total || 0);
