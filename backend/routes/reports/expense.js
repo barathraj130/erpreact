@@ -102,10 +102,15 @@ router.get('/summary', authMiddleware, async (req, res) => {
     // reporting, a column that's existed since the feature was built but
     // nothing ever actually read. This is what wires it up: same source/
     // amount/date shape as the ledger rows, UNIONed into every query below.
+    // party_type is picked independently of transaction_type on the Backdated
+    // Entry form — "Cash Paid"/"Bank Paid" (cash_out/bank_out) are just as
+    // likely for a supplier payment as "Payment Made", so this must key off
+    // party_type regardless of which outflow type was chosen, not just one.
     const backdatedOutSql = (dateClause = 'transaction_date BETWEEN $2 AND $3') => `
       SELECT
         CASE
-          WHEN transaction_type = 'payment_made' AND party_type = 'supplier' THEN 'PURCHASE_PAYMENT'
+          WHEN party_type = 'supplier' THEN 'PURCHASE_PAYMENT'
+          WHEN party_type = 'employee' THEN 'SALARY_PAYMENT'
           WHEN category IS NOT NULL AND category != '' THEN UPPER(category)
           ELSE UPPER(transaction_type)
         END AS source,

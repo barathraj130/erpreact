@@ -482,7 +482,11 @@ router.get('/true-performance', authMiddleware, async (req, res) => {
       // Backdated purchase/salary/chit payments for the period — not combined
       // with cashBal/bankBal below (those stay real-ledger-only, all-time,
       // untouched), only with the period outflow totals.
-      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('payment_made','purchase') AND party_type='supplier' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
+      // party_type is picked independently of transaction_type on the
+      // Backdated Entry form — a supplier payment can be entered as
+      // "Cash Paid"/"Bank Paid" (cash_out/bank_out) just as easily as
+      // "Payment Made", so this keys off party_type, not transaction_type.
+      db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','purchase') AND party_type='supplier' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','expense') AND LOWER(COALESCE(NULLIF(category,''), transaction_type)) IN ('salary_payment','daily_wage','weekly_salary','advance_payment') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS v FROM backdated_transactions WHERE company_id=$1 AND affects_reports=true AND transaction_type IN ('cash_out','bank_out','payment_made','expense') AND LOWER(COALESCE(NULLIF(category,''), transaction_type)) IN ('chit_payment','chit') AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ v: 0 })),
     ]);
