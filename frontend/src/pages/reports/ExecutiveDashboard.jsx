@@ -117,12 +117,14 @@ const ExecutiveDashboard = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px', marginBottom: '16px' }}>
                 <KPICard label="Receivables (Owed to You)" value={moneyOverview.receivables?.total || 0} color="#10b981" isAmount={true}
                   subtext={`${moneyOverview.receivables?.customer_count || 0} customers`} />
+                <KPICard label="Inventory Value" value={moneyOverview.inventory_value || 0} color="#0ea5e9" isAmount={true}
+                  subtext="Stock on hand, at cost" />
                 <KPICard label="Supplier Payables" value={moneyOverview.payables?.supplier_total || 0} color="#f59e0b" isAmount={true}
                   subtext={`${moneyOverview.payables?.supplier_count || 0} suppliers`} />
                 <KPICard label="Loans Outstanding" value={moneyOverview.payables?.loans_total || 0} color="#dc2626" isAmount={true}
                   subtext={`${moneyOverview.payables?.loan_count || 0} active loans`} />
                 <KPICard label="Net Position" value={moneyOverview.net_position || 0} color={(moneyOverview.net_position || 0) >= 0 ? '#10b981' : '#dc2626'} isAmount={true}
-                  subtext="Receivables − total payables" />
+                  subtext="Receivables + inventory − total payables" />
                 <KPICard label="Settlements (Non-Cash)" value={moneyOverview.settlements?.approved_total || 0} color="#7c3aed" isAmount={true}
                   subtext={`${moneyOverview.settlements?.approved_count || 0} approved${moneyOverview.settlements?.pending_count ? `, ${moneyOverview.settlements.pending_count} pending` : ''}`} />
               </div>

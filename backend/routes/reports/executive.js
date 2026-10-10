@@ -95,6 +95,7 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
     const [
       receivablesTotal, topReceivables,
       payablesTotal, topPayables,
+      inventoryTotal,
       loansRows,
       revenueMonth,
       settlementsApproved, settlementsPending,
@@ -103,6 +104,8 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
       db.pgAll(`SELECT id, username AS name, initial_balance AS balance FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0 ORDER BY initial_balance DESC LIMIT 10`, [companyId]).catch(() => []),
       db.pgGet(`SELECT COALESCE(SUM(current_balance),0) AS total, COUNT(*) AS count FROM suppliers WHERE company_id=$1 AND current_balance > 0`, [companyId]).catch(() => ({ total: 0, count: 0 })),
       db.pgAll(`SELECT id, name, current_balance AS balance FROM suppliers WHERE company_id=$1 AND current_balance > 0 ORDER BY current_balance DESC LIMIT 10`, [companyId]).catch(() => []),
+      // Same valuation formula as the Balance Sheet's Inventory Value (on-hand qty × cost)
+      db.pgGet(`SELECT COALESCE(SUM(current_stock * COALESCE(cost_price,selling_price,0)),0) AS total FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(() => ({ total: 0 })),
       db.pgAll(`
         SELECT l.id, COALESCE(ln.lender_name, l.party_name, 'Unknown') AS lender_name,
           l.principal_amount,
@@ -123,9 +126,14 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
     const loansOutstandingTotal = loansOutstanding.reduce((s, l) => s + parseFloat(l.remaining || 0), 0);
 
     const receivables = parseFloat(receivablesTotal?.total || 0);
+    const inventoryValue = parseFloat(inventoryTotal?.total || 0);
     const supplierPayables = parseFloat(payablesTotal?.total || 0);
     const totalPayables = supplierPayables + loansOutstandingTotal;
-    const netPosition = receivables - totalPayables;
+    // Net Position = what's owed to you + stock on hand, minus what you owe
+    // (suppliers + loan principal). Inventory counts here because it's a
+    // real, sellable asset — leaving it out understated the business's
+    // actual position, especially for a stock-heavy garment business.
+    const netPosition = receivables + inventoryValue - totalPayables;
 
     res.json({
       data: {
@@ -135,6 +143,7 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
           customer_count: parseInt(receivablesTotal?.count || 0),
           top: topReceivables.map(r => ({ name: r.name, amount: parseFloat(r.balance) || 0 })),
         },
+        inventory_value: inventoryValue,
         payables: {
           total: totalPayables,
           supplier_total: supplierPayables,
