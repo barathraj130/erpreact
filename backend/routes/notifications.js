@@ -8,10 +8,72 @@ import * as db from "../database/pg.js";
 
 const router = express.Router();
 
+// Chit instalment due-date reminders — this app has no job scheduler, so
+// reminders are generated opportunistically whenever a logged-in user's
+// client polls for notifications (every 30s via NotificationCenter.tsx).
+// Dedup is by `link`: one reminder is ever created per (chit group, due
+// month) per user, so re-polling never spams duplicates.
+const syncChitReminders = async (companyId, userId) => {
+    if (!companyId || !userId) return;
+    try {
+        const groups = await db.pgAll(
+            `SELECT id, group_name, monthly_installment, duration_months, start_date
+             FROM chit_groups WHERE company_id = $1 AND COALESCE(status,'ACTIVE') = 'ACTIVE'`,
+            [companyId]
+        );
+        if (!groups.length) return;
+
+        const today = new Date();
+        const soonCutoff = new Date(today.getTime() + 5 * 24 * 60 * 60 * 1000);
+
+        for (const g of groups) {
+            const installments = await db.pgAll(
+                `SELECT payment_date FROM chit_installments WHERE chit_group_id = $1`,
+                [g.id]
+            );
+            const start = new Date(g.start_date);
+            const months = Number(g.duration_months) || 0;
+            let nextDue = null;
+            for (let i = 1; i <= months; i++) {
+                const due = new Date(start);
+                due.setMonth(due.getMonth() + i - 1);
+                const paid = installments.some((ins) => {
+                    const d = new Date(ins.payment_date);
+                    return d.getMonth() === due.getMonth() && d.getFullYear() === due.getFullYear();
+                });
+                if (!paid) { nextDue = { month: i, due }; break; }
+            }
+            if (!nextDue || nextDue.due > soonCutoff) continue;
+
+            const link = `/finance/chit-management?chit=${g.id}&month=${nextDue.month}`;
+            const exists = await db.pgGet(
+                `SELECT id FROM notifications WHERE user_id = $1 AND link = $2 LIMIT 1`,
+                [userId, link]
+            );
+            if (exists) continue;
+
+            const overdue = nextDue.due < today;
+            const dateStr = nextDue.due.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+            const amount = Number(g.monthly_installment || 0).toLocaleString("en-IN");
+            const message = overdue
+                ? `🚨 ${g.group_name}: instalment of ₹${amount} was due ${dateStr} — overdue`
+                : `⚠️ ${g.group_name}: instalment of ₹${amount} due ${dateStr}`;
+
+            await db.pgRun(
+                `INSERT INTO notifications (user_id, message, type, link) VALUES ($1, $2, $3, $4)`,
+                [userId, message, overdue ? "danger" : "warning", link]
+            );
+        }
+    } catch (e) {
+        console.error("Chit reminder sync error:", e.message);
+    }
+};
+
 // GET /api/notifications — current user's notifications
 router.get("/", authMiddleware, async (req, res) => {
     try {
         const userId = req.user?.id;
+        await syncChitReminders(req.user?.active_company_id, userId);
         const rows = await db.pgAll(
             "SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50",
             [userId]
@@ -27,6 +89,7 @@ router.get("/", authMiddleware, async (req, res) => {
 // GET /api/notifications/unread-count
 router.get("/unread-count", authMiddleware, async (req, res) => {
     try {
+        await syncChitReminders(req.user?.active_company_id, req.user?.id);
         const row = await db.pgGet(
             "SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND is_read = false",
             [req.user?.id]

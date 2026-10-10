@@ -49,4 +49,24 @@ router.post('/installments', authMiddleware, async (req, res) => {
     }
 });
 
+// Cross-chit auction history — every month across every chit group where
+// the auction was won, newest first. Lets a member with several chit
+// groups see all their wins in one place instead of opening each group.
+router.get('/auction-history', authMiddleware, async (req, res) => {
+    try {
+        const companyId = req.user.active_company_id;
+        const rows = await db.pgAll(`
+            SELECT ci.id, ci.chit_group_id, cg.group_name, ci.payment_date,
+                   ci.auction_amount_received, ci.notes
+            FROM chit_installments ci
+            JOIN chit_groups cg ON cg.id = ci.chit_group_id
+            WHERE ci.company_id = $1 AND ci.is_auction_won = true
+            ORDER BY ci.payment_date DESC
+        `, [companyId]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch auction history' });
+    }
+});
+
 export default router;

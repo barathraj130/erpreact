@@ -81,6 +81,11 @@ export const financeApi = {
     return handleResponse(res);
   },
 
+  getChitAuctionHistory: async () => {
+    const res = await apiFetch("/chit-fund/auction-history");
+    return handleResponse(res);
+  },
+
   // Cash Receipts
   createCashReceipt: async (data: any) => {
     const res = await apiFetch("/transactions", {

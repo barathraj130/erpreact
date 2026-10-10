@@ -10,6 +10,7 @@ import {
   FaTimes,
   FaTrash,
   FaMoneyBillWave,
+  FaTrophy,
 } from "react-icons/fa";
 import { financeApi } from "./financeApi";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,7 +39,8 @@ const generateChitSchedule = (chit: any, installments: any[]) => {
     });
     const isCurrent = due.getMonth() === today.getMonth() && due.getFullYear() === today.getFullYear();
     const isPast = due < today && due.getMonth() !== today.getMonth();
-    schedule.push({ month: i, due, monthly, paid: !!paid, installment: paid, isCurrent, isPast });
+    const auctionWon = !!paid && !!paid.is_auction_won;
+    schedule.push({ month: i, due, monthly, paid: !!paid, installment: paid, isCurrent, isPast, auctionWon });
   }
   return schedule;
 };
@@ -50,6 +52,7 @@ const ChitManagement: React.FC = () => {
   const [selectedChit, setSelectedChit] = useState<any>(null);
   const [installments, setInstallments] = useState<any[]>([]);
   const [showCollectModal, setShowCollectModal] = useState(false);
+  const [auctionHistory, setAuctionHistory] = useState<any[]>([]);
 
   const fetchChits = async () => {
     setLoading(true);
@@ -72,8 +75,18 @@ const ChitManagement: React.FC = () => {
     }
   };
 
+  const fetchAuctionHistory = async () => {
+    try {
+      const res = await financeApi.getChitAuctionHistory();
+      setAuctionHistory(res.data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchChits();
+    fetchAuctionHistory();
   }, []);
 
   const [form, setForm] = useState({
@@ -147,6 +160,7 @@ const ChitManagement: React.FC = () => {
       setShowCollectModal(false);
       fetchInstallments(selectedChit.id);
       fetchChits();
+      if (colForm.is_auction_won) fetchAuctionHistory();
     } catch (e) {
       alert("Failed to record installment.");
     } finally {
@@ -227,6 +241,38 @@ const ChitManagement: React.FC = () => {
         </table>
       </div>
 
+      {/* Auction History — every win across every chit group, newest first */}
+      {auctionHistory.length > 0 && (
+        <div className="card" style={{ marginTop: '24px', padding: '0', borderRadius: '16px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            <FaTrophy color="#d97706" />
+            <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a' }}>Auction History</div>
+          </div>
+          <div className="page-table-wrapper" style={{ boxShadow: 'none', border: 'none' }}>
+            <table className="page-table">
+              <thead>
+                <tr>
+                  <th>Chit Group</th>
+                  <th>Date</th>
+                  <th className="text-right">Amount Received</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auctionHistory.map((row: any) => (
+                  <tr key={row.id}>
+                    <td><div className="font-bold">{row.group_name}</div></td>
+                    <td>{row.payment_date ? new Date(row.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+                    <td className="text-right font-mono" style={{ color: '#92400e', fontWeight: 700 }}>{fmt(row.auction_amount_received)}</td>
+                    <td style={{ color: '#64748b' }}>{row.notes || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Schedule Viewer */}
       <AnimatePresence>
         {selectedChit && !showCollectModal && (() => {
@@ -306,23 +352,49 @@ const ChitManagement: React.FC = () => {
                       <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>
                         {new Date(row.due).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
                       </div>
-                      <div style={{ fontSize: '15px', fontWeight: 800, color: row.paid ? '#16a34a' : '#0f172a' }}>
-                        {row.paid && row.installment ? fmt(row.installment.amount) : fmt(row.monthly)}
-                      </div>
+                      {row.auctionWon ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 800, color: '#92400e' }}>
+                          <FaTrophy size={12} color="#d97706" /> Won — {fmt(row.installment.auction_amount_received)}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '15px', fontWeight: 800, color: row.paid ? '#16a34a' : '#0f172a' }}>
+                          {row.paid && row.installment ? fmt(row.installment.amount) : fmt(row.monthly)}
+                        </div>
+                      )}
                       {!row.paid && (row.isCurrent || row.isPast) && (
-                        <button
-                          style={{ marginTop: '4px', padding: '5px 0', borderRadius: '8px', border: 'none', background: row.isCurrent ? '#f59e0b' : '#ef4444', color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
-                          onClick={() => {
-                            setColForm(prev => ({
-                              ...prev,
-                              amount: row.monthly,
-                              payment_date: row.due.toISOString().split('T')[0],
-                            }));
-                            setShowCollectModal(true);
-                          }}
-                        >
-                          Pay Now
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            style={{ flex: 1, marginTop: '4px', padding: '5px 0', borderRadius: '8px', border: 'none', background: row.isCurrent ? '#f59e0b' : '#ef4444', color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                            onClick={() => {
+                              setColForm(prev => ({
+                                ...prev,
+                                amount: row.monthly,
+                                payment_date: row.due.toISOString().split('T')[0],
+                                is_auction_won: false,
+                                auction_amount_received: 0,
+                              }));
+                              setShowCollectModal(true);
+                            }}
+                          >
+                            Pay Now
+                          </button>
+                          <button
+                            title="Record that you won this month's auction"
+                            style={{ flex: 1, marginTop: '4px', padding: '5px 0', borderRadius: '8px', border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                            onClick={() => {
+                              setColForm(prev => ({
+                                ...prev,
+                                amount: row.monthly,
+                                payment_date: row.due.toISOString().split('T')[0],
+                                is_auction_won: true,
+                                auction_amount_received: 0,
+                              }));
+                              setShowCollectModal(true);
+                            }}
+                          >
+                            <FaTrophy size={10} /> Won
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
