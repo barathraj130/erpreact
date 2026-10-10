@@ -482,15 +482,15 @@ const Inventory: React.FC = () => {
           <h1 className="text-title">Inventory Management</h1>
           <p className="text-muted">Track products, stock levels, and surplus stock types</p>
         </div>
-        <div className="finance-actions" style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-          <button className="btn btn-secondary" onClick={() => refresh()} style={{ width: "42px", height: "42px", padding: 0 }} title="Refresh">
+        <div className="finance-actions" style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", justifyContent: "flex-end" }}>
+          <button className="btn btn-secondary" onClick={() => refresh()} style={{ width: "42px", height: "42px", padding: 0, flexShrink: 0 }} title="Refresh">
             <FaSync className={loading ? "fa-spin" : ""} />
           </button>
           {pendingProducts.length > 0 && (
             <button
               className="btn btn-secondary"
               onClick={() => setShowPendingModal(true)}
-              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#b45309", borderColor: "#f59e0b", background: "#fffbeb", position: "relative" }}
+              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#b45309", borderColor: "#f59e0b", background: "#fffbeb", position: "relative" }}
               title="Products created during a purchase that still need review"
             >
               <FaExclamationTriangle size={13} /> Pending Review ({pendingProducts.length})
@@ -500,7 +500,7 @@ const Inventory: React.FC = () => {
             <button
               className="btn btn-secondary"
               onClick={() => setShowCostReviewModal(true)}
-              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#0e7490", borderColor: "#06b6d4", background: "#ecfeff", position: "relative" }}
+              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#0e7490", borderColor: "#06b6d4", background: "#ecfeff", position: "relative" }}
               title="Products auto-created from a typed sale line — cost was never entered"
             >
               <FaExclamationTriangle size={13} /> Needs Cost Review ({costReviewProducts.length})
@@ -509,7 +509,7 @@ const Inventory: React.FC = () => {
           <button
             className="btn btn-secondary"
             title="Repair stock: re-run deductions for invoices missing stock movements"
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#f59e0b", borderColor: "#f59e0b" }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#f59e0b", borderColor: "#f59e0b" }}
             onClick={async () => {
               if (!window.confirm("This will re-deduct stock for all invoices that are missing stock movements. Proceed?")) return;
               try {
@@ -525,7 +525,7 @@ const Inventory: React.FC = () => {
           <button
             className="btn btn-secondary"
             title="Recover stock stuck in the old Surplus/Lot purchase system (product_id was never linked, so it never reached the Product List or became sellable). Safe to run more than once."
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#dc2626", borderColor: "#dc2626" }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#dc2626", borderColor: "#dc2626" }}
             onClick={async () => {
               if (!window.confirm("This will find stock stuck in old Surplus purchases (never linked to a real product) and credit it to the matching product. Safe to run more than once. Proceed?")) return;
               try {
@@ -542,7 +542,7 @@ const Inventory: React.FC = () => {
           <button
             className="btn btn-secondary"
             title="Backfill Product Journey with sales made before it tracked sales at all (Fresh Left/Total Sold/Revenue stayed frozen at the purchased amount). Run Recover Surplus Stock first for best accuracy. Safe to run more than once."
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#7c3aed", borderColor: "#7c3aed" }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#7c3aed", borderColor: "#7c3aed" }}
             onClick={async () => {
               if (!window.confirm("This will backfill Product Journey with sales made before it tracked sales (so Fresh Left/Total Sold/Revenue reflect reality). Safe to run more than once. Proceed?")) return;
               try {
@@ -559,14 +559,14 @@ const Inventory: React.FC = () => {
           <button
             className="btn btn-secondary"
             onClick={() => { setConvertForm({ product_id: 0, product_name: "", lot_id: "", mistake_qty: 0, repair_cost_per_piece: 0, notes: "" }); setShowConvertModal(true); }}
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#3b82f6", borderColor: "#3b82f6" }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#3b82f6", borderColor: "#3b82f6" }}
           >
             <FaExchangeAlt size={13} /> Convert Mistake
           </button>
           <button
             className="btn btn-secondary"
             onClick={() => { setAddStockForm({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" }); setShowAddStockModal(true); }}
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#16a34a", borderColor: "#16a34a" }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#16a34a", borderColor: "#16a34a" }}
           >
             <FaBoxOpen size={13} /> Add Stock
           </button>
@@ -574,11 +574,11 @@ const Inventory: React.FC = () => {
             className="btn btn-secondary"
             title="Define a Set — a sales-side grouping of 2+ products with no stock of its own (e.g. top + pant sold as one line)"
             onClick={() => { resetSetForm(); setShowCreateSetModal(true); }}
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", color: "#7c3aed", borderColor: "#7c3aed" }}
+            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#7c3aed", borderColor: "#7c3aed" }}
           >
             <FaBox size={13} /> Create Set
           </button>
-          <button className="btn btn-primary" onClick={handleAdd} style={{ height: "42px", padding: "0 24px" }}>
+          <button className="btn btn-primary" onClick={handleAdd} style={{ height: "42px", padding: "0 24px", whiteSpace: "nowrap", flexShrink: 0 }}>
             <FaPlus /> Add New Product
           </button>
         </div>
