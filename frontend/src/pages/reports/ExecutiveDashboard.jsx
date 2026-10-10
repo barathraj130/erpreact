@@ -22,6 +22,7 @@ const ExecutiveDashboard = () => {
   const [insights, setInsights] = useState([]);
   const [forecast, setForecast] = useState([]);
   const [risks, setRisks] = useState([]);
+  const [moneyOverview, setMoneyOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pageTab, setPageTab] = useState('dashboard');
 
@@ -36,14 +37,18 @@ const ExecutiveDashboard = () => {
       apiFetch('/reports/executive/insights').then(r => r.ok ? r.json() : { data: [] }),
       apiFetch('/reports/executive/revenue-forecast?months=3').then(r => r.ok ? r.json() : { data: [] }),
       apiFetch('/reports/executive/risk-indicators').then(r => r.ok ? r.json() : { data: [] }),
-    ]).then(([k, i, f, r]) => {
+      apiFetch('/reports/executive/money-overview').then(r => r.ok ? r.json() : { data: null }),
+    ]).then(([k, i, f, r, m]) => {
       setKpis(k.data || null);
       setInsights(i.data || []);
       setForecast(f.data || []);
       setRisks(r.data || []);
+      setMoneyOverview(m.data || null);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  const fmtAmt = (v) => '₹' + Math.abs(parseFloat(v || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
   const KPIs = kpis ? [
     { label: 'Revenue', value: kpis.revenue?.value || 0, color: '#10b981', trend: kpis.revenue?.trend || null, subtext: kpis.revenue?.trend ? `${kpis.revenue.trend > 0 ? '+' : ''}${kpis.revenue.trend}% vs last month` : 'Current month', isAmount: true },
@@ -104,6 +109,61 @@ const ExecutiveDashboard = () => {
               />
             ))}
           </div>
+
+          {/* Money In / Money Out — what's owed TO the business vs what it owes,
+              right now (not bounded by a date range, unlike the KPIs above). */}
+          {moneyOverview && (
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+                <KPICard label="Receivables (Owed to You)" value={moneyOverview.receivables?.total || 0} color="#10b981" isAmount={true}
+                  subtext={`${moneyOverview.receivables?.customer_count || 0} customers`} />
+                <KPICard label="Supplier Payables" value={moneyOverview.payables?.supplier_total || 0} color="#f59e0b" isAmount={true}
+                  subtext={`${moneyOverview.payables?.supplier_count || 0} suppliers`} />
+                <KPICard label="Loans Outstanding" value={moneyOverview.payables?.loans_total || 0} color="#dc2626" isAmount={true}
+                  subtext={`${moneyOverview.payables?.loan_count || 0} active loans`} />
+                <KPICard label="Net Position" value={moneyOverview.net_position || 0} color={(moneyOverview.net_position || 0) >= 0 ? '#10b981' : '#dc2626'} isAmount={true}
+                  subtext="Receivables − total payables" />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                <div style={{ background: '#fff', borderRadius: 14, padding: 20, border: '1px solid #f1f5f9' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: '#0f172a' }}>💰 Who Owes You</div>
+                  {(moneyOverview.receivables?.top || []).length === 0 ? (
+                    <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: 24 }}>Nothing outstanding</div>
+                  ) : moneyOverview.receivables.top.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < moneyOverview.receivables.top.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                      <span style={{ fontSize: 13, color: '#334155' }}>{r.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>{fmtAmt(r.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ background: '#fff', borderRadius: 14, padding: 20, border: '1px solid #f1f5f9' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: '#0f172a' }}>💸 Suppliers You Owe</div>
+                  {(moneyOverview.payables?.top_suppliers || []).length === 0 ? (
+                    <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: 24 }}>Nothing outstanding</div>
+                  ) : moneyOverview.payables.top_suppliers.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < moneyOverview.payables.top_suppliers.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                      <span style={{ fontSize: 13, color: '#334155' }}>{p.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#d97706' }}>{fmtAmt(p.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ background: '#fff', borderRadius: 14, padding: 20, border: '1px solid #f1f5f9' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: '#0f172a' }}>🏦 Loans You Owe</div>
+                  {(moneyOverview.payables?.loans || []).length === 0 ? (
+                    <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: 24 }}>No active loans</div>
+                  ) : moneyOverview.payables.loans.map((l, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < moneyOverview.payables.loans.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                      <span style={{ fontSize: 13, color: '#334155' }}>{l.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{fmtAmt(l.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
             {/* Revenue Forecast Chart */}

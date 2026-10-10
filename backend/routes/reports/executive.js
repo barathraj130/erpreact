@@ -82,6 +82,75 @@ router.get('/kpis', authMiddleware, async (req, res) => {
 });
 
 /**
+ * GET /api/reports/executive/money-overview
+ * The full picture in one place: revenue in, what's owed TO the business
+ * (receivables — customers), what the business owes (payables — suppliers
+ * + outstanding loan principal), and the net of all three. Distinct from
+ * /kpis (period P&L-style numbers) — this is a snapshot of money owed
+ * right now, not bounded by a date range.
+ */
+router.get('/money-overview', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  try {
+    const [
+      receivablesTotal, topReceivables,
+      payablesTotal, topPayables,
+      loansRows,
+      revenueMonth,
+    ] = await Promise.all([
+      db.pgGet(`SELECT COALESCE(SUM(initial_balance),0) AS total, COUNT(*) AS count FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0`, [companyId]).catch(() => ({ total: 0, count: 0 })),
+      db.pgAll(`SELECT id, username AS name, initial_balance AS balance FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0 ORDER BY initial_balance DESC LIMIT 10`, [companyId]).catch(() => []),
+      db.pgGet(`SELECT COALESCE(SUM(current_balance),0) AS total, COUNT(*) AS count FROM suppliers WHERE company_id=$1 AND current_balance > 0`, [companyId]).catch(() => ({ total: 0, count: 0 })),
+      db.pgAll(`SELECT id, name, current_balance AS balance FROM suppliers WHERE company_id=$1 AND current_balance > 0 ORDER BY current_balance DESC LIMIT 10`, [companyId]).catch(() => []),
+      db.pgAll(`
+        SELECT l.id, COALESCE(ln.lender_name, l.party_name, 'Unknown') AS lender_name,
+          l.principal_amount,
+          GREATEST(0, l.principal_amount - COALESCE((SELECT SUM(lp.principal_component) FROM loan_payments lp WHERE lp.loan_id = l.id), 0)) AS remaining
+        FROM loans l
+        LEFT JOIN lenders ln ON ln.id = l.lender_id
+        WHERE l.company_id = $1
+      `, [companyId]).catch(() => []),
+      db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date >= date_trunc('month', CURRENT_DATE)`, [companyId]).catch(() => ({ total: 0 })),
+    ]);
+
+    const loansOutstanding = loansRows.filter(l => parseFloat(l.remaining) > 0);
+    const loansOutstandingTotal = loansOutstanding.reduce((s, l) => s + parseFloat(l.remaining || 0), 0);
+
+    const receivables = parseFloat(receivablesTotal?.total || 0);
+    const supplierPayables = parseFloat(payablesTotal?.total || 0);
+    const totalPayables = supplierPayables + loansOutstandingTotal;
+    const netPosition = receivables - totalPayables;
+
+    res.json({
+      data: {
+        revenue_this_month: parseFloat(revenueMonth?.total || 0),
+        receivables: {
+          total: receivables,
+          customer_count: parseInt(receivablesTotal?.count || 0),
+          top: topReceivables.map(r => ({ name: r.name, amount: parseFloat(r.balance) || 0 })),
+        },
+        payables: {
+          total: totalPayables,
+          supplier_total: supplierPayables,
+          supplier_count: parseInt(payablesTotal?.count || 0),
+          loans_total: loansOutstandingTotal,
+          loan_count: loansOutstanding.length,
+          top_suppliers: topPayables.map(p => ({ name: p.name, amount: parseFloat(p.balance) || 0 })),
+          loans: loansOutstanding
+            .sort((a, b) => parseFloat(b.remaining) - parseFloat(a.remaining))
+            .slice(0, 10)
+            .map(l => ({ name: l.lender_name, amount: parseFloat(l.remaining) || 0, principal: parseFloat(l.principal_amount) || 0 })),
+        },
+        net_position: netPosition,
+      },
+    });
+  } catch (err) {
+    console.error('executive/money-overview error:', err.message);
+    res.json({ data: null, error: err.message });
+  }
+});
+
+/**
  * GET /api/reports/executive/insights
  * Rule-based alerts, no AI
  */
