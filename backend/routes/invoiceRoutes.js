@@ -374,6 +374,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         invoice_number, invoice_type, customer_id, items, notes,
         amount_paid, discount_amount, balance_due, payment_status, payments,
         transport_details, bundles_count, return_items,
+        bundle_charges, // Optional per-invoice packing/bundling fee — not every bill has one
         broker_id, broker_commission_rate,
         bill_purpose, // 'real' or 'name_only'
         points_to_redeem, // Points to redeem on this invoice
@@ -385,6 +386,7 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
     } = req.body;
 
     const discountAmt = Number(discount_amount) || 0;
+    const bundleChargesAmt = Number(bundle_charges) || 0;
     const companyId = req.user.active_company_id;
     let client;
 
@@ -598,7 +600,12 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
         let totalReturnAmount = Math.round(totalReturnTaxable + totalReturnGST);
 
         // Final Invoice Amount after Returns and Discount
-        let netInvoiceAmount = totalSaleAmount - totalReturnAmount;
+        // Bundle charges fold into netInvoiceAmount (→ total_amount) itself, not
+        // handled as a side column like discount_amount — total_amount is read
+        // everywhere else in this app for balance/revenue/payment-status, so
+        // baking it in here means every one of those stays correct automatically
+        // with zero other changes, exactly as if it were just another billed item.
+        let netInvoiceAmount = totalSaleAmount - totalReturnAmount + bundleChargesAmt;
         const effectiveTotal = Math.max(0, netInvoiceAmount - discountAmt);
         // Use amount_paid from body; fall back to summing payments[] array if body value is 0
         const paymentsArrayTotal = Array.isArray(payments)
@@ -643,8 +650,9 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
                 points_earned, points_redeemed, points_discount,
                 series_prefix, series_number,
                 walk_in_name,
+                bundle_charges,
                 created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, NOW())
             RETURNING id
         `;
 
@@ -662,7 +670,8 @@ router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async 
             bill_purpose || 'real',
             0, pointsRedeemed, pointsDiscount,
             seriesPrefix, seriesNumber,
-            walk_in_name || null
+            walk_in_name || null,
+            bundleChargesAmt
         ];
 
         // Use SAVEPOINT so a duplicate-number failure can be recovered inside the transaction.
@@ -1938,7 +1947,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
 
         // 0. Fetch Old Invoice for Balance Adjustment (only active, same company)
         const oldInv = await client.query(
-            `SELECT total_amount, customer_id, invoice_number, invoice_type FROM invoices
+            `SELECT total_amount, customer_id, invoice_number, invoice_type, bundle_charges FROM invoices
              WHERE id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false`,
             [id, companyId]
         );
@@ -1946,6 +1955,12 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
         const oldTotal = Number(oldInv.rows[0].total_amount);
         const oldCustId = oldInv.rows[0].customer_id;
         const oldInvoiceNumber = oldInv.rows[0].invoice_number;
+        // Preserve the existing bundle charge unless this edit explicitly sends
+        // a new value — editing an invoice must never silently drop it from the
+        // recomputed total_amount below.
+        const bundleChargesAmt = req.body.bundle_charges !== undefined
+            ? (Number(req.body.bundle_charges) || 0)
+            : (Number(oldInv.rows[0].bundle_charges) || 0);
 
         // If user changed the invoice number, verify the new number is not already taken
         const finalInvoiceNumber = (newInvoiceNumber && newInvoiceNumber.trim())
@@ -2032,7 +2047,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
             };
         });
 
-        const totalAmount = Math.round(totalTaxable + totalGST);
+        const totalAmount = Math.round(totalTaxable + totalGST + bundleChargesAmt);
 
         // 2. Update Header — persist ALL editable fields
         await client.query(
@@ -2053,6 +2068,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 bundles_count      = COALESCE($14, bundles_count),
                 discount_amount    = COALESCE($17, 0),
                 walk_in_name       = $18,
+                bundle_charges     = $19,
                 updated_at         = NOW()
              WHERE id = $15 AND company_id = $16`,
             [
@@ -2074,6 +2090,7 @@ router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async 
                 companyId,
                 editDiscountAmount != null ? Number(editDiscountAmount) : null,
                 editWalkInName || null,
+                bundleChargesAmt,
             ]
         );
 

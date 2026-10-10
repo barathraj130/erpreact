@@ -253,6 +253,7 @@ const CreateInvoice: React.FC = () => {
   const [showPaymentPopup, setShowPaymentPopup] = useState(false);
   const [activePaymentIndex, setActivePaymentIndex] = useState<number | null>(null);
   const [discount, setDiscount] = useState<number>(0);
+  const [bundleCharges, setBundleCharges] = useState<number>(0);
   const [customerAdvance, setCustomerAdvance] = useState<number>(0);
   const [returnItems, setReturnItems] = useState<InvoiceItem[]>([]);
   const [pendingCredits, setPendingCredits] = useState<any[]>([]);
@@ -556,7 +557,7 @@ const CreateInvoice: React.FC = () => {
     const saleTotal = taxable + totalGst;
     const returnTotal = returnTaxable + totalReturnGst;
 
-    const grandTotal = saleTotal - returnTotal;
+    const grandTotal = saleTotal - returnTotal + bundleCharges;
     
     const totalQty = items.reduce((s, i) => s + i.qty, 0);
     const totalReturnQty = returnItems.reduce((s, i) => s + i.qty, 0);
@@ -587,7 +588,7 @@ const CreateInvoice: React.FC = () => {
       paymentStatus,
       totalReturnAmount: returnTotal
     };
-  }, [items, returnItems, gstState, invoiceType, amountPaid, discount]);
+  }, [items, returnItems, gstState, invoiceType, amountPaid, discount, bundleCharges]);
 
   const emptyRows = useMemo(
     () => new Array(Math.max(0, 15 - items.length - returnItems.length)).fill(0),
@@ -655,6 +656,7 @@ const CreateInvoice: React.FC = () => {
         notes,
         grand_total: totals.grandTotal,
         discount_amount: discount,
+        bundle_charges: bundleCharges,
         // NSB: customer owes nothing; GST liability tracked separately via mark-gst-paid flow
         amount_paid: invoiceType === 'NOMINAL_TAX_INVOICE' ? 0 : amountPaid,
         balance_due: invoiceType === 'NOMINAL_TAX_INVOICE' ? 0 : totals.pendingAmount,
@@ -1745,6 +1747,19 @@ const CreateInvoice: React.FC = () => {
               </div>
             )}
 
+            {/* Bundle / Packing Charges Row — optional, hidden for nominal tax invoice */}
+            {invoiceType !== 'NOMINAL_TAX_INVOICE' && <div style={{ marginTop: '12px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+              <div className="ci-field" style={{ flex: 1 }}>
+                <label>Bundle {'/'} Packing Charges (₹)</label>
+                <input
+                  type="number"
+                  value={bundleCharges || ""}
+                  onChange={(e) => setBundleCharges(Number(e.target.value))}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>}
+
             {/* Discount Row — hidden for nominal tax invoice */}
             {invoiceType !== 'NOMINAL_TAX_INVOICE' && <div style={{ marginTop: '12px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
               <div className="ci-field" style={{ flex: 1 }}>
@@ -1787,6 +1802,12 @@ const CreateInvoice: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                       <span style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 600 }}>Less: Return Credits</span>
                       <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#ef4444' }}>- ₹{fmt(totals.totalReturnAmount)}</span>
+                  </div>
+               )}
+               {bundleCharges > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Add: Bundle {'/'} Packing Charges</span>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>+ ₹{fmt(bundleCharges)}</span>
                   </div>
                )}
                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
