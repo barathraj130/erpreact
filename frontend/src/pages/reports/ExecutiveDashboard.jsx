@@ -123,6 +123,8 @@ const ExecutiveDashboard = () => {
                   subtext={`${moneyOverview.payables?.loan_count || 0} active loans`} />
                 <KPICard label="Net Position" value={moneyOverview.net_position || 0} color={(moneyOverview.net_position || 0) >= 0 ? '#10b981' : '#dc2626'} isAmount={true}
                   subtext="Receivables − total payables" />
+                <KPICard label="Settlements (Non-Cash)" value={moneyOverview.settlements?.approved_total || 0} color="#7c3aed" isAmount={true}
+                  subtext={`${moneyOverview.settlements?.approved_count || 0} approved${moneyOverview.settlements?.pending_count ? `, ${moneyOverview.settlements.pending_count} pending` : ''}`} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>

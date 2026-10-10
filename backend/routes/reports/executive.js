@@ -97,6 +97,7 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
       payablesTotal, topPayables,
       loansRows,
       revenueMonth,
+      settlementsApproved, settlementsPending,
     ] = await Promise.all([
       db.pgGet(`SELECT COALESCE(SUM(initial_balance),0) AS total, COUNT(*) AS count FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0`, [companyId]).catch(() => ({ total: 0, count: 0 })),
       db.pgAll(`SELECT id, username AS name, initial_balance AS balance FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0 ORDER BY initial_balance DESC LIMIT 10`, [companyId]).catch(() => []),
@@ -111,6 +112,11 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
         WHERE l.company_id = $1
       `, [companyId]).catch(() => []),
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date >= date_trunc('month', CURRENT_DATE)`, [companyId]).catch(() => ({ total: 0 })),
+      // Debt settlements: a customer clears what they owe via goods/assets/
+      // cheques instead of cash. Approved = receivables already reduced by
+      // this non-cash value; pending = awaiting approval, not yet applied.
+      db.pgGet(`SELECT COUNT(*) AS count, COALESCE(SUM(total_value),0) AS total FROM debt_settlements WHERE company_id=$1 AND status='approved'`, [companyId]).catch(() => ({ count: 0, total: 0 })),
+      db.pgGet(`SELECT COUNT(*) AS count, COALESCE(SUM(total_value),0) AS total FROM debt_settlements WHERE company_id=$1 AND status='pending'`, [companyId]).catch(() => ({ count: 0, total: 0 })),
     ]);
 
     const loansOutstanding = loansRows.filter(l => parseFloat(l.remaining) > 0);
@@ -142,6 +148,12 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
             .map(l => ({ name: l.lender_name, amount: parseFloat(l.remaining) || 0, principal: parseFloat(l.principal_amount) || 0 })),
         },
         net_position: netPosition,
+        settlements: {
+          approved_total: parseFloat(settlementsApproved?.total || 0),
+          approved_count: parseInt(settlementsApproved?.count || 0),
+          pending_total: parseFloat(settlementsPending?.total || 0),
+          pending_count: parseInt(settlementsPending?.count || 0),
+        },
       },
     });
   } catch (err) {

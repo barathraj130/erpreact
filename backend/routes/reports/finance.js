@@ -172,6 +172,16 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
                              broker_cash + broker_personal + interest_cash + interest_personal;
     const net_profit       = gross_profit - total_expenses;
 
+    // EBITDA = Net Profit + Interest + Tax + Depreciation + Amortization.
+    // This system doesn't track depreciation, amortization, or a formal tax
+    // expense line anywhere, so those are 0 (not estimated) rather than
+    // guessed — this is Net Profit + Interest only, the one component real
+    // data exists for. Flagged in the API response (ebitda_note) so the
+    // frontend can be upfront about the gap instead of presenting a number
+    // that looks like a complete EBITDA when it isn't.
+    const interest_total   = interest_cash + interest_personal;
+    const ebitda           = net_profit + interest_total;
+
     const capital_invested = n(capitalIntro);
     const drawings_taken   = n(drawings);
     const net_equity_change= capital_invested - drawings_taken;
@@ -187,13 +197,15 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
         interest_cash, interest_personal,
         total_expenses,
         net_profit,
+        ebitda, interest_total,
+        ebitda_note: 'Net Profit + Interest only — depreciation, amortization and a formal tax expense are not tracked in this system, so they are excluded rather than estimated.',
         capital_invested, drawings_taken, net_equity_change,
       },
       summary: { total_revenue, gross_profit, net_profit, from: startDate, to: endDate },
     });
   } catch (err) {
     console.error('profit-loss error:', err.message);
-    res.json({ data: { invoice_revenue:0, personal_receipt_revenue:0, total_revenue:0, purchases_cash:0, purchases_personal:0, total_cogs:0, gross_profit:0, salary_cash:0, salary_personal:0, chit_cash:0, chit_personal:0, broker_cash:0, broker_personal:0, interest_cash:0, interest_personal:0, total_expenses:0, net_profit:0, capital_invested:0, drawings_taken:0, net_equity_change:0 }, summary: {} });
+    res.json({ data: { invoice_revenue:0, personal_receipt_revenue:0, total_revenue:0, purchases_cash:0, purchases_personal:0, total_cogs:0, gross_profit:0, salary_cash:0, salary_personal:0, chit_cash:0, chit_personal:0, broker_cash:0, broker_personal:0, interest_cash:0, interest_personal:0, total_expenses:0, net_profit:0, ebitda:0, interest_total:0, capital_invested:0, drawings_taken:0, net_equity_change:0 }, summary: {} });
   }
 });
 

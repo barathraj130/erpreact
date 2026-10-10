@@ -224,11 +224,13 @@ const FinanceReports = () => {
     }
     const gp = parseFloat(d.gross_profit || 0);
     const np = parseFloat(d.net_profit   || 0);
+    const eb = parseFloat(d.ebitda       || 0);
     const eq = parseFloat(d.net_equity_change || 0);
     const kpis = [
       { label: 'Total Revenue',      value: d.total_revenue    || 0, color: '#10b981', border: '#bbf7d0' },
       { label: 'Gross Profit',       value: d.gross_profit     || 0, color: '#3b82f6', border: '#bfdbfe' },
       { label: 'Net Profit',         value: d.net_profit       || 0, color: np >= 0 ? '#10b981' : '#ef4444', border: np >= 0 ? '#bbf7d0' : '#fecaca' },
+      { label: 'EBITDA',             value: d.ebitda           || 0, color: eb >= 0 ? '#0891b2' : '#ef4444', border: eb >= 0 ? '#a5f3fc' : '#fecaca' },
       { label: 'Capital Introduced', value: d.capital_invested || 0, color: '#8b5cf6', border: '#ddd6fe' },
     ];
     return (
@@ -269,6 +271,11 @@ const FinanceReports = () => {
           <SectionGap />
 
           <FinanceRow label="NET PROFIT" amount={d.net_profit} isGrandTotal color={np >= 0 ? '#16a34a' : '#dc2626'} />
+          <FinanceRow label="+ Interest (Loan)" amount={d.interest_total} indent />
+          <FinanceRow label="EBITDA" amount={d.ebitda} isGrandTotal color={eb >= 0 ? '#0891b2' : '#dc2626'} />
+          {d.ebitda_note && (
+            <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0', fontStyle: 'italic' }}>{d.ebitda_note}</p>
+          )}
           <SectionGap />
 
           <SectionHeader title="Proprietor Equity Impact" color="#8b5cf6" />
