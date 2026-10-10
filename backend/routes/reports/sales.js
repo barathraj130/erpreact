@@ -15,8 +15,18 @@ const getDateRange = (from, to) => {
   };
 };
 
-// Sources that represent internal movement, not real revenue
+// Sources that represent internal movement or financing/equity activity —
+// NOT revenue. A loan received is borrowed money (a liability you owe back);
+// capital introduced by the proprietor is an equity contribution. Neither is
+// money earned from the business, so neither belongs in "Total Revenue" —
+// that's strictly operating income (sales, customer/invoice payments).
+// Pattern-matched (not an exact list) since backdated entries' category
+// field is free text the user types, so exact source names can vary.
 const NON_REVENUE_SOURCES = ['OPENING_BALANCE', 'CASH_TRANSFER'];
+const NON_REVENUE_PATTERNS = ['%LOAN%', '%PROPRIETOR%', '%CAPITAL%', '%DRAWING%'];
+const nonRevenueExcludeSql = (column) =>
+  `UPPER(${column}) NOT IN ('${NON_REVENUE_SOURCES.join("','")}') AND ` +
+  NON_REVENUE_PATTERNS.map(p => `UPPER(${column}) NOT LIKE '${p}'`).join(' AND ');
 
 const CATEGORY_LABELS = {
   PAYMENT: 'Invoice Payments',
@@ -62,7 +72,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
   const branchId = branch_id ? parseInt(branch_id) : null;
 
   try {
-    const excludeSql = `UPPER(source) NOT IN ('${NON_REVENUE_SOURCES.join("','")}')`;
+    const excludeSql = nonRevenueExcludeSql('source');
     const branchClause = branchId ? 'AND branch_id = $4' : '';
     const unionParams = branchId ? [companyId, from, to, branchId] : [companyId, from, to];
 
@@ -89,6 +99,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
       FROM backdated_transactions
       WHERE company_id = $1 AND affects_reports = true
         AND transaction_type IN ('cash_in','bank_in','sale','payment_received')
+        AND (party_type = 'customer' OR (${nonRevenueExcludeSql("COALESCE(NULLIF(category,''), transaction_type)")}))
         AND ${dateClause}
         ${branchId ? 'AND branch_id = $4' : ''}
     `;
@@ -131,6 +142,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
           SELECT amount FROM backdated_transactions
             WHERE company_id = $1 AND affects_reports = true AND account_type = 'cash'
               AND transaction_type IN ('cash_in','bank_in','sale','payment_received')
+              AND (party_type = 'customer' OR (${nonRevenueExcludeSql("COALESCE(NULLIF(category,''), transaction_type)")}))
               AND transaction_date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
         ) t
       `, unionParams),
@@ -142,6 +154,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
           SELECT amount FROM backdated_transactions
             WHERE company_id = $1 AND affects_reports = true AND account_type = 'bank'
               AND transaction_type IN ('cash_in','bank_in','sale','payment_received')
+              AND (party_type = 'customer' OR (${nonRevenueExcludeSql("COALESCE(NULLIF(category,''), transaction_type)")}))
               AND transaction_date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
         ) t
       `, unionParams),
