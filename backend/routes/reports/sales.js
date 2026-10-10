@@ -15,6 +15,181 @@ const getDateRange = (from, to) => {
   };
 };
 
+// Sources that represent internal movement, not real revenue
+const NON_REVENUE_SOURCES = ['OPENING_BALANCE', 'CASH_TRANSFER'];
+
+const CATEGORY_LABELS = {
+  PAYMENT: 'Invoice Payments',
+  INVOICE_PAYMENT: 'Invoice Payments',
+  CUSTOMER_PAYMENT: 'Customer Payments',
+  RECEIPT: 'Receipts',
+  RETAIL: 'Retail Sales',
+  GIFT_CONTRIBUTION: 'Gift Contributions',
+};
+
+const CATEGORY_COLORS = {
+  PAYMENT: '#059669',
+  INVOICE_PAYMENT: '#059669',
+  CUSTOMER_PAYMENT: '#10b981',
+  RECEIPT: '#14b8a6',
+  RETAIL: '#0891b2',
+  GIFT_CONTRIBUTION: '#84cc16',
+};
+
+const labelFor = (source) => {
+  const key = (source || '').toUpperCase();
+  if (CATEGORY_LABELS[key]) return CATEGORY_LABELS[key];
+  return (source || 'Other')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+};
+
+const colorFor = (source) => CATEGORY_COLORS[(source || '').toUpperCase()] || '#059669';
+
+/**
+ * GET /api/reports/sales/summary
+ * KPIs + revenue-source breakdown + daily trend — the inflow mirror of
+ * reports/expense.js's /summary. "Where the revenue comes from", same
+ * pattern: cash_ledger/bank_ledger direction='in', UNIONed with backdated
+ * inflow-type transactions (affects_reports=true — never touches the real
+ * balance, affects_balance stays false, but reporting should still see it).
+ */
+router.get('/summary', authMiddleware, async (req, res) => {
+  const companyId = req.user.active_company_id;
+  const { branch_id } = req.query;
+  const { from, to } = getDateRange(req.query.from, req.query.to);
+  const branchId = branch_id ? parseInt(branch_id) : null;
+
+  try {
+    const excludeSql = `UPPER(source) NOT IN ('${NON_REVENUE_SOURCES.join("','")}')`;
+    const branchClause = branchId ? 'AND branch_id = $4' : '';
+    const unionParams = branchId ? [companyId, from, to, branchId] : [companyId, from, to];
+
+    const ledgerInSql = (table, dateClause = 'date BETWEEN $2 AND $3') => `
+      SELECT source, amount, date
+      FROM ${table}
+      WHERE company_id = $1 AND direction = 'in'
+        AND ${excludeSql}
+        AND ${dateClause}
+        ${branchClause}
+    `;
+    // party_type is picked independently of transaction_type on the
+    // Backdated Entry form — a customer payment can be entered as "Cash
+    // Received"/"Bank Received" (cash_in/bank_in) just as easily as
+    // "Payment Received", so this keys off party_type, not transaction_type.
+    const backdatedInSql = (dateClause = 'transaction_date BETWEEN $2 AND $3') => `
+      SELECT
+        CASE
+          WHEN party_type = 'customer' THEN 'CUSTOMER_PAYMENT'
+          WHEN category IS NOT NULL AND category != '' THEN UPPER(category)
+          ELSE UPPER(transaction_type)
+        END AS source,
+        amount, transaction_date AS date
+      FROM backdated_transactions
+      WHERE company_id = $1 AND affects_reports = true
+        AND transaction_type IN ('cash_in','bank_in','sale','payment_received')
+        AND ${dateClause}
+        ${branchId ? 'AND branch_id = $4' : ''}
+    `;
+    const prevDateClause = "date BETWEEN ($2::date - ($3::date - $2::date) - interval '1 day') AND ($2::date - interval '1 day')";
+    const prevBackdatedDateClause = "transaction_date BETWEEN ($2::date - ($3::date - $2::date) - interval '1 day') AND ($2::date - interval '1 day')";
+
+    const [totalRes, categoryRes, dailyRes, prevRes, cashRes, bankRes] = await Promise.all([
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS cnt FROM (
+          ${ledgerInSql('cash_ledger')} UNION ALL ${ledgerInSql('bank_ledger')} UNION ALL ${backdatedInSql()}
+        ) t
+      `, unionParams),
+
+      db.pgAll(`
+        SELECT source, COUNT(*) AS transaction_count, COALESCE(SUM(amount),0) AS total_amount,
+               COALESCE(AVG(amount),0) AS avg_amount, MIN(amount) AS min_amount, MAX(amount) AS max_amount
+        FROM (${ledgerInSql('cash_ledger')} UNION ALL ${ledgerInSql('bank_ledger')} UNION ALL ${backdatedInSql()}) t
+        GROUP BY source
+        ORDER BY total_amount DESC
+      `, unionParams),
+
+      db.pgAll(`
+        SELECT date, source, COALESCE(SUM(amount),0) AS amount
+        FROM (${ledgerInSql('cash_ledger')} UNION ALL ${ledgerInSql('bank_ledger')} UNION ALL ${backdatedInSql()}) t
+        GROUP BY date, source
+        ORDER BY date ASC
+      `, unionParams),
+
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM (
+          ${ledgerInSql('cash_ledger', prevDateClause)} UNION ALL ${ledgerInSql('bank_ledger', prevDateClause)} UNION ALL ${backdatedInSql(prevBackdatedDateClause)}
+        ) t
+      `, unionParams),
+
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM (
+          SELECT amount FROM cash_ledger
+            WHERE company_id = $1 AND direction = 'in' AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}
+          UNION ALL
+          SELECT amount FROM backdated_transactions
+            WHERE company_id = $1 AND affects_reports = true AND account_type = 'cash'
+              AND transaction_type IN ('cash_in','bank_in','sale','payment_received')
+              AND transaction_date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
+        ) t
+      `, unionParams),
+      db.pgGet(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM (
+          SELECT amount FROM bank_ledger
+            WHERE company_id = $1 AND direction = 'in' AND ${excludeSql} AND date BETWEEN $2 AND $3 ${branchClause}
+          UNION ALL
+          SELECT amount FROM backdated_transactions
+            WHERE company_id = $1 AND affects_reports = true AND account_type = 'bank'
+              AND transaction_type IN ('cash_in','bank_in','sale','payment_received')
+              AND transaction_date BETWEEN $2 AND $3 ${branchId ? 'AND branch_id = $4' : ''}
+        ) t
+      `, unionParams),
+    ]);
+
+    const totalIn = parseFloat(totalRes?.total || 0);
+    const prevTotal = parseFloat(prevRes?.total || 0);
+    const changePercent = prevTotal > 0 ? Number((((totalIn - prevTotal) / prevTotal) * 100).toFixed(1)) : 0;
+
+    const categoryData = categoryRes.map(row => ({
+      category: row.source,
+      label: labelFor(row.source),
+      color: colorFor(row.source),
+      total_amount: parseFloat(row.total_amount) || 0,
+      transaction_count: parseInt(row.transaction_count) || 0,
+      avg_amount: parseFloat(row.avg_amount) || 0,
+      min_amount: parseFloat(row.min_amount) || 0,
+      max_amount: parseFloat(row.max_amount) || 0,
+      percentage: totalIn > 0 ? Number(((parseFloat(row.total_amount) / totalIn) * 100).toFixed(1)) : 0,
+    }));
+
+    const dailyMap = {};
+    dailyRes.forEach(row => {
+      const d = row.date instanceof Date ? row.date.toISOString().split('T')[0] : row.date;
+      if (!dailyMap[d]) dailyMap[d] = { date: d, total: 0, categories: {} };
+      dailyMap[d].categories[row.source] = parseFloat(row.amount) || 0;
+      dailyMap[d].total += parseFloat(row.amount) || 0;
+    });
+
+    res.json({
+      summary: {
+        total_revenue: totalIn,
+        cash_inflow: parseFloat(cashRes?.total || 0),
+        bank_inflow: parseFloat(bankRes?.total || 0),
+        transaction_count: parseInt(totalRes?.cnt || 0),
+        change_percent: Math.abs(changePercent),
+        change_direction: changePercent >= 0 ? 'up' : 'down',
+        from, to,
+      },
+      category_breakdown: categoryData,
+      daily_trend: Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date)),
+    });
+  } catch (err) {
+    console.error('[reports/sales/summary]', err.message);
+    res.json({ summary: {}, category_breakdown: [], daily_trend: [], error: err.message });
+  }
+});
+
 /**
  * GET /api/reports/sales/top-customers
  */

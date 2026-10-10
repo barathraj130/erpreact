@@ -13,6 +13,7 @@ import ChartCard from '../../components/reports/ChartCard';
 import FilterBar from '../../components/reports/FilterBar';
 import ExportButtons from '../../components/reports/ExportButtons';
 import RetailRevenue from '../RetailRevenue';
+import SalesOverviewTab from './SalesOverviewTab';
 
 const nowMonth = () => {
   const now = new Date();
@@ -20,7 +21,12 @@ const nowMonth = () => {
   return { from: `${now.getFullYear()}-${m}-01`, to: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0] };
 };
 
-const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', 'Collections', 'Retail Collections', '🛍️ Retail'];
+// 'Overview' and Retail are special-cased below (own self-contained content,
+// not the generic KPI/chart/table flow the first 7 tabs share) — inserted
+// right before Retail so the existing 0-6 numeric indices used throughout
+// this file (endpoints map, renderKPIs, renderChart, COLUMNS) never shift.
+const TABS = ['Top Customers', 'Sales Trend', 'Aging Receivables', 'Monthly Growth', 'Product Performance', 'Collections', 'Retail Collections', '💰 Overview', '🛍️ Retail'];
+const OVERVIEW_TAB = TABS.length - 2;
 const RETAIL_TAB = TABS.length - 1;
 
 const SalesReports = () => {
@@ -66,6 +72,9 @@ const SalesReports = () => {
   }, []);
 
   useEffect(() => {
+    // Overview and Retail are fully self-contained (their own fetching),
+    // not part of the shared data/summary endpoints map.
+    if (activeTab === OVERVIEW_TAB || activeTab === RETAIL_TAB) return;
     fetchTab(activeTab, filters);
   }, [activeTab, fetchTab]);
 
@@ -329,8 +338,10 @@ const SalesReports = () => {
         ))}
       </div>
 
-      {/* Retail tab — full inline component */}
-      {activeTab === RETAIL_TAB ? (
+      {/* Overview and Retail tabs — full inline/self-contained components */}
+      {activeTab === OVERVIEW_TAB ? (
+        <SalesOverviewTab />
+      ) : activeTab === RETAIL_TAB ? (
         <RetailRevenue />
       ) : (
         <>
