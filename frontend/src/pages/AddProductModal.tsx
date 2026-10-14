@@ -24,6 +24,7 @@ import {
   updateProduct,
 } from "../api/productApi";
 import CustomSelect from "../components/CustomSelect";
+import TextAutocomplete from "../components/TextAutocomplete";
 
 interface Props {
   onClose: () => void;
@@ -281,9 +282,22 @@ const AddProductModal: React.FC<Props> = ({
     barcode: "",
     unit: "pcs",
     category: "Other",
+    age_group: "",
     location: "",
   });
   const [loading, setLoading] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [ageGroupOptions, setAgeGroupOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    apiFetch("/products/category-options")
+      .then(r => r.ok ? r.json() : { categories: [], age_groups: [] })
+      .then(data => {
+        setCategoryOptions(data.categories || []);
+        setAgeGroupOptions(data.age_groups || []);
+      })
+      .catch(() => {});
+  }, []);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
@@ -324,6 +338,7 @@ const AddProductModal: React.FC<Props> = ({
         barcode: productToEdit.barcode || "",
         unit: productToEdit.unit || "pcs",
         category: productToEdit.category || "Other",
+        age_group: productToEdit.age_group || "",
         location: productToEdit.location || "",
       });
       if (productToEdit.image_url) {
@@ -489,17 +504,26 @@ const AddProductModal: React.FC<Props> = ({
                 <label style={styles.label}>Category</label>
                 <div style={styles.inputWrapper}>
                   <div style={styles.icon}><FaTag /></div>
-                  <CustomSelect
+                  <TextAutocomplete
                     value={formData.category}
-                    onChange={(e: any) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(v: string) => setFormData({ ...formData, category: v })}
+                    options={categoryOptions}
+                    placeholder="e.g. TOP, PANT, HOODIE"
                     style={styles.input}
-                  >
-                    <option value="Electronics">Electronics</option>
-                    <option value="Raw Materials">Raw Materials</option>
-                    <option value="Finished Goods">Finished Goods</option>
-                    <option value="Packaging">Packaging</option>
-                    <option value="Other">Other</option>
-                  </CustomSelect>
+                  />
+                </div>
+              </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Age Group</label>
+                <div style={styles.inputWrapper}>
+                  <div style={styles.icon}><FaTag /></div>
+                  <TextAutocomplete
+                    value={formData.age_group}
+                    onChange={(v: string) => setFormData({ ...formData, age_group: v })}
+                    options={ageGroupOptions}
+                    placeholder="e.g. 2 TO 8, 8 TO 16"
+                    style={styles.input}
+                  />
                 </div>
               </div>
             </div>

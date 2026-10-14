@@ -209,6 +209,19 @@ const CreateInvoice: React.FC = () => {
   const { activeBranch } = useTenant();
 
   const [products, setProducts] = useState<Product[]>([]);
+  // Category tabs above the item picker — set by Purchase when stock comes
+  // in (category/age_group on the product), narrowing what Sales sees here
+  // to one segment at a time instead of one flat list of everything.
+  const [activeCategory, setActiveCategory] = useState<string>("All");
+  const categoryTabs = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.category && p.category !== "Other") set.add(p.category); });
+    return ["All", ...Array.from(set).sort()];
+  }, [products]);
+  const filteredProducts = useMemo(() => {
+    if (activeCategory === "All") return products;
+    return products.filter((p) => p.category === activeCategory);
+  }, [products, activeCategory]);
   const [brokers, setBrokers] = useState<any[]>([]);
   const [company, setCompany] = useState({
     name: "COMPANY NAME",
@@ -1311,6 +1324,30 @@ const CreateInvoice: React.FC = () => {
             <div className="ci-card-title" style={{ marginBottom: 0 }}>
               Line Items
             </div>
+            {categoryTabs.length > 1 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", margin: "10px 0 14px" }}>
+                {categoryTabs.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "999px",
+                      border: `1px solid ${activeCategory === cat ? "#4f46e5" : "#e2e8f0"}`,
+                      background: activeCategory === cat ? "#4f46e5" : "#fff",
+                      color: activeCategory === cat ? "#fff" : "#475569",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
             <AnimatePresence mode="popLayout">
               {items.map((it, i) => (
                 <motion.div
@@ -1330,7 +1367,7 @@ const CreateInvoice: React.FC = () => {
                         style={{ fontSize: "0.8rem" }}
                       >
                         <option value="">Autofill from catalog...</option>
-                        {Array.isArray(products) && products.map((p) => (
+                        {Array.isArray(filteredProducts) && filteredProducts.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
                           </option>
@@ -1559,7 +1596,7 @@ const CreateInvoice: React.FC = () => {
                             style={{ fontSize: "0.75rem" }}
                         >
                             <option value="">Select product...</option>
-                              {Array.isArray(products) && products.map((p) => (
+                              {Array.isArray(filteredProducts) && filteredProducts.map((p) => (
                             <option key={p.id} value={p.id}>
                                 {p.name}
                             </option>

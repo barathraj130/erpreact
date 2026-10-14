@@ -1008,6 +1008,13 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     // Exact-name match reuses an existing product; no match creates
                     // one flagged pending_review=true, same as the regular purchase
                     // quick-add path, so it still goes through admin review.
+                    // Category/age group entered on this purchase line (e.g. "TOP",
+                    // "2 TO 8") — blank means "don't touch it", so re-purchasing an
+                    // existing product without filling these in never clobbers a
+                    // category it already has.
+                    const lineCategory  = (line.category  || '').trim();
+                    const lineAgeGroup  = (line.age_group || '').trim();
+
                     let lineProductId = null;
                     try {
                         const existingProduct = await client.query(
@@ -1016,13 +1023,19 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         );
                         if (existingProduct.rows[0]) {
                             lineProductId = existingProduct.rows[0].id;
-                            await client.query(`UPDATE products SET cost_price = $1 WHERE id = $2`, [freshRate || mistakeRate || 0, lineProductId]);
+                            await client.query(
+                                `UPDATE products SET cost_price = $1,
+                                        category = COALESCE(NULLIF($2, ''), category),
+                                        age_group = COALESCE(NULLIF($3, ''), age_group)
+                                 WHERE id = $4`,
+                                [freshRate || mistakeRate || 0, lineCategory, lineAgeGroup, lineProductId]
+                            );
                         } else {
                             const createdProduct = await client.query(`
-                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review, supplier_name)
-                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, 'Other', 1, false, true, $4)
+                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, age_group, is_active, is_deleted, pending_review, supplier_name)
+                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, $4, $5, 1, false, true, $6)
                                 RETURNING id
-                            `, [companyId, desc, freshRate || mistakeRate || 0, supplierRes.rows[0]?.name || supplier_name || null]);
+                            `, [companyId, desc, freshRate || mistakeRate || 0, lineCategory || 'Other', lineAgeGroup || null, supplierRes.rows[0]?.name || supplier_name || null]);
                             lineProductId = createdProduct.rows[0].id;
                         }
                     } catch (linkErr) {

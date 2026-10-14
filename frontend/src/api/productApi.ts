@@ -21,6 +21,7 @@ export interface Product {
   barcode: string | null;
   image_url?: string | null;
   category?: string | null;
+  age_group?: string | null;
   location?: string | null;
   is_active: number;
   updated_at: string;

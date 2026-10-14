@@ -328,6 +328,7 @@ export const runSchemaUpdates = async () => {
             ALTER TABLE products ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS age_group VARCHAR(100);
             ALTER TABLE products ADD COLUMN IF NOT EXISTS location TEXT;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
             ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_type VARCHAR(20) DEFAULT 'PCS';

@@ -21,6 +21,31 @@ const upload = multer({ storage });
 
 const router = express.Router();
 
+// GET /products/category-options — distinct category/age_group values already
+// in use, so the purchase-bill and product-edit forms can offer autocomplete
+// instead of a fixed list that doesn't match this business's actual categories.
+router.get("/category-options", authMiddleware, async (req, res) => {
+    try {
+        const companyId = req.user.active_company_id;
+        const [categories, ageGroups] = await Promise.all([
+            pgModule.pgAll(
+                `SELECT DISTINCT category FROM products WHERE company_id = $1 AND category IS NOT NULL AND category != '' AND category != 'Other' ORDER BY category`,
+                [companyId]
+            ),
+            pgModule.pgAll(
+                `SELECT DISTINCT age_group FROM products WHERE company_id = $1 AND age_group IS NOT NULL AND age_group != '' ORDER BY age_group`,
+                [companyId]
+            ),
+        ]);
+        res.json({
+            categories: categories.map(r => r.category),
+            age_groups: ageGroups.map(r => r.age_group),
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch category options" });
+    }
+});
+
 router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
     const companyId = parseInt(req.user?.active_company_id);
     // Resolve branch: use user's assigned branch, or find the main hub
@@ -37,7 +62,7 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
     const {
         name, selling_price, sku, brand, description, hsn_code, unit,
         cost_price, opening_stock, barcode, min_stock, max_stock_level,
-        gst_percent, supplier_name, category, location,
+        gst_percent, supplier_name, category, age_group, location,
         unit_type, pieces_per_bundle
     } = req.body;
 
@@ -58,10 +83,10 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
             INSERT INTO products (
                 company_id, branch_id, name, selling_price, sku, brand, description, hsn_code, unit,
                 cost_price, opening_stock, current_stock, barcode, min_stock, max_stock_level,
-                gst_percent, supplier_name, category, location, image_url, is_active, is_deleted,
+                gst_percent, supplier_name, category, age_group, location, image_url, is_active, is_deleted,
                 unit_type, pieces_per_bundle
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, 1, false, $21, $22)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21, 1, false, $22, $23)
             RETURNING *;
         `;
         const product = (await client.query(productSql, [
@@ -69,7 +94,7 @@ router.post("/", upload.single("image"), authMiddleware, async (req, res) => {
             hsn_code || null, unit || "pcs", cost_price || 0,
             opening_stock || 0, opening_stock || 0, barcode || null,
             min_stock || 0, max_stock_level || 0, gst_percent || 0, supplier_name || null,
-            category || "Other", location || null, imageUrl,
+            category || "Other", age_group || null, location || null, imageUrl,
             unit_type === "BUNDLE" ? "BUNDLE" : "PCS", parseFloat(pieces_per_bundle) || 1
         ])).rows[0];
 
