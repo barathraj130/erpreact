@@ -1009,11 +1009,19 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     // one flagged pending_review=true, same as the regular purchase
                     // quick-add path, so it still goes through admin review.
                     // Category/age group entered on this purchase line (e.g. "TOP",
-                    // "2 TO 8") — blank means "don't touch it", so re-purchasing an
-                    // existing product without filling these in never clobbers a
-                    // category it already has.
+                    // "2 TO 8") — the Fresh/Mistake line UI only offers these fields
+                    // for Fresh lines (Purchase Team segregates fresh stock directly);
+                    // Mistake lines never carry them, so these stay blank there and
+                    // the COALESCE-safe update below leaves any existing category
+                    // untouched rather than clobbering it with blanks.
                     const lineCategory  = (line.category  || '').trim();
                     const lineAgeGroup  = (line.age_group || '').trim();
+                    // A pure-mistake line (no fresh qty on this row — fresh and
+                    // mistake are always separate rows, never mixed) goes to the
+                    // intermediate checking team instead of straight to Sales: that
+                    // team inspects the defect batch, assigns its category, and
+                    // fixes the rate before it's sellable. See /products/:id/confirm.
+                    const isMistakeLine = mistakeQty > 0 && freshQty === 0;
 
                     let lineProductId = null;
                     try {
@@ -1032,10 +1040,10 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                             );
                         } else {
                             const createdProduct = await client.query(`
-                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, age_group, is_active, is_deleted, pending_review, supplier_name)
-                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, $4, $5, 1, false, true, $6)
+                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, age_group, is_active, is_deleted, pending_review, from_mistake_stock, supplier_name)
+                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, $4, $5, 1, false, true, $6, $7)
                                 RETURNING id
-                            `, [companyId, desc, freshRate || mistakeRate || 0, lineCategory || 'Other', lineAgeGroup || null, supplierRes.rows[0]?.name || supplier_name || null]);
+                            `, [companyId, desc, freshRate || mistakeRate || 0, lineCategory || 'Other', lineAgeGroup || null, isMistakeLine, supplierRes.rows[0]?.name || supplier_name || null]);
                             lineProductId = createdProduct.rows[0].id;
                         }
                     } catch (linkErr) {

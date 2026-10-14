@@ -94,12 +94,18 @@ export const fetchProducts = async (opts?: { includePending?: boolean }): Promis
 /**
  * Confirms a pending-review product as genuinely new (clears pending_review).
  * Pass `name` to rename it in the same step instead of a separate Edit trip.
+ * `fields` lets the Mistake Stock Review queue set category/age_group/
+ * cost_price/selling_price in the same confirm step (see productRoutes.js).
  */
-export const confirmPendingProduct = async (id: number, name?: string): Promise<ApiResponse> => {
+export const confirmPendingProduct = async (
+  id: number,
+  name?: string,
+  fields?: { category?: string; age_group?: string; cost_price?: number; selling_price?: number }
+): Promise<ApiResponse> => {
   const res = await apiFetch(`/products/${id}/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(name ? { name } : {}),
+    body: JSON.stringify({ ...(name ? { name } : {}), ...(fields || {}) }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {

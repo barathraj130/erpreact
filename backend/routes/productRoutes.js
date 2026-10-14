@@ -314,6 +314,10 @@ router.post("/merge-duplicate", authMiddleware, async (req, res) => {
 // row is soft-deleted, so it never shows up in the review queue again).
 // Optional `name`: lets the admin correct/standardize the name in the same
 // step instead of a separate trip to Edit Product first.
+// Optional `category`/`age_group`/`cost_price`/`selling_price`: the Mistake
+// Stock Review queue's confirm action (from_mistake_stock=true products)
+// uses these same fields — that intermediate team categorizes the defect
+// batch and fixes its rate here, in the same step that clears it for Sales.
 router.post("/:id/confirm", authMiddleware, async (req, res) => {
     if (!['admin', 'superadmin'].includes(req.user.role)) {
         return res.status(403).json({ error: 'Admin only.' });
@@ -321,16 +325,30 @@ router.post("/:id/confirm", authMiddleware, async (req, res) => {
     const companyId = req.user.active_company_id;
     const id = parseInt(req.params.id);
     const newName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const { category, age_group, cost_price, selling_price } = req.body || {};
+
+    const setClauses = ['pending_review = false'];
+    const values = [];
+    let idx = 1;
+    if (newName) { setClauses.push(`name = $${++idx}`); values.push(newName); }
+    if (category !== undefined && category !== null && String(category).trim() !== '') {
+        setClauses.push(`category = $${++idx}`); values.push(String(category).trim());
+    }
+    if (age_group !== undefined && age_group !== null && String(age_group).trim() !== '') {
+        setClauses.push(`age_group = $${++idx}`); values.push(String(age_group).trim());
+    }
+    if (cost_price !== undefined && cost_price !== null && cost_price !== '') {
+        setClauses.push(`cost_price = $${++idx}`); values.push(parseFloat(cost_price) || 0);
+    }
+    if (selling_price !== undefined && selling_price !== null && selling_price !== '') {
+        setClauses.push(`selling_price = $${++idx}`); values.push(parseFloat(selling_price) || 0);
+    }
+
     try {
-        const product = newName
-            ? await pgModule.pgGet(
-                `UPDATE products SET pending_review = false, name = $3 WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
-                [id, companyId, newName]
-            )
-            : await pgModule.pgGet(
-                `UPDATE products SET pending_review = false WHERE id = $1 AND company_id = $2 RETURNING id, name, pending_review`,
-                [id, companyId]
-            );
+        const product = await pgModule.pgGet(
+            `UPDATE products SET ${setClauses.join(', ')} WHERE id = $1 AND company_id = $${++idx} RETURNING id, name, pending_review, category, age_group, cost_price, selling_price`,
+            [id, ...values, companyId]
+        );
         if (!product) return res.status(404).json({ error: 'Product not found' });
         return res.json({ success: true, product });
     } catch (err) {

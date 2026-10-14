@@ -19,6 +19,7 @@ import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
 import "./finance/Finance.neo.css";
 import CustomSelect from "../components/CustomSelect";
+import TextAutocomplete from "../components/TextAutocomplete";
 import { apiFetch } from "../utils/api";
 
 const STOCK_TYPE_COLORS: Record<string, { bg: string; color: string; label: string }> = {
@@ -265,7 +266,10 @@ const Inventory: React.FC = () => {
   // land here as pending_review=true (see productRoutes.js /quick) so they
   // never show up for sale until an admin confirms them. useProducts() already
   // loads them (includePending: true), so we just filter the same list.
-  const pendingProducts = products.filter((p: any) => p.pending_review);
+  // Mistake-stock-originated products (from_mistake_stock=true) are excluded
+  // here — they go through the Mistake Stock Review queue below instead, so
+  // each item appears in exactly one review queue, not both.
+  const pendingProducts = products.filter((p: any) => p.pending_review && !p.from_mistake_stock);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   // Per-row draft rename text in the Pending Review modal — lets the admin
@@ -334,6 +338,58 @@ const Inventory: React.FC = () => {
       alert(e.message || "Failed to save cost");
     } finally {
       setSavingCostId(null);
+    }
+  };
+
+  // Mistake Stock Review: the intermediate team between Purchase and Sales.
+  // Mistake/defect purchase lines don't get categorized by Purchase Team (see
+  // SimplifiedPurchaseBill.tsx) — the newly-created product instead lands here
+  // (from_mistake_stock=true, pending_review=true) until this team inspects
+  // the batch, assigns its category/age group, and fixes its rate. Confirming
+  // clears pending_review via the same /products/:id/confirm endpoint used by
+  // Pending Review, just with category/age_group/cost_price/selling_price set
+  // in the same step.
+  const mistakeReviewProducts = products.filter((p: any) => p.pending_review && p.from_mistake_stock);
+  const [showMistakeReviewModal, setShowMistakeReviewModal] = useState(false);
+  const [mistakeDrafts, setMistakeDrafts] = useState<Record<number, { category: string; age_group: string; cost_price: string; selling_price: string }>>({});
+  const [confirmingMistakeId, setConfirmingMistakeId] = useState<number | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [ageGroupOptions, setAgeGroupOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    apiFetch("/products/category-options")
+      .then(r => r.ok ? r.json() : { categories: [], age_groups: [] })
+      .then(data => {
+        setCategoryOptions(data.categories || []);
+        setAgeGroupOptions(data.age_groups || []);
+      })
+      .catch(() => {});
+  }, []);
+
+  const emptyMistakeDraft = { category: "", age_group: "", cost_price: "", selling_price: "" };
+  const mistakeDraftFor = (p: any) => mistakeDrafts[p.id] || emptyMistakeDraft;
+  const updateMistakeDraft = (id: number, field: "category" | "age_group" | "cost_price" | "selling_price", value: string) =>
+    setMistakeDrafts(prev => ({ ...prev, [id]: { ...(prev[id] || emptyMistakeDraft), [field]: value } }));
+
+  const handleConfirmMistakeReview = async (productId: number) => {
+    const draft = mistakeDraftFor({ id: productId });
+    if (!draft.category.trim()) return alert("Category is required before this stock can go to Sales.");
+    if (!draft.cost_price.trim() && !draft.selling_price.trim()) return alert("Enter at least a cost price or selling price.");
+    setConfirmingMistakeId(productId);
+    try {
+      const data = await confirmPendingProduct(productId, undefined, {
+        category: draft.category.trim(),
+        age_group: draft.age_group.trim() || undefined,
+        cost_price: draft.cost_price.trim() ? Number(draft.cost_price) : undefined,
+        selling_price: draft.selling_price.trim() ? Number(draft.selling_price) : undefined,
+      });
+      if (!data.success) { alert(data.error || "Confirm failed"); return; }
+      setMistakeDrafts(prev => { const next = { ...prev }; delete next[productId]; return next; });
+      refresh();
+    } catch (e: any) {
+      alert(e.message || "Confirm failed");
+    } finally {
+      setConfirmingMistakeId(null);
     }
   };
 
@@ -504,6 +560,16 @@ const Inventory: React.FC = () => {
               title="Products auto-created from a typed sale line — cost was never entered"
             >
               <FaExclamationTriangle size={13} /> Needs Cost Review ({costReviewProducts.length})
+            </button>
+          )}
+          {mistakeReviewProducts.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowMistakeReviewModal(true)}
+              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#92400e", borderColor: "#f59e0b", background: "#fffbeb", position: "relative" }}
+              title="Mistake/defect stock from a purchase — needs category and rate before it's sellable"
+            >
+              <FaExclamationTriangle size={13} /> Mistake Stock Review ({mistakeReviewProducts.length})
             </button>
           )}
           <button
@@ -1038,6 +1104,95 @@ const Inventory: React.FC = () => {
               )}
               <div style={{ display: "flex", marginTop: "20px" }}>
                 <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCostReviewModal(false)}>Close</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mistake Stock Review Modal — the intermediate team between Purchase
+          and Sales. Mistake/defect purchase lines land here (from_mistake_stock
+          + pending_review) instead of being categorized at purchase time;
+          this team assigns category/age group and fixes the rate before the
+          stock can be sold. */}
+      <AnimatePresence>
+        {showMistakeReviewModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={e => { if (e.target === e.currentTarget) setShowMistakeReviewModal(false); }}
+          >
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "620px", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Mistake Stock Review</h2>
+              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
+                Mistake/defect stock from a purchase isn't categorized at purchase time. Check each batch, assign
+                its category and age group, and fix the rate — it stays off Sales until confirmed here.
+              </p>
+              {mistakeReviewProducts.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px 0" }}>Nothing pending.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {mistakeReviewProducts.map((p: any) => {
+                    const draft = mistakeDraftFor(p);
+                    return (
+                      <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>{p.name}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Category *</div>
+                            <TextAutocomplete
+                              value={draft.category}
+                              onChange={v => updateMistakeDraft(p.id, "category", v)}
+                              options={categoryOptions}
+                              placeholder="e.g. TOP, PANT, HOODIE"
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Age Group</div>
+                            <TextAutocomplete
+                              value={draft.age_group}
+                              onChange={v => updateMistakeDraft(p.id, "age_group", v)}
+                              options={ageGroupOptions}
+                              placeholder="e.g. 2 TO 8, 8 TO 16"
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Cost Price (₹)</div>
+                            <input
+                              type="number" min="0" step="0.01" placeholder="0.00"
+                              value={draft.cost_price}
+                              onChange={e => updateMistakeDraft(p.id, "cost_price", e.target.value)}
+                              style={{ width: "100%", padding: "7px 9px", borderRadius: 6, border: "0.5px solid #fde68a", fontSize: 12.5, boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Selling Price (₹)</div>
+                            <input
+                              type="number" min="0" step="0.01" placeholder="0.00"
+                              value={draft.selling_price}
+                              onChange={e => updateMistakeDraft(p.id, "selling_price", e.target.value)}
+                              style={{ width: "100%", padding: "7px 9px", borderRadius: 6, border: "0.5px solid #fde68a", fontSize: 12.5, boxSizing: "border-box" }}
+                            />
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-primary"
+                          style={{ padding: "7px 14px", fontSize: "0.78rem", alignSelf: "flex-end", opacity: confirmingMistakeId === p.id ? 0.6 : 1 }}
+                          disabled={confirmingMistakeId === p.id}
+                          onClick={() => handleConfirmMistakeReview(p.id)}
+                        >
+                          {confirmingMistakeId === p.id ? "Saving…" : "Confirm & Send to Sales"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={{ display: "flex", marginTop: "20px" }}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowMistakeReviewModal(false)}>Close</button>
               </div>
             </motion.div>
           </motion.div>

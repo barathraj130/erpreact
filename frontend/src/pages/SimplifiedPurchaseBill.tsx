@@ -84,7 +84,12 @@ const StockLineTable: React.FC<{
   title: string; theme: StockLineTableTheme; lines: StockLine[]; helpers: StockLineHelpers;
   totalQty: number; totalAmount: number; addLabel: string;
   categoryOptions: string[]; ageGroupOptions: string[];
-}> = ({ title, theme, lines, helpers, totalQty, totalAmount, addLabel, categoryOptions, ageGroupOptions }) => (
+  // Fresh stock gets categorized by Purchase Team right here. Mistake/defect
+  // stock does not — it goes to the Mistake Stock Review queue instead,
+  // where the checking team assigns category and fixes the rate before it's
+  // sellable (see Inventory.tsx's "Mistake Stock Review" button/modal).
+  showCategoryFields?: boolean;
+}> = ({ title, theme, lines, helpers, totalQty, totalAmount, addLabel, categoryOptions, ageGroupOptions, showCategoryFields = true }) => (
   <>
     <div style={{ fontSize: "0.78rem", fontWeight: 800, color: theme.text, marginBottom: "8px" }}>{title}</div>
     {lines.map((line, index) => (
@@ -106,26 +111,28 @@ const StockLineTable: React.FC<{
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 3 }}>Category</div>
-            <TextAutocomplete
-              value={line.category || ""}
-              onChange={v => helpers.updateLine(index, "category", v)}
-              options={categoryOptions}
-              placeholder="e.g. TOP, PANT, HOODIE"
-            />
+        {showCategoryFields && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 3 }}>Category</div>
+              <TextAutocomplete
+                value={line.category || ""}
+                onChange={v => helpers.updateLine(index, "category", v)}
+                options={categoryOptions}
+                placeholder="e.g. TOP, PANT, HOODIE"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 3 }}>Age Group</div>
+              <TextAutocomplete
+                value={line.age_group || ""}
+                onChange={v => helpers.updateLine(index, "age_group", v)}
+                options={ageGroupOptions}
+                placeholder="e.g. 2 TO 8, 8 TO 16"
+              />
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 3 }}>Age Group</div>
-            <TextAutocomplete
-              value={line.age_group || ""}
-              onChange={v => helpers.updateLine(index, "age_group", v)}
-              options={ageGroupOptions}
-              placeholder="e.g. 2 TO 8, 8 TO 16"
-            />
-          </div>
-        </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 30px", gap: 6, marginBottom: 4 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>Bundles</div>
@@ -745,12 +752,16 @@ const SimplifiedPurchaseBill: React.FC = () => {
                       addLabel="Add Fresh Item"
                       categoryOptions={categoryOptions} ageGroupOptions={ageGroupOptions}
                     />
+                    <div style={{ fontSize: "0.72rem", color: "#92400e", background: "#fffbeb", border: "0.5px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
+                      Mistake/defect stock isn't categorized here — it goes to <strong>Inventory → Mistake Stock Review</strong>, where the checking team assigns its category and fixes the rate before it's sellable.
+                    </div>
                     <StockLineTable
                       title="⚠️ Mistake / Defect Stock Items" theme={MISTAKE_THEME}
                       lines={mistakeLines} helpers={mistakeHelpers}
                       totalQty={surplusTotals.mistake_qty} totalAmount={surplusTotals.mistake_amount}
                       addLabel="Add Mistake Item"
                       categoryOptions={categoryOptions} ageGroupOptions={ageGroupOptions}
+                      showCategoryFields={false}
                     />
                     {/* Combined summary */}
                     <div style={{ border: "0.5px solid #e2e8f0", borderRadius: "10px", overflow: "hidden" }}>
