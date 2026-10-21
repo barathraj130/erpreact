@@ -222,6 +222,13 @@ const CreateInvoice: React.FC = () => {
     if (activeCategory === "All") return products;
     return products.filter((p) => p.category === activeCategory);
   }, [products, activeCategory]);
+  // Several products can share a name across different suppliers/batches
+  // (e.g. "MEN'S TOP" bought from two suppliers) — show whatever
+  // distinguishes them so the picker doesn't look like duplicates.
+  const productLabel = (p: Product) => {
+    const bits = [p.supplier_name, p.category && p.category !== "Other" ? p.category : null].filter(Boolean);
+    return bits.length ? `${p.name} — ${bits.join(" · ")}` : p.name;
+  };
   const [brokers, setBrokers] = useState<any[]>([]);
   const [company, setCompany] = useState({
     name: "COMPANY NAME",
@@ -1369,7 +1376,7 @@ const CreateInvoice: React.FC = () => {
                         <option value="">Autofill from catalog...</option>
                         {Array.isArray(filteredProducts) && filteredProducts.map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.name}
+                            {productLabel(p)}
                           </option>
                         ))}
                       </CustomSelect>
@@ -1598,7 +1605,7 @@ const CreateInvoice: React.FC = () => {
                             <option value="">Select product...</option>
                               {Array.isArray(filteredProducts) && filteredProducts.map((p) => (
                             <option key={p.id} value={p.id}>
-                                {p.name}
+                                {productLabel(p)}
                             </option>
                             ))}
                         </CustomSelect>
