@@ -1263,7 +1263,7 @@ router.delete('/entry/:table/:id', authMiddleware, async (req, res) => {
     }
     try {
         const entry = await db.pgGet(
-            `SELECT id, source, reference_id FROM ${tbl} WHERE id = $1 AND company_id = $2`,
+            `SELECT id, source, reference_id, reference_type FROM ${tbl} WHERE id = $1 AND company_id = $2`,
             [id, companyId]
         );
         if (!entry) return res.status(404).json({ error: 'Entry not found' });
@@ -1272,9 +1272,40 @@ router.delete('/entry/:table/:id', authMiddleware, async (req, res) => {
         }
         // Delete the ledger row
         await db.pgRun(`DELETE FROM ${tbl} WHERE id = $1 AND company_id = $2`, [id, companyId]);
-        // If this row was synced from a transaction (reference_id is set), mark that transaction
-        // as bill_purpose='excluded' so self-heal step 4 never re-adds it to cash_ledger
-        if (entry.reference_id) {
+        if (entry.reference_type === 'LOAN_PAYMENT' && entry.reference_id) {
+            // This row came from recordLoanRepayment() — loan_payments is read live for
+            // both Payment History and every loan's outstanding-principal figure, so the
+            // deletion isn't real until that row (and its double-entry transaction) is
+            // gone too, or it stays orphaned and keeps inflating both.
+            const payment = await db.pgGet(
+                `SELECT loan_id, principal_component FROM loan_payments WHERE id = $1 AND company_id = $2`,
+                [entry.reference_id, companyId]
+            ).catch(() => null);
+            await db.pgRun(
+                `DELETE FROM loan_payments WHERE id = $1 AND company_id = $2`,
+                [entry.reference_id, companyId]
+            ).catch(() => {});
+            await db.pgRun(
+                `UPDATE transactions SET bill_purpose = 'excluded' WHERE reference_type = 'LOAN_REPAYMENT' AND reference_id = $1 AND company_id = $2`,
+                [entry.reference_id, companyId]
+            ).catch(() => {});
+            // Some finance reports (reportRoutes.js) read loans.principal_outstanding
+            // directly instead of recomputing from loan_payments — reversing only the
+            // loan_payments row would leave that cached figure permanently short by
+            // this payment's principal_component. Add it back (capped at the original
+            // principal) and re-open the loan if removing this payment un-closes it.
+            if (payment?.loan_id && parseFloat(payment.principal_component) > 0) {
+                await db.pgRun(
+                    `UPDATE loans SET
+                        principal_outstanding = LEAST(principal_amount, COALESCE(principal_outstanding, principal_amount) + $1),
+                        status = 'ACTIVE'
+                     WHERE id = $2 AND company_id = $3`,
+                    [parseFloat(payment.principal_component), payment.loan_id, companyId]
+                ).catch(() => {});
+            }
+        } else if (entry.reference_id) {
+            // If this row was synced from a transaction (reference_id is set), mark that transaction
+            // as bill_purpose='excluded' so self-heal step 4 never re-adds it to cash_ledger
             await db.pgRun(
                 `UPDATE transactions SET bill_purpose = 'excluded' WHERE id = $1 AND company_id = $2`,
                 [entry.reference_id, companyId]

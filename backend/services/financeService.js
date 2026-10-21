@@ -403,33 +403,39 @@ export const recordLoanRepayment = async (user, paymentData) => {
             const cashAmt = parseFloat(paymentData.cash_amount || 0);
             const bankAmt = parseFloat(paymentData.bank_amount || 0);
 
+            // reference_type='LOAN_PAYMENT' + reference_id=payment.id links this ledger
+            // row back to the loan_payments row it came from, so deleting the ledger
+            // entry (ledgerRoutes.js DELETE /entry/:table/:id) can find and remove the
+            // matching loan_payments row too — otherwise it's orphaned forever and keeps
+            // inflating Payment History / outstanding-principal (both read loan_payments
+            // live) even after the cash/bank entry is gone.
             if (cashAmt > 0 || bankAmt > 0) {
                 // Split payment
                 if (cashAmt > 0) {
                     await client.query(
-                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                         VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
-                        [companyId, branchId, cashAmt, paymentData.payment_date]
+                        `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_type, reference_id)
+                         VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4, 'LOAN_PAYMENT', $5)`,
+                        [companyId, branchId, cashAmt, paymentData.payment_date, payment.id]
                     );
                 }
                 if (bankAmt > 0) {
                     await client.query(
-                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                         VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
-                        [companyId, branchId, bankAmt, paymentData.payment_date]
+                        `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date, reference_type, reference_id)
+                         VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4, 'LOAN_PAYMENT', $5)`,
+                        [companyId, branchId, bankAmt, paymentData.payment_date, payment.id]
                     );
                 }
             } else if (payMode === 'BANK' || payMode === 'UPI') {
                 await client.query(
-                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date)
-                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4)`,
-                    [companyId, branchId, total, paymentData.payment_date]
+                    `INSERT INTO bank_ledger (company_id, branch_id, source, amount, direction, bank_name, date, reference_type, reference_id)
+                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', 'Main Account', $4, 'LOAN_PAYMENT', $5)`,
+                    [companyId, branchId, total, paymentData.payment_date, payment.id]
                 );
             } else {
                 await client.query(
-                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date)
-                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4)`,
-                    [companyId, branchId, total, paymentData.payment_date]
+                    `INSERT INTO cash_ledger (company_id, branch_id, source, amount, direction, date, reference_type, reference_id)
+                     VALUES ($1, $2, 'LOAN_REPAYMENT', $3, 'out', $4, 'LOAN_PAYMENT', $5)`,
+                    [companyId, branchId, total, paymentData.payment_date, payment.id]
                 );
             }
             await client.query(`RELEASE SAVEPOINT sp_loan_ledger`);

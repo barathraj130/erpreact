@@ -539,10 +539,12 @@ export const runSchemaUpdates = async () => {
 
             ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS source VARCHAR(100);
             ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS reference_id INTEGER;
+            ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50);
             ALTER TABLE cash_ledger ADD COLUMN IF NOT EXISTS date DATE;
-            
+
             ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS source VARCHAR(100);
             ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS reference_id INTEGER;
+            ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS reference_type VARCHAR(50);
             ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS bank_account_id INTEGER;
             ALTER TABLE bank_ledger ADD COLUMN IF NOT EXISTS date DATE;
 
