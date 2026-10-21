@@ -3,7 +3,6 @@ import React, { useEffect, useState } from "react";
 import {
   FaBox,
   FaBoxOpen,
-  FaCheckCircle,
   FaEdit,
   FaExchangeAlt,
   FaExclamationTriangle,
@@ -13,13 +12,12 @@ import {
   FaTools,
   FaTrash,
 } from "react-icons/fa";
-import { confirmPendingProduct, createSet, deleteProduct, flagProductForReview, updateProduct } from "../api/productApi";
+import { deleteProduct, flagProductForReview, updateProduct } from "../api/productApi";
 import { useProducts } from "../hooks/useProducts";
 import AddProductModal from "./AddProductModal";
 import "./finance/Finance.css";
 import "./finance/Finance.neo.css";
 import CustomSelect from "../components/CustomSelect";
-import TextAutocomplete from "../components/TextAutocomplete";
 import { apiFetch } from "../utils/api";
 
 const STOCK_TYPE_COLORS: Record<string, { bg: string; color: string; label: string }> = {
@@ -54,15 +52,6 @@ interface BreakdownRow {
   total_cost: number;
 }
 
-interface ConvertForm {
-  product_id: number;
-  product_name: string;
-  lot_id: string;
-  mistake_qty: number;
-  repair_cost_per_piece: number;
-  notes: string;
-}
-
 const Inventory: React.FC = () => {
   const { products, loading, error, refresh } = useProducts();
   const [searchTerm, setSearchTerm] = useState("");
@@ -75,54 +64,9 @@ const Inventory: React.FC = () => {
   const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
   const [breakdownCache, setBreakdownCache] = useState<Record<number, BreakdownRow[]>>({});
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
-  const [showConvertModal, setShowConvertModal] = useState(false);
-  const [convertForm, setConvertForm] = useState<ConvertForm>({ product_id: 0, product_name: "", lot_id: "", mistake_qty: 0, repair_cost_per_piece: 0, notes: "" });
-  const [converting, setConverting] = useState(false);
   const [showAddStockModal, setShowAddStockModal] = useState(false);
   const [addStockForm, setAddStockForm] = useState<{ product_id: number; stock_type: "fresh" | "mistake"; qty: number; notes: string }>({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" });
   const [addingStock, setAddingStock] = useState(false);
-
-  // Create Set: defines a Set's recipe (which real products + how many of
-  // each make up one Set). A Set has no stock of its own — selling it
-  // deducts each component's stock directly at the moment of sale. This
-  // modal only saves the recipe, nothing is pre-assembled or deducted here.
-  const [showCreateSetModal, setShowCreateSetModal] = useState(false);
-  const [creatingSet, setCreatingSet] = useState(false);
-  const [setForm, setSetForm] = useState<{
-    mode: "new" | "existing";
-    set_product_id: string;
-    set_name: string;
-    components: { product_id: string; qty_per_set: string }[];
-  }>({ mode: "new", set_product_id: "", set_name: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
-
-  const resetSetForm = () => setSetForm({ mode: "new", set_product_id: "", set_name: "", components: [{ product_id: "", qty_per_set: "" }, { product_id: "", qty_per_set: "" }] });
-
-  const handleCreateSet = async () => {
-    const components = setForm.components
-      .filter(c => c.product_id && Number(c.qty_per_set) > 0)
-      .map(c => ({ product_id: Number(c.product_id), qty_per_set: Number(c.qty_per_set) }));
-    if (components.length === 0) return alert("Add at least one component with a quantity.");
-    if (setForm.mode === "existing" && !setForm.set_product_id) return alert("Select the existing set product.");
-    if (setForm.mode === "new" && !setForm.set_name.trim()) return alert("Enter a name for the new set product.");
-
-    setCreatingSet(true);
-    try {
-      const data = await createSet({
-        set_product_id: setForm.mode === "existing" ? Number(setForm.set_product_id) : null,
-        set_name: setForm.mode === "new" ? setForm.set_name.trim() : undefined,
-        components,
-      });
-      if (!data.success) { alert(data.error || "Save failed"); return; }
-      alert(data.message || "Set saved");
-      setShowCreateSetModal(false);
-      resetSetForm();
-      refresh();
-    } catch (e: any) {
-      alert(e.message || "Save failed");
-    } finally {
-      setCreatingSet(false);
-    }
-  };
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -152,32 +96,6 @@ const Inventory: React.FC = () => {
       }
     } finally {
       setLoadingBreakdown(false);
-    }
-  };
-
-  const handleConvert = async () => {
-    if (!convertForm.product_id || convertForm.mistake_qty <= 0) return alert("Select product and enter mistake qty.");
-    setConverting(true);
-    try {
-      const res = await apiFetch("/inventory/convert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          product_id: convertForm.product_id,
-          lot_id: convertForm.lot_id || undefined,
-          mistake_qty: convertForm.mistake_qty,
-          repair_cost_per_piece: convertForm.repair_cost_per_piece,
-          notes: convertForm.notes,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) return alert(data.error || "Conversion failed.");
-      alert(`Converted ${data.converted_qty} pcs to Fresh Repaired. Repair cost: ₹${data.repair_cost.toFixed(2)}`);
-      setShowConvertModal(false);
-      setBreakdownCache({});
-      refresh();
-    } finally {
-      setConverting(false);
     }
   };
 
@@ -262,42 +180,11 @@ const Inventory: React.FC = () => {
     }
   };
 
-  // Products created via quick-add during a purchase with no exact-name match
-  // land here as pending_review=true (see productRoutes.js /quick) so they
-  // never show up for sale until an admin confirms them. useProducts() already
-  // loads them (includePending: true), so we just filter the same list.
-  // Mistake-stock-originated products (from_mistake_stock=true) are excluded
-  // here — they go through the Mistake Stock Review queue below instead, so
-  // each item appears in exactly one review queue, not both.
-  const pendingProducts = products.filter((p: any) => p.pending_review && !p.from_mistake_stock);
-  const [showPendingModal, setShowPendingModal] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<number | null>(null);
-  // Per-row draft rename text in the Pending Review modal — lets the admin
-  // correct the name in the same step as confirming, instead of a separate
-  // Edit Product trip. Keyed by product id; falls back to the product's
-  // current name until the admin types something else.
-  const [renameDrafts, setRenameDrafts] = useState<Record<number, string>>({});
-  const [flaggingId, setFlaggingId] = useState<number | null>(null);
-
-  const handleConfirmPending = async (productId: number, currentName: string) => {
-    setConfirmingId(productId);
-    try {
-      const draft = (renameDrafts[productId] ?? "").trim();
-      const nameToSave = draft && draft !== currentName ? draft : undefined;
-      const data = await confirmPendingProduct(productId, nameToSave);
-      if (!data.success) { alert(data.error || "Confirm failed"); return; }
-      setRenameDrafts(prev => { const next = { ...prev }; delete next[productId]; return next; });
-      refresh();
-    } catch (e: any) {
-      alert(e.message || "Confirm failed");
-    } finally {
-      setConfirmingId(null);
-    }
-  };
-
   // Pulls a pre-existing product (created before Pending Review existed) into
-  // the same review queue — e.g. a legacy duplicate spotted later. Doesn't
-  // touch stock/name, only the flag, so nothing changes until confirmed/merged.
+  // the Segregation Team's review queue — e.g. a legacy duplicate spotted
+  // later. Doesn't touch stock/name, only the flag, so nothing changes until
+  // the Segregation Team acts on it (see Segregation.tsx).
+  const [flaggingId, setFlaggingId] = useState<number | null>(null);
   const handleFlagForReview = async (productId: number) => {
     if (!window.confirm("Flag this product for review? It'll be hidden from Sales until confirmed or merged.")) return;
     setFlaggingId(productId);
@@ -341,58 +228,6 @@ const Inventory: React.FC = () => {
     }
   };
 
-  // Mistake Stock Review: the intermediate team between Purchase and Sales.
-  // Mistake/defect purchase lines don't get categorized by Purchase Team (see
-  // SimplifiedPurchaseBill.tsx) — the newly-created product instead lands here
-  // (from_mistake_stock=true, pending_review=true) until this team inspects
-  // the batch, assigns its category/age group, and fixes its rate. Confirming
-  // clears pending_review via the same /products/:id/confirm endpoint used by
-  // Pending Review, just with category/age_group/cost_price/selling_price set
-  // in the same step.
-  const mistakeReviewProducts = products.filter((p: any) => p.pending_review && p.from_mistake_stock);
-  const [showMistakeReviewModal, setShowMistakeReviewModal] = useState(false);
-  const [mistakeDrafts, setMistakeDrafts] = useState<Record<number, { category: string; age_group: string; cost_price: string; selling_price: string }>>({});
-  const [confirmingMistakeId, setConfirmingMistakeId] = useState<number | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
-  const [ageGroupOptions, setAgeGroupOptions] = useState<string[]>([]);
-
-  useEffect(() => {
-    apiFetch("/products/category-options")
-      .then(r => r.ok ? r.json() : { categories: [], age_groups: [] })
-      .then(data => {
-        setCategoryOptions(data.categories || []);
-        setAgeGroupOptions(data.age_groups || []);
-      })
-      .catch(() => {});
-  }, []);
-
-  const emptyMistakeDraft = { category: "", age_group: "", cost_price: "", selling_price: "" };
-  const mistakeDraftFor = (p: any) => mistakeDrafts[p.id] || emptyMistakeDraft;
-  const updateMistakeDraft = (id: number, field: "category" | "age_group" | "cost_price" | "selling_price", value: string) =>
-    setMistakeDrafts(prev => ({ ...prev, [id]: { ...(prev[id] || emptyMistakeDraft), [field]: value } }));
-
-  const handleConfirmMistakeReview = async (productId: number) => {
-    const draft = mistakeDraftFor({ id: productId });
-    if (!draft.category.trim()) return alert("Category is required before this stock can go to Sales.");
-    if (!draft.cost_price.trim() && !draft.selling_price.trim()) return alert("Enter at least a cost price or selling price.");
-    setConfirmingMistakeId(productId);
-    try {
-      const data = await confirmPendingProduct(productId, undefined, {
-        category: draft.category.trim(),
-        age_group: draft.age_group.trim() || undefined,
-        cost_price: draft.cost_price.trim() ? Number(draft.cost_price) : undefined,
-        selling_price: draft.selling_price.trim() ? Number(draft.selling_price) : undefined,
-      });
-      if (!data.success) { alert(data.error || "Confirm failed"); return; }
-      setMistakeDrafts(prev => { const next = { ...prev }; delete next[productId]; return next; });
-      refresh();
-    } catch (e: any) {
-      alert(e.message || "Confirm failed");
-    } finally {
-      setConfirmingMistakeId(null);
-    }
-  };
-
   const handleEdit = (product: any) => { setSelectedProduct(product); setIsModalOpen(true); };
   const handleAdd  = () => { setSelectedProduct(null); setIsModalOpen(true); };
 
@@ -412,68 +247,6 @@ const Inventory: React.FC = () => {
         />
       )}
 
-      {/* Convert Modal */}
-      <AnimatePresence>
-        {showConvertModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={e => { if (e.target === e.currentTarget) setShowConvertModal(false); }}
-          >
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "440px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-              <h2 style={{ margin: "0 0 20px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Convert Mistake → Fresh Repaired</h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Product</label>
-                  <CustomSelect value={String(convertForm.product_id)} onChange={(e: any) => {
-                    const p = products.find(pr => String(pr.id) === e.target.value);
-                    setConvertForm(f => ({ ...f, product_id: Number(e.target.value), product_name: p?.name || "" }));
-                  }}>
-                    <option value="">Select Product</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
-                  </CustomSelect>
-                </div>
-                <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Lot Number (optional)</label>
-                  <input value={convertForm.lot_id} onChange={e => setConvertForm(f => ({ ...f, lot_id: e.target.value }))}
-                    placeholder="Leave blank for general stock" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                  <div>
-                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Mistake Qty *</label>
-                    <input type="number" min="1" value={convertForm.mistake_qty || ""}
-                      onChange={e => setConvertForm(f => ({ ...f, mistake_qty: Number(e.target.value) }))}
-                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Repair Cost/pc (₹)</label>
-                    <input type="number" min="0" value={convertForm.repair_cost_per_piece || ""}
-                      onChange={e => setConvertForm(f => ({ ...f, repair_cost_per_piece: Number(e.target.value) }))}
-                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                  </div>
-                </div>
-                {convertForm.mistake_qty > 0 && convertForm.repair_cost_per_piece > 0 && (
-                  <div style={{ background: "#eff6ff", borderRadius: "10px", padding: "12px 16px", fontSize: "0.85rem", color: "#1e40af", fontWeight: 600 }}>
-                    Total repair cost: ₹{(convertForm.mistake_qty * convertForm.repair_cost_per_piece).toLocaleString("en-IN")}
-                  </div>
-                )}
-                <div>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Notes</label>
-                  <input value={convertForm.notes} onChange={e => setConvertForm(f => ({ ...f, notes: e.target.value }))}
-                    placeholder="e.g. Repaired by Raju" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-                <button className="btn btn-secondary" onClick={() => setShowConvertModal(false)} style={{ flex: 1 }}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleConvert} disabled={converting} style={{ flex: 1 }}>
-                  {converting ? "Converting..." : "Convert"}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Add Stock Modal — Fresh or Mistake, replaces the old Stock Management pages */}
       <AnimatePresence>
@@ -542,16 +315,6 @@ const Inventory: React.FC = () => {
           <button className="btn btn-secondary" onClick={() => refresh()} style={{ width: "42px", height: "42px", padding: 0, flexShrink: 0 }} title="Refresh">
             <FaSync className={loading ? "fa-spin" : ""} />
           </button>
-          {pendingProducts.length > 0 && (
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowPendingModal(true)}
-              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#b45309", borderColor: "#f59e0b", background: "#fffbeb", position: "relative" }}
-              title="Products created during a purchase that still need review"
-            >
-              <FaExclamationTriangle size={13} /> Pending Review ({pendingProducts.length})
-            </button>
-          )}
           {costReviewProducts.length > 0 && (
             <button
               className="btn btn-secondary"
@@ -560,16 +323,6 @@ const Inventory: React.FC = () => {
               title="Products auto-created from a typed sale line — cost was never entered"
             >
               <FaExclamationTriangle size={13} /> Needs Cost Review ({costReviewProducts.length})
-            </button>
-          )}
-          {mistakeReviewProducts.length > 0 && (
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowMistakeReviewModal(true)}
-              style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#92400e", borderColor: "#f59e0b", background: "#fffbeb", position: "relative" }}
-              title="Mistake/defect stock from a purchase — needs category and rate before it's sellable"
-            >
-              <FaExclamationTriangle size={13} /> Mistake Stock Review ({mistakeReviewProducts.length})
             </button>
           )}
           <button
@@ -624,25 +377,10 @@ const Inventory: React.FC = () => {
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => { setConvertForm({ product_id: 0, product_name: "", lot_id: "", mistake_qty: 0, repair_cost_per_piece: 0, notes: "" }); setShowConvertModal(true); }}
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#3b82f6", borderColor: "#3b82f6" }}
-          >
-            <FaExchangeAlt size={13} /> Convert Mistake
-          </button>
-          <button
-            className="btn btn-secondary"
             onClick={() => { setAddStockForm({ product_id: 0, stock_type: "fresh", qty: 0, notes: "" }); setShowAddStockModal(true); }}
             style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#16a34a", borderColor: "#16a34a" }}
           >
             <FaBoxOpen size={13} /> Add Stock
-          </button>
-          <button
-            className="btn btn-secondary"
-            title="Define a Set — a sales-side grouping of 2+ products with no stock of its own (e.g. top + pant sold as one line)"
-            onClick={() => { resetSetForm(); setShowCreateSetModal(true); }}
-            style={{ height: "42px", padding: "0 16px", gap: "8px", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: 0, color: "#7c3aed", borderColor: "#7c3aed" }}
-          >
-            <FaBox size={13} /> Create Set
           </button>
           <button className="btn btn-primary" onClick={handleAdd} style={{ height: "42px", padding: "0 24px", whiteSpace: "nowrap", flexShrink: 0 }}>
             <FaPlus /> Add New Product
@@ -894,158 +632,6 @@ const Inventory: React.FC = () => {
         )}
       </div>
 
-      {/* Create Set Modal — defines a Set's recipe. No stock of its own;
-          selling a Set deducts each component's stock at sale time. */}
-      <AnimatePresence>
-        {showCreateSetModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={e => { if (e.target === e.currentTarget) setShowCreateSetModal(false); }}
-          >
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "540px", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Create Set</h2>
-              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
-                A Set has no stock of its own — it's a sales-side grouping. Define which products (and how many of
-                each) make up one Set here; selling a Set deducts straight from each component's real stock.
-              </p>
-
-              <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
-                <button type="button" onClick={() => setSetForm(f => ({ ...f, mode: "new" }))}
-                  style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: setForm.mode === "new" ? "2px solid #7c3aed" : "1.5px solid #e2e8f0", background: setForm.mode === "new" ? "#f5f3ff" : "#fff", color: setForm.mode === "new" ? "#7c3aed" : "#64748b" }}>
-                  New Set Product
-                </button>
-                <button type="button" onClick={() => setSetForm(f => ({ ...f, mode: "existing" }))}
-                  style={{ flex: 1, padding: "10px", borderRadius: "10px", cursor: "pointer", fontWeight: 700, border: setForm.mode === "existing" ? "2px solid #7c3aed" : "1.5px solid #e2e8f0", background: setForm.mode === "existing" ? "#f5f3ff" : "#fff", color: setForm.mode === "existing" ? "#7c3aed" : "#64748b" }}>
-                  Edit Existing Set
-                </button>
-              </div>
-
-              {setForm.mode === "new" ? (
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Set Name *</label>
-                  <input value={setForm.set_name} onChange={e => setSetForm(f => ({ ...f, set_name: e.target.value }))}
-                    placeholder="e.g. Men's Top + Pant Set" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                </div>
-              ) : (
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Existing Set Product *</label>
-                  <CustomSelect value={setForm.set_product_id} onChange={(e: any) => setSetForm(f => ({ ...f, set_product_id: e.target.value }))} placeholder="Search products…">
-                    {(products || []).filter((p: any) => p.is_set).map((p: any) => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
-                  </CustomSelect>
-                </div>
-              )}
-
-              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>Components (qty needed per 1 set)</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "10px" }}>
-                {setForm.components.map((c, idx) => (
-                  <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <div style={{ flex: 1 }}>
-                      <CustomSelect value={c.product_id} onChange={(e: any) => setSetForm(f => ({ ...f, components: f.components.map((row, i) => i === idx ? { ...row, product_id: e.target.value } : row) }))} placeholder="Search products…">
-                        {(products || []).filter((p: any) => !p.is_set).map((p: any) => <option key={p.id} value={p.id}>{withSupplier(p)}</option>)}
-                      </CustomSelect>
-                    </div>
-                    <input type="number" min="0.01" step="0.01" placeholder="Qty/set" value={c.qty_per_set}
-                      onChange={e => setSetForm(f => ({ ...f, components: f.components.map((row, i) => i === idx ? { ...row, qty_per_set: e.target.value } : row) }))}
-                      style={{ width: "90px", padding: "10px 12px", borderRadius: "10px", border: "1px solid #e2e8f0", boxSizing: "border-box" }} />
-                    <button type="button" className="btn btn-secondary" style={{ padding: "8px 10px" }}
-                      onClick={() => setSetForm(f => ({ ...f, components: f.components.filter((_, i) => i !== idx) }))}
-                      disabled={setForm.components.length <= 1}>
-                      <FaTrash size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="btn btn-secondary" style={{ fontSize: "0.8rem", marginBottom: "20px" }}
-                onClick={() => setSetForm(f => ({ ...f, components: [...f.components, { product_id: "", qty_per_set: "" }] }))}>
-                <FaPlus size={11} /> Add Component
-              </button>
-
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCreateSetModal(false)}>Cancel</button>
-                <button className="btn btn-primary" style={{ flex: 1, opacity: creatingSet ? 0.6 : 1 }} disabled={creatingSet} onClick={handleCreateSet}>
-                  {creatingSet ? "Saving…" : "Save Set"}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Pending Review Modal — products created via purchase quick-add with no
-          exact name match; admin must confirm each as new or merge it. */}
-      <AnimatePresence>
-        {showPendingModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={e => { if (e.target === e.currentTarget) setShowPendingModal(false); }}
-          >
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "560px", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Pending Review</h2>
-              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
-                These were created during a purchase because no product matched that exact name.
-                Confirm as new if it genuinely is, or merge it into an existing product if it's a duplicate.
-                Until confirmed, they won't show up for sale.
-              </p>
-              {pendingProducts.length === 0 ? (
-                <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px 0" }}>Nothing pending.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {pendingProducts.map((p: any) => (
-                    <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                        <div>
-                          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>
-                            {p.name}
-                            {p.supplier_name && <span style={{ marginLeft: 6, fontSize: "0.72rem", color: "#92400e", fontWeight: 600 }}>· {p.supplier_name}</span>}
-                          </div>
-                          <div style={{ fontSize: "0.75rem", color: "#92400e" }}>Stock: {p.current_stock ?? 0} {p.unit || ""}</div>
-                        </div>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#92400e", textTransform: "uppercase", display: "block", marginBottom: "4px" }}>
-                          Rename before confirming (optional)
-                        </label>
-                        <input
-                          value={renameDrafts[p.id] ?? p.name}
-                          onChange={e => setRenameDrafts(prev => ({ ...prev, [p.id]: e.target.value }))}
-                          style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1px solid #fde68a", background: "#fff", fontSize: "0.85rem", boxSizing: "border-box" }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", flexShrink: 0, justifyContent: "flex-end" }}>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: "6px 10px", fontSize: "0.78rem" }}
-                          title="Merge into another product (it's a duplicate)"
-                          onClick={() => { setShowPendingModal(false); setMergeFromProduct(p); }}
-                        >
-                          <FaExchangeAlt size={12} /> Merge
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          style={{ padding: "6px 10px", fontSize: "0.78rem", opacity: confirmingId === p.id ? 0.6 : 1 }}
-                          disabled={confirmingId === p.id}
-                          title="Confirm this is genuinely a new product (saves the rename above if changed)"
-                          onClick={() => handleConfirmPending(p.id, p.name)}
-                        >
-                          <FaCheckCircle size={12} /> {confirmingId === p.id ? "Confirming…" : "Confirm New"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: "flex", marginTop: "20px" }}>
-                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPendingModal(false)}>Close</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Needs Cost Review Modal — products auto-created from a typed sales
           invoice line (is_auto_created + cost_price_pending), the sales-side
           twin of Pending Review's purchase-side problem. */}
@@ -1104,95 +690,6 @@ const Inventory: React.FC = () => {
               )}
               <div style={{ display: "flex", marginTop: "20px" }}>
                 <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCostReviewModal(false)}>Close</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Mistake Stock Review Modal — the intermediate team between Purchase
-          and Sales. Mistake/defect purchase lines land here (from_mistake_stock
-          + pending_review) instead of being categorized at purchase time;
-          this team assigns category/age group and fixes the rate before the
-          stock can be sold. */}
-      <AnimatePresence>
-        {showMistakeReviewModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={e => { if (e.target === e.currentTarget) setShowMistakeReviewModal(false); }}
-          >
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "100%", maxWidth: "620px", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-              <h2 style={{ margin: "0 0 10px", fontSize: "1.1rem", fontWeight: 800, color: "#0f172a" }}>Mistake Stock Review</h2>
-              <p style={{ margin: "0 0 20px", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.6 }}>
-                Mistake/defect stock from a purchase isn't categorized at purchase time. Check each batch, assign
-                its category and age group, and fix the rate — it stays off Sales until confirmed here.
-              </p>
-              {mistakeReviewProducts.length === 0 ? (
-                <p style={{ textAlign: "center", color: "#94a3b8", padding: "20px 0" }}>Nothing pending.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {mistakeReviewProducts.map((p: any) => {
-                    const draft = mistakeDraftFor(p);
-                    return (
-                      <div key={p.id} style={{ border: "1.5px solid #fde68a", background: "#fffbeb", borderRadius: "12px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                        <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.9rem" }}>{p.name}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Category *</div>
-                            <TextAutocomplete
-                              value={draft.category}
-                              onChange={v => updateMistakeDraft(p.id, "category", v)}
-                              options={categoryOptions}
-                              placeholder="e.g. TOP, PANT, HOODIE"
-                            />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Age Group</div>
-                            <TextAutocomplete
-                              value={draft.age_group}
-                              onChange={v => updateMistakeDraft(p.id, "age_group", v)}
-                              options={ageGroupOptions}
-                              placeholder="e.g. 2 TO 8, 8 TO 16"
-                            />
-                          </div>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Cost Price (₹)</div>
-                            <input
-                              type="number" min="0" step="0.01" placeholder="0.00"
-                              value={draft.cost_price}
-                              onChange={e => updateMistakeDraft(p.id, "cost_price", e.target.value)}
-                              style={{ width: "100%", padding: "7px 9px", borderRadius: 6, border: "0.5px solid #fde68a", fontSize: 12.5, boxSizing: "border-box" }}
-                            />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: "#92400e", textTransform: "uppercase", marginBottom: 3 }}>Selling Price (₹)</div>
-                            <input
-                              type="number" min="0" step="0.01" placeholder="0.00"
-                              value={draft.selling_price}
-                              onChange={e => updateMistakeDraft(p.id, "selling_price", e.target.value)}
-                              style={{ width: "100%", padding: "7px 9px", borderRadius: 6, border: "0.5px solid #fde68a", fontSize: 12.5, boxSizing: "border-box" }}
-                            />
-                          </div>
-                        </div>
-                        <button
-                          className="btn btn-primary"
-                          style={{ padding: "7px 14px", fontSize: "0.78rem", alignSelf: "flex-end", opacity: confirmingMistakeId === p.id ? 0.6 : 1 }}
-                          disabled={confirmingMistakeId === p.id}
-                          onClick={() => handleConfirmMistakeReview(p.id)}
-                        >
-                          {confirmingMistakeId === p.id ? "Saving…" : "Confirm & Send to Sales"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div style={{ display: "flex", marginTop: "20px" }}>
-                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowMistakeReviewModal(false)}>Close</button>
               </div>
             </motion.div>
           </motion.div>

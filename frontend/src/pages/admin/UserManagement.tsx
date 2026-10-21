@@ -22,15 +22,21 @@ interface Branch {
 }
 
 const ROLE_COLORS: Record<string, { bg: string; color: string }> = {
-  admin:          { bg: "#ede9fe", color: "#6d28d9" },
-  superadmin:     { bg: "#ede9fe", color: "#6d28d9" },
-  branch_manager: { bg: "#d1fae5", color: "#065f46" },
-  accountant:     { bg: "#fef3c7", color: "#92400e" },
-  viewer:         { bg: "#f1f5f9", color: "#475569" },
-  staff:          { bg: "#dbeafe", color: "#1e40af" },
+  admin:            { bg: "#ede9fe", color: "#6d28d9" },
+  superadmin:       { bg: "#ede9fe", color: "#6d28d9" },
+  branch_manager:   { bg: "#d1fae5", color: "#065f46" },
+  accountant:       { bg: "#fef3c7", color: "#92400e" },
+  viewer:           { bg: "#f1f5f9", color: "#475569" },
+  staff:            { bg: "#dbeafe", color: "#1e40af" },
+  purchase_team:    { bg: "#fee2e2", color: "#991b1b" },
+  segregation_team: { bg: "#fef3c7", color: "#92400e" },
+  sales_team:       { bg: "#dcfce7", color: "#166534" },
 };
 
-const ROLES = ["admin", "branch_manager", "accountant", "viewer", "staff"];
+// purchase_team / segregation_team / sales_team: the three walled-off
+// pipeline roles — each sees only its own page (Sidebar.tsx gates nav,
+// restrictTeamRole middleware gates the matching backend routes).
+const ROLES = ["admin", "branch_manager", "accountant", "viewer", "staff", "purchase_team", "segregation_team", "sales_team"];
 
 const fmt = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";

@@ -2,6 +2,7 @@
 import express from 'express';
 import * as pgModule from '../database/pg.js';
 import authMiddleware from '../middlewares/jwtAuthMiddleware.js';
+import { restrictTeamRole } from '../middlewares/restrictTeamRole.js';
 import { createJourneyForPurchase } from '../utils/productJourneyEngine.js';
 
 const router = express.Router();
@@ -88,7 +89,7 @@ router.get('/avg-cost', authMiddleware, async (req, res) => {
 /**
  * POST /api/inventory/convert  — mistake → fresh_repaired
  */
-router.post('/convert', authMiddleware, async (req, res) => {
+router.post('/convert', authMiddleware, restrictTeamRole(["segregation_team"]), async (req, res) => {
     const companyId = req.user?.active_company_id;
     const { product_id, lot_id, mistake_qty, repair_cost_per_piece, notes } = req.body;
     if (!product_id || !(mistake_qty > 0)) return res.status(400).json({ error: "product_id and mistake_qty required." });

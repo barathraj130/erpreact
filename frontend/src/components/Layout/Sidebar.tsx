@@ -49,6 +49,28 @@ const getMenuItems = (mode: string, user: any, roundoffPendingCount: number = 0)
       { name: "Audit Logs", path: "/platform-admin/logs", icon: <FaHistory />, section: "System" },
     ];
   
+  // Three narrow, walled-off roles: each sees only their own stage of the
+  // Purchase → Segregation → Sales pipeline and nothing else — no other
+  // nav section, so one team never knows what the others are doing.
+  if (user?.role === "purchase_team") {
+    return [
+      { name: "Dashboard", path: "/dashboard", icon: <FaTachometerAlt />, section: "Overview" },
+      { name: "Purchase Bills", path: "/purchase-bills", icon: <FaTruck />, section: "Operations" },
+    ];
+  }
+  if (user?.role === "segregation_team") {
+    return [
+      { name: "Dashboard", path: "/dashboard", icon: <FaTachometerAlt />, section: "Overview" },
+      { name: "Segregation", path: "/segregation", icon: <FaBox />, section: "Operations" },
+    ];
+  }
+  if (user?.role === "sales_team") {
+    return [
+      { name: "Dashboard", path: "/dashboard", icon: <FaTachometerAlt />, section: "Overview" },
+      { name: "Sales", path: "/invoices", icon: <FaShoppingCart />, section: "Operations" },
+    ];
+  }
+
   const hasModule = (modName: string) => !user?.enabled_modules || user.enabled_modules.toLowerCase().includes(modName);
 
   const baseItems: MenuItem[] = [

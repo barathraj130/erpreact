@@ -39,6 +39,7 @@ import MobileAttendance from "./pages/hr/MobileAttendance";
 import WeeklySalary from "./pages/hr/WeeklySalary";
 import DailySalary from "./pages/hr/DailySalary";
 import Inventory from "./pages/Inventory";
+import Segregation from "./pages/Segregation";
 import Invoices from "./pages/Invoices";
 import SalesReturns from "./pages/SalesReturns";
 import StockLots from "./pages/StockLots";
@@ -464,6 +465,7 @@ const App: React.FC = () => {
             <Route path="/production/lots/:id" element={<ProductionLotDetail />} />
             <Route path="/production/inventory" element={<ProductionInventory />} />
             <Route path="/products" element={<Inventory />} />
+            <Route path="/segregation" element={<Segregation />} />
             <Route path="/documents" element={<DocumentManager />} />
             <Route path="/ai-insights" element={<AIInsights />} />
             <Route path="/ledgers" element={<Ledgers />} />

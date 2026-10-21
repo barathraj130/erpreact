@@ -3,6 +3,7 @@ import express from "express";
 import * as db from "../database/pg.js";
 import { checkAccess } from "../middlewares/checkAccess.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { restrictTeamRole } from "../middlewares/restrictTeamRole.js";
 import {
     createCustomerLedgerEvent,
     deleteCustomerLedgerEvents,
@@ -369,7 +370,7 @@ router.get("/", authMiddleware, checkAccess('Sales', 'view_invoices'), async (re
 /* ============================================================
    2. CREATE INVOICE (CRITICAL FIXES FOR COLUMN NAMES)
 ============================================================ */
-router.post("/", authMiddleware, checkAccess('Sales', 'create_invoices'), async (req, res) => {
+router.post("/", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess('Sales', 'create_invoices'), async (req, res) => {
     const {
         invoice_number, invoice_type, customer_id, items, notes,
         amount_paid, discount_amount, balance_due, payment_status, payments,
@@ -1911,7 +1912,7 @@ router.post("/:id/mark-nominal", authMiddleware, async (req, res) => {
 /* ============================================================
    4. UPDATE INVOICE
 ============================================================ */
-router.put("/:id", authMiddleware, checkAccess('Sales', 'edit_invoices'), async (req, res) => {
+router.put("/:id", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess('Sales', 'edit_invoices'), async (req, res) => {
     const id = Number(req.params.id);
     const {
         items, notes, payments,
@@ -2327,7 +2328,7 @@ Balance  : ₹${fmt(updBalance)}`);
 /* ============================================================
    5. DELETE INVOICE
 ============================================================ */
-router.delete("/:id", authMiddleware, checkAccess('Sales', 'delete_invoices'), async (req, res) => {
+router.delete("/:id", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess('Sales', 'delete_invoices'), async (req, res) => {
     const id = Number(req.params.id);
     const companyId = req.user.active_company_id;
     let client;

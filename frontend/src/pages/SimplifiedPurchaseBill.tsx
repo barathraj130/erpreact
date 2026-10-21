@@ -10,7 +10,6 @@ import { apiFetch } from "../utils/api";
 import { printPurchaseBill } from "../utils/purchaseBillPrint";
 import CustomSelect from "../components/CustomSelect";
 import ProductCombobox from "../components/ProductCombobox";
-import TextAutocomplete from "../components/TextAutocomplete";
 import AddProductModal from "./AddProductModal";
 import AddSupplierModal from "./AddSupplierModal";
 import { motion, AnimatePresence } from "framer-motion";
@@ -60,9 +59,9 @@ const MODE_COLORS: Record<string, string> = {
 // sub-lines that sum to its total qty, the same bundle_lines[] pattern
 // already used by Delivery Orders (see CreateDeliveryOrder.tsx).
 interface BundleSubLine { bundles: string; pcs_per_bundle: string; }
-interface StockLine { description: string; bundle_lines: BundleSubLine[]; rate: string; category: string; age_group: string; }
+interface StockLine { description: string; bundle_lines: BundleSubLine[]; rate: string; }
 const emptyBundleSubLine = (): BundleSubLine => ({ bundles: "1", pcs_per_bundle: "" });
-const emptyStockLine = (): StockLine => ({ description: "", bundle_lines: [emptyBundleSubLine()], rate: "", category: "", age_group: "" });
+const emptyStockLine = (): StockLine => ({ description: "", bundle_lines: [emptyBundleSubLine()], rate: "" });
 const bundleQtyOf = (b: BundleSubLine) => (parseFloat(b.bundles || "1") || 1) * parseFloat(b.pcs_per_bundle || "0");
 const stockQtyOf    = (l: StockLine) => l.bundle_lines.reduce((s, b) => s + bundleQtyOf(b), 0);
 const stockAmountOf = (l: StockLine) => stockQtyOf(l) * parseFloat(l.rate || "0");
@@ -70,7 +69,7 @@ const stockAmountOf = (l: StockLine) => stockQtyOf(l) * parseFloat(l.rate || "0"
 interface StockLineHelpers {
   addLine: () => void;
   removeLine: (index: number) => void;
-  updateLine: (index: number, field: "description" | "rate" | "category" | "age_group", value: string) => void;
+  updateLine: (index: number, field: "description" | "rate", value: string) => void;
   addBundleLine: (index: number) => void;
   removeBundleLine: (index: number, bundleIdx: number) => void;
   updateBundleLine: (index: number, bundleIdx: number, field: keyof BundleSubLine, value: string) => void;
@@ -80,16 +79,16 @@ interface StockLineTableTheme { text: string; border: string; bg: string; addBor
 const FRESH_THEME: StockLineTableTheme  = { text: "#166534", border: "#bbf7d0", bg: "#f0fdf4", addBorder: "#86efac" };
 const MISTAKE_THEME: StockLineTableTheme = { text: "#92400e", border: "#fde68a", bg: "#fffbeb", addBorder: "#fcd34d" };
 
+// Purchase Team enters raw purchase detail only — description, rate,
+// bundles — for both Fresh and Mistake lines. No categorization happens
+// here at all: every purchased product (fresh or mistake alike) goes to
+// the Segregation Team's queue instead, where category/age group get
+// assigned and rates get fixed before anything reaches Sales (see
+// Segregation.tsx).
 const StockLineTable: React.FC<{
   title: string; theme: StockLineTableTheme; lines: StockLine[]; helpers: StockLineHelpers;
   totalQty: number; totalAmount: number; addLabel: string;
-  categoryOptions: string[]; ageGroupOptions: string[];
-  // Fresh stock gets categorized by Purchase Team right here. Mistake/defect
-  // stock does not — it goes to the Mistake Stock Review queue instead,
-  // where the checking team assigns category and fixes the rate before it's
-  // sellable (see Inventory.tsx's "Mistake Stock Review" button/modal).
-  showCategoryFields?: boolean;
-}> = ({ title, theme, lines, helpers, totalQty, totalAmount, addLabel, categoryOptions, ageGroupOptions, showCategoryFields = true }) => (
+}> = ({ title, theme, lines, helpers, totalQty, totalAmount, addLabel }) => (
   <>
     <div style={{ fontSize: "0.78rem", fontWeight: 800, color: theme.text, marginBottom: "8px" }}>{title}</div>
     {lines.map((line, index) => (
@@ -110,29 +109,6 @@ const StockLineTable: React.FC<{
               style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "18px", lineHeight: 1, padding: "6px 0" }}>×</button>
           )}
         </div>
-
-        {showCategoryFields && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 3 }}>Category</div>
-              <TextAutocomplete
-                value={line.category || ""}
-                onChange={v => helpers.updateLine(index, "category", v)}
-                options={categoryOptions}
-                placeholder="e.g. TOP, PANT, HOODIE"
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", marginBottom: 3 }}>Age Group</div>
-              <TextAutocomplete
-                value={line.age_group || ""}
-                onChange={v => helpers.updateLine(index, "age_group", v)}
-                options={ageGroupOptions}
-                placeholder="e.g. 2 TO 8, 8 TO 16"
-              />
-            </div>
-          </div>
-        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 30px", gap: 6, marginBottom: 4 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>Bundles</div>
@@ -193,8 +169,6 @@ const SimplifiedPurchaseBill: React.FC = () => {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [brokers, setBrokers] = useState<any[]>([]);
-  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
-  const [ageGroupOptions, setAgeGroupOptions] = useState<string[]>([]);
   const [branchInfo, setBranchInfo] = useState<any>(null);
 
   // Form State
@@ -305,16 +279,6 @@ const SimplifiedPurchaseBill: React.FC = () => {
     };
     fetchData();
   }, [showAddProductModal, showAddSupplierModal]);
-
-  useEffect(() => {
-    apiFetch("/products/category-options")
-      .then(r => r.ok ? r.json() : { categories: [], age_groups: [] })
-      .then(data => {
-        setCategoryOptions(data.categories || []);
-        setAgeGroupOptions(data.age_groups || []);
-      })
-      .catch(() => {});
-  }, []);
 
   // Draft detection on mount
   const [savedDraft, setSavedDraft] = useState<any>(null);
@@ -538,7 +502,6 @@ const SimplifiedPurchaseBill: React.FC = () => {
               fresh_qty: qty, fresh_rate: rate,
               mistake_qty: 0, mistake_rate: 0,
               fresh_amount: qty * rate, mistake_amount: 0, total_amount: qty * rate,
-              category: (l.category || "").trim(), age_group: (l.age_group || "").trim(),
             };
           }),
           ...namedMistake.map(l => {
@@ -548,7 +511,6 @@ const SimplifiedPurchaseBill: React.FC = () => {
               fresh_qty: 0, fresh_rate: 0,
               mistake_qty: qty, mistake_rate: rate,
               fresh_amount: 0, mistake_amount: qty * rate, total_amount: qty * rate,
-              category: (l.category || "").trim(), age_group: (l.age_group || "").trim(),
             };
           }),
         ];
@@ -745,23 +707,20 @@ const SimplifiedPurchaseBill: React.FC = () => {
                       entered as two separate lists below and added to inventory independently.
                     </div>
 
+                    <div style={{ fontSize: "0.72rem", color: "#92400e", background: "#fffbeb", border: "0.5px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
+                      Category, age group, and final rate aren't set here — every item goes to <strong>Segregation</strong> after this purchase is saved, where that team categorizes it and releases it to Sales.
+                    </div>
                     <StockLineTable
                       title="✅ Fresh Stock Items" theme={FRESH_THEME}
                       lines={freshLines} helpers={freshHelpers}
                       totalQty={surplusTotals.fresh_qty} totalAmount={surplusTotals.fresh_amount}
                       addLabel="Add Fresh Item"
-                      categoryOptions={categoryOptions} ageGroupOptions={ageGroupOptions}
                     />
-                    <div style={{ fontSize: "0.72rem", color: "#92400e", background: "#fffbeb", border: "0.5px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
-                      Mistake/defect stock isn't categorized here — it goes to <strong>Inventory → Mistake Stock Review</strong>, where the checking team assigns its category and fixes the rate before it's sellable.
-                    </div>
                     <StockLineTable
                       title="⚠️ Mistake / Defect Stock Items" theme={MISTAKE_THEME}
                       lines={mistakeLines} helpers={mistakeHelpers}
                       totalQty={surplusTotals.mistake_qty} totalAmount={surplusTotals.mistake_amount}
                       addLabel="Add Mistake Item"
-                      categoryOptions={categoryOptions} ageGroupOptions={ageGroupOptions}
-                      showCategoryFields={false}
                     />
                     {/* Combined summary */}
                     <div style={{ border: "0.5px solid #e2e8f0", borderRadius: "10px", overflow: "hidden" }}>

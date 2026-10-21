@@ -218,8 +218,8 @@ router.post("/quick", authMiddleware, async (req, res) => {
 // (purchase bills, movements) stays intact for audit purposes.
 // ─────────────────────────────────────────────────────────────
 router.post("/merge-duplicate", authMiddleware, async (req, res) => {
-    if (!['admin', 'superadmin'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Admin only.' });
+    if (!['admin', 'superadmin', 'segregation_team'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Not permitted for your role.' });
     }
     const companyId = req.user.active_company_id;
     const fromId = parseInt(req.body.from_product_id);
@@ -307,20 +307,20 @@ router.post("/merge-duplicate", authMiddleware, async (req, res) => {
     }
 });
 
-// POST /products/:id/confirm — admin only
-// Clears pending_review once the admin has checked this is genuinely a new
+// POST /products/:id/confirm — admin or the Segregation Team
+// Clears pending_review once someone has checked this is genuinely a new
 // product, not a near-duplicate of an existing one. If it IS a duplicate,
 // use /merge-duplicate instead — that already clears it too (the merged
 // row is soft-deleted, so it never shows up in the review queue again).
-// Optional `name`: lets the admin correct/standardize the name in the same
-// step instead of a separate trip to Edit Product first.
-// Optional `category`/`age_group`/`cost_price`/`selling_price`: the Mistake
-// Stock Review queue's confirm action (from_mistake_stock=true products)
-// uses these same fields — that intermediate team categorizes the defect
-// batch and fixes its rate here, in the same step that clears it for Sales.
+// Optional `name`: lets the reviewer correct/standardize the name in the
+// same step instead of a separate trip to Edit Product first.
+// Optional `category`/`age_group`/`cost_price`/`selling_price`: the
+// Segregation Team's queue (see Segregation.tsx) uses these same fields —
+// that team categorizes every purchased product and fixes its rate here,
+// in the same step that releases it to Sales.
 router.post("/:id/confirm", authMiddleware, async (req, res) => {
-    if (!['admin', 'superadmin'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Admin only.' });
+    if (!['admin', 'superadmin', 'segregation_team'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Not permitted for your role.' });
     }
     const companyId = req.user.active_company_id;
     const id = parseInt(req.params.id);
@@ -471,8 +471,8 @@ router.post("/backfill-surplus-stock", authMiddleware, async (req, res) => {
 });
 
 router.post("/create-set", authMiddleware, async (req, res) => {
-    if (!['admin', 'superadmin'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Admin only.' });
+    if (!['admin', 'superadmin', 'segregation_team'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Not permitted for your role.' });
     }
     const companyId = req.user.active_company_id;
     const components = Array.isArray(req.body.components) ? req.body.components : [];

@@ -1,6 +1,7 @@
 import express from "express";
 import * as db from "../database/pg.js";
 import authMiddleware from "../middlewares/jwtAuthMiddleware.js";
+import { restrictTeamRole } from "../middlewares/restrictTeamRole.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -232,7 +233,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // paid_amount / balance_amount / status / the accounting ledger — those
 // were already settled against whatever was actually paid and stay as-is.
 // ─────────────────────────────────────────────────────────
-router.post("/:id/items", authMiddleware, async (req, res) => {
+router.post("/:id/items", authMiddleware, restrictTeamRole(["purchase_team"]), async (req, res) => {
     const id = Number(req.params.id);
     const companyId = req.user.active_company_id;
     const branchId = sanitizeInt(req.user.branch_id) || 1;
@@ -363,7 +364,7 @@ router.post("/:id/items", authMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // CREATE NEW BILL (Atomic with Inventory & Accounting)
 // ─────────────────────────────────────────────────────────
-router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) => {
+router.post("/", upload.single("bill_file"), authMiddleware, restrictTeamRole(["purchase_team"]), async (req, res) => {
     const companyId = sanitizeInt(req.user.active_company_id);
     const branchId  = sanitizeInt(req.user.branch_id) || 1;
     const userId    = sanitizeInt(req.user.id) || 1;
@@ -1006,21 +1007,11 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                     // Product List and undeductible from an Invoice, since both only
                     // ever read products/branch_inventory, never this lot system.
                     // Exact-name match reuses an existing product; no match creates
-                    // one flagged pending_review=true, same as the regular purchase
-                    // quick-add path, so it still goes through admin review.
-                    // Category/age group entered on this purchase line (e.g. "TOP",
-                    // "2 TO 8") — the Fresh/Mistake line UI only offers these fields
-                    // for Fresh lines (Purchase Team segregates fresh stock directly);
-                    // Mistake lines never carry them, so these stay blank there and
-                    // the COALESCE-safe update below leaves any existing category
-                    // untouched rather than clobbering it with blanks.
-                    const lineCategory  = (line.category  || '').trim();
-                    const lineAgeGroup  = (line.age_group || '').trim();
-                    // A pure-mistake line (no fresh qty on this row — fresh and
-                    // mistake are always separate rows, never mixed) goes to the
-                    // intermediate checking team instead of straight to Sales: that
-                    // team inspects the defect batch, assigns its category, and
-                    // fixes the rate before it's sellable. See /products/:id/confirm.
+                    // one flagged pending_review=true. Purchase Team never sets
+                    // category/age_group — every new product lands in the
+                    // Segregation Team's queue (category='Other' until they set it)
+                    // regardless of fresh or mistake origin. from_mistake_stock is
+                    // purely informational there, prompting Convert Mistake first.
                     const isMistakeLine = mistakeQty > 0 && freshQty === 0;
 
                     let lineProductId = null;
@@ -1031,19 +1022,13 @@ router.post("/", upload.single("bill_file"), authMiddleware, async (req, res) =>
                         );
                         if (existingProduct.rows[0]) {
                             lineProductId = existingProduct.rows[0].id;
-                            await client.query(
-                                `UPDATE products SET cost_price = $1,
-                                        category = COALESCE(NULLIF($2, ''), category),
-                                        age_group = COALESCE(NULLIF($3, ''), age_group)
-                                 WHERE id = $4`,
-                                [freshRate || mistakeRate || 0, lineCategory, lineAgeGroup, lineProductId]
-                            );
+                            await client.query(`UPDATE products SET cost_price = $1 WHERE id = $2`, [freshRate || mistakeRate || 0, lineProductId]);
                         } else {
                             const createdProduct = await client.query(`
-                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, age_group, is_active, is_deleted, pending_review, from_mistake_stock, supplier_name)
-                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, $4, $5, 1, false, true, $6, $7)
+                                INSERT INTO products (company_id, name, unit, selling_price, cost_price, opening_stock, current_stock, category, is_active, is_deleted, pending_review, from_mistake_stock, supplier_name)
+                                VALUES ($1, $2, 'pcs', 0, $3, 0, 0, 'Other', 1, false, true, $4, $5)
                                 RETURNING id
-                            `, [companyId, desc, freshRate || mistakeRate || 0, lineCategory || 'Other', lineAgeGroup || null, isMistakeLine, supplierRes.rows[0]?.name || supplier_name || null]);
+                            `, [companyId, desc, freshRate || mistakeRate || 0, isMistakeLine, supplierRes.rows[0]?.name || supplier_name || null]);
                             lineProductId = createdProduct.rows[0].id;
                         }
                     } catch (linkErr) {
@@ -1393,7 +1378,7 @@ router.patch("/:id/pay", authMiddleware, async (req, res) => {
 // POST /:id/payment — accepts same body as PATCH /:id/pay
 // Normalises `mode` → `payment_mode` for backwards compatibility.
 // ─────────────────────────────────────────────────────────
-router.post("/:id/payment", authMiddleware, async (req, res) => {
+router.post("/:id/payment", authMiddleware, restrictTeamRole(["purchase_team"]), async (req, res) => {
     // Normalise legacy field name
     if (req.body.mode && !req.body.payment_mode) req.body.payment_mode = req.body.mode;
     // Re-use the shared PATCH handler implementation by making an identical call
@@ -1476,7 +1461,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 // additional payments via POST/PATCH /:id/pay instead, which already
 // posts a correct, ledger-balanced entry.
 // ─────────────────────────────────────────────────────────
-router.put("/:id", authMiddleware, async (req, res) => {
+router.put("/:id", authMiddleware, restrictTeamRole(["purchase_team"]), async (req, res) => {
     const id = Number(req.params.id);
     const companyId = req.user.active_company_id;
     const { supplier_id, bill_number, bill_date, bill_type, notes } = req.body;
@@ -1599,7 +1584,7 @@ router.get("/returns/list", authMiddleware, async (req, res) => {
 });
 
 // POST /purchase-bills/returns — record a return to supplier
-router.post("/returns", authMiddleware, async (req, res) => {
+router.post("/returns", authMiddleware, restrictTeamRole(["purchase_team"]), async (req, res) => {
     await ensurePurchaseReturnsTable();
     const companyId = sanitizeInt(req.user.active_company_id);
     const branchId  = sanitizeInt(req.user.branch_id) || 1;

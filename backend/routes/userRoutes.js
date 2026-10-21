@@ -54,7 +54,7 @@ router.get("/staff", authMiddleware, checkPermission("Settings", "access_setting
             FROM users u
             LEFT JOIN branches b ON b.id = u.branch_id
             WHERE u.company_id = $1
-              AND u.role IN ('admin', 'superadmin', 'branch_manager', 'accountant', 'staff', 'manager', 'viewer')
+              AND u.role IN ('admin', 'superadmin', 'branch_manager', 'accountant', 'staff', 'manager', 'viewer', 'purchase_team', 'segregation_team', 'sales_team')
             ORDER BY u.id ASC
         `;
         const staff = await db.pgAll(sql, [companyId]);
