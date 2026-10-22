@@ -227,7 +227,10 @@ const CreateInvoice: React.FC = () => {
   // distinguishes them so the picker doesn't look like duplicates.
   const productLabel = (p: Product) => {
     const bits = [p.supplier_name, p.category && p.category !== "Other" ? p.category : null].filter(Boolean);
-    return bits.length ? `${p.name} — ${bits.join(" · ")}` : p.name;
+    if (bits.length) return `${p.name} — ${bits.join(" · ")}`;
+    // Neither set (legacy product never run through Purchase/Segregation) —
+    // fall back to SKU so look-alike names are still distinguishable.
+    return p.sku ? `${p.name} — ${p.sku}` : p.name;
   };
   const [brokers, setBrokers] = useState<any[]>([]);
   const [company, setCompany] = useState({
