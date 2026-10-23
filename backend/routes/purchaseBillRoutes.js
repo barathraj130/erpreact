@@ -132,6 +132,36 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────
+// GET /purchase-bills/missing-items — old bills stuck with zero recorded
+// items (see the big comment above POST /:id/items: a retired bill-entry
+// path that only ever saved a total amount, never products). Lets the
+// Purchase Bills list surface "N bills need items added" instead of
+// someone discovering each one individually by opening it. Must be
+// registered before GET "/:id" or Express would try to match
+// "missing-items" as a bill id.
+// ─────────────────────────────────────────────────────────
+router.get("/missing-items", authMiddleware, async (req, res) => {
+    const companyId = req.user.active_company_id;
+    try {
+        const rows = await db.pgAll(`
+            SELECT pb.id, pb.bill_number, pb.bill_date, pb.total_amount, s.name AS supplier_name
+            FROM purchase_bills pb
+            LEFT JOIN suppliers s ON s.id = pb.supplier_id
+            WHERE pb.company_id = $1
+              AND COALESCE(pb.is_deleted, false) = false
+              AND COALESCE(pb.bill_category, 'PRODUCT') != 'EXPENSE'
+              AND NOT EXISTS (SELECT 1 FROM purchase_bill_items pbi WHERE pbi.bill_id = pb.id)
+              AND NOT EXISTS (SELECT 1 FROM product_journeys pj WHERE pj.purchase_bill_id = pb.id)
+            ORDER BY pb.id ASC
+        `, [companyId]);
+        res.json({ count: rows.length, bills: rows });
+    } catch (err) {
+        console.error("[purchase-bills/missing-items]", err.message);
+        res.status(500).json({ error: "Failed to check for bills missing items" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────
 // GET SINGLE BILL — with items (joined to products) + expenses
 // ─────────────────────────────────────────────────────────
 router.get("/:id", authMiddleware, async (req, res) => {

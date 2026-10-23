@@ -265,6 +265,18 @@ const PurchaseBills: React.FC = () => {
     fetchSuppliersList();
   }, []);
 
+  // Old bills from a retired entry path that only ever saved a total amount,
+  // never actual products (see backend/routes/purchaseBillRoutes.js's
+  // POST /:id/items comment) — surfaced here so they don't have to be found
+  // one at a time by opening each bill.
+  const [missingItemsBills, setMissingItemsBills] = useState<{ id: number; bill_number: string | null; bill_date: string | null; total_amount: number; supplier_name: string | null }[]>([]);
+  useEffect(() => {
+    apiFetch("/purchase-bills/missing-items")
+      .then(r => r.ok ? r.json() : { bills: [] })
+      .then(data => setMissingItemsBills(data.bills || []))
+      .catch(() => {});
+  }, []);
+
   const handleCreateBill = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -488,6 +500,29 @@ const PurchaseBills: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {missingItemsBills.length > 0 && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "12px", padding: "14px 18px", margin: "0 0 16px" }}>
+          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#92400e", marginBottom: "8px" }}>
+            ⚠️ {missingItemsBills.length} old bill{missingItemsBills.length === 1 ? "" : "s"} {missingItemsBills.length === 1 ? "has" : "have"} no recorded items — click one to add them
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {missingItemsBills.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => handleViewBill(b)}
+                style={{
+                  background: "#fff", border: "1px solid #fcd34d", borderRadius: "8px",
+                  padding: "6px 12px", fontSize: "0.78rem", fontWeight: 600, color: "#92400e", cursor: "pointer",
+                }}
+                title={`₹${Number(b.total_amount || 0).toLocaleString("en-IN")}`}
+              >
+                #{b.id} {b.supplier_name || "(no supplier)"} — ₹{Number(b.total_amount || 0).toLocaleString("en-IN")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div
