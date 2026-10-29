@@ -530,8 +530,10 @@ const SimplifiedPurchaseBill: React.FC = () => {
         const summary = result.items_saved > 0
           ? `Bill saved! ${result.items_saved} item(s) recorded, ${result.products_created} new product(s) created, inventory updated.`
           : "Purchase Bill Saved Successfully!";
-        const debugText = result.surplus_debug ? `\n\n[debug] ${JSON.stringify(result.surplus_debug)}` : "";
-        alert((result.warning ? `${summary}\n\n⚠️ ${result.warning}` : summary) + debugText);
+        // Surplus-save diagnostics (lines received, lots created, etc.) go to the
+        // console for troubleshooting — not into the success popup a real user sees.
+        if (result.surplus_debug) console.log("[purchase bill surplus save]", result.surplus_debug);
+        alert(result.warning ? `${summary}\n\n⚠️ ${result.warning}` : summary);
         if (print) {
             try {
               const billRes = await apiFetch(`/purchase-bills/${result.id}`);
