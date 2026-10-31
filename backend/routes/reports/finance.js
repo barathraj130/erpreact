@@ -176,6 +176,7 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
           JOIN products p ON p.id = sl.product_id
           WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false AND pb.lot_id IS NOT NULL
             AND pb.bill_date BETWEEN $2::date AND $3::date
+            AND p.name IS NOT NULL AND TRIM(p.name) != ''
           UNION
           SELECT LOWER(TRIM(COALESCE(pbi.description, p.name))) AS key
           FROM purchase_bill_items pbi
@@ -183,6 +184,7 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
           LEFT JOIN products p ON p.id = pbi.product_id
           WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false AND COALESCE(pbi.is_deleted,false)=false
             AND pb.bill_date BETWEEN $2::date AND $3::date
+            AND COALESCE(pbi.description, p.name) IS NOT NULL AND TRIM(COALESCE(pbi.description, p.name)) != ''
         ),
         prod_cost AS (
           SELECT LOWER(TRIM(name)) AS key, cost_price
@@ -192,8 +194,8 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
         SELECT COALESCE(SUM(sold.sold_qty * prod_cost.cost_price), 0) AS total
         FROM sold
         JOIN prod_cost ON prod_cost.key = sold.key
-        WHERE sold.key NOT IN (SELECT key FROM purchased)
-      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+        WHERE NOT EXISTS (SELECT 1 FROM purchased WHERE purchased.key = sold.key)
+      `, [companyId, startDate, endDate]).catch((e) => { console.error('[estimated-unrecorded-cogs]', e.message); return { total: 0 }; }),
     ]);
 
     const n = (r) => parseFloat(r?.total || 0);
