@@ -117,6 +117,15 @@ const CreditAssessmentReport = () => {
   const netMargin = revenue > 0 ? (netProfit / revenue * 100) : 0;
   const ebitdaMargin = revenue > 0 ? (ebitda / revenue * 100) : 0;
 
+  // Real COGS only counts actual purchase_bills — products sold with no
+  // purchase record at all (typed straight into a sale) don't reduce it,
+  // overstating profit. This is a separate, clearly-labeled estimate using
+  // cost_price × qty sold for those, never blended into the figures above.
+  const estimatedUnrecordedCogs = parseFloat(pl?.estimated_unrecorded_cogs || 0);
+  const grossProfitEstimated = parseFloat(pl?.gross_profit_estimated ?? grossProfit);
+  const netProfitEstimated = parseFloat(pl?.net_profit_estimated ?? netProfit);
+  const ebitdaEstimated = parseFloat(pl?.ebitda_estimated ?? ebitda);
+
   const netWorth = parseFloat(kpis?.proprietor_net_equity?.value || 0);
   const loansOutstanding = parseFloat(money?.payables?.loans_total || 0);
   const debtToEquity = netWorth > 0 ? (loansOutstanding / netWorth) : null;
@@ -157,6 +166,22 @@ const CreditAssessmentReport = () => {
           <StatBlock label="EBITDA" value={fmtSigned(ebitda)} color={ebitda >= 0 ? '#0891b2' : '#dc2626'} />
           <StatBlock label="Net Worth" value={fmtSigned(netWorth)} color={netWorth >= 0 ? '#16a34a' : '#dc2626'} />
         </div>
+        {estimatedUnrecordedCogs > 0 && (
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px dashed #e2e8f0' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 10 }}>
+              ⚠️ Estimated figures (includes cost of goods sold with no purchase record — see note below)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 20 }}>
+              <StatBlock label="Unrecorded COGS (est.)" value={fmt(estimatedUnrecordedCogs)} color="#92400e" />
+              <StatBlock label="Gross Profit (est.)" value={fmtSigned(grossProfitEstimated)} color="#3b82f6" />
+              <StatBlock label="Net Profit (est.)" value={fmtSigned(netProfitEstimated)} color={netProfitEstimated >= 0 ? '#16a34a' : '#dc2626'} />
+              <StatBlock label="EBITDA (est.)" value={fmtSigned(ebitdaEstimated)} color={ebitdaEstimated >= 0 ? '#0891b2' : '#dc2626'} />
+            </div>
+            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10, marginBottom: 0 }}>
+              {pl?.estimate_note || 'Includes cost_price × qty sold for products sold with no real purchase record this period — an estimate, not an audited figure.'}
+            </p>
+          </div>
+        )}
       </Section>
 
       {/* Revenue trend */}

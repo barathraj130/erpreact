@@ -125,6 +125,7 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
       brokerCashRow, brokerPersonalRow,
       interestCashRow, interestPersonalRow,
       capitalIntro, drawings,
+      estimatedUnrecordedCogsRow,
     ] = await Promise.all([
       db.pgGet(`SELECT COALESCE(SUM(total_amount),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only' AND invoice_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='PERSONAL_RECEIPT' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
@@ -145,6 +146,54 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
       // Capital intro & drawings
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='CAPITAL_INTRO' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(amount),0) AS total FROM proprietor_transactions WHERE company_id=$1 AND transaction_type='DRAWINGS' AND transaction_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
+      // Estimated cost of goods sold through this period that were never
+      // actually recorded as purchased (typed straight into a sales invoice
+      // instead of picked from the catalog — see the Product Movement
+      // report's "Est." column, which uses this same logic per product).
+      // total_cogs above only reflects real purchase_bills, so it silently
+      // understates COGS (overstating profit) whenever a lot of sales have
+      // no purchase history. This is a separate, clearly-labeled estimate —
+      // never blended into the real total_cogs/gross_profit/net_profit/ebitda.
+      db.pgGet(`
+        WITH sold AS (
+          SELECT LOWER(TRIM(ili.description)) AS key, SUM(ili.quantity) AS sold_qty
+          FROM invoice_line_items ili
+          JOIN invoices i ON i.id = ili.invoice_id
+          WHERE i.company_id = $1
+            AND COALESCE(i.is_deleted,false)=false
+            AND COALESCE(i.is_nominal,false)=false
+            AND COALESCE(i.bill_purpose,'real') != 'name_only'
+            AND COALESCE(ili.is_return,false)=false
+            AND ili.description IS NOT NULL AND TRIM(ili.description) != ''
+            AND ili.quantity > 0
+            AND i.invoice_date BETWEEN $2::date AND $3::date
+          GROUP BY LOWER(TRIM(ili.description))
+        ),
+        purchased AS (
+          SELECT LOWER(TRIM(p.name)) AS key
+          FROM purchase_bills pb
+          JOIN stock_lots sl ON sl.id = pb.lot_id
+          JOIN products p ON p.id = sl.product_id
+          WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false AND pb.lot_id IS NOT NULL
+            AND pb.bill_date BETWEEN $2::date AND $3::date
+          UNION
+          SELECT LOWER(TRIM(COALESCE(pbi.description, p.name))) AS key
+          FROM purchase_bill_items pbi
+          JOIN purchase_bills pb ON pb.id = pbi.bill_id
+          LEFT JOIN products p ON p.id = pbi.product_id
+          WHERE pb.company_id=$1 AND COALESCE(pb.is_deleted,false)=false AND COALESCE(pbi.is_deleted,false)=false
+            AND pb.bill_date BETWEEN $2::date AND $3::date
+        ),
+        prod_cost AS (
+          SELECT LOWER(TRIM(name)) AS key, cost_price
+          FROM products
+          WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND cost_price > 0
+        )
+        SELECT COALESCE(SUM(sold.sold_qty * prod_cost.cost_price), 0) AS total
+        FROM sold
+        JOIN prod_cost ON prod_cost.key = sold.key
+        WHERE sold.key NOT IN (SELECT key FROM purchased)
+      `, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
     ]);
 
     const n = (r) => parseFloat(r?.total || 0);
@@ -186,11 +235,23 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
     const drawings_taken   = n(drawings);
     const net_equity_change= capital_invested - drawings_taken;
 
+    // Separate, clearly-labeled estimate — see query comment above. Never
+    // blended into total_cogs/gross_profit/net_profit/ebitda; a parallel set
+    // of _estimated figures instead, so both can be shown side by side.
+    const estimated_unrecorded_cogs = n(estimatedUnrecordedCogsRow);
+    const total_cogs_estimated      = total_cogs + estimated_unrecorded_cogs;
+    const gross_profit_estimated    = total_revenue - total_cogs_estimated;
+    const net_profit_estimated      = gross_profit_estimated - total_expenses;
+    const ebitda_estimated          = net_profit_estimated + interest_total;
+
     res.json({
       data: {
         invoice_revenue, personal_receipt_revenue, total_revenue,
         purchases_cash, purchases_personal, total_cogs,
         gross_profit,
+        estimated_unrecorded_cogs, total_cogs_estimated, gross_profit_estimated,
+        net_profit_estimated, ebitda_estimated,
+        estimate_note: 'Includes cost_price × qty sold for products sold with no real purchase record this period (typed straight into a sale instead of picked from the catalog) — an estimate, not an audited figure.',
         salary_cash, salary_personal,
         chit_cash, chit_personal,
         broker_cash, broker_personal,
@@ -205,7 +266,7 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('profit-loss error:', err.message);
-    res.json({ data: { invoice_revenue:0, personal_receipt_revenue:0, total_revenue:0, purchases_cash:0, purchases_personal:0, total_cogs:0, gross_profit:0, salary_cash:0, salary_personal:0, chit_cash:0, chit_personal:0, broker_cash:0, broker_personal:0, interest_cash:0, interest_personal:0, total_expenses:0, net_profit:0, ebitda:0, interest_total:0, capital_invested:0, drawings_taken:0, net_equity_change:0 }, summary: {} });
+    res.json({ data: { invoice_revenue:0, personal_receipt_revenue:0, total_revenue:0, purchases_cash:0, purchases_personal:0, total_cogs:0, gross_profit:0, estimated_unrecorded_cogs:0, total_cogs_estimated:0, gross_profit_estimated:0, net_profit_estimated:0, ebitda_estimated:0, salary_cash:0, salary_personal:0, chit_cash:0, chit_personal:0, broker_cash:0, broker_personal:0, interest_cash:0, interest_personal:0, total_expenses:0, net_profit:0, ebitda:0, interest_total:0, capital_invested:0, drawings_taken:0, net_equity_change:0 }, summary: {} });
   }
 });
 
