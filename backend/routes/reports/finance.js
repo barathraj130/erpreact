@@ -191,11 +191,15 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
           FROM products
           WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND cost_price > 0
         )
-        SELECT COALESCE(SUM(sold.sold_qty * prod_cost.cost_price), 0) AS total
+        SELECT
+          COALESCE(SUM(sold.sold_qty * prod_cost.cost_price), 0) AS total,
+          (SELECT COUNT(*) FROM sold) AS debug_sold_products,
+          (SELECT COUNT(*) FROM sold JOIN prod_cost ON prod_cost.key = sold.key) AS debug_sold_with_cost,
+          COUNT(*) AS debug_matched
         FROM sold
         JOIN prod_cost ON prod_cost.key = sold.key
         WHERE NOT EXISTS (SELECT 1 FROM purchased WHERE purchased.key = sold.key)
-      `, [companyId, startDate, endDate]).catch((e) => { console.error('[estimated-unrecorded-cogs]', e.message); return { total: 0 }; }),
+      `, [companyId, startDate, endDate]).catch((e) => { console.error('[estimated-unrecorded-cogs]', e.message); return { total: 0, debug_error: e.message }; }),
     ]);
 
     const n = (r) => parseFloat(r?.total || 0);
@@ -245,6 +249,13 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
     const gross_profit_estimated    = total_revenue - total_cogs_estimated;
     const net_profit_estimated      = gross_profit_estimated - total_expenses;
     const ebitda_estimated          = net_profit_estimated + interest_total;
+    // TEMPORARY — remove once the estimate is confirmed showing real numbers.
+    const estimate_debug = {
+      sold_products: parseInt(estimatedUnrecordedCogsRow?.debug_sold_products || 0),
+      sold_with_cost_price: parseInt(estimatedUnrecordedCogsRow?.debug_sold_with_cost || 0),
+      matched_unrecorded: parseInt(estimatedUnrecordedCogsRow?.debug_matched || 0),
+      query_error: estimatedUnrecordedCogsRow?.debug_error || null,
+    };
 
     res.json({
       data: {
@@ -252,7 +263,7 @@ router.get('/profit-loss', authMiddleware, async (req, res) => {
         purchases_cash, purchases_personal, total_cogs,
         gross_profit,
         estimated_unrecorded_cogs, total_cogs_estimated, gross_profit_estimated,
-        net_profit_estimated, ebitda_estimated,
+        net_profit_estimated, ebitda_estimated, estimate_debug,
         estimate_note: 'Includes cost_price × qty sold for products sold with no real purchase record this period (typed straight into a sale instead of picked from the catalog) — an estimate, not an audited figure.',
         salary_cash, salary_personal,
         chit_cash, chit_personal,

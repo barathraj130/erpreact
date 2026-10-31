@@ -166,6 +166,13 @@ const CreditAssessmentReport = () => {
           <StatBlock label="EBITDA" value={fmtSigned(ebitda)} color={ebitda >= 0 ? '#0891b2' : '#dc2626'} />
           <StatBlock label="Net Worth" value={fmtSigned(netWorth)} color={netWorth >= 0 ? '#16a34a' : '#dc2626'} />
         </div>
+        {/* TEMPORARY diagnostic — remove once the estimate above is confirmed working */}
+        {pl?.estimate_debug && (
+          <div style={{ marginTop: 14, fontSize: 10, color: '#cbd5e1', fontFamily: 'monospace' }}>
+            debug: sold_products={pl.estimate_debug.sold_products}, sold_with_cost_price={pl.estimate_debug.sold_with_cost_price}, matched_unrecorded={pl.estimate_debug.matched_unrecorded}
+            {pl.estimate_debug.query_error ? `, query_error=${pl.estimate_debug.query_error}` : ''}
+          </div>
+        )}
         {estimatedUnrecordedCogs > 0 && (
           <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px dashed #e2e8f0' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 10 }}>
