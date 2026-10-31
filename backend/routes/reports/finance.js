@@ -624,7 +624,12 @@ router.get('/ratios', authMiddleware, async (req, res) => {
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND bill_date BETWEEN $2::date AND $3::date`, [companyId, startDate, endDate]).catch(() => ({ total: 0 })),
       db.pgGet(`SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount,0)),0) AS total FROM invoices WHERE company_id=$1 AND COALESCE(is_deleted,false)=false AND COALESCE(bill_purpose,'')!='name_only'`, [companyId]),
       db.pgGet(`SELECT COALESCE(SUM(COALESCE(total_amount,grand_total,net_amount,0)),0) AS total FROM purchase_bills WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]).catch(() => ({ total: 0 })),
-      db.pgGet(`SELECT COALESCE(SUM(current_stock * COALESCE(cost_price,0)),0) AS total FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]),
+      // Falls back to selling_price when cost_price is unset, same as the
+      // Balance Sheet's and Money Overview's inventory valuation — without
+      // this, products still awaiting Segregation (no cost_price yet) made
+      // this sum (and so Inventory Turnover) collapse to 0 even with real
+      // stock on hand.
+      db.pgGet(`SELECT COALESCE(SUM(current_stock * COALESCE(cost_price,selling_price,0)),0) AS total FROM products WHERE company_id=$1 AND COALESCE(is_deleted,false)=false`, [companyId]),
     ]);
     const rev = parseFloat(sales?.total || 0);
     const cogs = parseFloat(purchases?.total || 0);
