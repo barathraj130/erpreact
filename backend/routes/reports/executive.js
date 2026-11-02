@@ -2,7 +2,6 @@
 import express from 'express';
 import * as db from '../../database/pg.js';
 import authMiddleware from '../../middlewares/jwtAuthMiddleware.js';
-import { recomputeSupplierBalance } from '../../services/supplierLedgerService.js';
 
 const router = express.Router();
 
@@ -93,16 +92,6 @@ router.get('/kpis', authMiddleware, async (req, res) => {
 router.get('/money-overview', authMiddleware, async (req, res) => {
   const companyId = req.user.active_company_id;
   try {
-    // Self-heal every supplier's current_balance before reading it below —
-    // same self-heal the Suppliers list page already runs on every load
-    // (suppliersRoutes.js). Without this, Supplier Payables here only ever
-    // reflects whatever was persisted the last time someone happened to open
-    // that page — e.g. a bill that was empty until just now and only just
-    // got its items added via "+ Add Items" would still show its old,
-    // near-zero balance here until the Suppliers page was next opened.
-    const supplierIds = await db.pgAll(`SELECT id FROM suppliers WHERE company_id = $1`, [companyId]).catch(() => []);
-    await Promise.all(supplierIds.map(s => recomputeSupplierBalance(companyId, s.id).catch(() => {})));
-
     const [
       receivablesTotal, topReceivables,
       payablesTotal, topPayables,
@@ -111,58 +100,8 @@ router.get('/money-overview', authMiddleware, async (req, res) => {
       revenueMonth,
       settlementsApproved, settlementsPending,
     ] = await Promise.all([
-      // Live-computed, same formula as the Customers page (userRoutes.js GET /)
-      // — users.initial_balance alone is a cached column that only reflects
-      // reality right after a "Sync Balances" click; reading it directly here
-      // (as this used to) let Receivables and the Customers page show two
-      // different numbers for the same customer whenever it drifted stale.
-      db.pgGet(`
-        SELECT COALESCE(SUM(balance), 0) AS total, COUNT(*) AS count
-        FROM (
-          SELECT
-            COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
-            + COALESCE((SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
-                FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted, false) = false
-                  AND COALESCE(bill_purpose, '') != 'name_only'), 0)
-            - COALESCE((SELECT SUM(ip.amount) FROM invoice_payments ip JOIN invoices i ON i.id = ip.invoice_id
-                WHERE i.customer_id = u.id AND i.company_id = $1 AND COALESCE(i.is_deleted, false) = false), 0)
-            - COALESCE((SELECT SUM(amount) FROM transactions WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'), 0)
-            + COALESCE((SELECT SUM(amount) FROM transactions WHERE reference_id = u.id AND company_id = $1 AND type = 'PAYMENT_TO_CUSTOMER'), 0)
-            - COALESCE((SELECT SUM(amount) FROM transactions WHERE user_id = u.id AND company_id = $1 AND type = 'GUIDELINE_TRANSFER'), 0)
-            - COALESCE((SELECT SUM(total_amount) FROM sales_returns WHERE customer_id = u.id AND company_id = $1), 0)
-            - COALESCE((SELECT SUM(amount) FROM transactions WHERE user_id = u.id AND company_id = $1 AND type = 'ROUND_OFF'), 0)
-            - COALESCE((SELECT SUM(COALESCE(discount_amount, 0)) FROM invoices WHERE customer_id = u.id AND company_id = $1
-                AND COALESCE(is_deleted, false) = false AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'), 0)
-            + COALESCE((SELECT SUM(amount) FROM backdated_transactions WHERE party_type = 'customer' AND party_id = u.id AND company_id = $1
-                AND is_reversed = false AND transaction_type IN ('sale', 'payment_made')), 0)
-            - COALESCE((SELECT SUM(amount) FROM backdated_transactions WHERE party_type = 'customer' AND party_id = u.id AND company_id = $1
-                AND is_reversed = false AND transaction_type IN ('cash_in', 'bank_in', 'payment_received')), 0) AS balance
-          FROM users u WHERE u.company_id = $1 AND u.role = 'customer'
-        ) t WHERE balance > 0
-      `, [companyId]).catch(() => ({ total: 0, count: 0 })),
-      db.pgAll(`
-        SELECT id, name, balance FROM (
-          SELECT u.id, u.username AS name,
-            COALESCE((u.meta->>'customer_opening_balance')::NUMERIC, COALESCE(u.initial_balance, 0))
-            + COALESCE((SELECT SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END)
-                FROM invoices WHERE customer_id = u.id AND company_id = $1 AND COALESCE(is_deleted, false) = false
-                  AND COALESCE(bill_purpose, '') != 'name_only'), 0)
-            - COALESCE((SELECT SUM(ip.amount) FROM invoice_payments ip JOIN invoices i ON i.id = ip.invoice_id
-                WHERE i.customer_id = u.id AND i.company_id = $1 AND COALESCE(i.is_deleted, false) = false), 0)
-            - COALESCE((SELECT SUM(amount) FROM transactions WHERE reference_id = u.id AND company_id = $1 AND type = 'CUSTOMER_PAYMENT'), 0)
-            + COALESCE((SELECT SUM(amount) FROM transactions WHERE reference_id = u.id AND company_id = $1 AND type = 'PAYMENT_TO_CUSTOMER'), 0)
-            - COALESCE((SELECT SUM(amount) FROM transactions WHERE user_id = u.id AND company_id = $1 AND type = 'GUIDELINE_TRANSFER'), 0)
-            - COALESCE((SELECT SUM(total_amount) FROM sales_returns WHERE customer_id = u.id AND company_id = $1), 0)
-            - COALESCE((SELECT SUM(amount) FROM transactions WHERE user_id = u.id AND company_id = $1 AND type = 'ROUND_OFF'), 0)
-            - COALESCE((SELECT SUM(COALESCE(discount_amount, 0)) FROM invoices WHERE customer_id = u.id AND company_id = $1
-                AND COALESCE(is_deleted, false) = false AND UPPER(COALESCE(invoice_type, '')) != 'SALES_RETURN'), 0)
-            + COALESCE((SELECT SUM(amount) FROM backdated_transactions WHERE party_type = 'customer' AND party_id = u.id AND company_id = $1
-                AND is_reversed = false AND transaction_type IN ('sale', 'payment_made')), 0)
-            - COALESCE((SELECT SUM(amount) FROM backdated_transactions WHERE party_type = 'customer' AND party_id = u.id AND company_id = $1
-                AND is_reversed = false AND transaction_type IN ('cash_in', 'bank_in', 'payment_received')), 0) AS balance
-          FROM users u WHERE u.company_id = $1 AND u.role = 'customer'
-        ) t WHERE balance > 0 ORDER BY balance DESC LIMIT 10
-      `, [companyId]).catch(() => []),
+      db.pgGet(`SELECT COALESCE(SUM(initial_balance),0) AS total, COUNT(*) AS count FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0`, [companyId]).catch(() => ({ total: 0, count: 0 })),
+      db.pgAll(`SELECT id, username AS name, initial_balance AS balance FROM users WHERE company_id=$1 AND role='customer' AND initial_balance > 0 ORDER BY initial_balance DESC LIMIT 10`, [companyId]).catch(() => []),
       db.pgGet(`SELECT COALESCE(SUM(current_balance),0) AS total, COUNT(*) AS count FROM suppliers WHERE company_id=$1 AND current_balance > 0`, [companyId]).catch(() => ({ total: 0, count: 0 })),
       db.pgAll(`SELECT id, name, current_balance AS balance FROM suppliers WHERE company_id=$1 AND current_balance > 0 ORDER BY current_balance DESC LIMIT 10`, [companyId]).catch(() => []),
       // Same valuation formula as the Balance Sheet's Inventory Value (on-hand qty × cost)
