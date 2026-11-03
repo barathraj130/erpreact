@@ -1458,9 +1458,24 @@ const CreateInvoice: React.FC = () => {
                     </div>
                     <div className="ci-row-3">
                       <div className="ci-field">
-                        <label>Qty</label>
+                        <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                          <span>Qty</span>
+                          <select
+                            value={it.uom || "Pcs"}
+                            onChange={(e) => updateItem(i, "uom", e.target.value)}
+                            style={{ fontSize: "0.65rem", fontWeight: 700, border: "1px solid #e2e8f0", borderRadius: "4px", padding: "1px 3px", background: "#fff" }}
+                            title="Unit — switch to Kg for items billed by weight"
+                          >
+                            <option value="Pcs">Pcs</option>
+                            <option value="Kg">Kg</option>
+                            <option value="Mtr">Mtr</option>
+                            <option value="Box">Box</option>
+                            <option value="Dozen">Dozen</option>
+                          </select>
+                        </label>
                         <input
                           type="number"
+                          step="any"
                           value={it.qty || ""}
                           onChange={(e) =>
                             updateItem(i, "qty", Number(e.target.value))
@@ -2286,7 +2301,7 @@ const CreateInvoice: React.FC = () => {
                           {it.hsn || "-"}
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right" }}>
-                          {it.qty || "-"}
+                          {it.qty ? `${it.qty} ${it.uom || "Pcs"}` : "-"}
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right" }}>
                           {fmt(it.rate)}
