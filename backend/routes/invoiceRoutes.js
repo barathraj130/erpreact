@@ -733,6 +733,7 @@ router.post("/", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess('
         await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(15,2)`).catch(() => {});
         await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS profit_per_piece NUMERIC(15,2)`).catch(() => {});
         await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS total_profit NUMERIC(15,2)`).catch(() => {});
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20)`).catch(() => {});
 
         // ── Auto-link/auto-create a real product for typed (catalog-free) line items ──
         // A cashier can bill an item by typing its name in Description without ever
@@ -852,8 +853,8 @@ router.post("/", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess('
                     unit_price, taxable_value, discount_percent, tax_percent,
                     cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
                     line_total, is_return,
-                    lot_id, stock_type
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                    lot_id, stock_type, uom
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                 RETURNING id`,
                 [
                     invoiceId,
@@ -870,6 +871,7 @@ router.post("/", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess('
                     item.is_return,
                     item.lot_id || null,
                     item.stock_type || null,
+                    item.uom || "Pcs",
                 ]
             );
 
@@ -2043,6 +2045,7 @@ router.put("/:id", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess
             return {
                 description: i.description || i.name,
                 hsn: i.hsn || i.hsn_acs_code,
+                uom: i.uom || "Pcs",
                 qty, rate, amount, gstRate,
                 cgstR, sgstR, igstR, cgstA, sgstA, igstA,
             };
@@ -2229,6 +2232,7 @@ router.put("/:id", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess
         }
 
         // 5. Sync Line Items — store full GST breakdown so print preview works correctly
+        await client.query(`ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20)`).catch(() => {});
         await client.query("DELETE FROM invoice_line_items WHERE invoice_id = $1", [id]);
 
         for (const item of processedItems) {
@@ -2239,14 +2243,15 @@ router.put("/:id", authMiddleware, restrictTeamRole(["sales_team"]), checkAccess
                     unit_price, taxable_value, tax_percent,
                     cgst_rate, sgst_rate, igst_rate,
                     cgst_amount, sgst_amount, igst_amount,
-                    line_total
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+                    line_total, uom
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
                 [
                     id, item.resolved_product_id || null, item.description, item.hsn, item.qty, item.rate, item.amount,
                     item.gstRate,
                     item.cgstR, item.sgstR, item.igstR,
                     item.cgstA, item.sgstA, item.igstA,
                     item.amount + lineTax,
+                    item.uom,
                 ]
             );
         }

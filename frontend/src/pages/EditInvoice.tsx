@@ -290,7 +290,7 @@ const EditInvoice: React.FC = () => {
               setItems(inv.items.map((i: any) => ({
                 name: i.description || "",
                 hsn: i.hsn_acs_code || "",
-                uom: "Pcs",
+                uom: i.uom || "Pcs",
                 qty: Number(i.quantity) || 0,
                 rate: Number(i.unit_price) || 0,
                 product_id: i.product_id || null,
@@ -469,6 +469,7 @@ const EditInvoice: React.FC = () => {
       .map((item) => ({
         description: item.name, // NOTE: Backend expects 'description', frontend input is 'name'
         hsn_acs_code: item.hsn || "",
+        uom: item.uom || "Pcs",
         quantity: Number(item.qty) || 0,
         unit_price: Number(item.rate) || 0,
         gst_rate: null, // Let backend use the 5% default (same as CreateInvoice)
@@ -959,6 +960,22 @@ const EditInvoice: React.FC = () => {
                     }}
                     style={inputStyle}
                   />
+                  <select
+                    value={it.uom || "Pcs"}
+                    onChange={(e) => {
+                      const t = [...items];
+                      t[i].uom = e.target.value;
+                      setItems(t);
+                    }}
+                    style={inputStyle}
+                    title="Unit — switch to KG for items billed by weight"
+                  >
+                    <option value="Pcs">Pcs</option>
+                    <option value="KG">KG</option>
+                    <option value="Mtr">Mtr</option>
+                    <option value="Box">Box</option>
+                    <option value="Dozen">Dozen</option>
+                  </select>
                   <input
                     type="number"
                     placeholder="Qty"
