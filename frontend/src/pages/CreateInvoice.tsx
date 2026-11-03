@@ -1467,7 +1467,7 @@ const CreateInvoice: React.FC = () => {
                             title="Unit — switch to Kg for items billed by weight"
                           >
                             <option value="Pcs">Pcs</option>
-                            <option value="Kg">Kg</option>
+                            <option value="KG">KG</option>
                             <option value="Mtr">Mtr</option>
                             <option value="Box">Box</option>
                             <option value="Dozen">Dozen</option>
