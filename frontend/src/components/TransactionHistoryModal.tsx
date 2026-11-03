@@ -518,6 +518,13 @@ const TransactionHistoryModal: React.FC<TransactionHistoryModalProps> = ({
               ))}
             </div>
 
+            {/* TEMPORARY diagnostic — remove once the list/ledger pending-amount mismatch is confirmed root-caused */}
+            {entityType === "customer" && (customerSummary as any)?.debug && (
+              <div style={{ fontSize: "0.65rem", color: "#94a3b8", fontFamily: "monospace", padding: "4px 24px 0" }}>
+                debug: list_style_total={fmt((customerSummary as any).debug.list_style_total_amount_sum)} | name_only_excluded_by_list={fmt((customerSummary as any).debug.name_only_total_amount_excluded_by_list)} | discount_sum={fmt((customerSummary as any).debug.discount_sum)} | bundle_sum={fmt((customerSummary as any).debug.bundle_sum)} | ledger_total_billed={fmt((customerSummary as any).debug.ledger_total_billed)} | ledger_total_paid={fmt((customerSummary as any).debug.ledger_total_paid)} | ledger_total_returns={fmt((customerSummary as any).debug.ledger_total_returns)}
+              </div>
+            )}
+
             <div className="thm-content-grid">
               <div className="thm-card">
                 <div className="thm-filters-row">

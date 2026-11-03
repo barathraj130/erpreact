@@ -849,6 +849,47 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
     );
   } catch (e) { /* table may not exist yet */ }
 
+  // TEMPORARY diagnostic — isolates exactly which term diverges between this
+  // statement's pending_amount and the Customers list's remaining_balance,
+  // which have been observed to disagree for the same customer. Remove once
+  // the discrepancy is confirmed root-caused and fixed.
+  let debug = null;
+  try {
+    const listStyle = await db.pgGet(
+      `SELECT COALESCE(SUM(CASE WHEN UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN' THEN total_amount ELSE -total_amount END), 0) AS list_style_total_amount_sum
+       FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false
+         AND COALESCE(bill_purpose, '') != 'name_only'`,
+      [customerId, companyId],
+    );
+    const nameOnly = await db.pgGet(
+      `SELECT COALESCE(SUM(total_amount), 0) AS name_only_total_amount
+       FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false
+         AND COALESCE(bill_purpose, '') = 'name_only' AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'`,
+      [customerId, companyId],
+    );
+    const discountSum = await db.pgGet(
+      `SELECT COALESCE(SUM(discount_amount), 0) AS discount_sum
+       FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false
+         AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'`,
+      [customerId, companyId],
+    );
+    const bundleSum = await db.pgGet(
+      `SELECT COALESCE(SUM(bundle_charges), 0) AS bundle_sum
+       FROM invoices WHERE customer_id = $1 AND company_id = $2 AND COALESCE(is_deleted, false) = false
+         AND UPPER(COALESCE(invoice_type,'')) != 'SALES_RETURN'`,
+      [customerId, companyId],
+    );
+    debug = {
+      list_style_total_amount_sum: toNumber(listStyle?.list_style_total_amount_sum),
+      name_only_total_amount_excluded_by_list: toNumber(nameOnly?.name_only_total_amount),
+      discount_sum: toNumber(discountSum?.discount_sum),
+      bundle_sum: toNumber(bundleSum?.bundle_sum),
+      ledger_total_billed: totals.total_billed,
+      ledger_total_paid: totals.total_paid,
+      ledger_total_returns: totals.total_returns,
+    };
+  } catch (e) { /* diagnostic only — never block the real statement */ }
+
   return {
     customer: {
       id: customer.id,
@@ -863,6 +904,7 @@ export async function buildCustomerLedgerStatement(companyId, customerId, filter
       total_paid: totals.total_paid,
       total_returns: totals.total_returns,
       pending_amount: openingBalance + totals.total_billed - totals.total_paid - totals.total_returns,
+      debug,
     },
     transactions: statement,
     backdated_entries: backdatedEntries,
